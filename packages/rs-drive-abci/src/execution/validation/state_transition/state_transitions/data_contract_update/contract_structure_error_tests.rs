@@ -6,10 +6,11 @@ use crate::execution::validation::state_transition::state_transitions::data_cont
     assert_kept_out_of_the_mempool_and_executed_in_block, assert_paid_contract_structure_error,
     assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
     assert_refused_unpaid_as_not_active, assert_unpaid_internal_error, check_and_process,
-    expiring_summed_schema, one_pattern_too_many, patterned_schema, resign_with_contract,
-    summed_u64_schema, terminal_without_index_only_schema, Outcome,
-    EXPIRING_UNBOUNDED_SUM_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE,
-    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE, TOO_MANY_PATTERNS_MESSAGE,
+    expiring_summed_schema, one_pattern_too_many, patterned_schema, private_schema,
+    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema,
+    transient_summed_schema, Outcome,
+    EXPIRING_UNBOUNDED_SUM_MESSAGE, PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE,
+    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE, TOO_MANY_PATTERNS_MESSAGE, TRANSIENT_SUMMED_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -271,6 +272,20 @@ async fn should_refuse_an_update_adding_a_summed_u64_property_with_a_paid_consen
     assert_paid_contract_structure_error(&outcome, SUMMED_U64_MESSAGE, UPDATE_NONCE);
 }
 
+/// An update is held to the rule on the contract it would store, as a registration is: `check_tx`
+/// refuses the transition with the error the block charges the owner for.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_summed_transient_property_with_a_paid_consensus_error() {
+    let outcome = update_contract_adding_schema(
+        transient_summed_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_eq!(outcome.nonce_before, None);
+    assert_paid_contract_structure_error(&outcome, TRANSIENT_SUMMED_MESSAGE, UPDATE_NONCE);
+}
+
 #[tokio::test]
 async fn should_refuse_an_update_adding_a_terminal_outside_an_index_only_type_with_a_paid_consensus_error(
 ) {
@@ -371,6 +386,19 @@ async fn should_refuse_an_update_adding_a_tradeable_token_unpaid_at_protocol_ver
     assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
 }
 
+/// Protocol version 15 decodes the trade mode and refuses the update as protocol version 13
+/// does: nothing can trade a token before protocol version 16.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_tradeable_token_unpaid_at_protocol_version_15() {
+    let outcome = update_fixture_contract(
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        15,
+    )
+    .await;
+
+    assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
+}
+
 /// The same update with a token that is not tradeable passes the gate: check_tx admits it.
 #[tokio::test]
 async fn should_admit_an_update_adding_a_token_that_is_not_tradeable_at_protocol_version_13() {
@@ -408,4 +436,25 @@ async fn should_keep_applying_an_update_adding_patterns_over_the_bound_at_protoc
             .await;
 
     assert_kept_out_of_the_mempool_and_executed_in_block(&outcome, TOO_MANY_PATTERNS_MESSAGE);
+}
+
+/// An update adding a private type is parsed without validation in `check_tx` too, and its fee
+/// estimate prices the store the update creates: `check_tx` refuses an `entrySize` over the cap
+/// with the error the block charges for, not an internal error.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_private_entry_size_over_the_cap_in_check_tx_as_the_block_does(
+) {
+    for entry_size in [4_097, 70_000, u64::from(u32::MAX)] {
+        let outcome = update_contract_adding_schema(
+            private_schema(entry_size),
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+
+        assert_paid_contract_structure_error(
+            &outcome,
+            PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE,
+            UPDATE_NONCE,
+        );
+    }
 }

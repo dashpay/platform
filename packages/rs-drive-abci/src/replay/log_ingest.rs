@@ -966,7 +966,7 @@ impl<'de> Deserializer<'de> for ParsedValue {
 
 /// The byte fields Tenderdash added to a struct after earlier requests were logged: the random
 /// beacon and the app hash after the block's random draws, which `CommitInfo` and `Commit`
-/// carry from consensus version 2. A request logged before prints neither, and both were empty
+/// carry from consensus version 3. A request logged before prints neither, and both were empty
 /// then.
 const FIELDS_OLDER_LOGS_OMIT: &[(&str, &[&str])] = &[
     ("CommitInfo", &["beacon", "app_hash"]),
@@ -1141,7 +1141,7 @@ mod tests {
         assert!(matches!(request_two, LoadedRequest::Finalize(_)));
     }
 
-    /// Requests logged before consensus version 2 print `CommitInfo` and `Commit` without the
+    /// Requests logged before consensus version 3 print `CommitInfo` and `Commit` without the
     /// random beacon and the app hash after the draws; they parse as empty.
     #[test]
     fn should_read_the_commit_beacon_and_app_hash_older_logs_omit_as_empty() {
@@ -1157,7 +1157,7 @@ mod tests {
         assert!(last_commit.beacon.is_empty() && last_commit.app_hash.is_empty());
     }
 
-    /// From consensus version 2 the commit carries the beacon and the app hash, and Tenderdash
+    /// From consensus version 3 the commit carries the beacon and the app hash, and Tenderdash
     /// sends `ApplyBlockRandomness`.
     #[test]
     fn should_parse_the_randomness_of_consensus_version_2() {

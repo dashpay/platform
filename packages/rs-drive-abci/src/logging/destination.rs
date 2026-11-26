@@ -246,10 +246,21 @@ impl TryFrom<&LogConfig> for FileRotate<AppendTimestamp> {
         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
         let compression = file_rotate::compression::Compression::OnRotate(2);
         // Only owner can see logs
-        let mode = Some(0o600);
+        let mut open_options = OpenOptions::new();
+        open_options
+            .read(true)
+            .create(true)
+            .append(true)
+            .mode(0o600);
         let path = PathBuf::from(&config.destination.to_string());
 
-        let f = FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
+        let f = FileRotate::new(
+            path,
+            suffix_scheme,
+            content_limit,
+            compression,
+            Some(open_options),
+        );
 
         Ok(f)
     }
@@ -472,5 +483,24 @@ mod tests {
             .unwrap();
 
         assert!(validate_log_path(&file_path).is_ok());
+    }
+
+    #[test]
+    fn should_create_rotated_log_file_readable_only_by_owner() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("drive-abci.log");
+        let config = LogConfig {
+            destination: LogDestination::File(file_path.clone()),
+            max_files: 3,
+            ..Default::default()
+        };
+
+        let mut rotate =
+            FileRotate::<AppendTimestamp>::try_from(&config).expect("create rotated log file");
+        rotate.write_all(b"entry\n").unwrap();
+        rotate.flush().unwrap();
+
+        let mode = fs::metadata(&file_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

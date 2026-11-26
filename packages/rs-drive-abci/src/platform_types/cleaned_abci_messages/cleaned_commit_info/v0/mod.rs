@@ -18,12 +18,12 @@ pub struct CleanedCommitInfo {
     /// The list of additional votes extensions, if any
     pub threshold_vote_extensions: Vec<VoteExtension>,
     /// The random beacon of the committed block: the threshold signature the prevotes of the
-    /// commit round combine into. Sent from Tenderdash consensus version 2 (protocol version
-    /// 15); `None` before.
+    /// commit round combine into. Sent from Tenderdash consensus version 3 (protocol version
+    /// 16); `None` before.
     pub beacon: Option<[u8; 96]>,
     /// The app hash the commit signs: the state after the block's random draws, which
     /// `ApplyBlockRandomness` returned for the commit round. Sent from Tenderdash consensus
-    /// version 2; `None` before.
+    /// version 3; `None` before.
     pub app_hash: Option<[u8; 32]>,
 }
 

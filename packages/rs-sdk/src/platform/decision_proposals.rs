@@ -6,7 +6,9 @@
 //! * [`Sdk::build_decision_proposal`] builds a proposal, put like any document create with
 //!   [`PutDocument`](crate::platform::transition::put_document::PutDocument). The create states
 //!   the fund itself. Consensus refuses a rule outside the contract's limits and an end date
-//!   less than a week or more than four weeks after the block that creates the proposal.
+//!   less than a week or more than four weeks after the block that creates the proposal. The
+//!   build puts the end date it is given as it is; [`Sdk::decision_proposal_end_date`] turns an
+//!   end date asked for as "a week from now" or "four weeks from now" into one Platform accepts.
 //! * [`build_decision_proposal_edit`] gives a proposal new text, put as a replace. Only the
 //!   title, description and url change, and only for a day after the proposal is created.
 //! * [`Sdk::fetch_decision_proposal`] reads a proposal by id, and three listings read them a
@@ -24,6 +26,11 @@
 //! for the poll's status and tallies, and to
 //! [`MasternodeYesNoVoteQuery::new`](crate::platform::yes_no_vote_polls::MasternodeYesNoVoteQuery::new)
 //! for a masternode's answer.
+//!
+//! A question with more than two answers is a multiple choice proposal, whose answers are
+//! choices that contend in a masternode vote: see [`multiple_choice`].
+
+pub mod multiple_choice;
 
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::documents::page::DocumentsPage;
@@ -40,12 +47,13 @@ use dpp::document::{DocumentV0, DocumentV0Getters, DocumentV0Setters, INITIAL_RE
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::TimestampMillis;
+use dpp::prelude::{TimestampMillis, TimestampMillisInterval};
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
+use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePollPurpose;
+use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoVotePoll, YesNoVotePollPurpose};
 use dpp::voting::votes::Vote;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::types::Documents;
@@ -69,6 +77,9 @@ pub struct DecisionProposalInput {
     pub minimum_turnout_percent: u8,
     /// When voting closes, in milliseconds since the Unix epoch: from a week to four weeks
     /// after the block that creates the proposal, which is a little later than now.
+    /// The proposal is built with this end date as it is. An end date asked for as "a week from
+    /// now" or "four weeks from now" is refused as it is; pass it through
+    /// [`Sdk::decision_proposal_end_date`] first.
     pub end_date: TimestampMillis,
 }
 
@@ -83,14 +94,14 @@ pub struct DecisionProposalEdit {
     pub url: Option<Option<String>>,
 }
 
-/// A proposal ready to be put with
+/// A proposal, or a choice of a multiple choice proposal, ready to be put with
 /// [`PutDocument`](crate::platform::transition::put_document::PutDocument): the document and
 /// the entropy its id derives from, which the put must reuse.
 #[derive(Debug, Clone)]
 pub struct DecisionProposalDocument {
     /// The document. Its id is a placeholder until it is put: from protocol version 14 the id
-    /// also commits to the identity contract nonce of the create transition. The poll is named
-    /// by the id of the document the put returns.
+    /// also commits to the identity contract nonce of the create transition. A proposal's poll,
+    /// and a choice in its vote, are named by the id of the document the put returns.
     pub document: Document,
     /// The entropy the document id derives from.
     pub entropy: Bytes32,
@@ -163,6 +174,51 @@ impl DecisionProposal {
     }
 }
 
+/// How close to an edge of the end date window [`decision_proposal_end_date`] takes an end date
+/// as meaning that edge, and how far inside the window it then puts it: one hour.
+///
+/// The window is measured from the time of the block that creates the proposal, which is later
+/// than the moment the proposal is built by the signing, broadcast and inclusion delay (seconds,
+/// more when the broadcast is retried), and device clocks differ a little from block times. An
+/// hour covers both and changes a vote of one to four weeks by nothing a voter notices.
+pub const DECISION_PROPOSAL_END_DATE_MARGIN_MS: TimestampMillisInterval = 60 * 60 * 1000;
+
+/// The end date to build a proposal with when `requested_end_date` was asked for at `now_ms`
+/// (this device's clock).
+///
+/// Consensus accepts an end date from a week to four weeks after the block that creates the
+/// proposal ([`YesNoVotePoll::end_date_window`]), which is later than `now_ms`. An end date of
+/// exactly a week from now is therefore always refused, and one of exactly four weeks from now
+/// is refused when this device's clock is ahead of the block's. So an end date within
+/// [`DECISION_PROPOSAL_END_DATE_MARGIN_MS`] of either edge of the window measured from
+/// `now_ms`, inside or just outside it (the caller read its clock a moment before this), is
+/// moved to that margin inside the window, so it moves by at most twice the margin (two hours,
+/// for one asked for an hour before the window opens). Any other end date is returned as it
+/// is: one well inside the window needs no change, and Platform refuses one further outside it.
+///
+/// Opt-in: [`Sdk::build_decision_proposal`] puts the end date it is given as it is, so a caller
+/// with an exact deadline keeps it. [`Sdk::decision_proposal_end_date`] calls this with this
+/// device's clock and the network's protocol version.
+///
+/// # Errors
+/// [`Error::Protocol`] when `platform_version` has no yes/no vote polls (before protocol
+/// version 15).
+pub fn decision_proposal_end_date(
+    requested_end_date: TimestampMillis,
+    now_ms: TimestampMillis,
+    platform_version: &PlatformVersion,
+) -> Result<TimestampMillis, Error> {
+    let window = YesNoVotePoll::end_date_window(now_ms, platform_version)?;
+    let margin = DECISION_PROPOSAL_END_DATE_MARGIN_MS;
+    let near_window = window.start().saturating_sub(margin)..=window.end().saturating_add(margin);
+    let earliest = window.start().saturating_add(margin);
+    let latest = window.end().saturating_sub(margin);
+    if !near_window.contains(&requested_end_date) || earliest > latest {
+        return Ok(requested_end_date);
+    }
+    Ok(requested_end_date.clamp(earliest, latest))
+}
+
 /// The end dates a listing by end date covers: from `from` (included) to `to` (left out). An
 /// open bound is `None`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -181,9 +237,6 @@ pub fn build_decision_proposal_document(
     input: &DecisionProposalInput,
     entropy: Bytes32,
 ) -> Result<DecisionProposalDocument, Error> {
-    let document_type = contract
-        .document_type_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
-        .map_err(|e| Error::Protocol(e.into()))?;
     let mut properties = BTreeMap::from([
         (
             properties::TITLE.to_string(),
@@ -206,11 +259,32 @@ pub fn build_decision_proposal_document(
     if let Some(url) = &input.url {
         properties.insert(properties::URL.to_string(), Value::Text(url.clone()));
     }
+    new_document(
+        contract,
+        PROPOSAL_DOCUMENT_TYPE_NAME,
+        owner_id,
+        properties,
+        entropy,
+    )
+}
+
+/// A new `document_type_name` document of `owner_id` in `contract` holding `properties`, with
+/// its id derived from `entropy` and its first revision when the type keeps one.
+fn new_document(
+    contract: &DataContract,
+    document_type_name: &str,
+    owner_id: Identifier,
+    properties: BTreeMap<String, Value>,
+    entropy: Bytes32,
+) -> Result<DecisionProposalDocument, Error> {
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .map_err(|e| Error::Protocol(e.into()))?;
     let document = DocumentV0 {
         id: Document::generate_document_id_v0(
             &contract.id(),
             &owner_id,
-            PROPOSAL_DOCUMENT_TYPE_NAME,
+            document_type_name,
             entropy.as_slice(),
         ),
         owner_id,
@@ -303,13 +377,15 @@ fn proposals_by_end_date_query(
     )
 }
 
-/// The query for the proposals of `owner_id`, by creation time (`byOwner`), one page of them.
+/// The query for the `document_type_name` documents of `owner_id`, by creation time (`byOwner`),
+/// one page of them.
 fn proposals_by_owner_query(
     contract: Arc<DataContract>,
+    document_type_name: &str,
     owner_id: Identifier,
     page: DocumentsPage,
 ) -> Result<DocumentQuery, Error> {
-    let query = DocumentQuery::new(contract, PROPOSAL_DOCUMENT_TYPE_NAME)?
+    let query = DocumentQuery::new(contract, document_type_name)?
         .with_where(WhereClause {
             field: "$ownerId".to_string(),
             operator: WhereOperator::Equal,
@@ -324,16 +400,17 @@ fn proposals_by_owner_query(
     paged(query, page)
 }
 
-/// The query for every proposal, newest first (`byCreatedAt`), one page of them.
+/// The query for every `document_type_name` document, newest first (`byCreatedAt`), one page
+/// of them.
 fn proposals_by_created_at_query(
     contract: Arc<DataContract>,
+    document_type_name: &str,
     page: DocumentsPage,
 ) -> Result<DocumentQuery, Error> {
-    let query =
-        DocumentQuery::new(contract, PROPOSAL_DOCUMENT_TYPE_NAME)?.with_order_by(OrderClause {
-            field: "$createdAt".to_string(),
-            ascending: false,
-        });
+    let query = DocumentQuery::new(contract, document_type_name)?.with_order_by(OrderClause {
+        field: "$createdAt".to_string(),
+        ascending: false,
+    });
     paged(query, page)
 }
 
@@ -368,8 +445,8 @@ impl Sdk {
     }
 
     /// Builds a proposal of `owner_id` asking what `input` says (see
-    /// [`build_decision_proposal_document`]). The result is put like any document create; the
-    /// owner pays the decision proposal fund on top of the fees.
+    /// [`build_decision_proposal_document`]), with its end date as given. The result is put like
+    /// any document create; the owner pays the decision proposal fund on top of the fees.
     pub async fn build_decision_proposal(
         &self,
         owner_id: Identifier,
@@ -378,6 +455,39 @@ impl Sdk {
         let contract = self.fetch_decision_proposals_contract().await?;
         let entropy = Bytes32::new(StdRng::from_os_rng().random());
         build_decision_proposal_document(&contract, owner_id, input, entropy)
+    }
+
+    /// The end date to create a proposal with when `requested_end_date` was asked for now: an
+    /// end date within an hour of either edge of the window Platform allows (from a week to four
+    /// weeks after the block that creates the proposal) is moved an hour inside it, any other is
+    /// returned as it is ([`decision_proposal_end_date`], with this device's clock). For a form
+    /// that offers "ends in N days" or a date picker, so that a week and four weeks are
+    /// accepted; a caller with an exact deadline passes it to the build as it is.
+    ///
+    /// Computed at the SDK's protocol version ([`Sdk::version`]): an SDK below protocol version
+    /// 15 first asks the network for its version, and is an error when it is still below 15:
+    /// the failure of that request when it failed (so a network that could not be reached is
+    /// not reported as one without decision proposals), [`Error::Generic`] otherwise. An SDK
+    /// already at 15 or later (or pinned there) computes without asking. It does not confirm
+    /// that the network can create proposals; the create does.
+    pub async fn decision_proposal_end_date(
+        &self,
+        requested_end_date: TimestampMillis,
+    ) -> Result<TimestampMillis, Error> {
+        if self.protocol_version_number() < DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION {
+            let (version, failure) = self.refresh_protocol_version_or_failure(None).await;
+            if version < DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION {
+                return Err(failure.unwrap_or_else(|| {
+                    Error::Generic(format!(
+                        "the decision proposal end date exists from protocol version \
+                         {DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION}; the SDK runs \
+                         protocol version {version}"
+                    ))
+                }));
+            }
+        }
+        let now_ms = chrono::Utc::now().timestamp_millis().max(0) as TimestampMillis;
+        decision_proposal_end_date(requested_end_date, now_ms, self.version())
     }
 
     /// The proposal with id `proposal_id`, `None` when there is none.
@@ -415,7 +525,11 @@ impl Sdk {
         page: DocumentsPage,
     ) -> Result<Documents, Error> {
         let contract = self.fetch_decision_proposals_contract().await?;
-        Document::fetch_many(self, proposals_by_owner_query(contract, owner_id, page)?).await
+        Document::fetch_many(
+            self,
+            proposals_by_owner_query(contract, PROPOSAL_DOCUMENT_TYPE_NAME, owner_id, page)?,
+        )
+        .await
     }
 
     /// One page of every proposal, newest first. [`DocumentsPage::after`] gives the next page.
@@ -424,7 +538,11 @@ impl Sdk {
         page: DocumentsPage,
     ) -> Result<Documents, Error> {
         let contract = self.fetch_decision_proposals_contract().await?;
-        Document::fetch_many(self, proposals_by_created_at_query(contract, page)?).await
+        Document::fetch_many(
+            self,
+            proposals_by_created_at_query(contract, PROPOSAL_DOCUMENT_TYPE_NAME, page)?,
+        )
+        .await
     }
 
     /// A masternode's answer `vote_choice` on the proposal `proposal_id`, to put with
@@ -804,13 +922,22 @@ mod tests {
         }
         assert_eq!(
             served_through(
-                &proposals_by_owner_query(contract.clone(), Identifier::from([3; 32]), page)
-                    .expect("builds")
+                &proposals_by_owner_query(
+                    contract.clone(),
+                    PROPOSAL_DOCUMENT_TYPE_NAME,
+                    Identifier::from([3; 32]),
+                    page
+                )
+                .expect("builds")
             ),
             "byOwner"
         );
-        let by_created_at =
-            proposals_by_created_at_query(contract, DocumentsPage::default()).expect("builds");
+        let by_created_at = proposals_by_created_at_query(
+            contract,
+            PROPOSAL_DOCUMENT_TYPE_NAME,
+            DocumentsPage::default(),
+        )
+        .expect("builds");
         assert_eq!(served_through(&by_created_at), "byCreatedAt");
         assert_eq!(by_created_at.limit, 100);
         assert_eq!(by_created_at.start, None);
@@ -857,5 +984,271 @@ mod tests {
                 vote_choice: YesNoAbstainVoteChoice::No,
             }))
         );
+    }
+
+    /// The window consensus checks an end date against for a proposal created in a block at
+    /// `block_time_ms`.
+    fn window_of_block(
+        block_time_ms: TimestampMillis,
+    ) -> std::ops::RangeInclusive<TimestampMillis> {
+        YesNoVotePoll::end_date_window(block_time_ms, PlatformVersion::latest())
+            .expect("yes/no vote polls exist at the latest version")
+    }
+
+    const NOW_MS: TimestampMillis = 1_700_000_000_000;
+
+    /// Delays between building a proposal and the block that includes it: the 7.8 s a devnet
+    /// run took, a slow retried broadcast, and a device clock a little behind the block's.
+    const INCLUSION_DELAYS_MS: [TimestampMillis; 4] = [1, 7_800, 120_000, 30 * 60 * 1000];
+
+    #[test]
+    fn should_move_an_end_date_a_week_from_now_inside_the_window_of_a_later_block() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let requested = NOW_MS + limits.min_yes_no_vote_poll_duration_ms;
+        // A week from now is refused by any block after now: the bug this fixes.
+        assert!(!window_of_block(NOW_MS + 7_800).contains(&requested));
+
+        let end_date = decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+            .expect("computes");
+
+        assert_eq!(end_date, requested + DECISION_PROPOSAL_END_DATE_MARGIN_MS);
+        for delay in INCLUSION_DELAYS_MS {
+            assert!(
+                window_of_block(NOW_MS + delay).contains(&end_date),
+                "a block {delay} ms later accepts it"
+            );
+        }
+    }
+
+    #[test]
+    fn should_move_an_end_date_four_weeks_from_now_inside_the_window_of_a_nearby_block() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let requested = NOW_MS + limits.max_yes_no_vote_poll_duration_ms;
+        // Four weeks from now is refused when this device's clock is ahead of the block's.
+        assert!(!window_of_block(NOW_MS - 1_000).contains(&requested));
+
+        let end_date = decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+            .expect("computes");
+
+        assert_eq!(end_date, requested - DECISION_PROPOSAL_END_DATE_MARGIN_MS);
+        for delay in INCLUSION_DELAYS_MS {
+            assert!(
+                window_of_block(NOW_MS + delay).contains(&end_date),
+                "a block {delay} ms later accepts it"
+            );
+            assert!(
+                window_of_block(NOW_MS - delay).contains(&end_date),
+                "a block {delay} ms earlier (a clock ahead of the block's) accepts it"
+            );
+        }
+    }
+
+    #[test]
+    fn should_treat_an_edge_computed_a_moment_before_now_as_the_edge() {
+        // The app reads its clock, adds a week, and the SDK reads its clock a moment later:
+        // the end date is then just outside the window measured from the SDK's now.
+        let limits = &PlatformVersion::latest().system_limits;
+        let app_now = NOW_MS - 250;
+        let a_week = app_now + limits.min_yes_no_vote_poll_duration_ms;
+        let four_weeks = app_now + limits.max_yes_no_vote_poll_duration_ms;
+
+        for requested in [a_week, four_weeks] {
+            let end_date = decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+                .expect("computes");
+            for delay in INCLUSION_DELAYS_MS {
+                assert!(
+                    window_of_block(NOW_MS + delay).contains(&end_date),
+                    "{requested}: a block {delay} ms later accepts {end_date}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_keep_an_end_date_well_inside_the_window() {
+        let end_date =
+            decision_proposal_end_date(NOW_MS + 14 * DAY_MS, NOW_MS, PlatformVersion::latest())
+                .expect("computes");
+
+        assert_eq!(end_date, NOW_MS + 14 * DAY_MS);
+    }
+
+    #[test]
+    fn should_leave_an_end_date_far_outside_the_window_for_platform_to_refuse() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let too_soon = NOW_MS + limits.min_yes_no_vote_poll_duration_ms
+            - DECISION_PROPOSAL_END_DATE_MARGIN_MS
+            - 1;
+        let too_late = NOW_MS
+            + limits.max_yes_no_vote_poll_duration_ms
+            + DECISION_PROPOSAL_END_DATE_MARGIN_MS
+            + 1;
+
+        for requested in [0, NOW_MS, too_soon, too_late, TimestampMillis::MAX] {
+            assert_eq!(
+                decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+                    .expect("computes"),
+                requested
+            );
+        }
+    }
+
+    /// A context provider that knows only the decision proposals contract.
+    struct ProposalsContractProvider(Arc<DataContract>);
+    impl dash_context_provider::ContextProvider for ProposalsContractProvider {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            _: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            Ok((*id == self.0.id()).then(|| self.0.clone()))
+        }
+        fn get_token_configuration(
+            &self,
+            _: &Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+        fn get_quorum_public_key(
+            &self,
+            _: u32,
+            _: [u8; 32],
+            _: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            Err(dash_context_provider::ContextProviderError::Generic(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            Ok(1)
+        }
+    }
+
+    /// The public build puts an end date near an edge of the window as of now as it is: only
+    /// a caller that asks [`Sdk::decision_proposal_end_date`] has it moved.
+    #[tokio::test]
+    async fn should_build_a_proposal_through_the_sdk_with_an_edge_end_date_as_given() {
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(ProposalsContractProvider(proposals_contract()))
+            .build()
+            .expect("a mock sdk");
+        let limits = &PlatformVersion::latest().system_limits;
+        let now_ms = chrono::Utc::now().timestamp_millis() as TimestampMillis;
+        // Within the margin of the latest end date, where the opt-in call would move it.
+        let edge = now_ms + limits.max_yes_no_vote_poll_duration_ms - 30 * 60 * 1000;
+        let input = DecisionProposalInput {
+            end_date: edge,
+            ..input()
+        };
+
+        let built = sdk
+            .build_decision_proposal(Identifier::new([7; 32]), &input)
+            .await
+            .expect("builds");
+
+        let end_date: u64 = built
+            .document
+            .properties()
+            .get_integer(properties::END_DATE)
+            .expect("has an end date");
+        assert_eq!(end_date, edge);
+        assert_ne!(
+            sdk.decision_proposal_end_date(edge)
+                .await
+                .expect("computes"),
+            edge,
+            "the opt-in call moves the same end date"
+        );
+    }
+
+    /// An SDK pinned below protocol version 15 learns nothing new, and the call says why.
+    #[tokio::test]
+    async fn should_refuse_the_end_date_on_an_sdk_pinned_below_protocol_version_15() {
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(14).expect("protocol version 14 exists"))
+            .build()
+            .expect("a mock sdk");
+
+        let error = sdk
+            .decision_proposal_end_date(NOW_MS + 14 * DAY_MS)
+            .await
+            .expect_err("below protocol version 15");
+
+        assert!(
+            matches!(&error, Error::Generic(message) if message.contains("protocol version 15")),
+            "{error:?}"
+        );
+    }
+
+    /// An SDK below protocol version 15 whose request for the network's version fails returns
+    /// that failure, not a claim that the network has no decision proposals. Needs `mocks`:
+    /// the failure is the mock client's.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_return_why_the_network_version_could_not_be_learned() {
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(14).expect("protocol version 14 exists"))
+            .build()
+            .expect("a mock sdk");
+
+        let error = sdk
+            .decision_proposal_end_date(NOW_MS + 14 * DAY_MS)
+            .await
+            .expect_err("below protocol version 15");
+
+        // The empty mock has no answer for the epoch request: that failure is returned.
+        assert!(
+            matches!(
+                &error,
+                Error::DapiClientError(rs_dapi_client::DapiClientError::Mock(
+                    rs_dapi_client::mock::MockError::MockExpectationNotFound(_)
+                ))
+            ),
+            "the request's own failure, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn should_build_a_proposal_with_an_edge_end_date_as_given() {
+        // The build never moves an end date: only a caller that asks for it does.
+        let limits = &PlatformVersion::latest().system_limits;
+        let edge = NOW_MS + limits.max_yes_no_vote_poll_duration_ms - 30 * 60 * 1000;
+        let input = DecisionProposalInput {
+            end_date: edge,
+            ..input()
+        };
+
+        let built = build_decision_proposal_document(
+            &proposals_contract(),
+            Identifier::new([7; 32]),
+            &input,
+            Bytes32::new([3; 32]),
+        )
+        .expect("builds");
+
+        let end_date: u64 = built
+            .document
+            .properties()
+            .get_integer(properties::END_DATE)
+            .expect("has an end date");
+        assert_eq!(end_date, edge);
+    }
+
+    #[test]
+    fn should_refuse_to_compute_an_end_date_before_yes_no_vote_polls_exist() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+
+        assert!(matches!(
+            decision_proposal_end_date(NOW_MS + 14 * DAY_MS, NOW_MS, platform_version),
+            Err(Error::Protocol(_))
+        ));
     }
 }

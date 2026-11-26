@@ -5,6 +5,7 @@ use platform_version::version::PlatformVersion;
 mod common;
 mod v0;
 mod v1;
+mod v2;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 pub use v0::*;
@@ -24,9 +25,10 @@ impl DataContractUpdateValidationMethodsV0 for DataContract {
         {
             0 => self.validate_update_v0(data_contract, block_info, platform_version),
             1 => self.validate_update_v1(data_contract, block_info, platform_version),
+            2 => self.validate_update_v2(data_contract, block_info, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_update".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }

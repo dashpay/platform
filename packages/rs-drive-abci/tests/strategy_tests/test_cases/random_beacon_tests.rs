@@ -1,4 +1,4 @@
-//! Same-block randomness across many blocks (protocol version 15): documents of a type with a
+//! Same-block randomness across many blocks (protocol version 16): documents of a type with a
 //! `sys.random.uniform` property, and random token transfers and mints, are sent block after
 //! block through the mimic, which hands each block a stand-in random beacon through
 //! `ApplyBlockRandomness` and signs the commit over the state after the draws. Every

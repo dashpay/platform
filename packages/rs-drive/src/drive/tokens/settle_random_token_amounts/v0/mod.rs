@@ -463,6 +463,7 @@ mod tests {
             storage_flags: None,
             cost: OperationCost::default(),
             fee: None,
+            parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
         })
     }
 

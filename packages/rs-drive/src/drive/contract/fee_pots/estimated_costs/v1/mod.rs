@@ -6,7 +6,7 @@ use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use grovedb::batch::KeyInfoPath;
 
 impl Drive {
-    /// v0 (protocol version 15), keeping a deeper description of the prefunded balances layer
+    /// v0 (protocol version 16), keeping a deeper description of the prefunded balances layer
     /// that another write of the batch registered: the escrow of the token marketplace's offers
     /// sits a level below the fee pots' keys.
     #[inline(always)]

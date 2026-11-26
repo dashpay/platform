@@ -9,6 +9,7 @@ pub use dpp::prelude::AddressNonce;
 #[cfg(doc)]
 use crate::PlatformWalletError;
 
+mod balance_history;
 mod fund_from_asset_lock;
 pub(crate) mod provider;
 mod sync;
@@ -42,6 +43,10 @@ where
         .ok_or(crate::PlatformWalletError::InputSumOverflow)
 }
 
+pub use balance_history::{
+    AddressBalanceChange, AddressBalanceChangeEntry, AddressBalanceHistory,
+    CompactedAddressBalanceChange, CompactedAddressBalanceChangeEntry,
+};
 pub use provider::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
 };

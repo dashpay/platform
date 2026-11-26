@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn should_ignore_indices_reordering() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -390,7 +390,7 @@ mod tests {
     // hard error.
     #[test]
     fn should_ignore_immutable_list_change() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -426,7 +426,7 @@ mod tests {
     // the schema.
     #[test]
     fn should_still_report_incompatible_property_change_alongside_indices_diff() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -464,7 +464,7 @@ mod tests {
     // `/properties/indices` and must still be validated.
     #[test]
     fn should_still_validate_property_named_indices() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -549,7 +549,7 @@ mod tests {
     /// property takes a presence byte), so no change to it is compatible.
     #[test]
     fn should_report_every_transient_list_change_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (original, new, change_name, change_path) in [
             (None, Some(json!(["a"])), "add", "/transient"),
             (Some(json!(["a"])), None, "remove", "/transient"),
@@ -592,7 +592,7 @@ mod tests {
     /// changes nothing a stored document depends on.
     #[test]
     fn should_accept_a_reordered_or_repeated_transient_list() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for new in [json!(["b", "a"]), json!(["a", "b", "a"])] {
             let result = validate_schema_compatibility(
                 &with_transient(Some(json!(["a", "b"]))),
@@ -645,7 +645,7 @@ mod tests {
     /// keywords.
     #[test]
     fn should_report_every_property_constraints_change_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let rule = json!({ "sum": { "lessThanOrEqual": [{ "add": ["a", "b"] }, 100] } });
         for (original, new, change_name, change_path) in [
             (None, Some(rule.clone()), "add", "/propertyConstraints"),
@@ -699,7 +699,7 @@ mod tests {
     /// incompatible.
     #[test]
     fn should_report_every_delete_constraints_change_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let with_delete_constraints = |rules: Option<serde_json::Value>| {
             let mut schema = with_property_constraints(None);
             if let Some(rules) = rules {
@@ -852,7 +852,7 @@ mod tests {
     /// refuses a real change before this check runs.
     #[test]
     fn should_report_every_change_to_a_keyword_without_a_shared_rule_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (pointer, value, other_value, changed_path) in frozen_keyword_cases() {
             // Adding, removing, then changing the value: the first incompatible
             // change reported is at the keyword, then inside its value
@@ -910,7 +910,8 @@ mod tests {
     /// Every keyword the document meta-schema admits, at the top of a document
     /// type, in a property's schema or in a typed array's element schema, is
     /// judged by a rule of its own or stripped before the diff, for every
-    /// protocol version that selects this generation. A keyword added to the
+    /// protocol version that selects this generation or generation 2, which
+    /// diffs with this generation's rules. A keyword added to the
     /// meta-schema without a rule fails here, and so does a new meta-schema
     /// diffed by this generation until it is listed below.
     #[test]
@@ -934,7 +935,9 @@ mod tests {
                 .contract_versions
                 .document_type_versions
                 .schema;
-            if schema_versions.validate_schema_compatibility != 1 {
+            // Generation 2 diffs with this generation's rules once it has left out the objects'
+            // `required` lists, so it is held to them too
+            if !matches!(schema_versions.validate_schema_compatibility, 1 | 2) {
                 continue;
             }
             let meta_schema: serde_json::Value = match schema_versions.document_type_schema {
@@ -996,7 +999,7 @@ mod tests {
     /// what keeps a later one from failing the update with an internal error.
     #[test]
     fn should_report_a_change_under_a_keyword_with_no_rule_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (pointer, original, new, change_name, change_path) in [
             ("/unruled", None, Some(json!(1)), "add", "/unruled"),
             ("/unruled", Some(json!(1)), None, "remove", "/unruled"),
@@ -1042,7 +1045,7 @@ mod tests {
     /// reordering or repeating names changes nothing a stored entry depends on.
     #[test]
     fn should_accept_a_reordered_or_repeated_entry_payload() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for new in [json!(["b", "a"]), json!(["a", "b", "a"])] {
             let result = validate_schema_compatibility(
                 &with_pointer("/entryPayload", Some(json!(["a", "b"]))),
@@ -1118,7 +1121,7 @@ mod tests {
     /// definition from one to the other, in either direction, is no change.
     #[test]
     fn should_compare_a_shorthand_as_the_long_form_it_stands_for() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (old, new) in [(true, false), (false, true)] {
             let (old_schema, old_defs) = spelled(old);
             let (new_schema, new_defs) = spelled(new);
@@ -1134,7 +1137,7 @@ mod tests {
     /// A real change is still one: an identifier is no plain 32-byte array.
     #[test]
     fn should_still_report_a_change_behind_a_shorthand() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let (_, old_defs) = spelled(true);
         let new_defs = json!({ "$defs": { "owner": { "type": "bytes", "size": 32 } } });
         let result = validate_schema_compatibility(&old_defs, &new_defs, platform_version)

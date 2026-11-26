@@ -884,6 +884,13 @@ impl TrustedHttpContextProvider {
 }
 
 impl ContextProvider for TrustedHttpContextProvider {
+    /// Quorum keys come only from its own service; the fallback provider
+    /// serves contracts and token configurations, which the revision does not
+    /// cover, so adding or replacing a known contract does not move it.
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -1047,6 +1054,11 @@ impl ContextProvider for TrustedHttpContextProvider {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod tests {
+    /// The token marketplace starts with protocol version 16.
+    fn token_marketplace_version() -> &'static dpp::version::PlatformVersion {
+        &dpp::version::v16::PLATFORM_V16
+    }
+
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
     use dash_context_provider::ContextProviderMode;
@@ -2510,7 +2522,7 @@ pub(crate) mod tests {
     /// The token market system contract is served only from its activation version on.
     #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
     #[test]
-    fn should_serve_token_market_only_from_protocol_15() {
+    fn should_serve_token_market_only_from_protocol_16() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::version::PlatformVersion;
 
@@ -2524,38 +2536,38 @@ pub(crate) mod tests {
         let id = SystemDataContract::TokenMarket.id();
 
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
             .expect("a pre-activation lookup must not error")
             .is_none());
 
         let contract = provider
-            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
-            .expect("the lookup must succeed at protocol version 15")
-            .expect("the token market contract must be served at protocol version 15");
+            .get_data_contract(&id, token_marketplace_version())
+            .expect("the lookup must succeed at protocol version 16")
+            .expect("the token market contract must be served at protocol version 16");
         assert_eq!(contract.id(), id);
 
         // A copy preloaded into the known contracts is not served before activation either.
         provider.add_known_contract((*contract).clone());
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
             .expect("a pre-activation lookup must not error")
             .is_none());
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
-            .expect("the lookup must succeed at protocol version 15")
+            .get_data_contract(&id, token_marketplace_version())
+            .expect("the lookup must succeed at protocol version 16")
             .is_some());
     }
 
     /// A build without the token market feature still refuses a contract preloaded under the
-    /// token market's id before protocol version 15, and serves it from 15.
+    /// token market's id before protocol version 16, and serves it from 16.
     #[test]
-    fn should_refuse_a_preloaded_token_market_id_before_protocol_15_in_any_build() {
+    fn should_refuse_a_preloaded_token_market_id_before_protocol_16_in_any_build() {
         use dpp::data_contract::config::DataContractConfig;
         use dpp::data_contract::v1::DataContractV1;
         use dpp::version::PlatformVersion;
         use std::collections::BTreeMap;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let id = SystemDataContract::TokenMarket.id();
         let contract = DataContract::V1(DataContractV1 {
             id,
@@ -2586,12 +2598,12 @@ pub(crate) mod tests {
         .with_known_contracts(vec![contract]);
 
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
             .expect("a pre-activation lookup must not error")
             .is_none());
         assert!(provider
             .get_data_contract(&id, platform_version)
-            .expect("the lookup must succeed from protocol version 15")
+            .expect("the lookup must succeed from protocol version 16")
             .is_some());
     }
 
@@ -2653,11 +2665,11 @@ pub(crate) mod tests {
         }
     }
 
-    /// The token market contract does not exist before protocol version 15,
+    /// The token market contract does not exist before protocol version 16,
     /// so no source may serve one under its id there: a fallback provider
     /// asked after the local contracts must not be able to supply it either.
     #[test]
-    fn should_refuse_a_token_market_contract_from_the_fallback_before_protocol_15() {
+    fn should_refuse_a_token_market_contract_from_the_fallback_before_protocol_16() {
         use dpp::version::PlatformVersion;
 
         // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
@@ -2668,12 +2680,12 @@ pub(crate) mod tests {
         )
         .unwrap()
         .with_fallback_provider(ServesEveryContract);
-        let pv14 = PlatformVersion::get(14).unwrap();
+        let pv15 = PlatformVersion::get(15).unwrap();
 
         let app_contract = Identifier::new([0x5a; 32]);
         assert!(
             provider
-                .get_data_contract(&app_contract, pv14)
+                .get_data_contract(&app_contract, pv15)
                 .expect("the fallback answers")
                 .is_some(),
             "the fallback must be asked for a contract the provider does not hold"
@@ -2681,12 +2693,12 @@ pub(crate) mod tests {
 
         let token_market = SystemDataContract::TokenMarket.id();
         assert!(provider
-            .get_data_contract(&token_market, pv14)
+            .get_data_contract(&token_market, pv15)
             .expect("a pre-activation lookup must not error")
             .is_none());
         assert!(provider
-            .get_data_contract(&token_market, PlatformVersion::get(15).unwrap())
-            .expect("the lookup must succeed from protocol version 15")
+            .get_data_contract(&token_market, token_marketplace_version())
+            .expect("the lookup must succeed from protocol version 16")
             .is_some());
     }
 

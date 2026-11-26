@@ -40,8 +40,8 @@ impl Drive {
     /// - `requests`: the documents the block created, in the order the block created them.
     /// - `block_info`: the block.
     /// - `transaction`: the block's transaction.
-    /// - `platform_version`: selects the method version; `None` before protocol version 15,
-    ///   whose parser is the first to admit a `sys.random` property.
+    /// - `platform_version`: selects the method version; `None` before protocol version 16
+    ///   (`DRIVE_VERSION_V11`), the first whose Drive draws a `sys.random` property.
     ///
     /// # Returns
     /// How many documents had properties drawn.
@@ -97,8 +97,8 @@ impl Drive {
     /// - `document_type`: its type.
     /// - `block_info`: the block, whose epoch prices the entries.
     /// - `transaction`: the block's transaction.
-    /// - `platform_version`: selects the method version; `None` before protocol version 15,
-    ///   whose parser is the first to admit a `sys.random` property.
+    /// - `platform_version`: selects the method version; `None` before protocol version 16
+    ///   (`DRIVE_VERSION_V11`), the first whose Drive draws a `sys.random` property.
     ///
     /// # Returns
     /// The fee of those entries; zero when no index of the type holds such a property.

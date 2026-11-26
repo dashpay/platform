@@ -1,6 +1,6 @@
-//! The block that switches to protocol version 15 receives no random beacon. Tenderdash applies
+//! The block that switches to protocol version 16 receives no random beacon. Tenderdash applies
 //! the consensus parameters a block returns from the next height on, so that block still runs
-//! under Tenderdash consensus version 1, which neither recovers a beacon nor calls
+//! under Tenderdash consensus version 2, which neither recovers a beacon nor calls
 //! `ApplyBlockRandomness`, and its commit carries none. Nothing would then draw what the block's
 //! transitions ask for: a document created with a `sys.random` property would keep its
 //! placeholder for good, and a random token amount would leave its maximum in escrow. So the
@@ -8,7 +8,7 @@
 //! or written (`RandomBeaconUnavailableError`), and the next block, which runs under consensus
 //! version 2, accepts it.
 //!
-//! Every protocol version selects the transformer this gate sits in, and it is inert before 15:
+//! Every protocol version selects the transformer this gate sits in, and it is inert before 16:
 //! [`random_beacon_withheld`] is false wherever the block's protocol version draws nothing
 //! (`apply_random_beacon` is `None`), before it reads anything else.
 
@@ -34,7 +34,7 @@ use std::collections::BTreeMap;
 /// (`apply_random_beacon` is `Some`), while Tenderdash runs it under the consensus version of
 /// the version it switches from
 /// ([`PlatformStateV0Methods::tenderdash_consensus_platform_version`]), whose
-/// `apply_random_beacon` is `None`: the block that switches to protocol version 15. In
+/// `apply_random_beacon` is `None`: the block that switches to protocol version 16. In
 /// check_tx, `platform_state` is the committed state, which runs under its own version, so this
 /// is false there.
 pub(super) fn random_beacon_withheld(
@@ -114,7 +114,7 @@ pub(super) fn refuse_random_document(
 }
 
 /// Whether `document_type` declares a property drawn at random (`generatedFrom` with a
-/// `sys.random` function), which no type parsed before protocol version 15 does.
+/// `sys.random` function), which no type parsed before protocol version 16 does.
 fn declares_a_property_drawn_at_random(document_type: DocumentTypeRef) -> bool {
     document_type
         .generated_from_fields()
@@ -151,15 +151,17 @@ mod tests {
     }
 
     #[test]
-    fn should_withhold_the_beacon_only_from_the_block_switching_to_protocol_version_15() {
+    fn should_withhold_the_beacon_only_from_the_block_switching_to_protocol_version_16() {
         let latest = PlatformVersion::latest().protocol_version;
-        // The block that switches from 14 runs under consensus version 1
+        // The block that switches from 15 runs under consensus version 2, and one that
+        // switches from an earlier version under one below it
+        assert!(withheld(latest, Some(15)));
         assert!(withheld(latest, Some(14)));
-        // Any later block, and check_tx on a committed state, run under consensus version 2
+        // Any later block, and check_tx on a committed state, run under consensus version 3
         assert!(!withheld(latest, None));
         // Inert at the last shipped protocol version, whatever it switched from: its blocks draw
         // nothing
-        assert!(!withheld(14, Some(13)));
+        assert!(!withheld(15, Some(14)));
         assert!(!withheld(14, None));
     }
 }

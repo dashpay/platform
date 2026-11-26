@@ -68,7 +68,7 @@ pub struct StateTransitionsProcessingResult {
     /// The token shielded pools the block's applied transitions touched, so the block end can
     /// record each pool's new anchor (and prune its old ones) without scanning every pool.
     pub(crate) token_shielded_pools_touched: BTreeSet<[u8; 32]>,
-    /// What the block's applied transitions ask its random beacon for (protocol version 15),
+    /// What the block's applied transitions ask its random beacon for (protocol version 16),
     /// in the order they were executed, handed to the block execution context.
     pub(crate) random_requests: BlockRandomRequests,
     invalid_paid_count: usize,

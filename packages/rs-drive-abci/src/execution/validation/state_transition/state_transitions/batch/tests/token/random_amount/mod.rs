@@ -1,10 +1,10 @@
-//! End-to-end coverage for random token amounts (protocol version 15): a token transfer or
+//! End-to-end coverage for random token amounts (protocol version 16): a token transfer or
 //! mint naming a random minimum amount reserves the most it moves in the token marketplace
 //! escrow when the block executes it, and `Drive::settle_random_token_amounts` pays out the
 //! amount drawn from the block's random beacon once the block's transitions are accepted. The
 //! token conservation check balances throughout. A client cannot know the amount, so it
 //! reads it from the proof of its own transition. The block that switches to protocol version
-//! 15 receives no random beacon, so it refuses a random amount, which the next block accepts.
+//! 16 receives no random beacon, so it refuses a random amount, which the next block accepts.
 
 use super::*;
 
@@ -437,8 +437,8 @@ mod random_amount_tests {
         assert_eq!(supply(&platform, token_id), Some(BASE_SUPPLY));
     }
 
-    /// The block that switches to protocol version 15 still runs under Tenderdash consensus
-    /// version 1, which sends it no random beacon, so nothing would settle a random amount
+    /// The block that switches to protocol version 16 still runs under Tenderdash consensus
+    /// version 2, which sends it no random beacon, so nothing would settle a random amount
     /// there: the transfer is refused unpaid, before anything moves, and the same transfer is
     /// accepted in the next block, which receives a beacon.
     #[tokio::test]
@@ -483,7 +483,7 @@ mod random_amount_tests {
         .await
         .expect("expected to create the transfer");
 
-        // The state of the block that switches from protocol version 14
+        // The state of the block that switches from protocol version 15
         let mut switching_block_state = PlatformState::clone(&platform.state.load());
         switching_block_state.set_switched_from_protocol_version(Some(14));
         let result = process_in_block(&platform, &transition, &switching_block_state);
@@ -493,7 +493,7 @@ mod random_amount_tests {
         assert_matches!(
             error,
             ConsensusError::BasicError(BasicError::RandomBeaconUnavailableError(e))
-                if e.protocol_version() == 15
+                if e.protocol_version() == 16
         );
         assert_eq!(
             balance(&platform, token_id, identity.id()),
@@ -502,7 +502,7 @@ mod random_amount_tests {
         assert_eq!(balance(&platform, token_id, recipient.id()), None);
         assert_tokens_balanced(&platform);
 
-        // The next block runs under consensus version 2: the same transfer goes through
+        // The next block runs under consensus version 3: the same transfer goes through
         let result = process(&platform, &transition);
         assert_matches!(
             &result,

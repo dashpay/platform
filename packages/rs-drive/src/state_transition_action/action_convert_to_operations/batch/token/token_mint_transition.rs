@@ -81,7 +81,7 @@ impl DriveHighLevelBatchOperationConverter for TokenMintTransitionAction {
                 }
 
                 if self.base().perform_action() {
-                    // A random mint (protocol version 15) adds the most it issues to the total
+                    // A random mint (protocol version 16) adds the most it issues to the total
                     // supply, holds it in a reservation and pays the recipient once the block's
                     // random beacon is known (`Drive::settle_random_token_amounts`), and its
                     // history holds the range's minimum until then. Only a version 1 mint carries a random minimum

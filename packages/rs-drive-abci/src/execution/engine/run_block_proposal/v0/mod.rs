@@ -479,7 +479,7 @@ where
                 proposer_results: None,
                 // Kept for `ApplyBlockRandomness` and `FinalizeBlock`, which draw them from the
                 // block's random beacon. Added in place to this shipped generation: the list is
-                // empty at every protocol version before 15, where `process_raw_state_transitions`
+                // empty at every protocol version before 16, where `process_raw_state_transitions`
                 // collects nothing (`apply_random_beacon` is `None`), and the context is neither
                 // serialized nor hashed.
                 random_requests: state_transitions_result.take_random_requests(),

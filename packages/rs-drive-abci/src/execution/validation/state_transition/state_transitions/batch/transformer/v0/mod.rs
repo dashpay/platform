@@ -47,6 +47,7 @@ use dpp::consensus::basic::document::{
 };
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
+use dpp::ProtocolError;
 
 use dpp::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -246,10 +247,10 @@ impl BatchTransitionTransformerV0 for BatchTransition {
         let user_fee_increase = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;
 
-        // The block that switches to protocol version 15 receives no random beacon, so nothing
+        // The block that switches to protocol version 16 receives no random beacon, so nothing
         // would settle a random token amount there (`random_beacon_gate`): a batch moving one
         // is refused, unpaid, before anything is read. In place: `random_beacon_withheld` is
-        // false at every protocol version before 15, whose tables draw nothing
+        // false at every protocol version before 16, whose tables draw nothing
         if random_beacon_withheld(platform.state, platform_version)? {
             if let Some(refusal) = refuse_random_token_amount(
                 self.transitions_iter()
@@ -512,11 +513,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             ));
         }
 
-        // The block that switches to protocol version 15 receives no random beacon, so a
+        // The block that switches to protocol version 16 receives no random beacon, so a
         // document created there with a `sys.random` property would keep its placeholder for
         // good (`random_beacon_gate`): the Batch is refused here, unpaid, before the contract
         // moderation gate reads state and before any document is read or written. In place:
-        // `random_beacon_withheld` is false at every protocol version before 15, whose tables
+        // `random_beacon_withheld` is false at every protocol version before 16, whose tables
         // draw nothing, and no type parsed there declares such a property
         if random_beacon_withheld(platform.state, platform_version)? {
             if let Some(refusal) = refuse_random_document(
@@ -1000,6 +1001,30 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
         match transition {
             DocumentTransition::Create(document_create_transition) => {
+                // A type summing a property it lists as transient, which registration refuses
+                // from protocol version 15 and a contract registered earlier may hold: its
+                // documents are stored without the value, so a create, contested or not, would
+                // reach Drive with nothing for the type's sums to read. Refused with the error
+                // registration refuses the type with, before anything is written. Edited in
+                // place: the method's gate, `validate_no_transient_summed_property`, is `None`
+                // before protocol version 15, so it refuses nothing there
+                if let Ok(document_type) = data_contract_fetch_info
+                    .contract
+                    .document_type_for_name(document_create_transition.base().document_type_name())
+                {
+                    match document_type.validate_no_transient_summed_property(platform_version) {
+                        Ok(()) => {}
+                        Err(ProtocolError::ConsensusError(error)) => {
+                            return Self::failed_per_transition_action(
+                                document_create_transition.base(),
+                                owner_id,
+                                vec![*error],
+                                platform_version,
+                            );
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                }
                 let (mut document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
                     drive, owner_id, transaction,
                     document_create_transition, block_info, user_fee_increase, |_identifier| {

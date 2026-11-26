@@ -909,7 +909,7 @@ pub enum BasicError {
     #[error(transparent)]
     RandomTokenMintNotAllowedError(RandomTokenMintNotAllowedError),
 
-    // A transition asking for a random value in the block that switches to protocol version 15,
+    // A transition asking for a random value in the block that switches to protocol version 16,
     // which receives no random beacon.
     #[error(transparent)]
     RandomBeaconUnavailableError(RandomBeaconUnavailableError),
@@ -1177,7 +1177,7 @@ mod tests {
             )),
             213
         );
-        // A token mint refusing a random amount (protocol version 15).
+        // A token mint refusing a random amount (protocol version 16).
         assert_eq!(
             discriminant_of(BasicError::RandomTokenMintNotAllowedError(
                 RandomTokenMintNotAllowedError::new(
@@ -1187,11 +1187,11 @@ mod tests {
             )),
             214
         );
-        // A random value asked of the block switching to protocol version 15: the tail of the
+        // A random value asked of the block switching to protocol version 16: the tail of the
         // enum.
         assert_eq!(
             discriminant_of(BasicError::RandomBeaconUnavailableError(
-                RandomBeaconUnavailableError::new("subject", 15)
+                RandomBeaconUnavailableError::new("subject", 16)
             )),
             215
         );

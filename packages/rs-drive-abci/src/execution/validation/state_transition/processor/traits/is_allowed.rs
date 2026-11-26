@@ -172,8 +172,10 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                 }
                 if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
                     // The token marketplace: a configuration update that makes a token
-                    // tradeable. Software older than the marketplace cannot decode one, so it
-                    // is refused unpaid, as that software refuses it.
+                    // tradeable. Software older than protocol version 15 cannot decode one, so
+                    // it is refused unpaid, as that software refuses it. Protocol version 15
+                    // decodes one and refuses it the same way: it has no order transitions,
+                    // and no contract may store the mode before they ship.
                     if let Some(transition) =
                         st.transitions_iter()
                             .find_map(|transition| match transition {
@@ -812,9 +814,20 @@ mod tests {
         use dpp::tests::fixtures::get_data_contract_fixture;
         use platform_version::TryIntoPlatformVersioned;
 
-        fn protocol_version_14() -> &'static PlatformVersion {
-            PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1)
-                .expect("the version before the token marketplace")
+        /// The versions that refuse a tradeable token: the last whose software cannot decode
+        /// the mode, and protocol version 15, which decodes it but creates none of its state.
+        fn protocol_versions_before_tradeable() -> [&'static PlatformVersion; 2] {
+            [
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1)
+                    .expect("the version before tradeable tokens"),
+            ]
+        }
+
+        /// The protocol version that admits a tradeable token.
+        fn protocol_version_admitting_tradeable() -> &'static PlatformVersion {
+            PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+                .expect("expected a version that admits a tradeable token")
         }
 
         /// A batch whose only transition sets a token's trade mode to `trade_mode`.
@@ -863,36 +876,38 @@ mod tests {
         }
 
         #[test]
-        fn should_refuse_making_a_token_tradeable_before_protocol_version_15() {
-            let result = trade_mode_update(TokenTradeMode::Tradeable)
-                .validate_is_allowed(protocol_version_14())
-                .expect("should not error");
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
-                    if error.state_transition_type()
-                        == "TokenConfigUpdateMarketplaceTradeModeTradeable"
-                        && error.current_protocol_version() == 14
-                        && error.required_protocol_version()
-                            == TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-            );
+        fn should_refuse_making_a_token_tradeable_before_protocol_version_16() {
+            for platform_version in protocol_versions_before_tradeable() {
+                let result = trade_mode_update(TokenTradeMode::Tradeable)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                        if error.state_transition_type()
+                            == "TokenConfigUpdateMarketplaceTradeModeTradeable"
+                            && error.current_protocol_version()
+                                == platform_version.protocol_version
+                            && error.required_protocol_version() == 16
+                );
+            }
         }
 
-        /// Setting the trade mode to the only mode older software knows stays allowed.
+        /// Setting the trade mode to the mode every version knows stays allowed.
         #[test]
-        fn should_allow_setting_the_trade_mode_to_not_tradeable_before_protocol_version_15() {
-            let result = trade_mode_update(TokenTradeMode::NotTradeable)
-                .validate_is_allowed(protocol_version_14())
-                .expect("should not error");
-            assert!(result.is_valid(), "{:?}", result.errors);
+        fn should_allow_setting_the_trade_mode_to_not_tradeable_before_protocol_version_16() {
+            for platform_version in protocol_versions_before_tradeable() {
+                let result = trade_mode_update(TokenTradeMode::NotTradeable)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+                assert!(result.is_valid(), "{:?}", result.errors);
+            }
         }
 
         #[test]
-        fn should_allow_making_a_token_tradeable_from_protocol_version_15() {
-            let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
-                .expect("the version that introduced the token marketplace");
+        fn should_allow_making_a_token_tradeable_from_protocol_version_16() {
             let result = trade_mode_update(TokenTradeMode::Tradeable)
-                .validate_is_allowed(platform_version)
+                .validate_is_allowed(protocol_version_admitting_tradeable())
                 .expect("should not error");
             assert!(result.is_valid(), "{:?}", result.errors);
         }
@@ -917,25 +932,26 @@ mod tests {
         }
 
         #[test]
-        fn should_refuse_a_contract_with_a_tradeable_token_before_protocol_version_15() {
-            let platform_version = protocol_version_14();
-            let result =
-                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
-                    .validate_is_allowed(platform_version)
-                    .expect("should not error");
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
-                    if error.state_transition_type() == "TokenTradeModeTradeable"
-                        && error.required_protocol_version()
-                            == TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-            );
+        fn should_refuse_a_contract_with_a_tradeable_token_before_protocol_version_16() {
+            for platform_version in protocol_versions_before_tradeable() {
+                let result =
+                    contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
+                        .validate_is_allowed(platform_version)
+                        .expect("should not error");
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                        if error.state_transition_type() == "TokenTradeModeTradeable"
+                            && error.current_protocol_version()
+                                == platform_version.protocol_version
+                            && error.required_protocol_version() == 16
+                );
+            }
         }
 
         #[test]
-        fn should_allow_a_contract_with_a_tradeable_token_from_protocol_version_15() {
-            let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
-                .expect("the version that introduced the token marketplace");
+        fn should_allow_a_contract_with_a_tradeable_token_from_protocol_version_16() {
+            let platform_version = protocol_version_admitting_tradeable();
             let result =
                 contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
                     .validate_is_allowed(platform_version)

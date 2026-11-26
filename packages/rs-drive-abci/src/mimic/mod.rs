@@ -64,7 +64,7 @@ pub struct MimicExecuteBlockOutcome {
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
     /// Root App hash: the state the block commits, after its random draws from Tenderdash
-    /// consensus version 2
+    /// consensus version 3
     pub root_app_hash: [u8; 32],
     /// State ID the commit signs, needed to verify the block, for example height, app version,
     /// etc.
@@ -510,11 +510,11 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             }
         }
 
-        // From Tenderdash consensus version 2 (protocol version 15) the round's prevotes
+        // From Tenderdash consensus version 3 (protocol version 16) the round's prevotes
         // combine into the block's random beacon, which Tenderdash hands to Drive before the
         // precommit, and the precommits sign the app hash Drive returns: the state after the
         // block's random draws. The commit carries both.
-        let (beacon, final_app_hash) = if tenderdash_consensus_version >= 2 {
+        let (beacon, final_app_hash) = if tenderdash_consensus_version >= 3 {
             let beacon = stand_in_beacon(&block_header_hash, round);
             let response = self
                 .apply_block_randomness(RequestApplyBlockRandomness {

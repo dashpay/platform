@@ -503,7 +503,7 @@ mod tests {
     }
 
     /// The request Tenderdash finalizes `proposal` with once it is committed in its own round,
-    /// with `app_hash` in the block header. From protocol version 15 the commit carries the
+    /// with `app_hash` in the block header. From protocol version 16 the commit carries the
     /// round's random beacon and the app hash after the block's draws, which the state id of
     /// the block id binds; the block asks for nothing, so that app hash is the header's.
     fn finalize_request(

@@ -117,12 +117,14 @@ mod tests {
         }
     }
 
-    /// Through the version dispatch: the latest protocol version binds exactly one trigger to
-    /// each replace and delete of an `ask` and a `bid`, and running it refuses the write with
-    /// `DataTriggerConditionError`. Protocol version 14 binds none of them.
+    /// Through the version dispatch: the latest bindings bind exactly one trigger to each
+    /// replace and delete of an `ask` and a `bid`, and running it refuses the write with
+    /// `DataTriggerConditionError`. Protocol version 14 binds none of them. The token market
+    /// contract exists from protocol version 16, so the platform is born at the latest version.
     #[test]
     fn should_refuse_order_writes_through_the_latest_bindings_and_bind_none_before_15() {
         let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
             .build_with_mock_rpc()
             .set_genesis_state();
         let state = platform.state.load();

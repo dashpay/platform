@@ -111,7 +111,7 @@
               "byteArray": true,
               "minItems": 32,
               "maxItems": 32,
-              "position": 1,
+              "position": 2,
               "contentMediaType": "application/x.dash.dpp.identifier",
               "description": "Identifier name record that refers to a Contract"
             }

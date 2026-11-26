@@ -1,6 +1,6 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
-    DkgMiningSchedule, DriveAbciBlockEndMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions,
+    DkgMiningSchedule, DriveAbciCoreBasedUpdatesMethodVersions,
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
@@ -101,8 +101,11 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// `update_core_info` does not ask Core again once it is recorded (the masternode list's
 /// operator key normalization reads the record too, as described below); in the asset unlocks
 /// it emits for withdrawals, described below; in the voter key of a masternode that returns to a
-/// voting address, described below; in the consensus evidence policy; and in the chain lock
-/// verification. The chain lock changes only work as a whole:
+/// voting address, described below; in the end of a contest, `voting.check_for_ended_vote_polls`
+/// being 2 rather than 1 (a contest whose winner's document does not decode, or cannot be
+/// written, is left open with no one awarded); in the consensus
+/// evidence policy; and in the chain lock verification. The chain lock changes only work as a
+/// whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -113,8 +116,7 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   `submitchainlock`, which skips that check for a height Core already has a chain lock at or
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
-/// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes, and
-///   gives the protocol version's own Tenderdash consensus version in an emergency update.
+/// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes.
 /// - `protocol_upgrade.perform_events_on_first_block_of_protocol_change` is `Some(3)`:
 ///   the first block crossing into protocol v15 migrates retained history after the other
 ///   activation work, in the same transaction.
@@ -137,10 +139,6 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// `core_based_updates.masternode_updates.update_voter_identity` is 1 rather than 0: a
 /// masternode that returns to a voting address it used before has the key of that address's
 /// voter identity re-enabled, where 0 re-enabled the key of the voter identity it was leaving.
-///
-/// `block_end.apply_random_beacon` is `Some(0)`: a block collects the documents it creates and
-/// its random token transfers and mints, and `ApplyBlockRandomness` (or `FinalizeBlock`, with
-/// the commit's beacon) draws their values from the block's random beacon.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
         perform_events_on_first_block_of_protocol_change: Some(3),
@@ -149,10 +147,6 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     engine: DriveAbciEngineMethodVersions {
         consensus_params_update: 2,
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.engine
-    },
-    block_end: DriveAbciBlockEndMethodVersions {
-        apply_random_beacon: Some(0),
-        ..DRIVE_ABCI_METHOD_VERSIONS_V10.block_end
     },
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
@@ -173,6 +167,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_based_updates
     },
     voting: DriveAbciVotingMethodVersions {
+        check_for_ended_vote_polls: 2, // changed in v15: a contest whose winner's document does not decode, or cannot be written, is left open with no one awarded
         tally_votes_for_yes_no_vote_poll: Some(0),
         keep_record_of_finished_yes_no_vote_poll: Some(0),
         clean_up_after_yes_no_vote_polls_end: Some(0),

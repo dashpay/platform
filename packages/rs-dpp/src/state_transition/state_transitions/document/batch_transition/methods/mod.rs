@@ -73,7 +73,7 @@ pub struct StateTransitionCreationOptions {
     /// included: its fund is fixed.
     pub contest_fund: Option<Credits>,
     /// The least a token transfer or a token mint moves when its amount is random (protocol
-    /// version 15): the amount is drawn uniformly from this to the amount the transition names,
+    /// version 16): the amount is drawn uniformly from this to the amount the transition names,
     /// both included, once the block carrying it is accepted. Setting it builds the transfer or
     /// the mint in format version 1, which no protocol version before 15 accepts. Every other
     /// transition ignores it.

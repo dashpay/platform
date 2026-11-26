@@ -47,7 +47,13 @@ extension Data {
             }
         }
 
-        bytes.append(contentsOf: num.reversed())
+        // Each leading "1" above already stands for one zero byte. The
+        // accumulator starts as a single zero byte, so for an all-zero
+        // value (only "1"s, or an empty string) appending it would add one
+        // byte too many: 31 "1"s would decode to 32 bytes and 32 to 33.
+        if num.contains(where: { $0 != 0 }) {
+            bytes.append(contentsOf: num.reversed())
+        }
 
         return Data(bytes)
     }

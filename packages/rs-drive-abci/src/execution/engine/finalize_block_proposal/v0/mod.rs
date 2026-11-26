@@ -135,8 +135,8 @@ where
         // The state the block commits: after the block's random draws when its random beacon
         // was applied (`ApplyBlockRandomness`, or the commit's beacon in `FinalizeBlock`), which
         // is the state the precommits sign; the header's, the state before them, otherwise.
-        // Added in place to this shipped generation: before protocol version 15 Tenderdash runs
-        // consensus version 1, whose commits carry neither a beacon nor an app hash, so nothing
+        // Added in place to this shipped generation: before protocol version 16 Tenderdash runs
+        // a consensus version below 3, whose commits carry neither a beacon nor an app hash, so nothing
         // is applied, the app hash is the header's as before, and the check below never runs.
         let committed_app_hash = block_execution_context
             .applied_randomness()
@@ -157,8 +157,8 @@ where
 
             // The precommits sign the block id, whose state id must be the header's with the
             // app hash after the draws: what binds that app hash to the commit's signature.
-            // Same justification as above: only a consensus version 2 commit carries an app
-            // hash, so this never runs before protocol version 15.
+            // Same justification as above: only a consensus version 3 commit carries an app
+            // hash, so this never runs before protocol version 16.
             let signed_state_id = StateId {
                 height: block_header.height,
                 app_hash: commit_app_hash.to_vec(),

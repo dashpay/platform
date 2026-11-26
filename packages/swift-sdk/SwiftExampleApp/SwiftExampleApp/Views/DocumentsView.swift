@@ -394,71 +394,41 @@ struct DocumentActionSheet: View {
     }
 }
 
-/// Shared select-key → sign → call-wrapper → persist pipeline behind all
-/// five document mutate actions.
+/// Shared resolve-wallet → sign → call-wrapper → persist pipeline behind
+/// the five document mutate actions.
 ///
-/// Per `project_document_signing_key_purpose_bug` the signing key MUST be
-/// an AUTHENTICATION key (a TRANSFER/CRITICAL key is rejected by consensus
-/// with "requires AUTHENTICATION"); we resolve it via
-/// `KeyManager.findSigningKey(purpose: .authentication, ...)` and pass its
-/// id to the `ManagedPlatformWallet` wrapper, which re-validates it
-/// Rust-side. The actual signature is produced on demand by the
-/// `KeychainSigner` trampoline — no private bytes ever cross into Swift
-/// logic here.
+/// Swift resolves only the `ManagedPlatformWallet` that holds the signing
+/// identity. The key is chosen in Rust (`rs-platform-wallet`), which picks
+/// the identity's AUTHENTICATION key that the document type's security
+/// level requires and the `KeychainSigner` can sign with. That covers
+/// identities restored from their wallet mnemonic, whose private keys are
+/// not stored per public key but derived by the signer on demand. The
+/// signature itself is produced by the `KeychainSigner` trampoline, so no
+/// private bytes cross into Swift logic here.
 @MainActor
 enum DocumentActionRunner {
-    /// Resolve the controlled identity + its `ManagedPlatformWallet` and
-    /// the AUTHENTICATION signing-key id for `identity`, satisfying the
-    /// document type's security-level requirement. Throws a descriptive
-    /// error if any precondition is missing.
-    static func resolveSigning(
+    /// The `ManagedPlatformWallet` that holds `identity`. Throws
+    /// `DocumentActionError.noWallet` when no loaded wallet holds it.
+    static func resolveWallet(
         for identity: PersistentIdentity,
-        documentType: PersistentDocumentType?,
         walletManager: PlatformWalletManager
-    ) throws -> (wallet: ManagedPlatformWallet, signingKeyId: UInt32) {
+    ) throws -> ManagedPlatformWallet {
         guard let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             throw DocumentActionError.noWallet
         }
-
-        // The document type's security level bounds which AUTHENTICATION
-        // keys may sign (mirrors the Rust-side requirement). Fall back to
-        // HIGH when unknown — the same default the builder path uses.
-        let requiredLevel = SecurityLevel(rawValue: UInt8(documentType?.securityLevel ?? 2)) ?? .high
-
-        let dppIdentity = DPPIdentity(
-            id: identity.identityId,
-            publicKeys: Dictionary(
-                uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }
-            ),
-            balance: UInt64(bitPattern: identity.balance),
-            revision: 0
-        )
-
-        let km = KeyManager.withSharedKeychain()
-        guard let key = km.findSigningKey(
-            for: dppIdentity,
-            purpose: .authentication,
-            minimumSecurityLevel: requiredLevel,
-            preferCritical: true
-        ) else {
-            throw DocumentActionError.noSigningKey(requiredLevel.name)
-        }
-        return (wallet, key.id)
+        return wallet
     }
 }
 
 enum DocumentActionError: LocalizedError {
     case noWallet
-    case noSigningKey(String)
     case identityNotFound
 
     var errorDescription: String? {
         switch self {
         case .noWallet:
             return "The owner identity is not held by a loaded wallet on this device."
-        case .noSigningKey(let level):
-            return "No AUTHENTICATION key with security \(level) or higher (and an available private key) found on the signing identity."
         case .identityNotFound:
             return "Could not resolve the controlled identity for this operation."
         }
@@ -549,11 +519,12 @@ struct ReplaceDocumentView: View {
                     }
                     immutabilitySection
                     Section {
-                        TextEditor(text: $propertiesText)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 200)
-                            .disabled(isSubmitting)
-                            .accessibilityIdentifier("documentReplace.jsonEditor")
+                        PlainTextEditor(
+                            text: $propertiesText,
+                            accessibilityIdentifier: "documentReplace.jsonEditor"
+                        )
+                        .frame(minHeight: 200)
+                        .disabled(isSubmitting)
                     } header: {
                         Text("Properties (JSON)")
                     } footer: {
@@ -680,12 +651,10 @@ struct ReplaceDocumentView: View {
             return
         }
 
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -707,7 +676,6 @@ struct ReplaceDocumentView: View {
                     documentType: typeName,
                     documentId: docId,
                     propertiesJSON: trimmed,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -813,12 +781,10 @@ struct DeleteDocumentView: View {
             actionError = .init(message: DocumentActionError.identityNotFound.localizedDescription)
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -839,7 +805,6 @@ struct DeleteDocumentView: View {
                     contractId: contractId,
                     documentType: typeName,
                     documentId: docId,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -864,16 +829,29 @@ struct DeleteDocumentView: View {
 
 // MARK: Erase
 
-/// Erases the retained revisions of a keep-history document that has
-/// already been deleted, one bounded chunk per broadcast. The row is still
-/// local because the deletion happened elsewhere (another device or the
-/// Settings builder). An ACTIVE or ABSENT lifecycle skips the broadcast.
-///
-/// The erase result only observes that the document is absent from
-/// ordinary reads, which it already was, so the sheet reads the lifecycle
-/// before and after each broadcast and shows what that read says. It stays
-/// open with the same id so further chunks can be submitted, and removes
-/// the local row only once the lifecycle reports the document absent.
+/// Display the Rust operation's decision and observations without deciding eligibility.
+func describeDocumentEraseOutcome(_ outcome: DocumentEraseOutcome) -> String {
+    switch outcome {
+    case .notSubmitted(let reason, _):
+        let explanation: String
+        switch reason {
+        case .active: explanation = "The document is active."
+        case .absent: explanation = "No retained revisions exist."
+        case .notNewestOwner(let owner):
+            explanation = "The newest retained revision belongs to \(owner.toBase58String()). Erase from that identity (Settings → Document Erase)."
+        case .preflightUnavailable:
+            explanation = "Lifecycle or ownership could not be read; read history before retrying."
+        }
+        return "Erase not submitted. " + explanation
+    case .submitted(let before, let after):
+        return "Erase submitted; document absence observed. " + (after.map {
+            DocumentHistoryLifecycle.describeEraseProgress(before: before, after: $0)
+        } ?? "Lifecycle not read; query the document history to see what remains.")
+    }
+}
+
+/// Displays one erase attempt at a time and removes the local row only after
+/// a proved observation reports the document absent.
 struct EraseDocumentView: View {
     let document: PersistentDocument
     private let documentIdText: String
@@ -900,7 +878,15 @@ struct EraseDocumentView: View {
     @State private var progress: String?
     @State private var persistWarning: String?
     @State private var actionError: DocumentActionErrorBox?
+    /// Network of a read that observed ABSENT without an erase being
+    /// submitted (the opening read, or a skipped erase's preflight). The
+    /// local copy is then removed only on an explicit tap: the network code
+    /// alone does not tell two devnets apart, so the row may belong to
+    /// another chain than the one just read.
+    @State private var openingAbsentNetworkRaw: UInt32?
+    @State private var localCopyRemoved = false
 
+    // This hides a button for presentation; Rust re-decides eligibility on every call.
     private var canSubmitAnother: Bool {
         guard let lifecycle else { return submissions == 0 }
         return lifecycle.state == .erasing || lifecycle.state == .deleted
@@ -917,7 +903,7 @@ struct EraseDocumentView: View {
                         DetailRow(label: "Revisions retained", value: String(lifecycle.remainingRevisions))
                     }
                 } footer: {
-                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. If the initial lifecycle read fails, an erase may still be submitted for an active document; consensus rejects it and still charges a fee. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
+                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. The lifecycle and initial ownership must be read before an erase can be submitted. If either read is unavailable, read history before retrying. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
                 }
                 if submissions > 0 || progress != nil {
                     Section {
@@ -932,12 +918,32 @@ struct EraseDocumentView: View {
                                     .font(.caption)
                                     .accessibilityIdentifier("documentErase.progress")
                             }
-                            if let warning = persistWarning {
-                                Label(warning, systemImage: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                    .font(.caption)
-                            }
                         }
+                    }
+                }
+                if let warning = persistWarning {
+                    // Shown on every path, including the opening read, which
+                    // changes neither `submissions` nor `progress`.
+                    Section {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                            .accessibilityIdentifier("documentErase.localCopyWarning")
+                    }
+                }
+                // Follows the latest observation, not how many chunks this
+                // sheet submitted: an erase finished by another caller
+                // after an earlier chunk here also offers the removal.
+                if let networkRaw = openingAbsentNetworkRaw, !localCopyRemoved {
+                    Section {
+                        Button("Remove Local Copy") {
+                            persistWarning = removeLocalCopy(networkRaw: networkRaw)
+                            localCopyRemoved = persistWarning == nil
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("documentErase.removeLocalCopy")
+                    } footer: {
+                        Text("Platform reports no retained revisions of this document on the network the app is connected to. If this copy was saved from that network, it is stale and can be removed from this device. Nothing is broadcast.")
                     }
                 }
                 Section {
@@ -976,6 +982,8 @@ struct EraseDocumentView: View {
             }
             .interactiveDismissDisabled(isSubmitting)
             .task {
+                // The network the read goes to, captured before awaiting it.
+                let readNetworkRaw = (appState.sdk?.network ?? appState.currentNetwork).rawValue
                 let observed = try? await appState.sdk?.documentGetLifecycle(
                     dataContractId: contractIdBase58,
                     documentType: documentTypeName,
@@ -984,9 +992,14 @@ struct EraseDocumentView: View {
                 // A skipped submission also has a newer lifecycle observation.
                 guard !isSubmitting, submissions == 0, progress == nil else { return }
                 lifecycle = observed
+                // Already ABSENT (an earlier erase whose closing read failed):
+                // the submit button is hidden, so offer the local cleanup.
+                if observed?.state == .absent {
+                    openingAbsentNetworkRaw = readNetworkRaw
+                }
             }
             .alert(item: $actionError) { err in
-                Alert(title: Text("Erase failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
+                Alert(title: Text("Erase status"), message: Text(err.message), dismissButton: .default(Text("OK")))
             }
         }
     }
@@ -999,74 +1012,74 @@ struct EraseDocumentView: View {
         }
     }
 
+    /// Remove the local row for this document on the network that observed
+    /// it ABSENT; a row saved from another network with the same ids stays.
+    private func removeLocalCopy(networkRaw: UInt32) -> String? {
+        DocumentPersistence.removeErasedLocalCopy(
+            networkRaw: networkRaw,
+            contractId: contractIdBase58,
+            documentType: documentTypeName,
+            documentId: documentIdText,
+            modelContext: modelContext
+        )
+    }
+
     private func submit() {
         guard let owner = ownerIdentity() else {
             actionError = .init(message: DocumentActionError.identityNotFound.localizedDescription)
             return
         }
-        let docType = document.documentType_relation
-        let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
-        do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
-            )
-        } catch {
-            actionError = .init(message: error.localizedDescription)
+        guard let walletId = owner.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            actionError = .init(message: DocumentActionError.noWallet.localizedDescription)
             return
         }
 
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let ownerId = owner.identityId
+        // The erase runs on the owner's network; captured before awaiting it.
+        let eraseNetworkRaw = owner.networkRaw
         let contractId = document.contractIdData
-        let contractIdBase58 = document.contractIdBase58
         let typeName = document.documentType
         let docId = document.id
-        let docIdBase58 = document.documentId
-        let sdk = appState.sdk
 
         Task {
             do {
-                let before = try? await sdk?.documentGetLifecycle(
-                    dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
-                )
-                if let before, before.state == .active || before.state == .absent {
-                    await MainActor.run {
-                        lifecycle = before
-                        progress = "Erase not submitted. " + (before.state == .absent
-                            ? "No retained revisions exist."
-                            : DocumentHistoryLifecycle.describeEraseProgress(before: before, after: before))
-                        isSubmitting = false
-                    }
-                    return
-                }
-                _ = try await wallet.eraseDocument(
-                    ownerIdentityId: ownerId,
+                let outcome = try await wallet.eraseDocumentAndObserve(
+                    submittingIdentityId: ownerId,
                     contractId: contractId,
                     documentType: typeName,
                     documentId: docId,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
-                _ = signer
-                let after = try? await sdk?.documentGetLifecycle(
-                    dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
-                )
                 await MainActor.run {
-                    submissions += 1
-                    lifecycle = after
-                    if let after {
-                        progress = DocumentHistoryLifecycle.describeEraseProgress(before: before, after: after)
-                        if after.state == .absent {
-                            persistWarning = DocumentPersistence.applyDelete(
-                                document: document,
-                                modelContext: modelContext
-                            )
+                    progress = describeDocumentEraseOutcome(outcome)
+                    switch outcome {
+                    case .notSubmitted(_, let before):
+                        lifecycle = before
+                        // Nothing was submitted: offer the removal on a tap,
+                        // as for the opening read (the row may belong to
+                        // another devnet with the same network code).
+                        if before?.state == .absent {
+                            openingAbsentNetworkRaw = eraseNetworkRaw
                         }
-                    } else {
-                        progress = "Lifecycle not read; use Platform Queries → Get Document History to see what remains."
+                    case .submitted(_, let after):
+                        submissions += 1
+                        lifecycle = after
+                        // The latest observation comes from a submission.
+                        openingAbsentNetworkRaw = nil
+                        // ABSENT after this submission: nothing is left to
+                        // show, so drop the local copy at once.
+                        if after?.state == .absent {
+                            persistWarning = removeLocalCopy(networkRaw: eraseNetworkRaw)
+                        }
                     }
+                    isSubmitting = false
+                }
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+                await MainActor.run {
+                    actionError = .init(message: "Erase outcome unknown; do not resubmit automatically; read history first.")
                     isSubmitting = false
                 }
             } catch {
@@ -1192,12 +1205,10 @@ struct TransferDocumentView: View {
             actionError = .init(message: "Enter a valid recipient identity ID.")
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -1219,7 +1230,6 @@ struct TransferDocumentView: View {
                     documentType: typeName,
                     documentId: docId,
                     recipientId: recipient,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -1343,12 +1353,10 @@ struct SetDocumentPriceView: View {
             actionError = .init(message: "Enter a valid price in credits.")
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -1370,7 +1378,6 @@ struct SetDocumentPriceView: View {
                     documentType: typeName,
                     documentId: docId,
                     price: price,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -1539,14 +1546,12 @@ struct PurchaseDocumentView: View {
             actionError = .init(message: "This document is not for sale (no price found).")
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
             // The purchaser signs (and becomes the new owner), so resolve
-            // the AUTHENTICATION key on the purchaser, not the owner.
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: purchaser, documentType: docType, walletManager: walletManager
+            // the purchaser's wallet; Rust picks the purchaser's key.
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: purchaser, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -1568,7 +1573,6 @@ struct PurchaseDocumentView: View {
                     documentType: typeName,
                     documentId: docId,
                     price: price,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -1641,6 +1645,44 @@ enum DocumentPersistence {
     ) -> String? {
         modelContext.delete(document)
         return save(modelContext)
+    }
+
+    /// Erase: once Rust observed the document ABSENT, remove the local row
+    /// for it on the erasing identity's network. Matches network, contract,
+    /// type and id, so a row saved from another network with the same ids
+    /// is kept. Returns a warning if the read or save failed, nil otherwise
+    /// (including when no local row exists).
+    static func removeErasedLocalCopy(
+        networkRaw: UInt32,
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        modelContext: ModelContext
+    ) -> String? {
+        let descriptor = FetchDescriptor<PersistentDocument>(
+            predicate: #Predicate {
+                $0.networkRaw == networkRaw
+                    && $0.contractId == contractId
+                    && $0.documentType == documentType
+                    && $0.documentId == documentId
+            }
+        )
+        let matches: [PersistentDocument]
+        do {
+            matches = try modelContext.fetch(descriptor)
+        } catch {
+            return "Platform reports the document absent, but reading the copy saved on this device failed: \(error.localizedDescription)."
+        }
+        guard !matches.isEmpty else { return nil }
+        for document in matches {
+            modelContext.delete(document)
+        }
+        do {
+            try modelContext.save()
+            return nil
+        } catch {
+            return "Platform reports the document absent, but removing the copy saved on this device failed: \(error.localizedDescription)."
+        }
     }
 
     /// Extract `$revision` from the canonical JSON, falling back to the
@@ -1971,7 +2013,10 @@ struct CreateDocumentView: View {
         // Prefer the parsed PersistentDocumentType rows (they carry the
         // schema the form needs); fall back to the stored name list.
         if let types = contract.documentTypes, !types.isEmpty {
-            return types.map { $0.name }.sorted()
+            // A private type (protocol version 15) takes no ordinary document: its
+            // store holds encrypted entries, read from the type's detail
+            // screen.
+            return types.filter { !$0.isPrivate }.map { $0.name }.sorted()
         }
         return contract.documentTypesList.sorted()
     }

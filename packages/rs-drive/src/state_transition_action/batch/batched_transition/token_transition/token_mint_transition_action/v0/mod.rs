@@ -18,7 +18,7 @@ pub struct TokenMintTransitionActionV0 {
     pub identity_balance_holder_id: Identifier,
     /// A public note
     pub public_note: Option<String>,
-    /// The least the mint issues when its amount is random (protocol version 15): the
+    /// The least the mint issues when its amount is random (protocol version 16): the
     /// recipient receives an amount drawn from this to `mint_amount` from the block's random
     /// beacon, and the rest is taken off the total supply again
     /// (`Drive::settle_random_token_amounts`)
@@ -137,6 +137,7 @@ mod tests {
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::prelude::DataContract;
+    use dpp::version::PlatformVersion;
     use grovedb_costs::OperationCost;
     use std::collections::BTreeMap;
 
@@ -181,6 +182,7 @@ mod tests {
             storage_flags: None,
             cost: OperationCost::default(),
             fee: None,
+            parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
         })
     }
 

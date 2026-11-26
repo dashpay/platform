@@ -888,6 +888,56 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> FFINe
     wrapper.sdk.network.into()
 }
 
+/// The quorum service base URL of the devnet called `devnet_name`:
+/// `https://quorums.<devnet_name>.networks.dash.org`, the URL the trusted
+/// context provider uses for a named devnet. A name the provider refuses
+/// (empty, characters other than letters, digits and hyphens, a leading or
+/// trailing hyphen, or a reserved network name such as `mainnet`, which
+/// would alias that network's quorum hostname) returns an
+/// `InvalidParameter` error saying why. The string is freed with
+/// `dash_sdk_string_free`.
+///
+/// # Safety
+/// - `devnet_name` must be null or a valid pointer to a NUL-terminated C
+///   string readable for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_devnet_quorum_base_url(
+    devnet_name: *const std::os::raw::c_char,
+) -> DashSDKResult {
+    if devnet_name.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Devnet name is null".to_string(),
+        ));
+    }
+    let name = match CStr::from_ptr(devnet_name).to_str() {
+        Ok(name) => name,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Devnet name is not valid UTF-8: {e}"),
+            ))
+        }
+    };
+    let url =
+        match rs_sdk_trusted_context_provider::get_quorum_base_url(Network::Devnet, Some(name)) {
+            Ok(url) => url,
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    e.to_string(),
+                ))
+            }
+        };
+    match std::ffi::CString::new(url) {
+        Ok(url) => DashSDKResult::success_string(url.into_raw()),
+        Err(e) => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InternalError,
+            e.to_string(),
+        )),
+    }
+}
+
 /// Add known contracts to the SDK's context provider
 ///
 /// This registers data contracts with the SDK's current context provider
@@ -1175,6 +1225,35 @@ mod fixed_provider_tests {
         unsafe { dash_sdk_destroy(handle) };
     }
 
+    /// The shielded anchor cache reuses a set only under a provider that
+    /// reports its policy revision; an SDK the native apps build must keep
+    /// reporting one, or every send silently refetches.
+    #[test]
+    fn should_report_a_policy_revision_for_every_fixed_provider_sdk() {
+        let dapi = CString::new("http://127.0.0.1:1").expect("address");
+        let quorum_url = CString::new("http://127.0.0.1:1").expect("quorum url");
+        let config = config(Network::Regtest, &dapi, Some(&quorum_url));
+        let constructors: [(
+            &str,
+            unsafe extern "C" fn(*const DashSDKConfig) -> DashSDKResult,
+        ); 3] = [
+            ("trusted", dash_sdk_create_trusted),
+            ("spv", dash_sdk_create_spv),
+            ("adaptive", dash_sdk_create_adaptive),
+        ];
+        for (kind, create) in constructors {
+            let result = unsafe { create(&config) };
+            assert!(result.error.is_null(), "{kind} SDK failed to build");
+            let handle = result.data as *mut SDKHandle;
+            let sdk = unsafe { &*(dash_sdk_get_inner_sdk_ptr(handle) as *const Sdk) };
+            assert!(
+                sdk.context_provider_arc().policy_revision().is_some(),
+                "{kind} SDK reports no policy revision"
+            );
+            unsafe { dash_sdk_destroy(handle) };
+        }
+    }
+
     /// The contracts registered with a provider, which is how
     /// `dash_sdk_add_known_contracts` and the SDK add them, and the contracts
     /// it verifies proofs and answers the document FFIs with must be one set,
@@ -1457,5 +1536,83 @@ mod fixed_provider_tests {
             "a provider that keeps no contracts serves none"
         );
         unsafe { dash_sdk_destroy(handle) };
+    }
+}
+
+#[cfg(test)]
+mod devnet_quorum_base_url_tests {
+    use super::*;
+    use crate::dash_sdk_error_free;
+    use std::ffi::CString;
+
+    /// The devnet URL from `dash_sdk_devnet_quorum_base_url`, or its error
+    /// code and message.
+    fn devnet_quorum_base_url(name: &str) -> Result<String, (DashSDKErrorCode, String)> {
+        let name = CString::new(name).expect("test names have no NUL");
+        call(name.as_ptr())
+    }
+
+    /// Call the C entry point on a raw pointer, freeing what it returns.
+    fn call(name: *const std::os::raw::c_char) -> Result<String, (DashSDKErrorCode, String)> {
+        let result = unsafe { dash_sdk_devnet_quorum_base_url(name) };
+        if result.error.is_null() {
+            let url = unsafe { CStr::from_ptr(result.data as *const std::os::raw::c_char) }
+                .to_string_lossy()
+                .into_owned();
+            unsafe { crate::dash_sdk_string_free(result.data as *mut std::os::raw::c_char) };
+            Ok(url)
+        } else {
+            let code = unsafe { (*result.error).code };
+            let message = unsafe { CStr::from_ptr((*result.error).message) }
+                .to_string_lossy()
+                .into_owned();
+            unsafe { dash_sdk_error_free(result.error) };
+            Err((code, message))
+        }
+    }
+
+    #[test]
+    fn should_return_the_quorum_url_of_a_named_devnet() {
+        assert_eq!(
+            devnet_quorum_base_url("palmatum").as_deref(),
+            Ok("https://quorums.palmatum.networks.dash.org")
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_devnet_name_that_aliases_another_network_or_breaks_the_url() {
+        for name in [
+            "",
+            "mainnet",
+            "Testnet",
+            "local",
+            "-palmatum",
+            "palm.atum",
+            "a/b",
+            "\u{FF4D}\u{FF41}\u{FF49}\u{FF4E}\u{FF4E}\u{FF45}\u{FF54}",
+        ] {
+            assert_eq!(
+                devnet_quorum_base_url(name).map_err(|(code, _)| code),
+                Err(DashSDKErrorCode::InvalidParameter),
+                "{name:?} must be refused as an invalid parameter"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_null_devnet_name() {
+        assert_eq!(
+            call(std::ptr::null()).map_err(|(code, _)| code),
+            Err(DashSDKErrorCode::InvalidParameter)
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_devnet_name_that_is_not_utf8() {
+        let bytes: &[u8] = b"palm\xFFatum\0";
+        assert_eq!(
+            call(bytes.as_ptr().cast()).map_err(|(code, _)| code),
+            Err(DashSDKErrorCode::InvalidParameter)
+        );
     }
 }

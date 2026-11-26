@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "latest_protocol_version": 15,
+  "latest_protocol_version": 16,
   "element_kinds": [
     {
       "name": "Item",
@@ -155,6 +155,36 @@
     {
       "name": "ItemWithSumItemWithBackwardsReferences",
       "is_tree": false,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "CountBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumIndexedTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumIndexedTree",
+      "is_tree": true,
       "is_opaque": false,
       "is_reference": false
     }
@@ -792,7 +822,7 @@
             "kinds": [
               "BigSumTree"
             ],
-            "since": 15,
+            "since": 16,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/tokens/paths.rs",
             "book": "data-model/token-marketplace.md",
@@ -813,7 +843,7 @@
                 "kinds": [
                   "SumTree"
                 ],
-                "since": 15,
+                "since": 16,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                 "description": "The escrowed listings of one token; created with its first listing.",
@@ -834,7 +864,7 @@
                       "SumItem"
                     ],
                     "value": "token amount",
-                    "since": 15,
+                    "since": 16,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                     "description": "What one open listing still holds.",
@@ -2044,7 +2074,7 @@
             "kinds": [
               "SumTree"
             ],
-            "since": 15,
+            "since": 16,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
             "book": "data-model/token-marketplace.md",
@@ -2066,7 +2096,7 @@
                   "SumItem"
                 ],
                 "value": "credits",
-                "since": 15,
+                "since": 16,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
                 "description": "What one open offer still holds.",
@@ -3015,7 +3045,11 @@
                           "CountSumTree",
                           "ProvableCountSumTree",
                           "ProvableCountProvableSumTree",
-                          "PrivateDocumentStore"
+                          "PrivateDocumentStore",
+                          "BigSumTree",
+                          "ProvableBigSumTree",
+                          "CountBigSumTree",
+                          "ProvableCountProvableBigSumTree"
                         ],
                         "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs. A private document store for a private type; see private_document_store.rs.",
                         "flags": [
@@ -3263,7 +3297,11 @@
                           "ProvableCountProvableSumTree",
                           "ProvableCountIndexedTree",
                           "ProvableSumIndexedTree",
-                          "ProvableCountProvableSumIndexedTree"
+                          "ProvableCountProvableSumIndexedTree",
+                          "ProvableBigSumTree",
+                          "ProvableCountProvableBigSumTree",
+                          "ProvableBigSumIndexedTree",
+                          "ProvableCountProvableBigSumIndexedTree"
                         ],
                         "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                         "flags": [
@@ -3295,7 +3333,10 @@
                               "CountSumTree",
                               "ProvableCountSumTree",
                               "ProvableCountProvableSumTree",
-                              "SumItem"
+                              "SumItem",
+                              "BigSumTree",
+                              "CountBigSumTree",
+                              "ProvableCountProvableBigSumTree"
                             ],
                             "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum. At the last property of a summableOffCountIndex index, a sum item counting the source index's entries for the value, in place of the tree.",
                             "flags": [
@@ -3326,7 +3367,11 @@
                                   "ProvableCountSumTree",
                                   "ProvableCountProvableSumTree",
                                   "Reference",
-                                  "ReferenceWithSumItem"
+                                  "ReferenceWithSumItem",
+                                  "BigSumTree",
+                                  "ProvableBigSumTree",
+                                  "CountBigSumTree",
+                                  "ProvableCountProvableBigSumTree"
                                 ],
                                 "kinds_note": "The end of an index: a tree of members, or for a unique index the one reference itself.",
                                 "flags": [
@@ -3395,7 +3440,11 @@
                                   "ProvableCountProvableSumTree",
                                   "ProvableCountIndexedTree",
                                   "ProvableSumIndexedTree",
-                                  "ProvableCountProvableSumIndexedTree"
+                                  "ProvableCountProvableSumIndexedTree",
+                                  "ProvableBigSumTree",
+                                  "ProvableCountProvableBigSumTree",
+                                  "ProvableBigSumIndexedTree",
+                                  "ProvableCountProvableBigSumIndexedTree"
                                 ],
                                 "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                                 "flags": [
@@ -5658,11 +5707,11 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
+                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                "description": "The polls ending at this time.",
+                "description": "The polls ending at this time. The last key, VOTE_POLLS_LEFT_OPEN_END_DATE (i64::MAX), is a time no block reaches: it lists the contests whose end left them open because the winner could not be awarded its document (protocol version 15). Such a contest keeps its contenders, documents, votes, record and prefunded balance.",
                 "children": [
                   {
                     "id": "votes.end_date_queries.end_date.poll",
@@ -5683,7 +5732,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
+                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",
@@ -6198,7 +6247,7 @@
   },
   "layer_shapes": {
     "contract_groups": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "00",
         "right": {
@@ -6207,7 +6256,7 @@
       }
     },
     "contract_groups.groups.group": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@16",
       "tree": {
         "hex": "02",
         "left": {
@@ -6222,7 +6271,7 @@
       }
     },
     "contract_groups.members.contract": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@16",
       "tree": {
         "hex": "01",
         "left": {
@@ -6234,7 +6283,7 @@
       }
     },
     "contracts.contract": {
-      "origin": "fixture contracts_with_documents@15",
+      "origin": "fixture contracts_with_documents@16",
       "tree": {
         "hex": "01",
         "left": {
@@ -6246,7 +6295,7 @@
       }
     },
     "contracts.contract.other": {
-      "origin": "fixture moderated_contract@15",
+      "origin": "fixture moderated_contract@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6264,7 +6313,7 @@
       }
     },
     "contracts.contract.other.team_actions": {
-      "origin": "fixture contract_with_team_actions@15",
+      "origin": "fixture contract_with_team_actions@16",
       "tree": {
         "hex": "58",
         "left": {
@@ -6273,7 +6322,7 @@
       }
     },
     "contracts.contract.other.team_actions.active.team_action": {
-      "origin": "fixture contract_with_team_actions@15",
+      "origin": "fixture contract_with_team_actions@16",
       "tree": {
         "hex": "53",
         "left": {
@@ -6282,7 +6331,7 @@
       }
     },
     "contracts.contract.other.team_actions.closed.team_action": {
-      "origin": "fixture contract_with_team_actions@15",
+      "origin": "fixture contract_with_team_actions@16",
       "tree": {
         "hex": "53",
         "left": {
@@ -6291,7 +6340,7 @@
       }
     },
     "group_actions.contract.group": {
-      "origin": "fixture tokens_and_group_actions@15",
+      "origin": "fixture tokens_and_group_actions@16",
       "tree": {
         "hex": "4d",
         "left": {
@@ -6303,7 +6352,7 @@
       }
     },
     "group_actions.contract.group.active.action": {
-      "origin": "fixture tokens_and_group_actions@15",
+      "origin": "fixture tokens_and_group_actions@16",
       "tree": {
         "hex": "53",
         "left": {
@@ -6312,7 +6361,7 @@
       }
     },
     "group_actions.contract.group.closed.action": {
-      "origin": "fixture tokens_and_group_actions@15",
+      "origin": "fixture tokens_and_group_actions@16",
       "tree": {
         "hex": "53",
         "left": {
@@ -6321,7 +6370,7 @@
       }
     },
     "identities.identity": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6346,7 +6395,7 @@
       "states": [
         {
           "state": "created",
-          "origin": "fixture identities@15",
+          "origin": "fixture identities@16",
           "tree": {
             "hex": "80",
             "left": {
@@ -6365,7 +6414,7 @@
         },
         {
           "state": "used_with_a_contract",
-          "origin": "fixture identities@15",
+          "origin": "fixture identities@16",
           "tree": {
             "hex": "80",
             "left": {
@@ -6387,7 +6436,7 @@
         },
         {
           "state": "budgeted_key_and_contract",
-          "origin": "fixture contract_groups_and_bound_keys@15",
+          "origin": "fixture contract_groups_and_bound_keys@16",
           "tree": {
             "hex": "80",
             "left": {
@@ -6413,7 +6462,7 @@
       ]
     },
     "identities.identity.contract_info.bound": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@16",
       "tree": {
         "hex": "01",
         "left": {
@@ -6422,7 +6471,7 @@
       }
     },
     "identities.identity.key_references": {
-      "origin": "fixture identities@15",
+      "origin": "fixture identities@16",
       "tree": {
         "hex": "03",
         "left": {
@@ -6434,7 +6483,7 @@
       }
     },
     "identities.identity.key_references.authentication": {
-      "origin": "fixture identities@15",
+      "origin": "fixture identities@16",
       "tree": {
         "hex": "02",
         "left": {
@@ -6449,7 +6498,7 @@
       }
     },
     "misc": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "45",
         "left": {
@@ -6461,7 +6510,7 @@
       }
     },
     "pools.epoch": {
-      "origin": "fixture current_epoch@15",
+      "origin": "fixture current_epoch@16",
       "tree": {
         "hex": "6d",
         "left": {
@@ -6489,14 +6538,14 @@
       "states": [
         {
           "state": "future",
-          "origin": "fixture current_epoch@15",
+          "origin": "fixture current_epoch@16",
           "tree": {
             "hex": "73"
           }
         },
         {
           "state": "running",
-          "origin": "fixture current_epoch@15",
+          "origin": "fixture current_epoch@16",
           "tree": {
             "hex": "6d",
             "left": {
@@ -6524,7 +6573,7 @@
         },
         {
           "state": "paid",
-          "origin": "fixture paid_epoch@15",
+          "origin": "fixture paid_epoch@16",
           "tree": {
             "hex": "74",
             "left": {
@@ -6547,7 +6596,7 @@
       ]
     },
     "prefunded_balances": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6562,7 +6611,7 @@
       }
     },
     "root": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "40",
         "left": {
@@ -6619,7 +6668,7 @@
       }
     },
     "saved_block_transactions": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "65",
         "left": {
@@ -6631,7 +6680,7 @@
       }
     },
     "shielded_balances.main_pool": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6649,7 +6698,7 @@
       }
     },
     "tokens": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6676,7 +6725,7 @@
       }
     },
     "tokens.distributions": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6691,7 +6740,7 @@
       }
     },
     "tokens.distributions.perpetual.token": {
-      "origin": "fixture token_distributions_unclaimed@15",
+      "origin": "fixture token_distributions_unclaimed@16",
       "tree": {
         "hex": "c0",
         "left": {
@@ -6700,7 +6749,7 @@
       }
     },
     "tokens.distributions.timed": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "80",
         "left": {
@@ -6712,7 +6761,7 @@
       }
     },
     "tokens.shielded_pools.token": {
-      "origin": "fixture token_shielded_pool@15",
+      "origin": "fixture token_shielded_pool@16",
       "tree": {
         "hex": "60",
         "left": {
@@ -6730,7 +6779,7 @@
       }
     },
     "versions": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "01",
         "left": {
@@ -6739,7 +6788,7 @@
       }
     },
     "votes": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "64",
         "left": {
@@ -6751,7 +6800,7 @@
       }
     },
     "votes.contested_resource": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "70",
         "left": {
@@ -6760,7 +6809,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type": {
-      "origin": "fixture contested_documents@15",
+      "origin": "fixture contested_documents@16",
       "tree": {
         "hex": "01",
         "left": {
@@ -6769,7 +6818,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
-      "origin": "fixture contested_documents@15",
+      "origin": "fixture contested_documents@16",
       "tree": {
         "hex": "01",
         "left": {
@@ -6778,7 +6827,7 @@
       }
     },
     "votes.decisions": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "70",
         "left": {
@@ -6787,7 +6836,7 @@
       }
     },
     "votes.decisions.active_polls.poll": {
-      "origin": "fixture yes_no_vote_polls@15",
+      "origin": "fixture yes_no_vote_polls@16",
       "tree": {
         "hex": "02",
         "left": {
@@ -6802,7 +6851,7 @@
       }
     },
     "withdrawals": {
-      "origin": "genesis@15",
+      "origin": "genesis@16",
       "tree": {
         "hex": "02",
         "left": {

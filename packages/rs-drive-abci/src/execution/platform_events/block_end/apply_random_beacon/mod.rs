@@ -13,7 +13,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Draws a block's random values from its random beacon (protocol version 15), once every
+    /// Draws a block's random values from its random beacon (protocol version 16), once every
     /// transition of the block is accepted: it fills the `sys.random` properties of the
     /// documents the block created (`Drive::draw_random_document_properties`), then settles
     /// the block's random token transfers and mints (`Drive::settle_random_token_amounts`).
@@ -30,7 +30,7 @@ where
     ///   block executed them.
     /// - `block_info`: the block.
     /// - `transaction`: the block's transaction, holding the state its execution left.
-    /// - `platform_version`: selects the method version; `None` before protocol version 15.
+    /// - `platform_version`: selects the method version; `None` before protocol version 16.
     ///
     /// # Returns
     /// `Ok(())` once the values are drawn; the caller reads the root hash.

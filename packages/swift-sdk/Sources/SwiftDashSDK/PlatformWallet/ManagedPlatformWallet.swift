@@ -88,6 +88,77 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         )
     }
 
+    // MARK: - Locked outpoints
+
+    /// A transaction output: the txid's raw 32 bytes (the order the FFI
+    /// carries, as `PersistentTxo.outpoint`) and the output index.
+    public struct Outpoint: Hashable, Sendable {
+        public let txid: Data
+        public let vout: UInt32
+
+        public init(txid: Data, vout: UInt32) {
+            self.txid = txid
+            self.vout = vout
+        }
+    }
+
+    /// The outpoints this wallet keeps out of coin selection: the collateral
+    /// of the masternode registrations the wallet has seen in a block (or
+    /// that created their collateral), and every outpoint locked with
+    /// `lockOutpoint`. An entry may name a coin the
+    /// wallet does not hold yet; the coin arrives locked.
+    public func lockedOutpoints() throws -> [Outpoint] {
+        var entries: UnsafePointer<OutPointFFI>?
+        var count: UInt = 0
+        let result = platform_wallet_locked_outpoints(handle, &entries, &count)
+        try result.check()
+        guard let entries, count > 0 else { return [] }
+        defer {
+            platform_wallet_locked_outpoints_free(UnsafeMutablePointer(mutating: entries), count)
+        }
+        return (0..<Int(count)).map { index in
+            Outpoint(txid: hashData(entries[index].txid), vout: entries[index].vout)
+        }
+    }
+
+    /// Lock `outpoint`, so no send, asset lock or special-transaction fee
+    /// spends it until `unlockOutpoint`. Returns `true` when it was not
+    /// locked before. The lock is persisted before this returns.
+    @discardableResult
+    public func lockOutpoint(_ outpoint: Outpoint) async throws -> Bool {
+        try await setOutpointLock(outpoint, locked: true)
+    }
+
+    /// Unlock `outpoint`, so coin selection may spend it again. Unlocking a
+    /// masternode collateral lets a send spend it, and spending it ends the
+    /// masternode registration. Returns `true` when it was locked. The
+    /// unlock is persisted before this returns.
+    @discardableResult
+    public func unlockOutpoint(_ outpoint: Outpoint) async throws -> Bool {
+        try await setOutpointLock(outpoint, locked: false)
+    }
+
+    private func setOutpointLock(_ outpoint: Outpoint, locked: Bool) async throws -> Bool {
+        guard outpoint.txid.count == 32 else {
+            throw PlatformWalletError.invalidParameter("txid must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var entry = OutPointFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                    outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                entry.vout = outpoint.vout
+                var changed = false
+                let result = locked
+                    ? platform_wallet_lock_outpoint(handle, &entry, &changed)
+                    : platform_wallet_unlock_outpoint(handle, &entry, &changed)
+                try result.check()
+                return changed
+            }
+        }.value
+    }
+
     // MARK: - Sub-wallet access
 
     /// Get the platform address wallet for BLAST sync, transfers, and withdrawals.
@@ -750,15 +821,23 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     // MARK: - Identity top-up (address-funded)
 
-    /// Top up an existing identity's credit balance from one or more
-    /// Platform addresses, using an external `KeychainSigner` for the
+    /// Top up an identity's credit balance from one or more Platform
+    /// addresses, whoever owns the identity (one of this wallet's or
+    /// someone else's), using an external `KeychainSigner` for the
     /// per-address funding signatures.
+    ///
+    /// Bridges `platform_wallet_top_up_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform, never adds it to the
+    /// wallet's identities, and updates the balance of an identity the
+    /// wallet manages, so the caller does not decide whether the identity
+    /// is its own.
     ///
     /// Top-up state-transitions are signed entirely with the input
     /// addresses' private keys (no IdentityCreate to sign), so unlike
     /// `registerIdentityFromAddresses` only one signer is required —
     /// the same `KeychainSigner` you use for registration's
-    /// `addressSigner` role.
+    /// `addressSigner` role. An identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
     ///
     /// - Parameters:
     ///   - identityId: 32-byte identity id of the existing identity
@@ -769,19 +848,117 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     ///     for each input platform address. Borrowed for the
     ///     duration of the call.
     ///
+    /// - Returns: the identity's new credit balance.
+    public func topUpIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.any
+        )
+    }
+
+    /// Top up an identity this wallet manages from one or more Platform
+    /// addresses.
+    ///
+    /// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
+    /// identity and updates a managed one's balance the same way. This
+    /// method differs only in throwing `PlatformWalletError.identityNotFound`
+    /// for an identity the wallet does not manage, before Platform is asked,
+    /// and `PlatformWalletError.identityBalanceUnavailable` (retryable) when
+    /// Platform does not show the wallet's identity yet. Arguments and
+    /// signer handling match `topUpIdentityFromAddresses`.
+    ///
     /// - Returns: the new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
     public func topUpFromAddresses(
         identityId: Data,
         inputs: [IdentityAddressInput],
         addressSigner: KeychainSigner
     ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.managed
+        )
+    }
+
+    /// Top up an identity this wallet does **not** manage (someone
+    /// else's) from one or more Platform addresses.
+    ///
+    /// **Deprecated:** now the same operation as
+    /// `topUpIdentityFromAddresses`, which tops up any identity; use that
+    /// instead.
+    ///
+    /// Bridges `platform_wallet_top_up_external_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform and never adds it to the
+    /// wallet's identities, so nothing about it is persisted here either.
+    /// Arguments, signer handling and error mapping match
+    /// `topUpFromAddresses`; an identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
+    ///
+    /// - Returns: the identity's new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
+    public func topUpExternalIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.external
+        )
+    }
+
+    /// The address-funded top-up exports each public wrapper hands its
+    /// arguments to. A stored property so tests can swap in fakes and see
+    /// which export a wrapper dispatches to.
+    struct AddressTopUpExports {
+        var any: AddressTopUpCall = platform_wallet_top_up_identity_from_addresses_with_signer
+        var managed: AddressTopUpCall = platform_wallet_top_up_from_addresses_with_signer
+        var external: AddressTopUpCall =
+            platform_wallet_top_up_external_identity_from_addresses_with_signer
+    }
+
+    var addressTopUpExports = AddressTopUpExports()
+
+    /// Signature shared by the address-funded top-up exports.
+    typealias AddressTopUpCall = @Sendable (
+        Handle,
+        UnsafePointer<IdentityIdBytes>?,
+        UnsafePointer<IdentityFundingInputFFI>?,
+        UInt,
+        OpaquePointer?,
+        UnsafeMutablePointer<UInt64>?
+    ) -> PlatformWalletFFIResult
+
+    typealias IdentityIdBytes = (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+
+    /// Guards and marshalling shared by the address-funded top-ups;
+    /// `call` is the export to hand the marshalled arguments to.
+    /// `internal` so tests can observe the marshalling.
+    func topUpFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner,
+        call: @escaping AddressTopUpCall
+    ) async throws -> UInt64 {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "identityId must be 32 bytes, got \(identityId.count)"
             )
-        }
-        guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter("inputs is empty")
         }
         // Reject malformed address hashes up front. Earlier
         // revisions used `.prefix(20)` on the FFI build below,
@@ -801,17 +978,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let addressSignerHandle = addressSigner.handle
 
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
-            // Keepalive — see `registerIdentityFromAddresses` for
-            // rationale. The trampoline ctx pointer dangles unless
-            // the Swift owner stays alive across this detached work.
-            _ = addressSigner
-
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
+            var idTuple: IdentityIdBytes = (
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
@@ -840,16 +1007,27 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             var newBalance: UInt64 = 0
 
-            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                withUnsafePointer(to: &idTuple) { idPtr in
-                    platform_wallet_top_up_from_addresses_with_signer(
-                        handle,
-                        idPtr,
-                        inputsBuf.baseAddress,
-                        UInt(inputsBuf.count),
-                        addressSignerHandle,
-                        &newBalance
-                    )
+            // `KeychainSigner` registers itself with the Rust signer as a
+            // `passUnretained` ctx and destroys the handle in `deinit`, and
+            // Swift lifetimes end at last use, not at scope end — a bare
+            // `_ = addressSigner` is no fence. `withExtendedLifetime` pins
+            // it across the whole synchronous FFI call (lookup, signing,
+            // broadcast and wait) and its buffer pinning. The wallet is
+            // pinned with it: its `deinit` destroys `handle`.
+            let result = withExtendedLifetime((self, addressSigner)) {
+                ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                    withUnsafePointer(to: &idTuple) { idPtr in
+                        // An empty list goes over as `(NULL, 0)`; Rust
+                        // refuses it as an invalid parameter.
+                        call(
+                            handle,
+                            idPtr,
+                            inputsBuf.isEmpty ? nil : inputsBuf.baseAddress,
+                            UInt(inputsBuf.count),
+                            addressSignerHandle,
+                            &newBalance
+                        )
+                    }
                 }
             }
 
@@ -2736,19 +2914,47 @@ extension ManagedPlatformWallet {
         /// unspent (a reclaim top-up consumes it without creating this
         /// identity), so the claim can still fail late.
         public let alreadyClaimed: Bool
+        /// Whether this wallet made the claim: `true` only when the wallet
+        /// records the invitation's identity in one of its registration
+        /// slots, `false` whenever `alreadyClaimed` is false, and `nil` for
+        /// any other claimed invitation (no key the identity holds decides
+        /// it). Always `nil` for a claimed invitation from
+        /// ``invitationClaimStatus(uri:)``, which does not ask.
+        public let claimedByThisWallet: Bool?
 
+        /// `claimedByThisWallet` defaults to unknown; Rust reports `false`
+        /// for an unclaimed invitation.
         public init(
             prospectiveIdentityId: Data,
             amountDuffs: UInt64,
             isInstant: Bool,
             isChainLocked: Bool,
-            alreadyClaimed: Bool
+            alreadyClaimed: Bool,
+            claimedByThisWallet: Bool? = nil
         ) {
             self.prospectiveIdentityId = prospectiveIdentityId
             self.amountDuffs = amountDuffs
             self.isInstant = isInstant
             self.isChainLocked = isChainLocked
             self.alreadyClaimed = alreadyClaimed
+            self.claimedByThisWallet = claimedByThisWallet
+        }
+
+        init(_ ffi: InvitationClaimStatusFFI) {
+            let claimedByThisWallet: Bool?
+            switch ffi.claimed_by_this_wallet {
+            case UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO): claimedByThisWallet = false
+            case UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_YES): claimedByThisWallet = true
+            default: claimedByThisWallet = nil
+            }
+            self.init(
+                prospectiveIdentityId: withUnsafeBytes(of: ffi.prospective_identity_id) { Data($0) },
+                amountDuffs: ffi.amount_duffs,
+                isInstant: ffi.is_instant,
+                isChainLocked: ffi.is_chain_locked,
+                alreadyClaimed: ffi.already_claimed,
+                claimedByThisWallet: claimedByThisWallet
+            )
         }
     }
 
@@ -2853,6 +3059,25 @@ extension ManagedPlatformWallet {
     /// time gate. The contact-bootstrap ("establish contact with the
     /// sender?") is NOT done here — after a successful claim the UI asks the
     /// invitee and, on confirm, calls `sendContactRequest` for the reciprocal.
+    ///
+    /// Nothing is broadcast when Platform would refuse the claim and charge
+    /// the voucher: it throws `.invitationClaimedByThisWallet` (the wallet
+    /// already records the invitation's identity; load that identity),
+    /// `.assetLockAlreadyConsumed` (claimed by an identity the wallet does not
+    /// record: whose it is is unknown, usually someone else's, possibly an
+    /// earlier claim of this wallet whose result was lost before it was
+    /// recorded; no key the identity holds decides it),
+    /// `.invitationKeysAlreadyRegistered` with no consensus error (another
+    /// identity holds these keys)
+    /// or `.invitationNotReady` (retry once synced). The same
+    /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
+    /// different: a key was registered after the lookup, Platform refused
+    /// the broadcast, and the voucher may have been charged.
+    /// `.assetLockNotChainLocked` means retry later. A node that has not seen an earlier landed claim
+    /// lets the retry through; Platform then refuses it, and the identity is
+    /// returned as the claim's result when it carries exactly these keys, or
+    /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`
+    /// as above when it does not.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(
@@ -2971,13 +3196,26 @@ extension ManagedPlatformWallet {
                     platform_wallet_invitation_claim_status(handle, uriPtr, &out)
                 }
                 try result.check()
-                return InvitationClaimStatus(
-                    prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
-                    amountDuffs: out.amount_duffs,
-                    isInstant: out.is_instant,
-                    isChainLocked: out.is_chain_locked,
-                    alreadyClaimed: out.already_claimed
-                )
+                return InvitationClaimStatus(out)
+            }
+        }.value
+    }
+
+    /// ``invitationClaimStatus(uri:)``, plus whether this wallet made the
+    /// claim (``InvitationClaimStatus/claimedByThisWallet``): `true` only for
+    /// an identity the wallet records, `nil` for any other claimed
+    /// invitation. Same error contract as ``invitationClaimStatus(uri:)``.
+    public func invitationClaimStatusForThisWallet(uri: String) async throws -> InvitationClaimStatus {
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
+            try withExtendedLifetime(self) {
+                var out = InvitationClaimStatusFFI()
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_claim_status_for_identity(handle, uriPtr, &out)
+                }
+                try result.check()
+                return InvitationClaimStatus(out)
             }
         }.value
     }
@@ -3535,7 +3773,8 @@ extension ManagedPlatformWallet {
 
     /// Shared submit path for the signer-driven profile flows. Mirrors
     /// `submitDashPayProfile` but routes through
-    /// `platform_wallet_create_or_update_dashpay_profile_with_signer`.
+    /// `platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer`,
+    /// passing each payment address as its keep / set / remove operation.
     private func submitDashPayProfileWithSigner(
         identityId: Identifier,
         update: DashPayProfileUpdate,
@@ -3559,8 +3798,9 @@ extension ManagedPlatformWallet {
             // Rust holds a `passUnretained` ctx pointer to it via `signerHandle`,
             // so a bare `_ = signer` keepalive can be released under -O before the
             // call returns. `withExtendedLifetime` keeps ARC holding it for the
-            // call's duration (matches the other *_with_signer wrappers).
-            let result: PlatformWalletFFIResult = withExtendedLifetime(signer) {
+            // call's duration (matches the other *_with_signer wrappers). The
+            // wallet is pinned the same way: its `deinit` destroys `handle`.
+            let result: PlatformWalletFFIResult = withExtendedLifetime((self, signer)) {
                 idBytes.withUnsafeBufferPointer {
                     idBp -> PlatformWalletFFIResult in
                     let idPtr = idBp.baseAddress!
@@ -3569,37 +3809,19 @@ extension ManagedPlatformWallet {
                         publicMessage,
                         avatarUrl
                     ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
-                        let bytes = avatarBytes ?? Data()
-                        if let avatarBytes, !avatarBytes.isEmpty {
-                            return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
-                                let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                                return platform_wallet_create_or_update_dashpay_profile_with_signer(
-                                    handle,
-                                    idPtr,
-                                    namePtr,
-                                    msgPtr,
-                                    urlPtr,
-                                    bytesPtr,
-                                    UInt(avatarBytes.count),
-                                    doCreate,
-                                    signerHandle,
-                                    &outProfile
-                                )
+                        return update.corePaymentAddress.withFFI { core in
+                            update.platformPaymentAddress.withFFI { platform in
+                                update.shieldedAddress.withFFI { shielded in
+                                    (avatarBytes ?? Data()).withUnsafeBytes { bytes in
+                                        platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer(
+                                            handle, idPtr, namePtr, msgPtr, urlPtr,
+                                            bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                            UInt(bytes.count), core, platform, shielded,
+                                            doCreate, signerHandle, &outProfile
+                                        )
+                                    }
+                                }
                             }
-                        } else {
-                            _ = bytes
-                            return platform_wallet_create_or_update_dashpay_profile_with_signer(
-                                handle,
-                                idPtr,
-                                namePtr,
-                                msgPtr,
-                                urlPtr,
-                                nil,
-                                0,
-                                doCreate,
-                                signerHandle,
-                                &outProfile
-                            )
                         }
                     }
                 }
@@ -4051,9 +4273,13 @@ extension ManagedPlatformWallet {
     /// budget AND to what is left of it, in credits; `expiresAt` moves the
     /// key's expiry to that block time in milliseconds and must be later
     /// than the one the key carries. At least one of the two must be given.
-    /// A limit the key does not already have, a zero top-up and an expiry
-    /// that is not later are refused before anything is signed, because
-    /// Platform would refuse them and charge for it.
+    /// A disabled key, a limit the key does not already have, a zero top-up
+    /// and an expiry that is not later are refused before anything is
+    /// signed, because Platform would refuse them and charge for it.
+    ///
+    /// A caller that showed a preview first signs with
+    /// `updateIdentityKeyLimits(asReviewed:signer:)`
+    /// instead, which signs exactly what that preview showed or nothing.
     ///
     /// No identity revision is claimed or bumped. The cached key and its
     /// `PersistentPublicKey` row follow through the persist-identity-keys
@@ -4065,34 +4291,191 @@ extension ManagedPlatformWallet {
         expiresAt: UInt64? = nil,
         signer: KeychainSigner
     ) async throws {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
         guard addBudget != nil || expiresAt != nil else {
             throw PlatformWalletError.walletOperation(
                 "updateIdentityKeyLimits needs a budget to add or a new expiry"
             )
         }
-        let handle = self.handle
-        let signerHandle = signer.handle
-        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
+        let idBytes = [UInt8](identityId)
         let budgetToAdd = addBudget
         let newExpiresAt = expiresAt
-        try await Task.detached(priority: .userInitiated) {
-            _ = signer
-            let result = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                platform_wallet_update_identity_key_limits_with_signer(
-                    handle,
-                    idBp.baseAddress!,
-                    keyId,
-                    budgetToAdd != nil,
-                    budgetToAdd ?? 0,
-                    newExpiresAt != nil,
-                    newExpiresAt ?? 0,
-                    signerHandle
-                )
+        try await Task.detached(priority: .userInitiated) { [self] in
+            // Pin the wallet and the signer through the synchronous FFI call:
+            // Rust calls back into the signer from a worker, and each object
+            // destroys its native handle in `deinit`.
+            try withExtendedLifetime((self, signer)) {
+                let result = idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    platform_wallet_update_identity_key_limits_with_signer(
+                        handle,
+                        idBp.baseAddress!,
+                        keyId,
+                        budgetToAdd != nil,
+                        budgetToAdd ?? 0,
+                        newExpiresAt != nil,
+                        newExpiresAt ?? 0,
+                        signer.handle
+                    )
+                }
+                try result.check()
             }
-            try result.check()
+        }.value
+    }
+
+    /// Raise the limits of the key `reviewed` names, of the identity it
+    /// names, to exactly what it shows: the preview
+    /// `previewIdentityKeyLimitsUpdate` returned and the caller showed.
+    /// The preview carries its target, so it cannot raise another key.
+    /// Rust signs that new total, that expiry and that signing key, or
+    /// nothing: when the wallet's identity moved since the preview, so the
+    /// same change would now sign other limits or another key, it throws
+    /// before anything is signed. Preview again and show the new values.
+    public func updateIdentityKeyLimits(
+        asReviewed reviewed: IdentityKeyLimitsUpdatePreview,
+        signer: KeychainSigner
+    ) async throws {
+        guard reviewed.identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        let reviewedFFI = IdentityKeyLimitsUpdatePreviewFFI(reviewed)
+        try await Task.detached(priority: .userInitiated) { [self] in
+            // Pinned as in `updateIdentityKeyLimits(identityId:keyId:addBudget:expiresAt:signer:)`.
+            try withExtendedLifetime((self, signer)) {
+                var preview = reviewedFFI
+                let result = platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
+                    handle,
+                    &preview,
+                    signer.handle
+                )
+                try result.check()
+            }
+        }.value
+    }
+
+    /// Fetch one of this wallet's identities from Platform with a proof and
+    /// fold it into the wallet (`IdentityWallet::refresh_identity`). Keys
+    /// added or changed on another client are taken in, a node behind what
+    /// the wallet already holds cannot roll an update back, and changed key
+    /// rows are handed to the persist-identity-keys callback. A failed
+    /// store there is thrown and leaves the wallet's copy as it was, so a
+    /// retry still includes those keys.
+    public func refreshIdentity(identityId: Identifier) async throws {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        let idBytes = [UInt8](identityId)
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                let result = idBytes.withUnsafeBufferPointer { idBp in
+                    platform_wallet_refresh_identity(handle, idBp.baseAddress!)
+                }
+                try result.check()
+            }
+        }.value
+    }
+
+    /// What `updateIdentityKeyLimits` would do for the same arguments, as
+    /// `previewIdentityKeyLimitsUpdate` reports it. All values come from
+    /// Rust; credits and block time milliseconds, as on the key.
+    public struct IdentityKeyLimitsUpdatePreview: Equatable, Sendable {
+        /// The identity whose key the update raises.
+        public let identityId: Identifier
+        /// The key the update raises.
+        public let keyId: UInt32
+        /// The key that would sign the update.
+        public let signingKeyId: UInt32
+        /// The total budget the key carries now, `nil` when it has none.
+        public let currentTotalBudget: UInt64?
+        /// The expiry the key carries now, `nil` when it has none.
+        public let currentExpiresAt: UInt64?
+        /// The total budget the update would set, `nil` when no budget
+        /// was asked to be added.
+        public let newTotalBudget: UInt64?
+        /// The expiry the update would set, `nil` when none was asked for.
+        public let newExpiresAt: UInt64?
+
+        public init(
+            identityId: Identifier,
+            keyId: UInt32,
+            signingKeyId: UInt32,
+            currentTotalBudget: UInt64?,
+            currentExpiresAt: UInt64?,
+            newTotalBudget: UInt64?,
+            newExpiresAt: UInt64?
+        ) {
+            self.identityId = identityId
+            self.keyId = keyId
+            self.signingKeyId = signingKeyId
+            self.currentTotalBudget = currentTotalBudget
+            self.currentExpiresAt = currentExpiresAt
+            self.newTotalBudget = newTotalBudget
+            self.newExpiresAt = newExpiresAt
+        }
+
+        init(ffi: IdentityKeyLimitsUpdatePreviewFFI) {
+            var idTuple = ffi.identity_id
+            let identityId = withUnsafeBytes(of: &idTuple) { Data($0) }
+            self.init(
+                identityId: identityId,
+                keyId: ffi.key_id,
+                signingKeyId: ffi.signing_key_id,
+                currentTotalBudget: ffi.has_current_total_budget ? ffi.current_total_budget : nil,
+                currentExpiresAt: ffi.has_current_expires_at ? ffi.current_expires_at : nil,
+                newTotalBudget: ffi.has_new_total_budget ? ffi.new_total_budget : nil,
+                newExpiresAt: ffi.has_new_expires_at ? ffi.new_expires_at : nil
+            )
+        }
+    }
+
+    /// Ask the wallet what raising the limits of one of an identity's keys
+    /// would do, without signing or sending anything: which key would sign,
+    /// the limits the key carries, and the limits `addBudget` (credits) and
+    /// `expiresAt` (block time in milliseconds) would set.
+    ///
+    /// With neither given it answers whether the key can be raised at all,
+    /// which is what a form asks before it offers the action. A refusal is
+    /// thrown with Rust's reason as `localizedDescription`. Every rule is
+    /// decided in `platform-wallet`
+    /// (`IdentityWallet::preview_identity_key_limits_update`), and
+    /// `updateIdentityKeyLimits` runs the same preview.
+    public func previewIdentityKeyLimitsUpdate(
+        identityId: Identifier,
+        keyId: UInt32,
+        addBudget: UInt64? = nil,
+        expiresAt: UInt64? = nil,
+        signer: KeychainSigner
+    ) async throws -> IdentityKeyLimitsUpdatePreview {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        let idBytes = [UInt8](identityId)
+        let budgetToAdd = addBudget
+        let newExpiresAt = expiresAt
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            // Pinned as in `updateIdentityKeyLimits`: the preview asks the
+            // signer which keys it holds through a callback.
+            try withExtendedLifetime((self, signer)) {
+                var out = IdentityKeyLimitsUpdatePreviewFFI()
+                let result = idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    platform_wallet_preview_identity_key_limits_update(
+                        handle,
+                        idBp.baseAddress!,
+                        keyId,
+                        budgetToAdd != nil,
+                        budgetToAdd ?? 0,
+                        newExpiresAt != nil,
+                        newExpiresAt ?? 0,
+                        signer.handle,
+                        &out
+                    )
+                }
+                try result.check()
+                return IdentityKeyLimitsUpdatePreview(ffi: out)
+            }
         }.value
     }
 
@@ -4572,19 +4955,38 @@ extension ManagedPlatformWallet {
     /// and broadcast the change to Platform.
     ///
     /// Companion to `createDataContract`. The wallet fetches the
-    /// live contract from Platform, bumps its version, and applies
-    /// the supplied schemas / config at the next version — the
-    /// caller does NOT track contract version state. Every JSON
-    /// input has the same shape as `createDataContract`.
+    /// live contract from Platform, checks that `ownerIdentityId`
+    /// owns it, raises its version by one, and merges the supplied
+    /// sections onto it: document types, tokens and groups are
+    /// added or replaced key by key (omitted keys keep their
+    /// on-chain definition), and keywords, description and config
+    /// replace the live ones only when supplied. The caller does
+    /// NOT track contract version state. Every JSON input has the
+    /// same shape as `createDataContract`. Platform decides whether
+    /// the update is allowed when it is broadcast;
+    /// `previewDataContractUpdate` reports what the same arguments
+    /// would change without broadcasting.
     ///
     /// `contractId` is the id of the existing contract to update.
     /// Returns the (unchanged) contract id of the updated contract.
     ///
-    /// Lifetime contract: the `signer` instance MUST stay alive for
-    /// the duration of the `await` (Rust holds a `passUnretained`
-    /// ctx pointer to the underlying `KeychainSigner`). A
-    /// `_ = signer` keepalive at the call site is the canonical way
-    /// to pin it.
+    /// `expectedCurrentVersion` is the contract version the caller
+    /// reviewed (`DataContractUpdatePreview.currentVersion`). When
+    /// it is set and the live contract is at another version, Rust
+    /// refuses the update before any nonce is read; review again.
+    /// `nil` (passed to Rust as `0`, never a real contract version)
+    /// updates whatever version is live.
+    ///
+    /// A broadcast whose result could not be confirmed throws
+    /// `ErrorTransactionBroadcastUnconfirmed`: the update may have
+    /// executed.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call inside this async wrapper
+    /// (Rust holds a `passUnretained` ctx pointer to the underlying
+    /// `KeychainSigner`). The wrapper pins it with
+    /// `withExtendedLifetime(signer)` around the full marshalling
+    /// chain, so callers need no keepalive of their own.
     public func updateDataContract(
         ownerIdentityId: Identifier,
         contractId: Identifier,
@@ -4594,10 +4996,29 @@ extension ManagedPlatformWallet {
         keywordsJSON: String? = nil,
         description: String? = nil,
         contractConfigJSON: String? = nil,
+        expectedCurrentVersion: UInt32? = nil,
         signer: KeychainSigner
     ) async throws -> Identifier {
+        try Self.requireDataContractUpdateIdentifiers(
+            ownerIdentityId: ownerIdentityId,
+            contractId: contractId
+        )
+        try Self.requireNoNULInDataContractUpdateArguments(
+            documentSchemasJSON: documentSchemasJSON,
+            tokenSchemasJSON: tokenSchemasJSON,
+            groupsJSON: groupsJSON,
+            keywordsJSON: keywordsJSON,
+            description: description,
+            contractConfigJSON: contractConfigJSON
+        )
         let handle = self.handle
         let signerHandle = signer.handle
+        // 0 is the FFI's "no check" value, so an explicit 0 would silently
+        // update whatever version is live. Contract versions start at 1.
+        if expectedCurrentVersion == 0 {
+            throw PlatformWalletError.invalidParameter("expectedCurrentVersion must be greater than zero")
+        }
+        let expectedVersion: UInt32 = expectedCurrentVersion ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -4612,31 +5033,37 @@ extension ManagedPlatformWallet {
             // inside `block_on_worker`, so the `withCString` scopes
             // here are sufficient — the pointers don't need to
             // outlive the call.
-            _ = signer
             var contractIdBytes = [UInt8](repeating: 0, count: 32)
 
-            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                    documentSchemasJSON.withCString { docsPtr in
-                        Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
-                            Self.withOptionalCString(groupsJSON) { groupsPtr in
-                                Self.withOptionalCString(keywordsJSON) { keywordsPtr in
-                                    Self.withOptionalCString(description) { descriptionPtr in
-                                        Self.withOptionalCString(contractConfigJSON) { configPtr in
-                                            contractIdBytes.withUnsafeMutableBufferPointer { outBp in
-                                                platform_wallet_update_data_contract_with_signer(
-                                                    handle,
-                                                    ownerBp.baseAddress!,
-                                                    contractBp.baseAddress!,
-                                                    docsPtr,
-                                                    tokensPtr,
-                                                    groupsPtr,
-                                                    keywordsPtr,
-                                                    descriptionPtr,
-                                                    configPtr,
-                                                    signerHandle,
-                                                    outBp.baseAddress!
-                                                )
+            // Pin `signer` for the whole FFI call. A bare `_ = signer`
+            // may be elided under -O, releasing the signer before Rust
+            // dereferences `signerHandle`; `withExtendedLifetime`
+            // guarantees it, as in `createDocument`.
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentSchemasJSON.withCString { docsPtr in
+                            Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                                Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                    Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                        Self.withOptionalCString(description) { descriptionPtr in
+                                            Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                                contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                                    platform_wallet_update_data_contract_with_signer(
+                                                        handle,
+                                                        ownerBp.baseAddress!,
+                                                        contractBp.baseAddress!,
+                                                        docsPtr,
+                                                        tokensPtr,
+                                                        groupsPtr,
+                                                        keywordsPtr,
+                                                        descriptionPtr,
+                                                        configPtr,
+                                                        expectedVersion,
+                                                        signerHandle,
+                                                        outBp.baseAddress!
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -4650,6 +5077,156 @@ extension ManagedPlatformWallet {
             try result.check()
             return Data(contractIdBytes)
         }.value
+    }
+
+    /// Report what `updateDataContract`, called with the same
+    /// arguments, would change in the contract `contractId`, without
+    /// signing or broadcasting anything.
+    ///
+    /// Routes through `IdentityWallet::preview_data_contract_update`
+    /// (via `platform_wallet_preview_data_contract_update`): the
+    /// wallet fetches the live contract, checks that
+    /// `ownerIdentityId` owns it, merges the supplied sections onto
+    /// it and builds the updated contract as the update does, then
+    /// compares the two. It consumes no nonce. JSON that does not
+    /// parse or a schema the contract parser rejects is the same
+    /// error the update would give.
+    ///
+    /// The preview says what changes, not whether Platform accepts
+    /// the update: the network checks the contract update rules when
+    /// the update is broadcast. `hasChanges` is computed by Rust.
+    public func previewDataContractUpdate(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil
+    ) async throws -> DataContractUpdatePreview {
+        try Self.requireDataContractUpdateIdentifiers(
+            ownerIdentityId: ownerIdentityId,
+            contractId: contractId
+        )
+        try Self.requireNoNULInDataContractUpdateArguments(
+            documentSchemasJSON: documentSchemasJSON,
+            tokenSchemasJSON: tokenSchemasJSON,
+            groupsJSON: groupsJSON,
+            keywordsJSON: keywordsJSON,
+            description: description,
+            contractConfigJSON: contractConfigJSON
+        )
+        let handle = self.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            // Receives an owned JSON C string on success; freed with
+            // `platform_wallet_string_free` on every path.
+            var previewJsonPtr: UnsafeMutablePointer<CChar>? = nil
+            defer { if let p = previewJsonPtr { platform_wallet_string_free(p) } }
+
+            // Pin the wallet (whose deinit destroys the handle) and every
+            // borrowed payload across the FFI call. Rust dereferences the
+            // C-string pointers synchronously inside `block_on_worker`,
+            // so the `withCString` scopes are long enough.
+            let result = withExtendedLifetime(self) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentSchemasJSON.withCString { docsPtr in
+                            Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                                Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                    Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                        Self.withOptionalCString(description) { descriptionPtr in
+                                            Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                                platform_wallet_preview_data_contract_update(
+                                                    handle,
+                                                    ownerBp.baseAddress!,
+                                                    contractBp.baseAddress!,
+                                                    docsPtr,
+                                                    tokensPtr,
+                                                    groupsPtr,
+                                                    keywordsPtr,
+                                                    descriptionPtr,
+                                                    configPtr,
+                                                    &previewJsonPtr
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            // On success the Rust side always writes the JSON; a null
+            // pointer is an FFI contract violation.
+            guard let jsonPtr = previewJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "preview_data_contract_update returned no preview JSON"
+                )
+            }
+            return try DataContractUpdatePreview.decode(fromJSON: String(cString: jsonPtr))
+        }.value
+    }
+
+    /// Refuse an identifier argument of `updateDataContract` or
+    /// `previewDataContractUpdate` that is not 32 bytes. `Identifier` is
+    /// `Data` of any length, and `withFFIBytes` traps on any other length,
+    /// so the wrong length is a thrown `PlatformWalletError.invalidParameter`
+    /// naming the argument rather than a crash. Checks only that the ids can
+    /// cross the boundary, as `refreshIdentityBalance` does.
+    static func requireDataContractUpdateIdentifiers(
+        ownerIdentityId: Identifier,
+        contractId: Identifier
+    ) throws {
+        guard ownerIdentityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "ownerIdentityId must be 32 bytes, got \(ownerIdentityId.count)"
+            )
+        }
+        guard contractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "contractId must be 32 bytes, got \(contractId.count)"
+            )
+        }
+    }
+
+    /// Refuse a string argument of `updateDataContract` or
+    /// `previewDataContractUpdate` that holds a NUL. `withCString` hands
+    /// Rust a C string that ends at the first NUL, so Rust would preview or
+    /// update with a prefix of the argument. Throws
+    /// `PlatformWalletError.invalidParameter` naming the first such
+    /// argument. Checks only that the strings can cross the boundary; what
+    /// they say is the wallet's and Platform's to judge.
+    static func requireNoNULInDataContractUpdateArguments(
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String?,
+        groupsJSON: String?,
+        keywordsJSON: String?,
+        description: String?,
+        contractConfigJSON: String?
+    ) throws {
+        let arguments: [(name: String, value: String?)] = [
+            ("documentSchemasJSON", documentSchemasJSON),
+            ("tokenSchemasJSON", tokenSchemasJSON),
+            ("groupsJSON", groupsJSON),
+            ("keywordsJSON", keywordsJSON),
+            ("description", description),
+            ("contractConfigJSON", contractConfigJSON)
+        ]
+        for argument in arguments {
+            if let value = argument.value {
+                try KeyDerivation.requireNoNUL(value, argument.name)
+            }
+        }
     }
 
     /// Create + broadcast a new revision-1 document on `contractId`'s
@@ -4776,22 +5353,22 @@ extension ManagedPlatformWallet {
     }
 
     /// Replace + broadcast `documentId`'s properties on `contractId`'s
-    /// `documentType`, owned by `ownerIdentityId`, signed with the
-    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
-    /// 32-byte document id and the confirmed document's canonical
-    /// query-side JSON (now at the bumped revision) once Platform
-    /// confirms the transition.
+    /// `documentType`, owned by `ownerIdentityId`. Returns the 32-byte
+    /// document id and the confirmed document's canonical query-side
+    /// JSON (now at the bumped revision) once Platform confirms the
+    /// transition.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::replace_document_with_signer` (via
     /// `platform_wallet_document_replace`): the Rust side fetches the
     /// current document, applies `propertiesJSON` (the full replacement
     /// property object, same hex/base58 encoding rules as create),
-    /// bumps the revision, validates `signingKeyId` is an
-    /// AUTHENTICATION + ECDSA key on the owner, broadcasts on the
-    /// platform-wallet 8 MB worker stack, and waits for confirmation.
-    /// The signing key never crosses into Swift logic — the
-    /// `KeychainSigner` trampoline services the signature on demand.
+    /// bumps the revision, selects the owner's AUTHENTICATION key that
+    /// the document type's security level requires and `signer` can
+    /// sign with, broadcasts on the platform-wallet 8 MB worker stack,
+    /// and waits for confirmation. No key is chosen in Swift, so an
+    /// identity restored from its wallet mnemonic (whose private keys
+    /// the `KeychainSigner` derives on demand) signs too.
     /// Callers persist the returned JSON verbatim so the local cache
     /// matches the on-chain document.
     ///
@@ -4805,7 +5382,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         propertiesJSON: String,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -4839,7 +5415,6 @@ extension ManagedPlatformWallet {
                                             typePtr,
                                             docBp.baseAddress!,
                                             propsPtr,
-                                            signingKeyId,
                                             signerHandle,
                                             outBp.baseAddress!,
                                             &documentJsonPtr
@@ -4865,9 +5440,10 @@ extension ManagedPlatformWallet {
     }
 
     /// Delete + broadcast `documentId` on `contractId`'s `documentType`,
-    /// owned by `ownerIdentityId`, signed with the explicit
-    /// AUTHENTICATION + ECDSA key `signingKeyId`. Returns the deleted
-    /// document's 32-byte id once Platform confirms the transition.
+    /// owned by `ownerIdentityId`. Returns the deleted document's
+    /// 32-byte id once Platform confirms the transition. Rust selects
+    /// the owner's AUTHENTICATION key that the document type's security
+    /// level requires and `signer` can sign with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::delete_document_with_signer` (via
@@ -4879,7 +5455,6 @@ extension ManagedPlatformWallet {
         contractId: Identifier,
         documentType: String,
         documentId: Identifier,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> Identifier {
         let handle = self.handle
@@ -4908,7 +5483,6 @@ extension ManagedPlatformWallet {
                                         contractBp.baseAddress!,
                                         typePtr,
                                         docBp.baseAddress!,
-                                        signingKeyId,
                                         signerHandle,
                                         outBp.baseAddress!
                                     )
@@ -4924,9 +5498,10 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Delete + broadcast a document by its values, signed with the
-    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
-    /// deleted document's 32-byte id once Platform confirms the transition.
+    /// Delete + broadcast a document by its values. Returns the deleted
+    /// document's 32-byte id once Platform confirms the transition. Rust
+    /// selects the owner's AUTHENTICATION key that the document type's
+    /// security level requires and `signer` can sign with.
     ///
     /// The delete an `indexOnly` document type needs: it keeps no document
     /// row, so the transition carries the values that identify its entries
@@ -4946,7 +5521,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         propertiesJSON: String,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> Identifier {
         let handle = self.handle
@@ -4978,7 +5552,6 @@ extension ManagedPlatformWallet {
                                             typePtr,
                                             docBp.baseAddress!,
                                             propsPtr,
-                                            signingKeyId,
                                             signerHandle,
                                             outBp.baseAddress!
                                         )
@@ -4995,82 +5568,50 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Erase + broadcast a chunk of the retained revisions of the already
-    /// deleted `documentId` on `contractId`'s `documentType`, signed with
-    /// the explicit AUTHENTICATION + ECDSA key `signingKeyId` of
-    /// `ownerIdentityId`. Returns the document's 32-byte id once Platform
-    /// has proved it absent from ordinary reads. That absence predates the
-    /// erase, so the return observes the affected state and is not
-    /// evidence that this erase removed a revision; read
-    /// `SDK.documentGetLifecycle` for the state and the exact number of
-    /// revisions still retained.
-    ///
-    /// Sibling to `deleteDocument`. Routes through
-    /// `IdentityWallet::erase_document_with_signer` (via
-    /// `platform_wallet_document_erase`). Only a keep-history document
-    /// type whose schema sets `canBeErased` can be erased, and only after
-    /// the document has been deleted: the first erase must be signed by
-    /// the document's owner, every later one may be signed by any
-    /// identity, so `ownerIdentityId` is the signing identity rather than
-    /// necessarily the owner. One erase removes a bounded chunk of
-    /// revisions; erase again while the lifecycle reports any. Erase
-    /// returns no document body, so there is no canonical JSON.
-    public func eraseDocument(
-        ownerIdentityId: Identifier,
+    /// Rust owns eligibility, key selection, one submission and lifecycle observations.
+    public func eraseDocumentAndObserve(
+        submittingIdentityId: Identifier,
         contractId: Identifier,
         documentType: String,
         documentId: Identifier,
-        signingKeyId: UInt32,
         signer: KeychainSigner
-    ) async throws -> Identifier {
-        let handle = self.handle
-        let signerHandle = signer.handle
-        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
+    ) async throws -> DocumentEraseOutcome {
+        guard submittingIdentityId.count == 32, contractId.count == 32, documentId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Identifiers must be 32 bytes")
         }
         return try await Task.detached(priority: .userInitiated) { [self] in
-            var documentIdBytes = [UInt8](repeating: 0, count: 32)
-
+            var output = DocumentEraseOutcomeFFI()
             let result = withExtendedLifetime((self, signer)) {
-                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                        documentType.withCString { typePtr in
-                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
-                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
-                                    platform_wallet_document_erase(
-                                        handle,
-                                        ownerBp.baseAddress!,
-                                        contractBp.baseAddress!,
-                                        typePtr,
-                                        docBp.baseAddress!,
-                                        signingKeyId,
-                                        signerHandle,
-                                        outBp.baseAddress!
-                                    )
-                                }
+                submittingIdentityId.withUnsafeBytes { owner in
+                    contractId.withUnsafeBytes { contract in
+                        documentType.withCString { type in
+                            documentId.withUnsafeBytes { document in
+                                platform_wallet_document_erase_and_observe(
+                                    self.handle,
+                                    owner.bindMemory(to: UInt8.self).baseAddress!,
+                                    contract.bindMemory(to: UInt8.self).baseAddress!,
+                                    type,
+                                    document.bindMemory(to: UInt8.self).baseAddress!,
+                                    signer.handle,
+                                    &output
+                                )
                             }
                         }
                     }
                 }
             }
-
             try result.check()
-            return Data(documentIdBytes)
+            return try DocumentEraseOutcome(ffi: output)
         }.value
     }
 
     /// Transfer + broadcast `documentId` on `contractId`'s
-    /// `documentType`, from `ownerIdentityId` to `recipientId`, signed
-    /// with the explicit AUTHENTICATION + ECDSA key `signingKeyId`.
-    /// Returns the 32-byte document id and the confirmed document's
-    /// canonical JSON (now reflecting the new owner) once Platform
-    /// confirms the transition.
+    /// `documentType`, from `ownerIdentityId` to `recipientId`. Returns
+    /// the 32-byte document id and the confirmed document's canonical
+    /// JSON (now reflecting the new owner) once Platform confirms the
+    /// transition. Rust selects the owner's AUTHENTICATION key that the
+    /// document type's security level requires and `signer` can sign
+    /// with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::transfer_document_with_signer` (via
@@ -5083,7 +5624,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         recipientId: Identifier,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5118,7 +5658,6 @@ extension ManagedPlatformWallet {
                                             typePtr,
                                             docBp.baseAddress!,
                                             recipBp.baseAddress!,
-                                            signingKeyId,
                                             signerHandle,
                                             outBp.baseAddress!,
                                             &documentJsonPtr
@@ -5144,11 +5683,12 @@ extension ManagedPlatformWallet {
     }
 
     /// Set (update) the trade price of `documentId` on `contractId`'s
-    /// `documentType` to `price` credits, owned by `ownerIdentityId`,
-    /// signed with the explicit AUTHENTICATION + ECDSA key
-    /// `signingKeyId`. Returns the 32-byte document id and the confirmed
-    /// document's canonical JSON (now carrying `$price`) once Platform
-    /// confirms the transition.
+    /// `documentType` to `price` credits, owned by `ownerIdentityId`.
+    /// Returns the 32-byte document id and the confirmed document's
+    /// canonical JSON (now carrying `$price`) once Platform confirms the
+    /// transition. Rust selects the owner's AUTHENTICATION key that the
+    /// document type's security level requires and `signer` can sign
+    /// with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::set_document_price_with_signer` (via
@@ -5161,7 +5701,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         price: UInt64,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5192,7 +5731,6 @@ extension ManagedPlatformWallet {
                                         typePtr,
                                         docBp.baseAddress!,
                                         price,
-                                        signingKeyId,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr
@@ -5218,11 +5756,11 @@ extension ManagedPlatformWallet {
 
     /// Purchase + broadcast for-sale `documentId` on `contractId`'s
     /// `documentType` for `price` credits, with `purchaserId` as the
-    /// buyer (and new owner), signed with the explicit AUTHENTICATION +
-    /// ECDSA key `signingKeyId` resolved on the purchaser. Returns the
-    /// 32-byte document id and the confirmed document's canonical JSON
-    /// (now owned by the purchaser) once Platform confirms the
-    /// transition.
+    /// buyer (and new owner). Returns the 32-byte document id and the
+    /// confirmed document's canonical JSON (now owned by the purchaser)
+    /// once Platform confirms the transition. Rust selects the
+    /// purchaser's AUTHENTICATION key that the document type's security
+    /// level requires and `signer` can sign with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::purchase_document_with_signer` (via
@@ -5235,7 +5773,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         price: UInt64,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5266,7 +5803,6 @@ extension ManagedPlatformWallet {
                                         typePtr,
                                         docBp.baseAddress!,
                                         price,
-                                        signingKeyId,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr
@@ -5818,5 +6354,34 @@ extension ManagedPlatformWallet {
             try releaseReservation(token: payment.reservationToken)
             payment.close()
         }
+    }
+}
+
+extension IdentityKeyLimitsUpdatePreviewFFI {
+    /// The C form of a preview, handed back to the update so Rust can check
+    /// it still signs what was shown.
+    /// `preview.identityId` must be 32 bytes; the caller checks it.
+    init(_ preview: ManagedPlatformWallet.IdentityKeyLimitsUpdatePreview) {
+        var identityId: (
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+        ) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        withUnsafeMutableBytes(of: &identityId) { $0.copyBytes(from: preview.identityId.prefix(32)) }
+        self.init(
+            identity_id: identityId,
+            key_id: preview.keyId,
+            signing_key_id: preview.signingKeyId,
+            has_current_total_budget: preview.currentTotalBudget != nil,
+            current_total_budget: preview.currentTotalBudget ?? 0,
+            has_current_expires_at: preview.currentExpiresAt != nil,
+            current_expires_at: preview.currentExpiresAt ?? 0,
+            has_new_total_budget: preview.newTotalBudget != nil,
+            new_total_budget: preview.newTotalBudget ?? 0,
+            has_new_expires_at: preview.newExpiresAt != nil,
+            new_expires_at: preview.newExpiresAt ?? 0
+        )
     }
 }

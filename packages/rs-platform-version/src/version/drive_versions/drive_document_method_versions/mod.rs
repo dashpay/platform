@@ -49,9 +49,8 @@ pub struct DriveDocumentMethodVersions {
     /// `draw_random_document_properties`: fills each `sys.random` property of the documents a
     /// block created with a value drawn from the block's random beacon, once every transition
     /// of the block is accepted, and `prepay_random_document_index_entries`, the same
-    /// generation's price of the index entries the draw may create, which a create pays. `Some(0)`
-    /// from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` in every earlier
-    /// table, which admit no `sys.random` property.
+    /// generation's price of the index entries the draw may create, which a create pays. `None` in
+    /// every document method table; `DRIVE_VERSION_V11` (protocol version 16) sets `Some(0)`.
     pub draw_random_document_properties: OptionalFeatureVersion,
 }
 
@@ -73,6 +72,9 @@ pub struct DriveDocumentExpirationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub fetch_document_lifecycle: OptionalFeatureVersion,
+    /// Reads the total a document type keeps of its summed property, which document create
+    /// and replace state validation hold in range from protocol version 15.
+    pub fetch_document_type_sum: OptionalFeatureVersion,
 
     pub query_documents: FeatureVersion,
     /// Chained document queries (provable semi-join): the version slot
@@ -217,6 +219,11 @@ pub struct DriveDocumentUpdateMethodVersions {
 pub struct DriveDocumentDeleteMethodVersions {
     /// Prices the third-party balance updates caused by an erase; inactive before protocol 15.
     pub erase_refund_recipient_cost: OptionalFeatureVersion,
+    /// Prices, by estimation, the delete of a document a create consumes, which check tx
+    /// reserves for a create whose state it does not validate: 0 the by-id delete of the create
+    /// conversion 0, 1 (protocol version 15) the delete from what the lookup read of the create
+    /// conversion 1.
+    pub consumed_document_delete_cost: FeatureVersion,
     pub erase_document_for_contract_operations: OptionalFeatureVersion,
     pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
     pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,

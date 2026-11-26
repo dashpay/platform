@@ -10,7 +10,7 @@ use thiserror::Error;
 
 /// A transition asks for a random value (a random token transfer or mint, or a create of a
 /// document whose type declares a `sys.random` property) in the block that switches to
-/// `protocol_version`, the first whose blocks draw random values (protocol version 15).
+/// `protocol_version`, the first whose blocks draw random values (protocol version 16).
 /// Tenderdash applies the consensus parameters a block returns from the next height on, so that
 /// block still runs under the consensus version of the protocol version before it, which sends
 /// no random beacon: nothing would draw the value. The transition is refused without being

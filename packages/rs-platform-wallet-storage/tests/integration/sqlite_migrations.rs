@@ -608,7 +608,11 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
         .expect("re-enable foreign keys");
 
     // 4. The rebuild must complete rather than abort on the orphans.
-    mig::run(&mut conn).expect("migrate to latest despite the orphan rows");
+    // This fixture deliberately uses opaque record bytes; V014 preserves them.
+    mig::runner()
+        .set_target(refinery::Target::Version(14))
+        .run(&mut conn)
+        .expect("V014 must migrate despite the orphan rows");
 
     // 5. Both orphans are gone — the same outcome the declared cascade would
     //    have produced had enforcement been on when the wallet was deleted.

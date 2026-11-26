@@ -2,13 +2,13 @@ use drive::drive::document::draw_random_document_properties::RandomDocumentReque
 use drive::drive::tokens::settle_random_token_amounts::RandomTokenRequest;
 
 /// What a block's random beacon fills in once the block's prevotes combine into it (protocol
-/// version 15): every document the block created, whose `sys.random` properties are drawn, and
+/// version 16): every document the block created, whose `sys.random` properties are drawn, and
 /// every random token transfer and mint, whose amount is drawn and settled.
 ///
 /// `process_raw_state_transitions` collects them from the transitions the block executed
 /// successfully, in the order it executed them, and the block execution context keeps them
 /// until `ApplyBlockRandomness`, or `FinalizeBlock` with the commit's beacon, hands the beacon
-/// over. Empty before protocol version 15, where nothing is collected.
+/// over. Empty before protocol version 16, where nothing is collected.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BlockRandomRequests {
     /// The documents the block created, whose `sys.random` properties are drawn; a document

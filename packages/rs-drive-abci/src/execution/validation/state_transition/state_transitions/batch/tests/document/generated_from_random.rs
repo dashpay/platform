@@ -1,9 +1,9 @@
-//! End-to-end coverage for `generatedFrom` with `sys.random.uniform` (protocol version 15): an
+//! End-to-end coverage for `generatedFrom` with `sys.random.uniform` (protocol version 16): an
 //! integer property the platform writes with a placeholder, its range's minimum, when the
 //! document is created, and draws from the block's random beacon once the block's transitions
 //! are accepted (`Drive::draw_random_document_properties`). A client leaves the property out
 //! and takes the drawn value from the proof of its own transition; one that sends a value is
-//! refused, and a replace keeps the drawn value. The block that switches to protocol version 15
+//! refused, and a replace keeps the drawn value. The block that switches to protocol version 16
 //! receives no random beacon, so it refuses a create of such a type, which the next block
 //! accepts.
 
@@ -491,8 +491,8 @@ mod generated_from_random_tests {
         assert_eq!(rarity_of(&fixture.stored_cards()[0]), Some(rarity));
     }
 
-    /// The block that switches to protocol version 15 still runs under Tenderdash consensus
-    /// version 1, which sends it no random beacon, so nothing would draw the rarity there and
+    /// The block that switches to protocol version 16 still runs under Tenderdash consensus
+    /// version 2, which sends it no random beacon, so nothing would draw the rarity there and
     /// the card would keep its placeholder: the create is refused unpaid, before anything is
     /// written, and the same create is accepted in the next block, which receives a beacon.
     #[tokio::test]
@@ -503,7 +503,7 @@ mod generated_from_random_tests {
             .create_transition(CardFixture::card_data(None, None), 4)
             .await;
 
-        // The state of the block that switches from protocol version 14
+        // The state of the block that switches from protocol version 15
         let mut switching_block_state = PlatformState::clone(&fixture.platform.state.load());
         switching_block_state.set_switched_from_protocol_version(Some(14));
         let result = fixture.process_in_block(&transition, &switching_block_state);
@@ -513,11 +513,11 @@ mod generated_from_random_tests {
         assert_matches!(
             error,
             ConsensusError::BasicError(BasicError::RandomBeaconUnavailableError(e))
-                if e.protocol_version() == 15
+                if e.protocol_version() == 16
         );
         assert!(fixture.stored_cards().is_empty());
 
-        // The next block runs under consensus version 2: the same create goes through
+        // The next block runs under consensus version 3: the same create goes through
         assert_success(&fixture.process(&transition));
         let stored = fixture.stored_cards();
         assert_eq!(stored.len(), 1);

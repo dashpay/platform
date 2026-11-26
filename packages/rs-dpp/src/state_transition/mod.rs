@@ -1182,9 +1182,9 @@ fn batch_carries_a_version_1_token_transfer_or_mint(batch_transition: &BatchTran
 /// The active range of a batch carrying a token transfer or a token mint of format version 1
 /// (a random amount), among `versions`, the protocol versions in order: from the first whose
 /// table admits a random token amount (`random_token_amount` is `Some`, from protocol version
-/// 15, whose blocks settle the amounts), and `NO_VERSION` should none do. The tables decide it.
-/// Every table of protocol version 14 and earlier keeps it `None` (no binary of theirs decodes
-/// the format), so the start is never below 15.
+/// 16, whose blocks settle the amounts), and `NO_VERSION` should none do. The tables decide it.
+/// Every table of protocol version 15 and earlier keeps it `None` (no binary of theirs decodes
+/// the format), so the start is never below 16.
 fn random_token_amount_active_version_range(
     versions: &[PlatformVersion],
 ) -> RangeInclusive<ProtocolVersion> {
@@ -1293,10 +1293,10 @@ impl StateTransition {
             StateTransition::Batch(batch_transition) => {
                 // Version 1 of the token transfer and of the token mint (a random amount) is
                 // active from the first protocol version whose table admits a random token
-                // amount, 15, whose blocks settle the amounts from their random beacon.
-                // Binaries from before 15 cannot decode one, so an earlier version rejects the
+                // amount, 16, whose blocks settle the amounts from their random beacon.
+                // Binaries from before 16 cannot decode one, so an earlier version rejects the
                 // batch without charging, exactly as they do. Checked first: the range starts
-                // at 15 at the earliest, the later start, so it holds whatever else the batch
+                // at 16 at the earliest, the later start, so it holds whatever else the batch
                 // carries.
                 if batch_carries_a_version_1_token_transfer_or_mint(batch_transition) {
                     return random_token_amount_active_version_range(PLATFORM_VERSIONS);
@@ -2457,6 +2457,7 @@ impl StateTransition {
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let Some(signature) = self.signature() else {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
@@ -2472,15 +2473,19 @@ impl StateTransition {
         }
         let data = self.signable_bytes()?;
         let data_hash = double_sha(data);
-        signer::verify_hash_signature(&data_hash, signature.as_slice(), public_key_hash).map_err(
-            |e| {
-                ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(e.to_string()),
-                    ),
-                ))
-            },
-        )
+        ecdsa::verify_hash_signature(
+            &data_hash,
+            signature.as_slice(),
+            public_key_hash,
+            platform_version,
+        )?
+        .map_err(|e| {
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(e.to_string()),
+                ),
+            ))
+        })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -3414,6 +3419,7 @@ mod tests {
     #[cfg(feature = "state-transition-signing")]
     #[test]
     fn should_refuse_a_high_s_ecdsa_signature_at_every_protocol_version() {
+        use crate::dashcore::hashes::hash160;
         use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
         let bls = crate::bls::native_bls::NativeBlsModule;
@@ -3448,13 +3454,13 @@ mod tests {
             .negate();
         high_s[33..].copy_from_slice(&negated.to_secret_bytes());
         high_s[0] = 27 + ((high_s[0] - 27) ^ 1);
-        // A real twin: `dashcore` alone verifies it like the signature the key made.
-        crate::dashcore::signer::verify_data_signature(
-            &signed.signable_bytes().expect("signable bytes"),
+        // A real twin: key recovery, which takes any S, recovers the key from it.
+        crate::dashcore::signer::verify_hash_signature(
+            &double_sha(signed.signable_bytes().expect("signable bytes")),
             &high_s,
-            key.data().as_slice(),
+            hash160::Hash::hash(key.data().as_slice()).as_byte_array(),
         )
-        .expect("the high-S twin verifies once S is normalized");
+        .expect("key recovery accepts the high-S twin");
         let mut malleated = signed.clone();
         malleated.set_signature(BinaryData::new(high_s));
 
@@ -3478,6 +3484,91 @@ mod tests {
                 "protocol version {}: {error:?}",
                 platform_version.protocol_version
             );
+        }
+    }
+
+    // An ECDSA_HASH160 key is checked by recovering the public key, which takes any S and either
+    // header form. From protocol version 15 (`verify_hash_signature` 1) the two twins a third
+    // party can derive from a valid signature, the high-S one and the one whose header names an
+    // uncompressed key, are refused; protocol version 14 keeps accepting them for replay.
+    // Masternode votes, signed by an ECDSA_HASH160 VOTING key, take the same path.
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_refuse_an_ecdsa_hash160_signature_twin_from_protocol_version_15() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::tests::utils::{high_s_twin, uncompressed_header_twin};
+        use secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [0x21; 32];
+        let public_key = SecpPublicKey::from_secret_key(
+            &SecretKey::from_secret_bytes(private_key).expect("a valid ECDSA private key"),
+        );
+        let key_hash = ripemd160_sha256(&public_key.serialize());
+
+        let latest = PlatformVersion::latest();
+        let last_without_the_check = PlatformVersion::get(14).expect("protocol version 14");
+
+        for (transition, key_id, purpose, label) in [
+            (sample_transfer_st(), 11, Purpose::TRANSFER, "transfer"),
+            (
+                sample_masternode_vote_st(),
+                5,
+                Purpose::VOTING,
+                "masternode vote",
+            ),
+        ] {
+            let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                id: key_id,
+                purpose,
+                security_level: SecurityLevel::CRITICAL,
+                key_type: KeyType::ECDSA_HASH160,
+                data: key_hash.to_vec().into(),
+                ..Default::default()
+            }
+            .into();
+
+            let mut signed = transition;
+            signed
+                .sign_by_private_key(&private_key, KeyType::ECDSA_HASH160, &bls)
+                .expect("the key signs");
+            let signature = signed.signature().expect("signed").to_vec();
+
+            for platform_version in [latest, last_without_the_check] {
+                signed
+                    .verify_identity_signed_signature(&key, &bls, platform_version)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "{label}: the low-S signature verifies at protocol version {}: {e:?}",
+                            platform_version.protocol_version
+                        )
+                    });
+            }
+            for (twin, twin_label) in [
+                (high_s_twin(&signature), "high-S twin"),
+                (
+                    uncompressed_header_twin(&signature),
+                    "uncompressed header twin",
+                ),
+            ] {
+                let mut malleated = signed.clone();
+                malleated.set_signature(BinaryData::new(twin));
+                malleated
+                    .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                    .unwrap_or_else(|e| {
+                        panic!("{label}: protocol version 14 accepts the {twin_label}: {e:?}")
+                    });
+                let error = malleated
+                    .verify_identity_signed_signature(&key, &bls, latest)
+                    .expect_err("the twin is refused");
+                assert!(
+                    matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                    if matches!(&**consensus_error, ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    ))),
+                    "{label}, {twin_label}: {error:?}"
+                );
+            }
         }
     }
 
@@ -3703,7 +3794,7 @@ mod tests {
     }
 
     // Version 1 of the token transfer and of the token mint carries a random amount, which
-    // exists from protocol version 15, whose blocks settle the amounts. Software from before it
+    // exists from protocol version 16, whose blocks settle the amounts. Software from before it
     // cannot decode either, so new software must refuse the batch while an earlier version is
     // active; version 0 stays active everywhere its batch is.
     #[test]
@@ -3773,7 +3864,7 @@ mod tests {
             TokenMintTransitionV1::from_v0(mint_v0, Some(10)),
         )));
         for random in [random_transfer, random_mint] {
-            assert_eq!(random.active_version_range(), 15..=LATEST_VERSION);
+            assert_eq!(random.active_version_range(), 16..=LATEST_VERSION);
             let bytes =
                 PlatformSerializable::serialize_to_bytes(&random).expect("serialize succeeds");
             for platform_version in PLATFORM_VERSIONS {
@@ -3781,7 +3872,7 @@ mod tests {
                     &bytes,
                     platform_version,
                 );
-                if platform_version.protocol_version < 15 {
+                if platform_version.protocol_version < 16 {
                     assert!(
                         matches!(
                             decoded,
@@ -3807,17 +3898,17 @@ mod tests {
     }
 
     // `random_token_amount` decides it: the active range starts at the first protocol version
-    // whose table has it, 15, and is empty should no table have it.
+    // whose table has it, 16, and is empty should no table have it.
     #[test]
     fn should_activate_random_token_amounts_from_the_first_table_admitting_them() {
         let active = random_token_amount_active_version_range(PLATFORM_VERSIONS);
-        assert_eq!(active, 15..=LATEST_VERSION);
-        assert!(!active.contains(&14));
-        // No binary of protocol version 14 or earlier decodes the format, so none of their
+        assert_eq!(active, 16..=LATEST_VERSION);
+        assert!(!active.contains(&15));
+        // No binary of protocol version 15 or earlier decodes the format, so none of their
         // tables may ever admit it
         assert!(PLATFORM_VERSIONS
             .iter()
-            .filter(|platform_version| platform_version.protocol_version < 15)
+            .filter(|platform_version| platform_version.protocol_version < 16)
             .all(|platform_version| platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -3835,6 +3926,37 @@ mod tests {
             random_token_amount_active_version_range(&versions),
             NO_VERSION
         );
+    }
+
+    // A table admitting random token amounts decodes transitions whose execution reserves in
+    // the token marketplace escrow and whose amounts the block's settlement pays out, so the
+    // same protocol version's Drive tables must select the escrow and the settlement too
+    #[test]
+    fn should_admit_random_token_amounts_only_where_drive_reserves_and_settles_them() {
+        for platform_version in PLATFORM_VERSIONS {
+            if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .random_token_amount
+                .is_none()
+            {
+                continue;
+            }
+            let token = &platform_version.drive.methods.token;
+            assert!(
+                token.settle_random_token_amounts.is_some(),
+                "protocol version {} admits random token amounts it does not settle",
+                platform_version.protocol_version
+            );
+            assert!(
+                token.order_escrow.add_tokens.is_some()
+                    && token.order_escrow.fetch_tokens.is_some()
+                    && token.order_escrow.remove_tokens.is_some(),
+                "protocol version {} admits random token amounts without the escrow they are \
+                 reserved in",
+                platform_version.protocol_version
+            );
+        }
     }
 
     fn sample_format_1_batch_st_with_erase() -> StateTransition {

@@ -951,7 +951,8 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
             )
             .value
             .expect("expected the primary-key tree");
-        let Element::CountSumTree(_, count, sum, _) = element else {
+        // The tip jar's amounts may pass 2^27, so the tree keeps its sum in 128 bits
+        let Element::CountBigSumTree(_, count, sum, _) = element else {
             panic!("a countable summable type stores its documents in a count-sum tree");
         };
         (count, sum)
@@ -3221,6 +3222,9 @@ fn should_cover_applied_delete_fees_for_migrated_history_with_multi_epoch_contra
     let drive = setup_drive_with_initial_state_structure(None);
     let owner = [7; 32];
     let mut schema = json_document_to_json_value(FAMILY_HISTORY_CONTRACT).unwrap();
+    // A deletable contract, so the legacy writer flags the document's history
+    // tree with the document's own flags.
+    schema["config"] = serde_json::json!({"$formatVersion": "0", "canBeDeleted": true});
     let contract = DataContract::from_json(schema.clone(), false, old).unwrap();
     drive
         .apply_contract(
@@ -3300,13 +3304,13 @@ fn should_cover_applied_delete_fees_for_migrated_history_with_multi_epoch_contra
         )
         .value
         .unwrap();
-    let flags = StorageFlags::map_cow_some_element_flags_ref(tree.get_flags())
-        .unwrap()
-        .unwrap();
-    assert!(matches!(flags.as_ref(), StorageFlags::MultiEpochOwned(..)));
-    assert!(
-        tree.get_flags().as_ref().unwrap().len()
-            > StorageFlags::approximate_size(true, None) as usize
+    assert_eq!(
+        tree.get_flags(),
+        &StorageFlags::map_to_some_element_flags(Some(&StorageFlags::new_single_epoch(
+            0,
+            Some(owner)
+        ))),
+        "the migrated history tree keeps its legacy tree's flags, not the contract's"
     );
     assert_delete_estimate_covers_applied(
         &drive,

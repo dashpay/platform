@@ -135,6 +135,10 @@ where
             )?;
         }
 
+        if previous_protocol_version < 16 && platform_version.protocol_version >= 16 {
+            self.transition_to_version_16(block_info, transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -927,8 +931,7 @@ where
     /// trigger, re-store the DashPay contract whose v3 schema states the checks of
     /// both its data triggers, create the vote decisions trees that yes/no polls
     /// live in, insert the decision proposals contract whose proposals open those
-    /// polls, add the token marketplace: its escrow trees and the token market
-    /// contract, and reconcile the operator payouts of Platform's masternode list
+    /// polls, and reconcile the operator payouts of Platform's masternode list
     /// with Dash Core's.
     fn transition_to_version_15(
         &self,
@@ -957,7 +960,8 @@ where
 
         // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
         // which no contract update can turn a unique index into, so the `preorder` type is
-        // rebuilt and every preorder made before this block is deleted, unrefunded.
+        // rebuilt and every preorder made before this block is deleted, unrefunded. The
+        // `tombstone` type v3 adds is created as a contract update creates a type it adds.
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
 
         self.drive.apply_contract_rebuilding_document_types(
@@ -1007,9 +1011,20 @@ where
             platform_version,
         )?;
 
-        // Token marketplace escrow trees (v15 note 17): the BigSumTree under the Tokens tree of
-        // the tokens open listings hold, and the SumTree under the prefunded specialized
-        // balances of the credits open offers hold. The same helper builds them at genesis
+        Ok(())
+    }
+
+    /// When transitioning to version 16 we add the token marketplace (v16 note 1): its escrow
+    /// trees and the token market contract.
+    fn transition_to_version_16(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // Token order escrow trees: the BigSumTree under the Tokens tree of the tokens open
+        // listings hold, and the SumTree under the prefunded specialized balances of the credits
+        // open offers hold. The same helper builds them at genesis
         // (`create_initial_state_structure_v5`), last, so both node populations build the same
         // `[Tokens]` and `[PreFundedSpecializedBalances]` subtrees.
         self.drive
@@ -4583,29 +4598,109 @@ mod tests {
         );
     }
 
-    /// The token marketplace escrow trees are built by two paths that must coincide byte for
-    /// byte: `Drive::create_initial_state_structure_v5` at a v15 genesis and
-    /// `transition_to_version_15` on a chain upgraded from v14.
+    /// The token marketplace starts with protocol version 16: protocol version 15 creates
+    /// neither of its escrow trees nor the token market contract, at genesis or on the upgrade.
     #[test]
-    fn test_genesis_v15_and_upgrade_to_v15_build_identical_token_order_escrow_trees() {
+    fn should_not_create_the_token_marketplace_at_genesis_v15_or_on_the_upgrade_to_v15() {
         use drive::drive::prefunded_specialized_balances::PREFUNDED_BALANCES_FOR_TOKEN_ORDERS;
         use drive::drive::tokens::paths::TOKEN_ORDER_ESCROW_KEY;
 
         let platform_version_15 = PlatformVersion::get(15).expect("expected v15");
+        let token_market_id = SystemDataContract::TokenMarket.id();
 
-        let platform_a = TestPlatformBuilder::new()
+        let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
             .with_no_core_masternodes()
             .set_genesis_state();
 
-        let platform_b = TestPlatformBuilder::new()
+        let upgraded_to_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .with_no_core_masternodes()
             .set_genesis_state();
 
-        // A genuine v14 genesis has neither escrow tree yet.
+        let transaction = upgraded_to_15.drive.grove.start_transaction();
+        upgraded_to_15
+            .transition_to_version_15(
+                &mut PlatformState::clone(&upgraded_to_15.state.load()),
+                &BlockInfo::default(),
+                &transaction,
+                platform_version_15,
+            )
+            .expect("upgrade: transition_to_version_15 should succeed");
+
+        for (platform, transaction) in [(&born_at_15, None), (&upgraded_to_15, Some(&transaction))]
+        {
+            for (root, key) in [
+                (RootTree::Tokens as u8, TOKEN_ORDER_ESCROW_KEY),
+                (
+                    RootTree::PreFundedSpecializedBalances as u8,
+                    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS,
+                ),
+            ] {
+                let root_path: [&[u8]; 1] = [&[root]];
+                let escrow_root = platform.drive.grove.get(
+                    SubtreePath::from(&root_path[..]),
+                    &[key],
+                    transaction,
+                    &platform_version_15.drive.grove_version,
+                );
+                assert!(
+                    escrow_root.value.is_err(),
+                    "protocol version 15 must not hold the escrow tree {key} under root {root}; got {:?}",
+                    escrow_root.value
+                );
+            }
+
+            assert!(
+                platform
+                    .drive
+                    .fetch_contract(
+                        token_market_id.to_buffer(),
+                        None,
+                        None,
+                        transaction,
+                        platform_version_15,
+                    )
+                    .value
+                    .expect("expected to query the token market contract")
+                    .is_none(),
+                "protocol version 15 must not hold the token market contract"
+            );
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(token_market_id, platform_version_15)
+                .expect("expected the lookup to succeed")
+                .is_none());
+        }
+    }
+
+    /// The token marketplace escrow trees are built by two paths that must coincide byte for
+    /// byte: `Drive::create_initial_state_structure_v5` at a v16 genesis and
+    /// `transition_to_version_16` on a chain upgraded from v15.
+    #[test]
+    fn test_genesis_v16_and_upgrade_to_v16_build_identical_token_order_escrow_trees() {
+        use drive::drive::prefunded_specialized_balances::PREFUNDED_BALANCES_FOR_TOKEN_ORDERS;
+        use drive::drive::tokens::paths::TOKEN_ORDER_ESCROW_KEY;
+
+        let platform_version_16 = PlatformVersion::get(16).expect("expected v16");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .with_no_core_masternodes()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .with_no_core_masternodes()
+            .set_genesis_state();
+
+        // A genuine v15 genesis has neither escrow tree yet.
         {
             let txn = platform_b.drive.grove.start_transaction();
             for (root, key) in [
@@ -4620,25 +4715,29 @@ mod tests {
                     SubtreePath::from(&root_path[..]),
                     &[key],
                     Some(&txn),
-                    &platform_version_15.drive.grove_version,
+                    &platform_version_16.drive.grove_version,
                 );
                 assert!(
                     escrow_root.value.is_err(),
-                    "v14 genesis must not contain the escrow tree {key} under root {root}; got {:?}",
+                    "v15 genesis must not contain the escrow tree {key} under root {root}; got {:?}",
                     escrow_root.value
                 );
             }
         }
 
+        // Through the dispatcher a block runs on the first block of a version, so the test
+        // fails if the ladder stops reaching the rung for 16.
         let txn_b = platform_b.drive.grove.start_transaction();
         platform_b
-            .transition_to_version_15(
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_b.state.load(),
                 &mut PlatformState::clone(&platform_b.state.load()),
                 &BlockInfo::default(),
                 &txn_b,
-                platform_version_15,
+                15,
+                platform_version_16,
             )
-            .expect("upgrade: transition_to_version_15 should succeed");
+            .expect("upgrade: the protocol change from 15 to 16 should succeed");
 
         let roots = [
             RootTree::Tokens as u8,
@@ -4658,7 +4757,7 @@ mod tests {
         assert!(
             diffs.is_empty(),
             "CONSENSUS FORK: the [Tokens] or [PreFundedSpecializedBalances] subtree differs \
-             between a fresh genesis-v15 node and an in-place-upgraded v15 node.\n{}",
+             between a fresh genesis-v16 node and an in-place-upgraded v16 node.\n{}",
             diffs.join("\n"),
         );
 
@@ -4676,7 +4775,7 @@ mod tests {
                     drive::grovedb_path::SubtreePath::empty(),
                     &[root],
                     txn,
-                    &platform_version_15.drive.grove_version,
+                    &platform_version_16.drive.grove_version,
                 )
                 .unwrap()
                 .expect("expected to read the root element")
@@ -4686,7 +4785,7 @@ mod tests {
                 root_element(&platform_a, root, None),
                 root_element(&platform_b, root, Some(&txn_b)),
                 "CONSENSUS FORK: the Merk of root {root} is shaped differently on a fresh \
-                 genesis-v15 node and an in-place-upgraded one"
+                 genesis-v16 node and an in-place-upgraded one"
             );
         }
 
@@ -4706,7 +4805,7 @@ mod tests {
             crate::rpc::core::MockCoreRPCLike,
         >,
                             root: u8| {
-            let grove_version = &platform_version_15.drive.grove_version;
+            let grove_version = &platform_version_16.drive.grove_version;
             let query = drive::grovedb::PathQuery::new_single_key(vec![], vec![root]);
             let proof = platform
                 .drive
@@ -4725,23 +4824,23 @@ mod tests {
                 subtree_hash(&platform_a, root),
                 subtree_hash(&platform_b, root),
                 "CONSENSUS FORK: root {root} authenticates to a different hash on a fresh \
-                 genesis-v15 node and an in-place-upgraded one"
+                 genesis-v16 node and an in-place-upgraded one"
             );
         }
     }
 
     #[test]
-    fn should_insert_the_token_market_contract_on_transition_to_version_15() {
+    fn should_insert_the_token_market_contract_on_transition_to_version_16() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
         let platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(14)
+            .with_initial_protocol_version(15)
             .build_with_mock_rpc()
             .with_no_core_masternodes()
             .set_genesis_state();
 
-        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
-        let platform_version = PlatformVersion::get(15).expect("expected platform version 15");
+        let platform_version_15 = PlatformVersion::get(15).expect("expected platform version 15");
+        let platform_version = PlatformVersion::get(16).expect("expected platform version 16");
         let token_market_id = SystemDataContract::TokenMarket.id();
 
         let transaction = platform.drive.grove.start_transaction();
@@ -4754,22 +4853,24 @@ mod tests {
                     None,
                     None,
                     Some(&transaction),
-                    platform_version_14,
+                    platform_version_15,
                 )
                 .value
                 .expect("expected to query the token market contract")
                 .is_none(),
-            "the token market contract must not exist before transition_to_version_15"
+            "the token market contract must not exist before transition_to_version_16"
         );
 
         platform
-            .transition_to_version_15(
+            .perform_events_on_first_block_of_protocol_change(
+                &platform.state.load(),
                 &mut PlatformState::clone(&platform.state.load()),
                 &BlockInfo::default(),
                 &transaction,
+                15,
                 platform_version,
             )
-            .expect("expected the transition to succeed");
+            .expect("expected the protocol change from 15 to 16 to succeed");
 
         let stored = platform
             .drive
@@ -4782,7 +4883,7 @@ mod tests {
             )
             .value
             .expect("expected to fetch the token market contract")
-            .expect("the token market contract must exist after transition_to_version_15");
+            .expect("the token market contract must exist after transition_to_version_16");
 
         assert_eq!(stored.contract.id(), token_market_id);
         assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));

@@ -28,7 +28,7 @@ pub struct TokenTransferTransitionBuilder {
     pub settings: Option<PutSettings>,
     pub user_fee_increase: Option<UserFeeIncrease>,
     pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
-    /// The least the transfer moves when its amount is random (protocol version 15); see
+    /// The least the transfer moves when its amount is random (protocol version 16); see
     /// [`Self::with_random_minimum_amount`]
     pub random_minimum_amount: Option<TokenAmount>,
 }
@@ -164,7 +164,7 @@ impl TokenTransferTransitionBuilder {
         self
     }
 
-    /// Makes the transfer move a random amount (protocol version 15): the recipient receives
+    /// Makes the transfer move a random amount (protocol version 16): the recipient receives
     /// an amount drawn uniformly from `random_minimum_amount` to the builder's amount, both
     /// included, from the random beacon of the block that carries the transfer. The sender
     /// must hold the builder's amount, which the block takes before the draw; what the draw

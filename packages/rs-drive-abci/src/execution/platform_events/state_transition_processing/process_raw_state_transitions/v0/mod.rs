@@ -168,13 +168,13 @@ where
         let mut block_credit_mints: Credits = 0;
 
         // Whether the block collects what its transitions ask its random beacon for: only from
-        // protocol version 15, whose `apply_random_beacon` draws the values once Tenderdash
+        // protocol version 16, whose `apply_random_beacon` draws the values once Tenderdash
         // hands the beacon over. Every protocol version selects this generation, and the
-        // collection is inert before 15 twice over: nothing is collected while the step is
+        // collection is inert before 16 twice over: nothing is collected while the step is
         // `None`, which every earlier table sets, and what is collected lives only on the
         // in-memory processing result and block execution context, which are neither
-        // serialized nor hashed. The block that switches to 15 receives no beacon, as Tenderdash
-        // still runs it under consensus version 1: the batch transformer refuses there whatever
+        // serialized nor hashed. The block that switches to 16 receives no beacon, as Tenderdash
+        // still runs it under consensus version 2: the batch transformer refuses there whatever
         // would ask the beacon for a value (`random_beacon_gate`), so all it collects are the
         // creates of types that draw nothing, which no draw would change.
         let collect_random_requests = platform_version
@@ -489,7 +489,7 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
     }
 }
 
-/// What a state transition asks the block's random beacon for (protocol version 15), in the
+/// What a state transition asks the block's random beacon for (protocol version 16), in the
 /// order of its transitions: every document a batch creates, whose `sys.random` properties the
 /// draw fills (it leaves alone a document whose type declares none), and every token transfer
 /// or mint of a batch with a random minimum amount, whose reservation the settlement pays out.

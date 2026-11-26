@@ -220,11 +220,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // Early-exit if the account already exists — keeps the recurring
         // sweep's re-registration a true no-op (no duplicate persistence
         // round, no managed-state churn).
+        //
+        // Only on this handle's wallet generation, checked under the guard
+        // held to the end: a wallet removed, or re-created under this id,
+        // since the handle was taken is given no account, stored or in
+        // memory.
         {
             use key_wallet::account::account_collection::DashpayAccountKey;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let info = self.current_wallet_info_mut(&mut wm)?;
             let key = DashpayAccountKey {
                 index: account_index,
                 user_identity_id: our_identity_id.to_buffer(),
@@ -255,7 +258,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // DashPay accounts are funds-bearing; use the typed
         // `insert_funds_bearing_account` API exposed by the post-split
         // collection rather than wrapping in `OwnedManagedCoreAccount`.
-        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account)
+            .map_err(|source| PlatformWalletError::DashpayAccountBuild {
+                account_type,
+                source,
+            })?;
 
         // Persist the registration BEFORE the in-memory inserts: a store
         // failure aborts with nothing mutated, while an insert failure
@@ -273,9 +280,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 ))
             })?;
 
-        let (wallet, info) = wm
-            .get_wallet_mut_and_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let (wallet, info) = self.current_wallet_and_info_mut(&mut wm)?;
 
         // Mirror the restored shape: the immutable `wallet.accounts`
         // collection holds the Account (like `build_wallet_start_state`
@@ -482,13 +487,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let contact_identity_id = contact_identity.id();
 
         // --- 1. Early-exit if the external account already exists. ---
+        //
+        // On this handle's wallet generation only: a wallet re-created under
+        // this id since may hold an account of its own, which would answer
+        // for this registration and clear a caller's queued one.
         {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                Transient(PlatformWalletError::WalletNotFound(hex::encode(
-                    self.wallet_id,
-                )))
-            })?;
+            let info = self.current_wallet_info(&wm).map_err(Transient)?;
             use key_wallet::account::account_collection::DashpayAccountKey;
             let key = DashpayAccountKey {
                 index: account_index,
@@ -594,18 +599,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // DashpayExternalAccount is funds-bearing; insert via the
         // typed `insert_funds` API after the upstream split.
-        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        // An xpub that cannot derive the account's address pool stays unusable on every retry.
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account)
+            .map_err(|source| {
+                Permanent(PlatformWalletError::DashpayAccountBuild {
+                    account_type,
+                    source,
+                })
+            })?;
 
         #[cfg(test)]
         registration_rendezvous::wait(&contact_identity_id).await;
         let mut wm = self.wallet_manager.write().await;
-        let (wallet, info) = wm
-            .get_wallet_mut_and_info_mut(&self.wallet_id)
-            .ok_or_else(|| {
-                Transient(PlatformWalletError::WalletNotFound(hex::encode(
-                    self.wallet_id,
-                )))
-            })?;
+        // Only on this handle's wallet generation, under the guard held to
+        // the end: the decrypt above ran with no lock, and a wallet
+        // re-created under this id since is given no account.
+        let (wallet, info) = self
+            .current_wallet_and_info_mut(&mut wm)
+            .map_err(Transient)?;
 
         // Re-check under the guard that serializes registrations: the early
         // check above ran under a read guard that was released for the

@@ -48,6 +48,7 @@ import java.util.Date
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.voting.DecisionProposal
 import org.dashfoundation.dashsdk.voting.DecisionProposalParams
@@ -60,6 +61,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDate
@@ -93,9 +95,9 @@ fun DecisionProposalsScreen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
-    val identities by container.database.identityDao()
-        .observeByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var listing by remember { mutableStateOf(ProposalListing.OPEN) }
     var owner by remember { mutableStateOf<IdentityEntity?>(null) }
@@ -350,11 +352,20 @@ class CreateDecisionProposalViewModel : ViewModel() {
         private set
 
     /**
-     * Run [create], which returns the created proposal's id, unless a create is running or
-     * one already succeeded: the form is never submitted twice.
+     * The wallet's message when the create's outcome is unconfirmed
+     * ([DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]): the proposal may exist
+     * and its fund may be paid. The form is held from then on, as the other create forms
+     * hold after an unconfirmed outcome, so that it is not filed and paid for twice.
+     */
+    var unconfirmedMessage by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Run [create], which returns the created proposal's id, unless a create is running, one
+     * already succeeded or one's outcome is unconfirmed: the form is never submitted twice.
      */
     fun submit(create: suspend () -> String) {
-        if (isSubmitting || createdProposalId != null) return
+        if (isSubmitting || createdProposalId != null || unconfirmedMessage != null) return
         isSubmitting = true
         error = null
         viewModelScope.launch {
@@ -362,6 +373,8 @@ class CreateDecisionProposalViewModel : ViewModel() {
                 createdProposalId = create()
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
+                unconfirmedMessage = e.message ?: "The create's outcome is unconfirmed"
             } catch (e: Exception) {
                 error = e.message ?: "Create failed"
             } finally {
@@ -390,13 +403,14 @@ fun CreateDecisionProposalScreen(
 ) {
     val appState = LocalAppState.current
     val container = LocalAppContainer.current
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     // Identities on the active network held by a loaded wallet, so the
     // manager's signer can sign for them.
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var owner by remember { mutableStateOf<IdentityEntity?>(null) }
     LaunchedEffect(identities) {
@@ -410,6 +424,9 @@ fun CreateDecisionProposalScreen(
     var endsInDays by rememberSaveable { mutableStateOf("14") }
 
     val isSubmitting = submission.isSubmitting
+    val unconfirmedMessage = submission.unconfirmedMessage
+    // The fields take no input while a create runs or after one whose outcome is unconfirmed.
+    val formEnabled = !isSubmitting && unconfirmedMessage == null
     // System Back would pop the entry and clear the submission with it; the toolbar Back
     // is disabled for the same reason.
     BackHandler(enabled = isSubmitting) {}
@@ -470,7 +487,7 @@ fun CreateDecisionProposalScreen(
                         selected = owner ?: identities.first(),
                         optionLabel = { it.displayLabel() },
                         testTag = "createDecisionProposal.ownerPicker",
-                        enabled = !isSubmitting,
+                        enabled = formEnabled,
                         onSelected = { owner = it },
                     )
                 }
@@ -488,7 +505,7 @@ fun CreateDecisionProposalScreen(
                     onValueChange = { title = it },
                     label = { Text("Title: the question, in one line") },
                     singleLine = true,
-                    enabled = !isSubmitting,
+                    enabled = formEnabled,
                     modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.title"),
                 )
                 OutlinedTextField(
@@ -496,7 +513,7 @@ fun CreateDecisionProposalScreen(
                     onValueChange = { description = it },
                     label = { Text("Description: what a yes and a no mean") },
                     minLines = 3,
-                    enabled = !isSubmitting,
+                    enabled = formEnabled,
                     modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.description"),
                 )
                 OutlinedTextField(
@@ -504,7 +521,7 @@ fun CreateDecisionProposalScreen(
                     onValueChange = { url = it },
                     label = { Text("URL where it is discussed (optional)") },
                     singleLine = true,
-                    enabled = !isSubmitting,
+                    enabled = formEnabled,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.url"),
                 )
@@ -522,7 +539,7 @@ fun CreateDecisionProposalScreen(
                     onValueChange = { passPercent = it },
                     label = { Text("Passes when yes is more than (% of yes plus no)") },
                     singleLine = true,
-                    enabled = !isSubmitting,
+                    enabled = formEnabled,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.passPercent"),
                 )
@@ -531,7 +548,7 @@ fun CreateDecisionProposalScreen(
                     onValueChange = { turnoutPercent = it },
                     label = { Text("Minimum turnout (% of total voting power)") },
                     singleLine = true,
-                    enabled = !isSubmitting,
+                    enabled = formEnabled,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.turnoutPercent"),
                 )
@@ -540,7 +557,7 @@ fun CreateDecisionProposalScreen(
                     onValueChange = { endsInDays = it },
                     label = { Text("Voting ends in (days from now)") },
                     singleLine = true,
-                    enabled = !isSubmitting,
+                    enabled = formEnabled,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.endDate"),
                 )
@@ -549,18 +566,39 @@ fun CreateDecisionProposalScreen(
                         "no must reach the turnout percent of the masternodes' total voting " +
                         "power. Platform accepts a pass percent of 50 to 80, a turnout of 0 " +
                         "to 50, and an end date one to four weeks after the block that " +
-                        "creates the proposal. The rule never changes.",
+                        "creates the proposal: an end of 7 or 28 days is moved up to two " +
+                        "hours inward so that block accepts it. The rule never changes.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
+            if (unconfirmedMessage != null) {
+                FormSection(title = "Outcome Unknown") {
+                    Text(
+                        "The create may have gone through, with the decision proposal fund " +
+                            "paid. Do not create it again. The proposal can take a while to " +
+                            "appear under Mine, and it not being listed there does not mean " +
+                            "the create failed, so it is no reason to try again.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("createDecisionProposal.unconfirmed"),
+                    )
+                    Text(
+                        unconfirmedMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             SubmitButton(
                 text = if (isSubmitting) "Broadcasting…" else "Create / Broadcast",
                 isLoading = isSubmitting,
-                enabled = manager != null && owner != null,
+                enabled = sdk != null && manager != null && owner != null &&
+                    unconfirmedMessage == null,
                 modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.submitButton"),
             ) {
+                val currentSdk = sdk ?: return@SubmitButton
                 val mgr = manager ?: return@SubmitButton
                 val proposer = owner ?: return@SubmitButton
                 // Form parsing only: the limits on these values are Platform's.
@@ -576,15 +614,18 @@ fun CreateDecisionProposalScreen(
                     submission.error = "The proposer's wallet is not loaded in the wallet manager."
                     return@SubmitButton
                 }
-                val params = DecisionProposalParams(
-                    title = title,
-                    description = description,
-                    url = url.trim().ifEmpty { null },
-                    passPercent = pass,
-                    minimumTurnoutPercent = turnout,
-                    endDateMs = System.currentTimeMillis() + days * MILLIS_PER_DAY,
-                )
+                val requestedEndDateMs = System.currentTimeMillis() + days * MILLIS_PER_DAY
                 submission.submit {
+                    // Rust moves an end of exactly 7 or 28 days inside the window Platform
+                    // measures from the block, which comes seconds after now.
+                    val params = DecisionProposalParams(
+                        title = title,
+                        description = description,
+                        url = url.trim().ifEmpty { null },
+                        passPercent = pass,
+                        minimumTurnoutPercent = turnout,
+                        endDateMs = currentSdk.decisionProposals.endDate(requestedEndDateMs),
+                    )
                     mgr.decisionProposals.create(
                         walletHandle = wallet.handle,
                         ownerId = proposer.identityId,

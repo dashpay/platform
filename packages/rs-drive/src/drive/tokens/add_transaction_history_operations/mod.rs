@@ -16,7 +16,7 @@ mod v0;
 impl Drive {
     /// Adds token transaction history: the history document of `event`, under the id
     /// `token_history_document_id` gives it. `random_range` is the least and the most a random
-    /// transfer or mint moves (protocol version 15), whose id also hashes them, and `None` for
+    /// transfer or mint moves (protocol version 16), whose id also hashes them, and `None` for
     /// every other event, whose id is the one it always had.
     #[allow(clippy::too_many_arguments)]
     pub fn add_token_transaction_history_operations(

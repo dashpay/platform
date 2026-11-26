@@ -251,7 +251,7 @@ impl SystemDataContracts {
             SystemDataContract::DecisionProposals => {
                 DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION
             }
-            // Written to state by the transition to protocol version 15.
+            // Written to state by the transition to protocol version 16.
             SystemDataContract::TokenMarket => TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION,
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
@@ -513,19 +513,30 @@ mod tests {
     fn should_serve_token_market_only_from_its_activation_version() {
         let contracts = SystemDataContracts::new();
 
-        assert!(contracts
-            .find_by_id(SystemDataContract::TokenMarket.id(), platform_version(14))
-            .expect("expected the pre-activation lookup to succeed")
-            .is_none());
+        let token_marketplace_version =
+            platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION);
+
+        for before in [14, TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1] {
+            assert!(contracts
+                .find_by_id(
+                    SystemDataContract::TokenMarket.id(),
+                    platform_version(before)
+                )
+                .expect("expected the pre-activation lookup to succeed")
+                .is_none());
+        }
         assert!(contracts
             .find_by_id(
                 SystemDataContract::TokenMarket.id(),
-                platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+                token_marketplace_version
             )
-            .expect("expected the v15 lookup to succeed")
+            .expect("expected the lookup from the activation version to succeed")
             .is_some());
         assert!(contracts
-            .find_by_id(SystemDataContract::TokenMarket.id(), platform_version(14))
+            .find_by_id(
+                SystemDataContract::TokenMarket.id(),
+                platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1)
+            )
             .expect("an old-version lookup after materialization must succeed")
             .is_none());
     }

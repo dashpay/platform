@@ -146,7 +146,7 @@ Your software version: {}, latest supported protocol version: {}."#,
                 // the version it switches from (`tenderdash_consensus_platform_version`). In
                 // memory only: nothing saves or hashes it, and `update_state_cache` clears it
                 // when the block is committed. Only the random beacon gate of the batch
-                // transformer reads it, which is inert before protocol version 15.
+                // transformer reads it, which is inert before protocol version 16.
                 block_platform_state.set_switched_from_protocol_version(Some(old_protocol_version));
 
                 let last_block_time_ms = platform_state.last_committed_block_time_ms();

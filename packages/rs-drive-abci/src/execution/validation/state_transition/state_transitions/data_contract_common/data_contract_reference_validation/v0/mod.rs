@@ -1437,7 +1437,7 @@ mod tests {
 
     #[test]
     fn should_refuse_a_where_entry_comparing_a_property_drawn_at_random() {
-        // Protocol version 15 admits `sys.random.uniform`
+        // Protocol version 16 admits `sys.random.uniform`
         let platform_version = PlatformVersion::latest();
         let contract = DataContract::from_value(
             platform_value!({

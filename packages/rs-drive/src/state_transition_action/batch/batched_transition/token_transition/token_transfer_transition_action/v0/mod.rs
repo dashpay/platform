@@ -33,7 +33,7 @@ pub struct TokenTransferTransitionActionV0 {
         DerivationEncryptionKeyIndex,
         Vec<u8>,
     )>,
-    /// The least the transfer moves when its amount is random (protocol version 15): the
+    /// The least the transfer moves when its amount is random (protocol version 16): the
     /// recipient receives an amount drawn from this to `amount` from the block's random beacon,
     /// and the rest goes back to the sender (`Drive::settle_random_token_amounts`)
     pub random_minimum_amount: Option<TokenAmount>,

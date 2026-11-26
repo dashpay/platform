@@ -26,6 +26,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [What a document costs (`documentCreateCost`)](#what-a-document-costs-documentcreatecost)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
+- [Giving up a DPNS name](#giving-up-a-dpns-name)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -120,7 +121,7 @@ Static helpers are also exported:
 
 - `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
-- `sdk.version()` — the protocol version this SDK currently uses. Unpinned SDKs seed at a per-network floor (13 on mainnet, testnet and local; 14 on devnets) and ratchet upward from verified response metadata. On mainnet and testnet the Wasm SDK persists the learned version in `localStorage` under `dash-sdk.protocol-version.<network>` and seeds the next SDK with it, so the first proved request of a later page load already runs at the network's version. Passing `version` pins the SDK and disables both the ratchet and the persistence.
+- `sdk.version()` — the protocol version this SDK currently uses. Unpinned SDKs start at protocol version 14 on every network and ratchet upward from verified response metadata. On mainnet and testnet the Wasm SDK saves the learned version in `localStorage` under `dash-sdk.protocol-version.<network>`. On the next page load a saved version replaces the default only if this build knows it and it is above the default. A restored version can still be behind the network after an upgrade, until the next verified response raises it. A network still on protocol version 13 (a local one on an older release) needs `version: 13`: the default is above it and is never lowered. Passing `version` pins the SDK and disables both the ratchet and the persistence.
 - Data contracts fetched through the SDK are cached in the trusted or verified context and, on mainnet and testnet, persisted in `localStorage` under `dash-sdk.contracts.<network>` (`dash-sdk.contracts.<network>.verified` for a verified SDK, so it never starts from contracts proved with trusted keys). The next SDK seeds its cache from that store, so the first proved document query of a later page load needs no contract round trip. A document stamped with a newer `$contractVersion` than the cached contract drops the entry and refetches the contract; `removeCachedContract` clears both the cache and the stored copy.
 - `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
 - `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
@@ -137,7 +138,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.documents`](src/documents/facade.ts) | Query, create, replace, delete, and transfer documents; aggregate `count` / `sum` / `average` over indexed fields; `ranked` top-K and `having` range queries over ranked indexes |
 | [`sdk.contracts`](src/contracts/facade.ts) | Fetch, publish, and update data contracts |
 | [`sdk.tokens`](src/tokens/facade.ts) | Mint, burn, transfer, freeze tokens and query balances |
-| [`sdk.dpns`](src/dpns/facade.ts) | Register and resolve Dash Platform names |
+| [`sdk.dpns`](src/dpns/facade.ts) | Register and resolve Dash Platform names; delete or tombstone a name its owner gives up |
 | [`sdk.epoch`](src/epoch/facade.ts) | Query epoch information and evonode proposed blocks |
 | [`sdk.protocol`](src/protocol/facade.ts) | Protocol version upgrade state and voting |
 | [`sdk.stateTransitions`](src/state-transitions/facade.ts) | Broadcast and wait for state transitions |
@@ -148,6 +149,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.encryptedFor`](src/encrypted-for/facade.ts) | Encrypt and decrypt the byte properties a document type declares `encryptedFor`, for any contract |
 | [`sdk.moderationCharters`](src/moderation-charters/facade.ts) | Read a contract's seated charter, its team, proposals and join requests; build join and resignation requests |
 | [`sdk.decisionProposals`](src/decision-proposals/facade.ts) | Build, edit, list and read decision proposals; read their polls and vote on them as a masternode |
+| [`sdk.decisionProposals.multipleChoice`](src/decision-proposals/multiple-choice-facade.ts) | Build, edit, list and read multiple choice proposals and their choices; read the vote among the choices and vote in it as a masternode |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
 
@@ -579,6 +581,64 @@ const answer = await sdk.decisionProposals.masternodeVote(proTxHash, proposal.id
 
 `sdk.voting.masternodeVote` also answers a yes/no poll as `sdk.voting.votePollsByEndDate` lists it, with `voteChoice: 'yes' | 'no' | 'abstain'`.
 
+### Multiple choice proposals
+
+A question with more than two answers is a `multipleChoiceProposal` document of the same contract, and each answer is a `choice` document. The choices contend in a masternode vote that the first choice opens, and the one with the most votes is kept. `sdk.decisionProposals.multipleChoice` builds both for `sdk.documents`, and reads and answers the vote by the proposal's id. A choice is named by its document id, in a vote and in the vote's state:
+
+```ts
+const multipleChoice = sdk.decisionProposals.multipleChoice;
+
+// Described by a document of an elected-moderation contract, at a url, or both.
+// The owner pays the processing fee on top of the fees; the create does not state it.
+const fee = await multipleChoice.processingFee(); // 0.2 Dash, in credits
+const draft = await multipleChoice.build({
+  ownerId: identity.id,
+  title: 'Which block size?',
+  descriptionDocument: { id: postId, contractId: forumContractId, documentType: 'post' },
+  url: 'https://forum.dash.org/t/block-size',
+  open: true, // anyone may enter choices; false leaves them to the owner
+});
+const proposal = await sdk.documents.create({ document: draft, identityKey, signer });
+
+// The title, url and description document can be edited for two hours; `open` never changes
+const edited = await multipleChoice.buildEdit(proposal, { title: 'Which block size, then?' });
+await sdk.documents.replace({ document: edited, identityKey, signer });
+
+// A choice pays the contest fund, which the create states itself
+const fund = await multipleChoice.choiceFund(proposal.id); // 0.1 Dash until the vote holds 250 choices
+const choiceDraft = await multipleChoice.buildChoice({
+  ownerId: identity.id,
+  proposalId: proposal.id,
+  title: 'Double it',
+  description: 'Twice the size it is today.',
+});
+const choice = await sdk.documents.create({ document: choiceDraft, identityKey, signer });
+
+// An identity's proposals; every proposal, newest first
+const mine = await multipleChoice.byOwner({ ownerId: identity.id });
+const latest = await multipleChoice.byCreatedAt({ limit: 10 });
+
+// The vote: every choice with its tally while it runs, its result once it ended
+const vote = await multipleChoice.voteState(proposal.id);
+for (const [choiceId, { choice: document, voteTally }] of vote.choices) {
+  console.log(choiceId, document?.properties.title, voteTally);
+}
+if (vote.result) console.log(vote.result.keptChoiceId?.toBase58());
+const kept = await multipleChoice.keptChoice(proposal.id);
+
+// A masternode answers with a choice's document id, 'abstain' or 'noneOfTheChoices'
+await multipleChoice.vote({
+  masternodeProTxHash: proTxHash,
+  proposalId: proposal.id,
+  voteChoice: { choiceId: choice.id },
+  votingKey,
+  signer: votingSigner,
+});
+const given = await multipleChoice.masternodeVote(proTxHash, proposal.id);
+```
+
+`multipleChoice.votePoll(proposal.id)` gives the vote as a vote poll for `sdk.voting` and the contested resource queries.
+
 ## Immutable properties (`immutable`)
 
 From protocol version 14 a mutable document type can freeze some of its top-level properties with the doctype-level `immutable` list, while the rest of the document stays replaceable. An entry naming a property freezes it at creation. An entry `{ property, when }` freezes it for any replace its condition holds for: the condition takes the grammar of a `propertyConstraints` rule, is judged on the document the replace writes (whose `$updatedAt` is the replace's block time), and reads the stored document through `$old.` paths.
@@ -805,6 +865,30 @@ const next = await sdk.documents.composite({
 ```
 
 `limit` on the page is required (1–100) and bounds every derived clause (at most 100 values reach a sub-query). A sub-query may bind the page (`bind.source: 'page'`, the default) or an earlier `documents` sub-query by index (`bind.source: 1`), so quoted posts can in turn pull their authors' profiles. Every sub-query walks in the page's direction: leave a lookup's ordering out and it inherits that direction, while an ordering that disagrees with the page is refused. Sub-results come back in request order as `{ kind: 'documents', documents }` (a join in first-appearance order of the page's ids, a lookup or sibling in query order) or `{ kind: 'counts', counts }` (a `Map` keyed by the bound value's base58 identifier; a value with no entry counts zero). There is no cursor on this surface; paginate with a range clause on the page's ordering property. `sdk.documents.compositeWithProof(...)` returns the same result with the metadata and proof envelope attached.
+
+## Giving up a DPNS name
+
+From protocol version 15 the identity holding a DPNS name can throw it away, one of two ways:
+
+```ts
+// Delete: the name is free again, anybody may register it.
+// Resolves to the id of the deleted domain document.
+const deletedId = await sdk.dpns.deleteName({ name: 'a-name-i-no-longer-want.dash', identityKey, signer });
+
+// Tombstone: the name is deleted and nobody can register it again.
+// Resolves to the tombstone document the network stored.
+const tombstone = await sdk.dpns.tombstoneName({ name: 'alice.dash', identity, identityKey, signer });
+
+await sdk.dpns.isNameTombstoned('alice.dash'); // true
+await sdk.dpns.isNameAvailable('alice');       // false: a tombstoned name is not available
+```
+
+`name` is the label (`alice`) or the full name (`alice.dash`). In both calls the owner is refunded what is left of the name's storage fee; a tombstone also pays for its own storage.
+
+- **A contested name can only be tombstoned.** A name whose normalized label is 3 to 19 characters of `a-z`, `0`, `1` and `-` is contested (`sdk.dpns.isContestedUsername(label)`): a masternode vote awards it, and the network refuses a delete of it. `deleteName` rejects such a name before anything is broadcast.
+- **A tombstone can not be undone by anyone.** Neither its owner nor anybody else can delete a tombstone. The DPNS contract says only that a tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO. Ask the user to confirm before calling `tombstoneName`.
+
+Before protocol version 15 both calls are refused, and no name is tombstoned: `isNameTombstoned` answers false when its read succeeds. At any protocol version a read that fails rejects; it is never answered as false.
 
 ## Contributing
 

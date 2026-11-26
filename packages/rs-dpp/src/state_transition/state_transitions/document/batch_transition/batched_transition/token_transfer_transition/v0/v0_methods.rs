@@ -27,7 +27,7 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     fn set_amount(&mut self, amount: u64);
 
     /// The least the transfer moves when its amount is random (format version 1, protocol
-    /// version 15): the recipient receives an amount drawn uniformly from it to `amount`, both
+    /// version 16): the recipient receives an amount drawn uniformly from it to `amount`, both
     /// included. `None` for a transfer of exactly `amount`, which every version 0 transfer is.
     /// Set on the versioned
     /// [`TokenTransferTransition`](crate::state_transition::batch_transition::TokenTransferTransition),

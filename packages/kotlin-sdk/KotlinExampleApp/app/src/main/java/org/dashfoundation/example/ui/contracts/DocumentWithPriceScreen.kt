@@ -34,19 +34,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
-import org.dashfoundation.example.services.IdentityKeys
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.formatCredits
@@ -70,10 +69,12 @@ import org.dashfoundation.example.util.truncateMiddle
  *   `DocumentTransactions.purchase` (`platform_wallet_document_purchase`);
  *   consensus rejects self-buys, so the UI gates the owner out of it.
  *
- * The signing key resolves like iOS `DocumentActionRunner.resolveSigning`:
- * an enabled AUTHENTICATION key at or above the document type's
- * `signatureSecurityLevelRequirement` (default HIGH) whose private half is
- * in the Keystore.
+ * The submits resolve only the acting identity's wallet (like iOS
+ * `DocumentActionRunner.resolveWallet`); the Rust wallet picks the signing
+ * key: the first AUTHENTICATION key the document type's security level and
+ * the key's contract bounds allow that the signer can sign with. On Android
+ * the signer holds an identity's keys once persistence has stored them
+ * (a mnemonic restore derives and stores them then).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,9 +94,9 @@ fun DocumentWithPriceScreen(
     val contractIdBytes = remember(contractIdHex) { contractIdHex.hexToBytes() }
     val contractIdBase58 = remember(contractIdHex) { Base58.encode(contractIdBytes) }
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var actingIdentity by remember { mutableStateOf<IdentityEntity?>(null) }
     LaunchedEffect(identities) {
         if (actingIdentity == null) actingIdentity = identities.firstOrNull()
@@ -283,7 +284,7 @@ fun DocumentWithPriceScreen(
                             fail = { error = it },
                             scope = scope,
                         ) {
-                            val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                            val (wallet, mgr) = resolveWallet(container, owner)
                             mgr.documentTransactions.setPrice(
                                 walletHandle = wallet,
                                 ownerId = owner.identityId,
@@ -291,7 +292,6 @@ fun DocumentWithPriceScreen(
                                 documentType = typeName,
                                 documentId = docIdBytes,
                                 price = newPrice,
-                                signingKeyId = signingKeyId,
                                 signerHandle = mgr.signerHandle,
                             )
                             successMessage = "Price updated on-chain."
@@ -327,7 +327,7 @@ fun DocumentWithPriceScreen(
                             fail = { error = it },
                             scope = scope,
                         ) {
-                            val (wallet, mgr, signingKeyId) = resolveSigning(container, purchaser)
+                            val (wallet, mgr) = resolveWallet(container, purchaser)
                             mgr.documentTransactions.purchase(
                                 walletHandle = wallet,
                                 purchaserId = purchaser.identityId,
@@ -335,7 +335,6 @@ fun DocumentWithPriceScreen(
                                 documentType = typeName,
                                 documentId = docIdBytes,
                                 price = purchasePrice,
-                                signingKeyId = signingKeyId,
                                 signerHandle = mgr.signerHandle,
                             )
                             successMessage = "Purchase confirmed — you are the new owner."
@@ -370,55 +369,32 @@ internal fun submitDocumentTransaction(
     }
 }
 
-/** `(walletHandle, manager, signingKeyId)` for [identity]'s submits. */
-internal data class ResolvedSigning(
+/** `(walletHandle, manager)` for [identity]'s submits. */
+internal data class ResolvedWallet(
     val walletHandle: Long,
     val manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
-    val signingKeyId: Int,
 )
 
 /**
- * Resolve the wallet handle + AUTHENTICATION signing key for [identity]
- * — the Kotlin counterpart of `DocumentActionRunner.resolveSigning`.
- * Throws with user-facing copy when the identity has no loaded wallet or
- * no qualifying key.
+ * Resolve the wallet handle [identity]'s document submits go through — the
+ * Kotlin counterpart of `DocumentActionRunner.resolveWallet`. No signing key
+ * is picked here: the Rust wallet selects the AUTHENTICATION key the
+ * document type's security level and the key's contract bounds allow and
+ * the signer can sign with.
+ * Throws with user-facing copy when the identity has no loaded wallet.
  */
-internal suspend fun resolveSigning(
+internal fun resolveWallet(
     container: org.dashfoundation.example.di.AppContainer,
     identity: IdentityEntity,
-): ResolvedSigning {
+): ResolvedWallet {
     val manager = container.walletManagerStore.activeManager.value
         ?: throw IllegalStateException("Wallet manager not active")
     val walletIdHex = identity.walletId?.toHex()
         ?: throw IllegalStateException("Identity has no wallet linkage")
     val wallet = manager.wallets.value[walletIdHex]
         ?: throw IllegalStateException("Wallet not loaded in the wallet manager")
-
-    val identityBase58 = Base58.encode(identity.identityId)
-    val keys = container.database.publicKeyDao()
-        .observeByIdentityId(identityBase58).first()
-        .ifEmpty {
-            container.database.publicKeyDao()
-                .observeByIdentityId(identity.identityId.toHex()).first()
-        }
-    // Pre-filter to keys whose private half is in the Keystore (suspend
-    // reads), then rank purely.
-    val keysWithPrivate = keys.filter {
-        container.walletStorage.hasPrivateKey(it.publicKeyData.toHex())
-    }
-    val signingKeyId = IdentityKeys.findAuthenticationSigningKeyId(
-        keys = keysWithPrivate,
-        minimumSecurityLevel = SIGNING_MINIMUM_LEVEL_HIGH,
-        hasPrivateKey = { true },
-    ) ?: throw IllegalStateException(
-        "No enabled HIGH-or-stronger authentication key with a stored " +
-            "private key on this identity",
-    )
-    return ResolvedSigning(wallet.handle, manager, signingKeyId)
+    return ResolvedWallet(wallet.handle, manager)
 }
-
-/** DPP `SecurityLevel.HIGH` rank — the default document signing bound. */
-internal const val SIGNING_MINIMUM_LEVEL_HIGH = 2
 
 /** The fields the probe reads off the fetched document object. */
 private data class ProbedDocument(

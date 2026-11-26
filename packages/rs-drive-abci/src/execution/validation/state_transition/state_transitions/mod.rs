@@ -1270,12 +1270,9 @@ pub(in crate::execution) mod tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 15)
-        assert_eq!(
-            domain.documents_can_be_deleted(),
-            platform_version.system_data_contracts.dpns < 3
-        );
+        // Deletion is refused by a data trigger on DPNS v2, and for a contested name
+        // alone by the one DPNS v3 binds (protocol version 15)
+        assert!(domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -3667,13 +3664,14 @@ pub(in crate::execution) mod tests {
         /// vote-poll resolver. When `widen` is true the byteArray `maxItems` is
         /// flipped (the attack); when false the original contract is left in
         /// place (the control).
-        async fn run_contest_then_resolve(widen: bool) -> Result<(), crate::error::Error> {
+        async fn run_contest_then_resolve(
+            widen: bool,
+            platform_version: &'static PlatformVersion,
+        ) -> Result<(), crate::error::Error> {
             let mut platform = TestPlatformBuilder::new()
-                .with_latest_protocol_version()
+                .with_initial_protocol_version(platform_version.protocol_version)
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
-
-            let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(0xB17E_A77A);
 
@@ -3900,10 +3898,15 @@ pub(in crate::execution) mod tests {
         /// rejects the widening (see the rs-dpp validate_byte_array_encoding
         /// tests). This test deliberately writes the corrupt state directly to
         /// grovedb (bypassing validation) to reproduce the consequence the
-        /// validation fix prevents.
+        /// validation fix prevents. Protocol version 14 (`check_for_ended_vote_polls`
+        /// 1); from protocol version 15 the contest is left open instead.
         #[tokio::test]
         async fn widening_byte_array_max_items_halts_vote_poll_resolver() {
-            let result = run_contest_then_resolve(true).await;
+            let result = run_contest_then_resolve(
+                true,
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+            )
+            .await;
 
             assert!(
                 result.is_err(),
@@ -3931,12 +3934,26 @@ pub(in crate::execution) mod tests {
         /// only difference between the two runs is the `maxItems` flip.
         #[tokio::test]
         async fn contest_without_widening_resolves_successfully() {
-            let result = run_contest_then_resolve(false).await;
+            let result = run_contest_then_resolve(false, PlatformVersion::latest()).await;
 
             assert!(
                 result.is_ok(),
                 "control: without the byteArray widening the vote-poll resolver \
                  must succeed; got {:?}",
+                result
+            );
+        }
+
+        /// From protocol version 15 a contest whose top contenders hold documents that do
+        /// not decode is left open, and the block goes through.
+        #[tokio::test]
+        async fn should_leave_the_contest_open_when_no_contender_decodes_at_the_latest_protocol_version(
+        ) {
+            let result = run_contest_then_resolve(true, PlatformVersion::latest()).await;
+
+            assert!(
+                result.is_ok(),
+                "the block must go through; got {:?}",
                 result
             );
         }

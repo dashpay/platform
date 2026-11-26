@@ -3,7 +3,8 @@ use crate::version::drive_versions::drive_token_method_versions::{
     DriveTokenMethodVersions, DriveTokenOrderEscrowMethodVersions,
 };
 
-/// Drive token methods for protocol v15+.
+/// Drive token methods with the token marketplace, which starts with protocol version 16
+/// (`DRIVE_VERSION_V11`).
 ///
 /// Identical to [`super::v2::DRIVE_TOKEN_METHOD_VERSIONS_V2`] except
 /// `calculate_total_tokens_balance` is bumped to `2`: the tokens the token marketplace holds in

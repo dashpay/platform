@@ -803,7 +803,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .expect("expected document type");
                                 let serialized_document = serialized_document.unwrap();
 
-                                // A random transfer or mint (protocol version 15) writes its
+                                // A random transfer or mint (protocol version 16) writes its
                                 // history holding the range's minimum, and the block's
                                 // settlement rewrites the amount to the one drawn, which the
                                 // committed state proves: it must lie in the range
@@ -1439,7 +1439,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 }
 
 /// A `sys.random` property is drawn from the block's random beacon once the block's transitions
-/// ran (protocol version 15), so the create action this harness rebuilds holds the placeholder,
+/// ran (protocol version 16), so the create action this harness rebuilds holds the placeholder,
 /// the range's minimum, where the proved document holds the drawn value. Checks that the drawn
 /// value lies in the property's range and takes it into `expected`.
 fn adopt_drawn_random_properties(

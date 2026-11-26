@@ -3,6 +3,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 pub mod v1;
 pub mod v10;
 pub mod v11;
+pub mod v12;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -168,8 +169,8 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub record_token_shielded_pool_anchors: OptionalFeatureVersion,
     /// Fills a block's `sys.random` document properties and settles its random token amounts
     /// from the block's random beacon, which Tenderdash hands over in `ApplyBlockRandomness`
-    /// once the block's prevotes combine into it. `None` before protocol version 15, whose
-    /// Tenderdash consensus version 2 is the first to send a beacon; a block then collects no
+    /// once the block's prevotes combine into it. `None` before protocol version 16, whose
+    /// Tenderdash consensus version 3 is the first to send a beacon; a block then collects no
     /// random requests and applies none.
     pub apply_random_beacon: OptionalFeatureVersion,
 }

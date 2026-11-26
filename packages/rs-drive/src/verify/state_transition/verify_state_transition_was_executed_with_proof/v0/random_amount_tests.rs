@@ -1,4 +1,4 @@
-//! The proof of a random token transfer or mint (protocol version 15): its sender cannot know
+//! The proof of a random token transfer or mint (protocol version 16): its sender cannot know
 //! the amount the block's random beacon drew, so verification takes it from the proved history
 //! document once it lies in the range the transition asked for, and compares every other field
 //! as for any transition. The document's id hashes the range (`token_history_document_id`), so
@@ -69,7 +69,7 @@ enum Execution {
     Fixed,
 }
 
-/// The latest platform version with random token amounts active, which no protocol version
+/// [`PlatformVersion::latest`] with random token amounts active, which no protocol version
 /// is until block execution settles them.
 fn random_platform_version() -> PlatformVersion {
     let mut platform_version = PlatformVersion::latest().clone();

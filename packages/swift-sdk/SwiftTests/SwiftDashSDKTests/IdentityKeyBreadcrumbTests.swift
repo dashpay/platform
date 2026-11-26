@@ -286,19 +286,24 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
     }
 
     /// The stored-scalar branch is key-type independent (the scalar signs via
-    /// `ffiSign` regardless of the declared type), so a row carrying a keychain
-    /// identifier preflights as signable for any key type — the resolver gate
-    /// only governs the breadcrumb-only path. Deterministic: no mnemonic read.
+    /// `ffiSign` regardless of the declared type), so a row whose keychain
+    /// identifier names a stored item preflights as signable for any key type —
+    /// the resolver gate only governs the breadcrumb-only path. Deterministic:
+    /// no mnemonic read.
     func testCanSignAcceptsStoredScalarRegardlessOfKeyType() throws {
         let container = try DashModelContainer.createInMemory()
         let seed = ModelContext(container)
         let pubKey = Data(repeating: 0x99, count: 33)
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let identifier = "identity_privkey.x"
+        XCTAssertNotNil(keychain.storeKeyData(Data(repeating: 0x42, count: 32), identifier: identifier))
+        defer { keychain.deleteKeyData(identifier: identifier) }
         seed.insert(makeRow(keyId: 0, publicKeyData: pubKey, identityId: "id1",
-                            keychainId: "identity_privkey.x",
+                            keychainId: identifier,
                             keyType: .eddsa25519Hash160))
         try seed.save()
 
-        let signer = KeychainSigner(modelContainer: container, network: .testnet)
+        let signer = KeychainSigner(modelContainer: container, network: .testnet, keychain: keychain)
 
         XCTAssertTrue(
             signer.canSign(publicKey: pubKey, keyType: KeyType.ecdsaSecp256k1.rawValue),
@@ -307,6 +312,28 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
         XCTAssertTrue(
             signer.canSign(publicKey: pubKey, keyType: KeyType.eddsa25519Hash160.rawValue),
             "a stored-scalar row is signable regardless of key type"
+        )
+    }
+
+    /// A row whose keychain identifier names an item that is gone (a reset
+    /// Keychain, a restore onto another device) is not signable through it:
+    /// reported signable, Rust would pick the key and the sign would fail
+    /// while a later key could sign. With no breadcrumb and no item under the
+    /// public key either, the preflight answers false.
+    func testCanSignRejectsAStoredScalarReferenceWhoseItemIsGone() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        let pubKey = Data(repeating: 0x9A, count: 33)
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        seed.insert(makeRow(keyId: 0, publicKeyData: pubKey, identityId: "id1",
+                            keychainId: "identity_privkey.gone"))
+        try seed.save()
+
+        let signer = KeychainSigner(modelContainer: container, network: .testnet, keychain: keychain)
+
+        XCTAssertFalse(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.ecdsaSecp256k1.rawValue),
+            "a reference to a missing Keychain item must not preflight as signable"
         )
     }
 

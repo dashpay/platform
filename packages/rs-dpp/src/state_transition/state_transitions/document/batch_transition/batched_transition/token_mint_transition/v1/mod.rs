@@ -9,7 +9,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// A token mint that can issue a random amount (protocol version 15): every field of
+/// A token mint that can issue a random amount (protocol version 16): every field of
 /// [`TokenMintTransitionV0`], and `random_minimum_amount`.
 ///
 /// `amount` is the most the mint issues, and what the token's maximum supply must have room

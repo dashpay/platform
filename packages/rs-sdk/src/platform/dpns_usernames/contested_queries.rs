@@ -4,6 +4,8 @@
 //! These are wrappers around the general contested resource queries that automatically
 //! set the DPNS contract ID and document type.
 
+use super::normalize_dpns_label;
+use crate::platform::documents::contest_vote_state::read_not_older_than;
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
 use dpp::platform_value::{Identifier, Value};
@@ -19,7 +21,9 @@ use drive::query::vote_poll_vote_state_query::{
 };
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::VotePollsByEndDateDriveQuery;
-use drive_proof_verifier::types::{Contenders, ContestedResource, VotePollsGroupedByTimestamp};
+use drive_proof_verifier::types::{
+    Contenders, ContestedResource, VotePollsGroupedByTimestamp, Voter, Voters,
+};
 use futures::{stream, StreamExt};
 use std::collections::BTreeMap;
 
@@ -127,7 +131,10 @@ impl Sdk {
     ///
     /// # Arguments
     ///
-    /// * `label` - The username label to check (e.g., "alice")
+    /// * `name` - The username to check: a label or a full name, in any case (e.g. "alice",
+    ///   "Alice.DASH", or the normalized "a11ce"). A `.dash` suffix, matched in any case, is
+    ///   stripped and the rest normalized (homograph-safe, lowercase) to the contest's index
+    ///   value, so all three address the same contest.
     /// * `limit` - Maximum number of contenders to return; `None` returns every contender, and
     ///   `Some(0)` returns an empty state without a request
     ///
@@ -136,7 +143,7 @@ impl Sdk {
     /// Returns the contenders and their vote counts for the username
     pub async fn get_contested_dpns_vote_state(
         &self,
-        label: &str,
+        name: &str,
         limit: Option<u32>,
     ) -> Result<Contenders, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
@@ -147,73 +154,55 @@ impl Sdk {
             index_name: "parentNameAndLabel".to_string(),
             index_values: vec![
                 Value::Text(DPNS_PARENT_DOMAIN.to_string()),
-                Value::Text(label.to_string()),
+                Value::Text(normalize_dpns_label(name)),
             ],
         };
 
-        let mut state: Option<Contenders> = None;
-        let mut start_at = None;
-        loop {
-            let read = state.as_ref().map_or(0, |state| state.contenders.len());
-            let page_limit = match limit {
-                Some(limit) => {
-                    let left = (limit as usize).saturating_sub(read);
-                    if left == 0 {
-                        break;
-                    }
-                    left.min(DEFAULT_QUERY_LIMIT as usize) as u16
-                }
-                None => DEFAULT_QUERY_LIMIT,
-            };
-            let page = ContenderWithSerializedDocument::fetch_many(
-                self,
-                ContestedDocumentVotePollDriveQuery {
-                    vote_poll: vote_poll.clone(),
-                    result_type:
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-                    allow_include_locked_and_abstaining_vote_tally: true,
-                    start_at,
-                    limit: Some(page_limit),
-                    offset: None,
-                },
-            )
-            .await?;
-            let page_len = page.contenders.len();
-            let last = page.contenders.keys().last().copied();
-            match state.as_mut() {
-                None => state = Some(page),
-                Some(state) => state.contenders.extend(page.contenders),
-            }
-
-            // A short page is the last one
-            match last {
-                Some(last) if page_len >= page_limit as usize => {
-                    start_at = Some((last.to_buffer(), false));
-                }
-                _ => break,
-            }
-        }
-
-        Ok(state.unwrap_or_default())
+        self.fetch_contested_resource_vote_state(&vote_poll, limit)
+            .await
     }
 
     /// Get voters who voted for a specific identity for a contested DPNS username
     ///
+    /// Reads the voters in identity order, in pages of up to 100 (the most Drive answers to one
+    /// query) that each start after the last voter read, until `limit` voters are read or none
+    /// are left.
+    ///
+    /// Live contests only: the voters are read from the contest's live voting tree, which
+    /// finalization deletes once it moves the votes into the contest's stored record. When no
+    /// voter is read, the contest's vote state is read too, and a contest that has a winner is
+    /// an [`Error::InvalidRequest`] rather than an empty list, so an ended contest never reads
+    /// as one nobody voted in. That vote state is read no older than the empty page of
+    /// voters; when the nodes keep answering it from an older block, the error is a stale
+    /// node one, and the call can be made again.
+    ///
+    /// The pages are not one block's snapshot, but they never go back: a page after the first
+    /// is read at a height not below the page that gave its start, so an older block cannot
+    /// end the list early or leave out voters the earlier page already counted past. Nodes
+    /// that keep answering it from an older block are the same stale node error.
+    ///
     /// # Arguments
     ///
-    /// * `label` - The username label (e.g., "alice")
+    /// * `name` - The username: a label or a full name, in any case (e.g. "alice",
+    ///   "Alice.DASH", or the normalized "a11ce"). A `.dash` suffix, matched in any case, is
+    ///   stripped and the rest normalized (homograph-safe, lowercase) to the contest's index
+    ///   value, so all three address the same contest.
     /// * `contestant_id` - The identity ID of the contestant
-    /// * `limit` - Maximum number of voters to return
+    /// * `limit` - Maximum number of voters to return; `None` returns every voter, and
+    ///   `Some(0)` returns no voter without a request
     ///
     /// # Returns
     ///
-    /// Returns the list of masternode voters who voted for this contestant
+    /// Returns the masternode voters who voted for this contestant in a live contest, or
+    /// [`Error::InvalidRequest`] when the contest has ended. An empty list means no live voter
+    /// entries were found: the contest or the contestant may not exist, so it does not show a
+    /// live contestant with no votes
     pub async fn get_contested_dpns_voters_for_identity(
         &self,
-        label: &str,
+        name: &str,
         contestant_id: Identifier,
         limit: Option<u32>,
-    ) -> Result<(), Error> {
+    ) -> Result<Voters, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
 
         let vote_poll = ContestedDocumentResourceVotePoll {
@@ -222,21 +211,73 @@ impl Sdk {
             index_name: "parentNameAndLabel".to_string(),
             index_values: vec![
                 Value::Text(DPNS_PARENT_DOMAIN.to_string()),
-                Value::Text(label.to_string()),
+                Value::Text(normalize_dpns_label(name)),
             ],
         };
 
-        let _query = ContestedDocumentVotePollVotesDriveQuery {
-            vote_poll,
-            contestant_id,
-            start_at: None,
-            limit: limit.map(|l| l as u16),
-            offset: None,
-            order_ascending: true,
-        };
+        let mut voters = Voters::default();
+        let mut start_at = None;
+        let mut last_page_empty = false;
+        let mut last_page_height = 0;
+        loop {
+            let page_limit = match limit {
+                Some(limit) => {
+                    let left = (limit as usize).saturating_sub(voters.0.len());
+                    if left == 0 {
+                        break;
+                    }
+                    left.min(DEFAULT_QUERY_LIMIT as usize) as u16
+                }
+                None => DEFAULT_QUERY_LIMIT,
+            };
+            let query = ContestedDocumentVotePollVotesDriveQuery {
+                vote_poll: vote_poll.clone(),
+                contestant_id,
+                start_at,
+                limit: Some(page_limit),
+                offset: None,
+                order_ascending: true,
+            };
+            // A page continues the one that gave its start, whose height `last_page_height`
+            // still is: from an older block it could be short of voters that page already
+            // counted, or end the list early
+            let (page, metadata): (Voters, _) = read_not_older_than(
+                last_page_height,
+                |_| false,
+                || Voter::fetch_many_with_metadata(self, query.clone(), None),
+            )
+            .await?;
+            let read = page.0.len();
+            let last = page.0.last().map(|voter| voter.0);
+            last_page_empty = read == 0;
+            last_page_height = metadata.height;
+            voters.0.extend(page.0);
 
-        // ContestedResourceVoters isn't available, so we'll skip this for now
-        Ok(())
+            // A short page is the last one
+            match last {
+                Some(last) if read >= page_limit as usize => {
+                    start_at = Some((last.to_buffer(), false));
+                }
+                _ => break,
+            }
+        }
+
+        // Finalization deletes the live votes, so no voter, or an empty page after earlier
+        // ones, can also mean the contest ended. The contest's state is read no older than
+        // that empty page: an older read showing it open would not say it still was
+        if (voters.0.is_empty() || last_page_empty) && limit != Some(0) {
+            let state = self
+                .fetch_contested_resource_vote_state_record_since(&vote_poll, last_page_height)
+                .await?;
+            if state.winner.is_some() {
+                return Err(Error::InvalidRequest(format!(
+                    "the contest for {name} has ended: its voters are only in the contest's \
+                     finalized record, not in the live votes"
+                )));
+            }
+        }
+
+        Ok(voters)
     }
 
     /// Get all contested DPNS usernames that an identity has voted on
@@ -707,9 +748,12 @@ mod vote_polls_by_end_date_paging_tests {
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
+    use crate::error::StaleNodeError;
     use crate::SdkBuilder;
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
+    use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
     use drive_proof_verifier::types::ContestedResources;
 
     fn mock_sdk() -> Sdk {
@@ -983,6 +1027,18 @@ mod tests {
         limit: u16,
         page: &[Identifier],
     ) {
+        expect_vote_state_page_with_winner(sdk, label, start_after, limit, page, None).await;
+    }
+
+    /// [`expect_vote_state_page`] of a contest whose page names `winner`
+    async fn expect_vote_state_page_with_winner(
+        sdk: &mut Sdk,
+        label: &str,
+        start_after: Option<Identifier>,
+        limit: u16,
+        page: &[Identifier],
+        winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
+    ) {
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll: ContestedDocumentResourceVotePoll {
                 contract_id: sdk
@@ -1003,7 +1059,7 @@ mod tests {
         };
         let first = start_after.is_none();
         let page = Contenders {
-            winner: None,
+            winner,
             contenders: page
                 .iter()
                 .map(|&identity_id| {
@@ -1034,10 +1090,10 @@ mod tests {
     #[tokio::test]
     async fn should_read_every_contender_of_a_vote_state_across_pages() {
         let mut sdk = mock_sdk();
-        expect_vote_state_page(&mut sdk, "alice", None, 100, &contenders(0, 100)).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 100, &contenders(0, 100)).await;
         expect_vote_state_page(
             &mut sdk,
-            "alice",
+            "a11ce",
             Some(contender(99)),
             100,
             &contenders(100, 160),
@@ -1045,7 +1101,7 @@ mod tests {
         .await;
 
         let state = sdk
-            .get_contested_dpns_vote_state("alice", None)
+            .get_contested_dpns_vote_state("a11ce", None)
             .await
             .expect("expected both pages to answer");
 
@@ -1062,10 +1118,10 @@ mod tests {
     #[tokio::test]
     async fn should_read_a_vote_state_limit_over_100_in_pages_of_at_most_100() {
         let mut sdk = mock_sdk();
-        expect_vote_state_page(&mut sdk, "alice", None, 100, &contenders(0, 100)).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 100, &contenders(0, 100)).await;
         expect_vote_state_page(
             &mut sdk,
-            "alice",
+            "a11ce",
             Some(contender(99)),
             20,
             &contenders(100, 120),
@@ -1073,7 +1129,7 @@ mod tests {
         .await;
 
         let state = sdk
-            .get_contested_dpns_vote_state("alice", Some(120))
+            .get_contested_dpns_vote_state("a11ce", Some(120))
             .await
             .expect("expected both pages to answer");
 
@@ -1087,14 +1143,313 @@ mod tests {
     #[tokio::test]
     async fn should_read_a_vote_state_limit_of_at_most_100_in_one_page() {
         let mut sdk = mock_sdk();
-        expect_vote_state_page(&mut sdk, "alice", None, 10, &contenders(0, 10)).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 10, &contenders(0, 10)).await;
 
         let state = sdk
-            .get_contested_dpns_vote_state("alice", Some(10))
+            .get_contested_dpns_vote_state("a11ce", Some(10))
             .await
             .expect("expected the page to answer");
 
         assert_eq!(state.contenders.len(), 10);
+    }
+
+    /// A full name in any case addresses the contest of its normalized label
+    #[tokio::test]
+    async fn should_read_the_vote_state_of_a_full_name_from_its_normalized_label() {
+        let mut sdk = mock_sdk();
+        expect_vote_state_page(&mut sdk, "a11ce", None, 10, &contenders(0, 10)).await;
+
+        let state = sdk
+            .get_contested_dpns_vote_state("Alice.DASH", Some(10))
+            .await
+            .expect("expected the page of the normalized label to answer");
+
+        assert_eq!(state.contenders.len(), 10);
+    }
+
+    /// The query for the page of voters for `contestant` in the contest for `label` after
+    /// `start_after`, built here rather than with the code under test
+    fn voters_page_query(
+        sdk: &Sdk,
+        label: &str,
+        contestant: Identifier,
+        start_after: Option<Identifier>,
+        limit: u16,
+    ) -> ContestedDocumentVotePollVotesDriveQuery {
+        ContestedDocumentVotePollVotesDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id: sdk
+                    .get_dpns_contract_id()
+                    .expect("expected the dpns contract id"),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text(label.to_string()),
+                ],
+            },
+            contestant_id: contestant,
+            start_at: start_after.map(|id| (id.to_buffer(), false)),
+            limit: Some(limit),
+            offset: None,
+            order_ascending: true,
+        }
+    }
+
+    /// Registers `page` as the answer to [`voters_page_query`]
+    async fn expect_voters_page(
+        sdk: &mut Sdk,
+        label: &str,
+        contestant: Identifier,
+        start_after: Option<Identifier>,
+        limit: u16,
+        page: &[Identifier],
+    ) {
+        let query = voters_page_query(sdk, label, contestant, start_after, limit);
+        let page = Voters::from_iter(page.iter().copied().map(Voter));
+        sdk.mock()
+            .expect_fetch_many::<usize, Voter, _, Voters>(query, Some(page))
+            .await
+            .expect("expected to register the page of voters");
+    }
+
+    /// Every voter is read across pages of 100, and a full name addresses the contest of its
+    /// normalized label
+    #[tokio::test]
+    async fn should_read_every_voter_of_a_full_name_across_pages() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            None,
+            100,
+            &contenders(0, 100),
+        )
+        .await;
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            Some(contender(99)),
+            100,
+            &contenders(100, 130),
+        )
+        .await;
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("Alice.DASH", contestant, None)
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(
+            voters.0.iter().map(|voter| voter.0).collect::<Vec<_>>(),
+            contenders(0, 130)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_a_voters_limit_over_100_in_pages_of_at_most_100() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            None,
+            100,
+            &contenders(0, 100),
+        )
+        .await;
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            Some(contender(99)),
+            20,
+            &contenders(100, 120),
+        )
+        .await;
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, Some(120))
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(voters.0.len(), 120);
+    }
+
+    /// A contender nobody voted for in a live contest has no voters, which is not an error
+    #[tokio::test]
+    async fn should_read_no_voters_for_an_open_contender_without_votes() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 1, &[contestant]).await;
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect("expected an open contest without votes to answer");
+
+        assert!(voters.0.is_empty());
+    }
+
+    /// Finalization moves the voters into the contest's stored record and deletes the live
+    /// votes: an ended contest is refused rather than read as one nobody voted in
+    #[tokio::test]
+    async fn should_refuse_the_voters_of_a_finalized_contest() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page_with_winner(
+            &mut sdk,
+            "a11ce",
+            None,
+            1,
+            &[contestant],
+            Some((
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(contestant),
+                BlockInfo::default(),
+            )),
+        )
+        .await;
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected an ended contest to be refused");
+
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("has ended")),
+            "expected an invalid request saying the contest ended, got {error:?}"
+        );
+    }
+
+    /// The first page is full at block 11, and the page after it is only answered from block
+    /// 10, where it holds two voters: block 10 may hold fewer voters after the start than
+    /// block 11 does, so the short page does not end the list and nothing is returned
+    #[tokio::test]
+    async fn should_refuse_a_voters_page_older_than_the_page_that_gave_its_start() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            None,
+            100,
+            &contenders(0, 100),
+        )
+        .await;
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            Some(contender(99)),
+            100,
+            &contenders(100, 102),
+        )
+        .await;
+        let first_page = voters_page_query(&sdk, "a11ce", contestant, None, 100);
+        sdk.mock()
+            .set_response_height(10)
+            .set_response_height_for_many::<usize, Voter, _, Voters>(first_page, 11);
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected the older page to be refused");
+
+        assert!(
+            matches!(
+                &error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 11,
+                    received_height: 10,
+                    ..
+                })
+            ),
+            "expected a stale node error, got {error:?}"
+        );
+    }
+
+    /// The votes are gone at block 11, and the contest's state is only answered from block
+    /// 10, where it still shows open: that read cannot say the contest is open at block 11
+    #[tokio::test]
+    async fn should_refuse_an_open_vote_state_older_than_the_empty_voters_page() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 1, &[contestant]).await;
+        sdk.mock()
+            .set_response_height_of::<Voters>(11)
+            .set_response_height_of::<Contenders>(10);
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected the older vote state to be refused");
+
+        assert!(
+            matches!(
+                &error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 11,
+                    received_height: 10,
+                    ..
+                })
+            ),
+            "expected a stale node error, got {error:?}"
+        );
+    }
+
+    /// A contest that ended stays ended, so a record naming a winner is taken from an older
+    /// block than the empty page of voters
+    #[tokio::test]
+    async fn should_refuse_the_voters_of_a_contest_an_older_block_shows_finalized() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page_with_winner(
+            &mut sdk,
+            "a11ce",
+            None,
+            1,
+            &[contestant],
+            Some((
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(contestant),
+                BlockInfo::default(),
+            )),
+        )
+        .await;
+        sdk.mock()
+            .set_response_height_of::<Voters>(11)
+            .set_response_height_of::<Contenders>(10);
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected an ended contest to be refused");
+
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("has ended")),
+            "expected an invalid request saying the contest ended, got {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_no_voters_for_a_zero_limit_without_asking() {
+        // No expectation is registered, so any request would fail.
+        let sdk = mock_sdk();
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("alice", contender(1), Some(0))
+            .await
+            .expect("expected a zero limit to answer without a request");
+
+        assert!(voters.0.is_empty());
     }
 
     /// One page of vote polls by end date, all of them the DPNS contests for `labels`

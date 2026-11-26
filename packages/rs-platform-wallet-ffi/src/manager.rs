@@ -3,24 +3,26 @@
 use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{
-    DpnsMarketplaceSyncCompletedFn, EventHandlerCallbacks, EventHandlerCallbacksExtension,
-    FFIEventHandler, PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+    DpnsMarketplaceSyncCompletedFn, EventExtensionCallbacks, EventHandlerCallbacks,
+    EventHandlerCallbacksExtension, FFIEventHandler, ShieldedBalanceChangedFn,
+    PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
-    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
-    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
-    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn, LoadAssetLockOperationIdFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
+    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn,
+    LoadWalletLockedOutpointsFn, PersistAssetLockOperationIdFn,
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PersistWalletChangesetOutpointLocksFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
-use crate::runtime::runtime;
+use crate::runtime::{big_stack_spawn_failed, run_on_big_stack_thread, runtime};
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
@@ -87,7 +89,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         event_handler,
         PersistenceCapabilities::NONE,
         PersistenceExtensionCallbacks::default(),
-        None,
+        EventExtensionCallbacks::default(),
         out_handle,
     )
 }
@@ -114,7 +116,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         event_handler,
         declaration,
         PersistenceExtensionCallbacks::default(),
-        None,
+        EventExtensionCallbacks::default(),
         out_handle,
     )
 }
@@ -148,7 +150,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
         event_handler,
         declaration,
         extensions,
-        None,
+        EventExtensionCallbacks::default(),
         out_handle,
     )
 }
@@ -172,7 +174,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     check_ptr!(event_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
-    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    let event_extensions = event_extension_callbacks(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         None,
@@ -180,7 +182,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         event_handler,
         declaration,
         persistence_extensions,
-        dpns_event_callback,
+        event_extensions,
         out_handle,
     )
 }
@@ -226,7 +228,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
 
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
-    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    let event_extensions = event_extension_callbacks(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         spv_quorum_lease,
@@ -234,7 +236,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
         event_handler,
         declaration,
         persistence_extensions,
-        dpns_event_callback,
+        event_extensions,
         out_handle,
     )
 }
@@ -408,26 +410,55 @@ unsafe fn persistence_extension_callbacks(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
         ),
+        wallet_changeset_outpoint_locks: slot!(
+            on_persist_wallet_changeset_outpoint_locks_fn,
+            PersistWalletChangesetOutpointLocksFn
+        ),
+        load_wallet_locked_outpoints: slot!(
+            on_load_wallet_locked_outpoints_fn,
+            LoadWalletLockedOutpointsFn
+        ),
+        load_wallet_locked_outpoints_free: slot!(
+            on_load_wallet_locked_outpoints_free_fn,
+            FreeWalletLockedOutpointsFn
+        ),
     }
 }
 
-unsafe fn event_extension_dpns_callback(
+/// Read every negotiated event-extension slot through
+/// [`negotiated_extension_slot!`], against one snapshot of the header (see
+/// [`persistence_extension_callbacks`]): a host whose `struct_size` stops
+/// before a slot keeps exactly the earlier slots it allocated.
+unsafe fn event_extension_callbacks(
     extension: *const EventHandlerCallbacksExtension,
-) -> Option<DpnsMarketplaceSyncCompletedFn> {
+) -> EventExtensionCallbacks {
     let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
     let version_end =
         std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
     let version_ok = supplied_size >= version_end
         && std::ptr::addr_of!((*extension).version).read()
             == PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION;
-    negotiated_extension_slot!(
-        extension,
-        EventHandlerCallbacksExtension,
-        supplied_size,
-        version_ok,
-        on_dpns_marketplace_sync_completed_fn,
-        DpnsMarketplaceSyncCompletedFn
-    )
+
+    macro_rules! slot {
+        ($field:ident, $fn_ty:ty) => {
+            negotiated_extension_slot!(
+                extension,
+                EventHandlerCallbacksExtension,
+                supplied_size,
+                version_ok,
+                $field,
+                $fn_ty
+            )
+        };
+    }
+
+    EventExtensionCallbacks {
+        dpns_marketplace_sync_completed: slot!(
+            on_dpns_marketplace_sync_completed_fn,
+            DpnsMarketplaceSyncCompletedFn
+        ),
+        shielded_balance_changed: slot!(on_shielded_balance_changed_fn, ShieldedBalanceChangedFn),
+    }
 }
 
 // The C entry point's own shape: every callback table and out-param the
@@ -441,7 +472,7 @@ unsafe fn platform_wallet_manager_create_impl(
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
     persistence_extensions: PersistenceExtensionCallbacks,
-    dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    event_extensions: EventExtensionCallbacks,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
@@ -486,7 +517,7 @@ unsafe fn platform_wallet_manager_create_impl(
     );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
         std::ptr::read(event_handler),
-        dpns_event_callback,
+        event_extensions,
     ));
 
     // `PlatformWalletManager::new` spawns the wallet-event adapter
@@ -605,14 +636,25 @@ unsafe fn create_wallet_from_seed_impl(
         _ => WalletAccountCreationOptions::Default,
     };
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.create_wallet_from_seed_bytes(
-            network,
-            &seed,
-            accounts,
-            birth_height_override,
-        ))
+    // Polled on the big-stack thread, not the caller's: in an unoptimized
+    // build, registration and the private payment restore it runs need
+    // several hundred KiB of stack, more than a small host thread has left
+    // (dashpay/platform#6020). `run_on_big_stack_thread` rather than
+    // `block_on_worker` because the future borrows the manager and the seed.
+    let spawned = run_on_big_stack_thread(|| {
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+            runtime().block_on(manager.create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                accounts,
+                birth_height_override,
+            ))
+        })
     });
+    let option = match spawned {
+        Ok(option) => option,
+        Err(e) => return big_stack_spawn_failed("wallet create", e),
+    };
     let result = unwrap_option_or_return!(option);
     let wallet = unwrap_result_or_return!(result);
     let wallet_id = wallet.wallet_id();
@@ -648,14 +690,21 @@ unsafe fn create_wallet_from_mnemonic_impl(
         _ => WalletAccountCreationOptions::Default,
     };
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.create_wallet_from_mnemonic(
-            mnemonic_str,
-            network,
-            accounts,
-            birth_height_override,
-        ))
+    // Big-stack polling for the same reason as the seed create above.
+    let spawned = run_on_big_stack_thread(|| {
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+            runtime().block_on(manager.create_wallet_from_mnemonic(
+                mnemonic_str,
+                network,
+                accounts,
+                birth_height_override,
+            ))
+        })
     });
+    let option = match spawned {
+        Ok(option) => option,
+        Err(e) => return big_stack_spawn_failed("wallet create", e),
+    };
     let result = unwrap_option_or_return!(option);
     let wallet = unwrap_result_or_return!(result);
     let wallet_id = wallet.wallet_id();
@@ -803,9 +852,18 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
 ) -> PlatformWalletFFIResult {
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.load_from_persistor())
+    // Big-stack polling, as for the creates above: the load registers every
+    // stored wallet and, with a shielded store configured, restores their
+    // private payments.
+    let spawned = run_on_big_stack_thread(|| {
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+            runtime().block_on(manager.load_from_persistor())
+        })
     });
+    let option = match spawned {
+        Ok(option) => option,
+        Err(e) => return big_stack_spawn_failed("persistor load", e),
+    };
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
@@ -1976,6 +2034,73 @@ mod tests {
         assert!(read.wallet_changeset_chain_lock_height.is_none());
     }
 
+    unsafe extern "C" fn dpns_marketplace_sync_completed(
+        _context: *mut c_void,
+        _results: *const crate::event_handler::DpnsSyncWalletResultFFI,
+        _count: usize,
+        _sync_unix_seconds: u64,
+    ) {
+    }
+
+    unsafe extern "C" fn shielded_balance_changed(
+        _context: *mut c_void,
+        _update: *const crate::shielded_types::ShieldedBalanceUpdateFFI,
+    ) {
+    }
+
+    /// The event extension as a host compiled before the shielded balance
+    /// slot existed lays it out.
+    #[repr(C)]
+    struct DpnsOnlyEventCallbacksExtension {
+        struct_size: usize,
+        version: u32,
+        reserved: u32,
+        on_dpns_marketplace_sync_completed_fn: Option<DpnsMarketplaceSyncCompletedFn>,
+    }
+
+    /// The shielded balance slot is read only when the host's `struct_size`
+    /// covers it and the version is known: an extension sized before the
+    /// slot keeps its DPNS callback and never has the new slot read, and an
+    /// unknown version yields nothing.
+    #[test]
+    fn should_read_the_shielded_balance_slot_only_when_the_event_extension_covers_it() {
+        let full = EventHandlerCallbacksExtension {
+            on_dpns_marketplace_sync_completed_fn: Some(dpns_marketplace_sync_completed),
+            on_shielded_balance_changed_fn: Some(shielded_balance_changed),
+            ..EventHandlerCallbacksExtension::default()
+        };
+        let read = unsafe { event_extension_callbacks(&full) };
+        assert!(read.dpns_marketplace_sync_completed.is_some());
+        assert!(read.shielded_balance_changed.is_some());
+
+        let older = DpnsOnlyEventCallbacksExtension {
+            struct_size: std::mem::size_of::<DpnsOnlyEventCallbacksExtension>(),
+            version: PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+            reserved: 0,
+            on_dpns_marketplace_sync_completed_fn: Some(dpns_marketplace_sync_completed),
+        };
+        assert_eq!(
+            older.struct_size,
+            std::mem::offset_of!(
+                EventHandlerCallbacksExtension,
+                on_shielded_balance_changed_fn
+            )
+        );
+        let read = unsafe {
+            event_extension_callbacks((&older as *const DpnsOnlyEventCallbacksExtension).cast())
+        };
+        assert!(read.dpns_marketplace_sync_completed.is_some());
+        assert!(read.shielded_balance_changed.is_none());
+
+        let unknown = EventHandlerCallbacksExtension {
+            version: PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION + 1,
+            ..full
+        };
+        let read = unsafe { event_extension_callbacks(&unknown) };
+        assert!(read.dpns_marketplace_sync_completed.is_none());
+        assert!(read.shielded_balance_changed.is_none());
+    }
+
     /// The exact cross-version pairing the size-negotiated extension
     /// exists for: a host built when the extension ended at an earlier
     /// slot declares that smaller `struct_size` — bytes it filled with a
@@ -2747,5 +2872,429 @@ mod remove_wallet_lifecycle_tests {
 
             drop(in_flight_a);
         });
+    }
+}
+
+/// The exports that register wallets or restore their private payments
+/// (wallet create, persistor load, shielded configure and bind) poll on the
+/// `pw-ffi-bigstack` thread, never on the caller's: in an unoptimized build
+/// that work does not fit a small host thread's stack
+/// (dashpay/platform#6020). A persistence callback the polled future calls
+/// inline runs on the polling thread, so the thread it reports is that one.
+#[cfg(test)]
+mod big_stack_polling_tests {
+    use super::*;
+    use crate::persistence::TrackedMasternodeFFI;
+    use crate::test_fixtures::mock_manager_with;
+    use crate::wallet::platform_wallet_destroy;
+    use crate::wallet_restore_types::WalletRestoreEntryFFI;
+    use std::ffi::CString;
+    use std::os::raw::c_char;
+    use std::sync::{Arc, Mutex, PoisonError};
+
+    const BIG_STACK_THREAD: &str = "pw-ffi-bigstack";
+    const TEST_MNEMONIC: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// The probed callbacks that ran, each with the name of its thread.
+    #[derive(Default)]
+    struct CallbackThreads(Mutex<Vec<(&'static str, Option<String>)>>);
+
+    impl CallbackThreads {
+        /// # Safety
+        /// `context` must point at a live `CallbackThreads`: the reference
+        /// the persister owns ([`probe_callbacks`]), or one its fixture
+        /// still holds.
+        unsafe fn record(context: *const c_void, callback: &'static str) {
+            let threads = &*(context as *const CallbackThreads);
+            threads
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push((callback, std::thread::current().name().map(str::to_owned)));
+        }
+
+        fn take(&self) -> Vec<(&'static str, Option<String>)> {
+            std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
+        }
+    }
+
+    // Probed: the changeset a create stores, the tracked-masternode load a
+    // persistor load runs and the snapshot load a shielded bind takes, all
+    // called inline by the polled future. The wallet list a create or a
+    // persistor load reads runs on a tokio blocking thread
+    // (`run_blocking_load`) whichever thread polls, so only the binds
+    // assert on it.
+    unsafe extern "C" fn record_begin(context: *mut c_void, _wallet_id: *const u8) -> i32 {
+        CallbackThreads::record(context, "changeset_begin");
+        0
+    }
+
+    unsafe extern "C" fn record_load_tracked_masternodes(
+        context: *mut c_void,
+        _network: *const c_char,
+        out_rows: *mut *const TrackedMasternodeFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        CallbackThreads::record(context, "load_tracked_masternodes");
+        *out_rows = std::ptr::null();
+        *out_count = 0;
+        0
+    }
+
+    unsafe extern "C" fn end(_context: *mut c_void, _wallet_id: *const u8, _success: bool) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn record_load_wallet_list(
+        context: *mut c_void,
+        out_entries: *mut *const WalletRestoreEntryFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        CallbackThreads::record(context, "load_wallet_list");
+        *out_entries = std::ptr::null();
+        *out_count = 0;
+        0
+    }
+
+    unsafe extern "C" fn free_wallet_list(
+        _context: *mut c_void,
+        _entries: *const WalletRestoreEntryFFI,
+        _count: usize,
+    ) {
+    }
+
+    unsafe extern "C" fn free_tracked_masternodes(
+        _context: *mut c_void,
+        _rows: *const TrackedMasternodeFFI,
+        _count: usize,
+    ) {
+    }
+
+    /// Releases the reference to the `CallbackThreads` a persister owns.
+    unsafe extern "C" fn release_threads(context: *mut c_void) {
+        drop(Arc::from_raw(context as *const CallbackThreads));
+    }
+
+    /// The probed persistence callbacks, writing to `threads`. The persister
+    /// built over them owns a reference to it, released with its last owner.
+    fn probe_callbacks(threads: &Arc<CallbackThreads>) -> PersistenceCallbacks {
+        PersistenceCallbacks {
+            context: Arc::into_raw(Arc::clone(threads)) as *mut c_void,
+            release_fn: Some(release_threads),
+            on_changeset_begin_fn: Some(record_begin),
+            on_changeset_end_fn: Some(end),
+            on_load_wallet_list_fn: Some(record_load_wallet_list),
+            on_load_wallet_list_free_fn: Some(free_wallet_list),
+            ..Default::default()
+        }
+    }
+
+    /// A manager whose persister records the thread of every probed callback
+    /// in `threads`. Dropped, it destroys the wallet handles it was given
+    /// and then the manager, on a failed assertion too.
+    struct ProbedManager {
+        handle: Handle,
+        wallets: Vec<Handle>,
+        threads: Arc<CallbackThreads>,
+    }
+
+    impl ProbedManager {
+        fn new() -> Self {
+            Self::over(PersistenceCapabilities::NONE, |callbacks| callbacks)
+        }
+
+        /// Over the probed callbacks as `extend` completes them (and the
+        /// tracked-masternode load probe), declaring `capabilities`.
+        fn over(
+            capabilities: PersistenceCapabilities,
+            extend: impl FnOnce(PersistenceCallbacks) -> PersistenceCallbacks,
+        ) -> Self {
+            let threads = Arc::new(CallbackThreads::default());
+            let manager = mock_manager_with(
+                FFIPersister::new_with_persistence_capabilities_and_extensions(
+                    extend(probe_callbacks(&threads)),
+                    capabilities,
+                    PersistenceExtensionCallbacks {
+                        load_tracked_masternodes: Some(record_load_tracked_masternodes),
+                        load_tracked_masternodes_free: Some(free_tracked_masternodes),
+                        ..Default::default()
+                    },
+                ),
+            );
+            Self {
+                handle: PLATFORM_WALLET_MANAGER_STORAGE.insert(manager),
+                wallets: Vec::new(),
+                threads,
+            }
+        }
+
+        /// Create the [`TEST_MNEMONIC`] wallet, returning its id.
+        fn create_wallet(&mut self) -> [u8; 32] {
+            let (result, wallet_handle, wallet_id) = unsafe { create_from_mnemonic(self.handle) };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            self.wallets.push(wallet_handle);
+            wallet_id
+        }
+    }
+
+    impl Drop for ProbedManager {
+        fn drop(&mut self) {
+            for wallet in self.wallets.drain(..) {
+                unsafe { platform_wallet_destroy(wallet) };
+            }
+            unsafe { platform_wallet_manager_destroy(self.handle) };
+        }
+    }
+
+    /// `callback` ran during the call, every time on the big-stack thread.
+    fn assert_polled_on_big_stack(seen: &[(&'static str, Option<String>)], callback: &str) {
+        let threads: Vec<_> = seen
+            .iter()
+            .filter(|(name, _)| *name == callback)
+            .map(|(_, thread)| thread.as_deref())
+            .collect();
+        assert!(
+            !threads.is_empty(),
+            "the call fired no `{callback}` callback; saw {seen:?}"
+        );
+        for thread in threads {
+            assert_eq!(
+                thread,
+                Some(BIG_STACK_THREAD),
+                "`{callback}` ran on {thread:?}, so the call was polled there rather than on \
+                 the big-stack thread"
+            );
+        }
+    }
+
+    /// The result of creating a wallet from [`TEST_MNEMONIC`] through the
+    /// export, with the wallet's handle and id.
+    unsafe fn create_from_mnemonic(handle: Handle) -> (PlatformWalletFFIResult, Handle, [u8; 32]) {
+        let mnemonic = CString::new(TEST_MNEMONIC).expect("no interior NUL");
+        let mut wallet_handle: Handle = 0;
+        let mut wallet_id = [0u8; 32];
+        let result = platform_wallet_manager_create_wallet_from_mnemonic(
+            handle,
+            mnemonic.as_ptr(),
+            FFINetwork::Testnet,
+            1,
+            &mut wallet_handle,
+            &mut wallet_id,
+        );
+        (result, wallet_handle, wallet_id)
+    }
+
+    #[test]
+    fn should_poll_the_mnemonic_wallet_create_on_the_big_stack_thread() {
+        let mut manager = ProbedManager::new();
+        manager.create_wallet();
+        assert_polled_on_big_stack(&manager.threads.take(), "changeset_begin");
+    }
+
+    #[test]
+    fn should_poll_the_seed_wallet_create_on_the_big_stack_thread() {
+        let mut manager = ProbedManager::new();
+        let seed = [42u8; 64];
+        let mut wallet_handle: Handle = 0;
+        let mut wallet_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_manager_create_wallet_from_seed_with_birth_height(
+                manager.handle,
+                FFINetwork::Testnet,
+                seed.as_ptr(),
+                seed.len(),
+                1,
+                true,
+                0,
+                &mut wallet_handle,
+                &mut wallet_id,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        manager.wallets.push(wallet_handle);
+        assert_polled_on_big_stack(&manager.threads.take(), "changeset_begin");
+    }
+
+    #[test]
+    fn should_poll_the_persistor_load_on_the_big_stack_thread() {
+        let manager = ProbedManager::new();
+        let result = unsafe { platform_wallet_manager_load_from_persistor(manager.handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_polled_on_big_stack(&manager.threads.take(), "load_tracked_masternodes");
+    }
+
+    #[cfg(feature = "shielded")]
+    mod shielded {
+        use super::*;
+        use crate::shielded_persistence::ShieldedViewingKeyFFI;
+        use crate::shielded_sync::{
+            platform_wallet_manager_bind_shielded, platform_wallet_manager_configure_shielded,
+        };
+        use crate::test_fixtures::{noop_free_viewing_keys, noop_load_viewing_keys};
+        use rs_sdk_ffi::{
+            dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+            mnemonic_resolver_result, MnemonicResolverHandle,
+        };
+        use tempfile::TempDir;
+
+        /// A caller's stack too small to poll a wallet create on in an
+        /// unoptimized build (polled there, the create overflowed one of
+        /// 384 KiB), and ample for a call that only waits for the big-stack
+        /// thread.
+        const SMALL_CALLER_STACK_BYTES: usize = 128 * 1024;
+
+        unsafe extern "C" fn record_persist_viewing_keys(
+            context: *mut c_void,
+            _wallet_id: *const u8,
+            _entries: *const ShieldedViewingKeyFFI,
+            _count: usize,
+        ) -> i32 {
+            CallbackThreads::record(context, "persist_viewing_keys");
+            0
+        }
+
+        /// Resolves [`TEST_MNEMONIC`], recording its thread in the
+        /// `CallbackThreads` it is given as context.
+        unsafe extern "C" fn record_resolve(
+            context: *const c_void,
+            _wallet_id: *const u8,
+            out_buf: *mut c_char,
+            out_capacity: usize,
+            out_len: *mut usize,
+        ) -> i32 {
+            CallbackThreads::record(context, "resolve_mnemonic");
+            let phrase = TEST_MNEMONIC.as_bytes();
+            if phrase.len() + 1 > out_capacity {
+                return mnemonic_resolver_result::BUFFER_TOO_SMALL;
+            }
+            std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+            *out_buf.add(phrase.len()) = 0;
+            *out_len = phrase.len();
+            mnemonic_resolver_result::SUCCESS
+        }
+
+        unsafe extern "C" fn keep_resolver_context(_context: *mut c_void) {}
+
+        /// A probed manager that keeps shielded viewing keys, with a
+        /// directory for its shielded store. The manager is dropped first,
+        /// which closes the store, and the directory after it.
+        struct ShieldedFixture {
+            manager: ProbedManager,
+            dir: TempDir,
+        }
+
+        impl ShieldedFixture {
+            fn new() -> Self {
+                let manager = ProbedManager::over(
+                    PersistenceCapabilities::ATOMIC_CHANGESETS
+                        .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS),
+                    |callbacks| PersistenceCallbacks {
+                        on_persist_shielded_viewing_keys_fn: Some(record_persist_viewing_keys),
+                        on_load_shielded_viewing_keys_fn: Some(noop_load_viewing_keys),
+                        on_load_shielded_viewing_keys_free_fn: Some(noop_free_viewing_keys),
+                        ..callbacks
+                    },
+                );
+                Self {
+                    manager,
+                    dir: tempfile::tempdir().expect("a temporary directory"),
+                }
+            }
+
+            /// Configure the shielded store in the fixture's directory.
+            fn configure(&self) -> PlatformWalletFFIResultCode {
+                let path = self.dir.path().join("shielded.sqlite");
+                let path = CString::new(path.to_str().expect("utf-8 temp path")).expect("no NUL");
+                unsafe {
+                    platform_wallet_manager_configure_shielded(self.manager.handle, path.as_ptr())
+                }
+                .code
+            }
+        }
+
+        /// `call` run on a thread of [`SMALL_CALLER_STACK_BYTES`].
+        fn on_a_small_stack<T: Send + 'static>(call: impl FnOnce() -> T + Send + 'static) -> T {
+            std::thread::Builder::new()
+                .name("small-stack-caller".into())
+                .stack_size(SMALL_CALLER_STACK_BYTES)
+                .spawn(call)
+                .expect("spawn the small-stack caller")
+                .join()
+                .expect("the small-stack caller returns")
+        }
+
+        /// The reported crash (dashpay/platform#6020): a mnemonic create with
+        /// a shielded store configured, which restores the wallet's private
+        /// payments, completes from a caller whose own stack could not hold
+        /// it. Only the call's own frames run on the caller's stack.
+        #[test]
+        fn should_create_a_wallet_from_a_caller_thread_too_small_to_poll_it() {
+            let mut fixture = ShieldedFixture::new();
+            assert_eq!(fixture.configure(), PlatformWalletFFIResultCode::Success);
+
+            let handle = fixture.manager.handle;
+            let (created, wallet_handle) = on_a_small_stack(move || {
+                let (result, wallet_handle, _) = unsafe { create_from_mnemonic(handle) };
+                (result.code, wallet_handle)
+            });
+            assert_eq!(created, PlatformWalletFFIResultCode::Success);
+            fixture.manager.wallets.push(wallet_handle);
+        }
+
+        /// Both binds of the export, the one from persisted viewing keys and
+        /// the seed-backed fallback, poll on the big-stack thread; the
+        /// mnemonic resolver between them still runs on the caller's.
+        #[test]
+        fn should_poll_both_shielded_binds_on_the_big_stack_thread() {
+            let mut fixture = ShieldedFixture::new();
+            let wallet_id = fixture.manager.create_wallet();
+            assert_eq!(fixture.configure(), PlatformWalletFFIResultCode::Success);
+            fixture.manager.threads.take();
+
+            // The resolver borrows the record the fixture holds, and is
+            // destroyed before the fixture.
+            let resolver: *mut MnemonicResolverHandle = unsafe {
+                dash_sdk_mnemonic_resolver_create(
+                    Arc::as_ptr(&fixture.manager.threads) as *mut c_void,
+                    record_resolve,
+                    keep_resolver_context,
+                )
+            };
+            let accounts = [0u32];
+            let result = unsafe {
+                platform_wallet_manager_bind_shielded(
+                    fixture.manager.handle,
+                    wallet_id.as_ptr(),
+                    resolver,
+                    accounts.as_ptr(),
+                    accounts.len(),
+                )
+            };
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+
+            // The resolver runs between the two binds, so a snapshot load
+            // recorded before it is the bind from persisted viewing keys.
+            let seen = fixture.manager.threads.take();
+            let resolved_at = seen
+                .iter()
+                .position(|(name, _)| *name == "resolve_mnemonic")
+                .expect("the bind fell back to the seed, so the resolver ran");
+            assert_polled_on_big_stack(&seen[..resolved_at], "load_wallet_list");
+            assert_polled_on_big_stack(&seen[resolved_at..], "persist_viewing_keys");
+            assert_polled_on_big_stack(&seen, "load_wallet_list");
+            let caller = std::thread::current().name().map(str::to_owned);
+            let resolved_on: Vec<_> = seen
+                .iter()
+                .filter(|(name, _)| *name == "resolve_mnemonic")
+                .map(|(_, thread)| thread.clone())
+                .collect();
+            assert_eq!(
+                resolved_on,
+                vec![caller],
+                "the resolver must run once, on the caller"
+            );
+        }
     }
 }

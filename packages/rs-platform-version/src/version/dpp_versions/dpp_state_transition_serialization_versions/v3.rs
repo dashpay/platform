@@ -230,7 +230,7 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
-        // No binary of protocol version 14 decodes a random token amount; protocol version 15
-        // admits it in V4
+        // No binary of protocol version 14 or 15 decodes a random token amount (V4 takes this
+        // value); protocol version 16 admits it in V5
         random_token_amount: None,
     };

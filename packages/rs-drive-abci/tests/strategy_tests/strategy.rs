@@ -364,7 +364,7 @@ pub struct NetworkStrategy {
     /// block is relative to the wall clock (checkpoints) set it near now.
     pub start_time_ms: u64,
     /// The least every token transfer and mint of the strategy moves when its amount is random
-    /// (protocol version 15): set, they move an amount drawn from this to the operation's
+    /// (protocol version 16): set, they move an amount drawn from this to the operation's
     /// amount from the block's random beacon; `None` keeps their fixed amounts.
     pub random_token_minimum_amount: Option<u64>,
 }

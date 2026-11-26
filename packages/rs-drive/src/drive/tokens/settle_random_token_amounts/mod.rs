@@ -38,7 +38,7 @@ pub enum RandomTokenRequestKind {
     },
 }
 
-/// A token transfer or mint of a block that moves a random amount (protocol version 15), whose
+/// A token transfer or mint of a block that moves a random amount (protocol version 16), whose
 /// maximum the block reserved when it executed the transition
 /// (`TokenOperationType::TokenReserveRandomTransfer` and `TokenReserveRandomMint`): it holds
 /// the maximum in the token marketplace escrow of the token, under
@@ -98,7 +98,7 @@ impl RandomTokenRequest {
 }
 
 impl Drive {
-    /// Pays out the random token transfers and mints of a block (protocol version 15) once
+    /// Pays out the random token transfers and mints of a block (protocol version 16) once
     /// every transition of the block is accepted, from `beacon`, the block's random beacon (the
     /// threshold signature the block's prevotes combine into). For each request it draws an
     /// amount `v` from the request's minimum to its maximum, both included, and settles what
@@ -128,8 +128,8 @@ impl Drive {
     ///   executed them.
     /// - `block_info`: the block.
     /// - `transaction`: the block's transaction.
-    /// - `platform_version`: selects the method version; `None` before protocol version 15,
-    ///   which is the first to decode a random token amount.
+    /// - `platform_version`: selects the method version; `None` before protocol version 16,
+    ///   whose token tables are the first to hold the escrow the amounts are reserved in.
     ///
     /// # Returns
     /// How many requests were settled.
@@ -166,7 +166,7 @@ impl Drive {
         }
     }
 
-    /// What a random token transfer or mint (protocol version 15) whose token keeps the
+    /// What a random token transfer or mint (protocol version 16) whose token keeps the
     /// history of its kind pays in advance for the settlement's rewrite of its history document
     /// ([`Self::settle_random_token_amounts`]). The transition writes the document holding the
     /// range's minimum, and the settlement moves its entry in each index of the document's type
@@ -191,8 +191,8 @@ impl Drive {
     ///   document's id hashes (`token_history_document_id`).
     /// - `block_info`: the block, whose epoch prices the entries.
     /// - `transaction`: the block's transaction.
-    /// - `platform_version`: selects the method version; `None` before protocol version 15,
-    ///   which is the first to decode a random token amount.
+    /// - `platform_version`: selects the method version; `None` before protocol version 16,
+    ///   whose token tables are the first to hold the escrow the amounts are reserved in.
     ///
     /// # Returns
     /// The fee of those entries.

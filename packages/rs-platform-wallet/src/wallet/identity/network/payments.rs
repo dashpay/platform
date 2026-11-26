@@ -22,6 +22,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::PlatformWalletChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
+use crate::wallet::persister::NotDurable;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::reservations::release_reservation_after_rejected_broadcast;
 
@@ -807,14 +808,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             if window.key_source.can_derive() {
                 let want = window
                     .pool
-                    .gap_limit
+                    .gap_limit()
                     .saturating_mul(HISTORICAL_SEED_GAP_MULTIPLE);
-                let have = window.pool.highest_generated.map_or(0, |i| i + 1);
+                let have = window.pool.highest_generated().map_or(0, |i| i + 1);
                 if have < want {
-                    if let Err(e) =
-                        window
-                            .pool
-                            .generate_addresses(want - have, &window.key_source, true)
+                    if let Err(e) = window
+                        .pool
+                        .generate_addresses(want - have, &window.key_source)
                     {
                         incomplete_scan = true;
                         tracing::warn!(
@@ -829,16 +829,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             loop {
                 let highest_matched = window
                     .pool
-                    .addresses
+                    .addresses()
                     .values()
-                    .filter(|info| observed_scripts.contains(&info.script_pubkey))
+                    .filter(|info| observed_scripts.contains(&info.address.script_pubkey()))
                     .map(|info| info.index)
                     .max();
                 let Some(highest_matched) = highest_matched else {
                     break;
                 };
-                let target = highest_matched.saturating_add(window.pool.gap_limit);
-                let generated_through = match window.pool.highest_generated {
+                let target = highest_matched.saturating_add(window.pool.gap_limit());
+                let generated_through = match window.pool.highest_generated() {
                     Some(index) if index >= target => break,
                     Some(index) => index,
                     None => break,
@@ -856,11 +856,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     );
                     break;
                 }
-                if let Err(e) = window.pool.generate_addresses(
-                    target - generated_through,
-                    &window.key_source,
-                    true,
-                ) {
+                if let Err(e) = window
+                    .pool
+                    .generate_addresses(target - generated_through, &window.key_source)
+                {
                     incomplete_scan = true;
                     tracing::warn!(
                         error = %e,
@@ -871,9 +870,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     break;
                 }
             }
-            for address_info in window.pool.addresses.values() {
+            for address_info in window.pool.addresses().values() {
                 address_matches
-                    .entry(address_info.script_pubkey.clone())
+                    .entry(address_info.address.script_pubkey())
                     .or_insert((window.owner, window.contact));
             }
         }
@@ -1416,7 +1415,7 @@ fn mark_contact_addresses_paid_on_chain(
     let mut marked = false;
     loop {
         let candidate = external_account
-            .next_address(Some(contact_xpub), true)
+            .next_address(Some(contact_xpub))
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
         let script = candidate.script_pubkey();
         let paid = match &paid_scripts {
@@ -1478,7 +1477,7 @@ fn reserve_contact_payment_address(
     let (contact_xpub, external_account) =
         contact_external_account(wm, wallet_id, None, from_identity_id, to_contact_id)?;
     let payment_address = external_account
-        .next_address(Some(&contact_xpub), true)
+        .next_address(Some(&contact_xpub))
         .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
     // `next_address`/`next_unused` only *selects* (and, when the
@@ -1562,15 +1561,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )?
         };
         // Host persistence may re-enter wallet APIs, so never invoke it under
-        // the manager guard. Failure must not expose an unpersisted address.
+        // the manager guard. Failure must not expose an unpersisted address,
+        // and a flush that succeeded is no proof by itself: another flush of
+        // the wallet's records may have taken the reservation and failed for
+        // good, dropping it, or have written an older state of the contact's
+        // addresses after it (`WalletPersister::store_durably`). The address
+        // then stays used in memory and is not handed out.
         self.persister
-            .store(changeset)
-            .map_err(|e| self.persister.classify_store_failure(e))?;
-        self.persister.flush().map_err(|e| {
-            PlatformWalletError::Persistence(format!(
-                "failed to flush payment-address reservation: {e}"
-            ))
-        })?;
+            .store_durably(changeset)
+            .map_err(|not_durable| match not_durable {
+                NotDurable::Store(e) => self.persister.classify_store_failure(e),
+                not_flushed => PlatformWalletError::Persistence(format!(
+                    "failed to flush payment-address reservation: {not_flushed}"
+                )),
+            })?;
         Ok(address)
     }
 
@@ -2196,6 +2200,16 @@ mod tests {
         /// When set, every round recording a DashPay payment fails
         /// transiently (and is not recorded).
         fail_payment_records: Mutex<bool>,
+        /// Once set, the next flush is overtaken: a flush through this
+        /// persister, as one from another thread would, takes what was
+        /// buffered before it writes, and fails; the overtaken flush then
+        /// succeeds over nothing.
+        overtaken_by: Mutex<Option<WalletPersister>>,
+        /// Whether the overtaking flush fails transiently, putting back what
+        /// it took, or for good, dropping it.
+        overtaking_puts_back: std::sync::atomic::AtomicBool,
+        /// While set, a flush is the overtaking one, and fails.
+        overtaking: std::sync::atomic::AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -2283,6 +2297,30 @@ mod tests {
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
             self.flushes
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // Taken in its own statement: the flush below comes back here.
+            let overtaking = self.overtaken_by.lock().unwrap().take();
+            let puts_back = self
+                .overtaking_puts_back
+                .load(std::sync::atomic::Ordering::SeqCst);
+            if let Some(persister) = overtaking {
+                self.overtaking
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                let overtook = persister.flush();
+                self.overtaking
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                assert!(overtook.is_err_and(|error| error.is_transient() == puts_back));
+                return Ok(());
+            }
+            if self.overtaking.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(if puts_back {
+                    PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    )
+                } else {
+                    PersistenceError::backend("the database is corrupt")
+                });
+            }
             if *self.fail_flushes.lock().unwrap() {
                 return Err(PersistenceError::backend_with_kind(
                     PersistenceErrorKind::Transient,
@@ -2707,7 +2745,7 @@ mod tests {
                 .address_pools()
                 .first()
                 .expect("receival account has a pool")
-                .addresses
+                .addresses()
                 .values()
                 .next()
                 .expect("pool has at least one derived address")
@@ -2721,7 +2759,7 @@ mod tests {
                 outpoint,
                 txout: dashcore::TxOut {
                     value: value_duffs,
-                    script_pubkey: address_info.script_pubkey.clone(),
+                    script_pubkey: address_info.address.script_pubkey(),
                 },
                 address: address_info.address.clone(),
                 height: 100,
@@ -2767,7 +2805,8 @@ mod tests {
             account_xpub,
             is_watch_only: true,
         };
-        let managed = ManagedCoreFundsAccount::from_account(&account);
+        let managed =
+            ManagedCoreFundsAccount::from_account(&account).expect("managed external account");
 
         wallet
             .add_account(account_type, Some(account_xpub))
@@ -2793,7 +2832,7 @@ mod tests {
             .address_pools()
             .first()
             .expect("external account has a pool")
-            .addresses
+            .addresses()
             .values()
             .take(2)
             .map(|info| info.address.clone())
@@ -2820,7 +2859,7 @@ mod tests {
             .address_pools()
             .first()
             .expect("standard external pool")
-            .addresses
+            .addresses()
             .values()
             .next()
             .expect("at least one standard address")
@@ -4423,6 +4462,7 @@ mod tests {
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: self.backfill.clone(),
+                    funding_issuance_floors: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -8783,6 +8823,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
 
         // The payment handler must NOT write a sent-payment verdict: it runs
@@ -8903,6 +8944,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
         crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &matured_event)
             .await;
@@ -9060,6 +9102,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
         crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &event).await;
 
@@ -9867,14 +9910,14 @@ mod tests {
                 .expect("external account");
             let pools = account.managed_account_type().address_pools();
             let pool = *pools.first().expect("pool");
-            let materialized_max = pool.addresses.keys().copied().max().unwrap_or(0);
-            let target = materialized_max + pool.gap_limit + 1;
+            let materialized_max = pool.addresses().keys().copied().max().unwrap_or(0);
+            let target = materialized_max + pool.gap_limit() + 1;
             let mut scan = pool.clone();
             let key_source = key_wallet::KeySource::Public(test_receiving_xpub(&owner, &contact));
-            scan.generate_addresses(target + 1, &key_source, true)
+            scan.generate_addresses(target + 1, &key_source)
                 .expect("derive past the hole");
             (
-                scan.addresses
+                scan.addresses()
                     .get(&target)
                     .expect("target derived")
                     .address
@@ -10337,17 +10380,17 @@ mod tests {
                 .address_pools();
             let pool = (*pools.first().expect("pool")).clone();
             let near_index = pool
-                .highest_generated
+                .highest_generated()
                 .expect("resident pool has a generated window");
-            let far_index = near_index + pool.gap_limit;
+            let far_index = near_index + pool.gap_limit();
             let mut extended = pool;
             let key_source = KeySource::Public(test_receiving_xpub(&owner, &contact));
             extended
-                .generate_addresses(extended.gap_limit + 1, &key_source, true)
+                .generate_addresses(extended.gap_limit() + 1, &key_source)
                 .expect("extend clone past the resident window");
             (
-                extended.addresses[&near_index].address.clone(),
-                extended.addresses[&far_index].address.clone(),
+                extended.addresses()[&near_index].address.clone(),
+                extended.addresses()[&far_index].address.clone(),
                 far_index,
             )
         };
@@ -12013,7 +12056,14 @@ mod tests {
         let pools = info.core_wallet.accounts.dashpay_external_accounts[&key]
             .managed_account_type()
             .address_pools();
-        assert_eq!(pools[0].used_indices.len(), 3);
+        assert_eq!(
+            pools[0]
+                .addresses()
+                .values()
+                .filter(|info| info.is_used())
+                .count(),
+            3
+        );
     }
 
     #[tokio::test]
@@ -12123,6 +12173,60 @@ mod tests {
                 .is_err(),
             "the owner/contact scope cannot be reversed"
         );
+    }
+
+    /// A withdrawal address is not handed out when another flush of the
+    /// wallet's records took its reservation first and failed for good,
+    /// though the reservation's own flush then succeeded, over nothing: a
+    /// restart would hand the same address to the next payment. The address
+    /// stays used in memory, so the next call hands out another one.
+    #[tokio::test]
+    async fn should_not_hand_out_a_payment_address_whose_reservation_another_flush_dropped() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let (manager, persister, wallet_id, owner, contact) =
+            register_sender_and_external_account().await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let iw = wallet.identity();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        *persister.buffered.lock().unwrap() = true;
+        *persister.overtaken_by.lock().unwrap() = Some(wallet.persister().clone());
+        let refused = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+                if message.contains("failed to flush payment-address reservation")),
+            "{refused:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner, contact).await,
+            vec![0],
+            "the address that was not handed out stays used in memory"
+        );
+        let next = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await
+            .expect("a later reservation is durable");
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner, contact).await,
+            vec![0, 1]
+        );
+        assert!(persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .flat_map(|(_, cs)| &cs.account_address_pools)
+            .flat_map(|pool| &pool.addresses)
+            .any(|info| info.address == next && info.is_used()));
     }
 
     /// Persister that parks the FIRST external-pool store inside `store`,
@@ -12712,13 +12816,14 @@ mod tests {
             .expect("external account present");
         let pools = account.managed_account_type().address_pools();
         let pool = pools.first().expect("external pool");
-        assert!(
-            pool.used_indices.is_empty(),
-            "a failed build must not leave any address consumed, found {:?}",
-            pool.used_indices
+        assert_eq!(
+            pool.highest_used(),
+            None,
+            "a failed build must not leave any address consumed"
         );
         assert_eq!(
-            pool.highest_used, None,
+            pool.highest_used(),
+            None,
             "no on-chain use happened, so the pool's used high-water must stay unset"
         );
     }
@@ -12845,10 +12950,10 @@ mod tests {
                 .expect("external account present");
             let pools = account.managed_account_type().address_pools();
             let pool = pools.first().expect("external pool");
-            assert!(
-                pool.used_indices.is_empty(),
-                "a rejected broadcast must not leave any address consumed, found {:?}",
-                pool.used_indices
+            assert_eq!(
+                pool.highest_used(),
+                None,
+                "a rejected broadcast must not leave any address consumed"
             );
         }
 
@@ -13432,8 +13537,11 @@ mod tests {
             generation: Arc::clone(&real.generation),
             broadcaster: Arc::new(GatedRejectingBroadcaster { entered, release }),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
         }
     }
 
@@ -13474,8 +13582,11 @@ mod tests {
             generation: Arc::clone(&real.generation),
             broadcaster: Arc::new(GatedBroadcaster { entered, release }),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
         }
     }
 
@@ -13530,8 +13641,11 @@ mod tests {
             generation: Arc::clone(&real.generation),
             broadcaster: Arc::new(broadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
         }
     }
 
@@ -13563,7 +13677,7 @@ mod tests {
             .address_pools()
             .first()
             .expect("BIP-44 account has an address pool")
-            .addresses
+            .addresses()
             .values()
             .next()
             .expect("pool has at least one derived address")
@@ -13576,7 +13690,7 @@ mod tests {
                 outpoint,
                 txout: dashcore::TxOut {
                     value: value_duffs,
-                    script_pubkey: address_info.script_pubkey.clone(),
+                    script_pubkey: address_info.address.script_pubkey(),
                 },
                 address: address_info.address.clone(),
                 height: 100,
@@ -13827,9 +13941,10 @@ mod tests {
         let mut used: Vec<u32> = pools
             .first()
             .expect("external pool")
-            .used_indices
-            .iter()
-            .copied()
+            .addresses()
+            .values()
+            .filter(|info| info.is_used())
+            .map(|info| info.index)
             .collect();
         used.sort_unstable();
         used
@@ -14716,29 +14831,28 @@ mod tests {
                 .persister
                 .flushes
                 .load(std::sync::atomic::Ordering::SeqCst);
-            let reserved = self
-                .persister
-                .stores
-                .lock()
-                .unwrap()
-                .iter()
-                .rev()
-                .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
-                .find(|entry| {
-                    matches!(
-                        entry.account_type,
-                        key_wallet::account::AccountType::DashpayExternalAccount { .. }
-                    )
-                })
-                .is_some_and(|entry| {
-                    entry.addresses.iter().any(|info| {
-                        matches!(info.state, AddressState::Reserved { .. })
-                            && transaction
-                                .output
-                                .iter()
-                                .any(|output| output.script_pubkey == info.script_pubkey)
+            let reserved =
+                self.persister
+                    .stores
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .rev()
+                    .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+                    .find(|entry| {
+                        matches!(
+                            entry.account_type,
+                            key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                        )
                     })
-                });
+                    .is_some_and(|entry| {
+                        entry.addresses.iter().any(|info| {
+                            matches!(info.state, AddressState::Reserved { .. })
+                                && transaction.output.iter().any(|output| {
+                                    output.script_pubkey == info.address.script_pubkey()
+                                })
+                        })
+                    });
             *self.seen.lock().unwrap() = Some((flushes, reserved));
             Ok(transaction.txid())
         }
@@ -14880,6 +14994,272 @@ mod tests {
             "the failed send gave its address back"
         );
         iw.dashpay().abandon_prepared_payment(retry).await;
+    }
+
+    /// A prepared payment's reservation is not on disk when another flush of
+    /// the wallet's records took it first and failed for good, though its own
+    /// flush then succeeded, over nothing: nothing is sent, the address and
+    /// the inputs come back, and the error is a flush whose buffered round
+    /// was discarded.
+    #[tokio::test]
+    async fn should_send_nothing_when_another_flush_dropped_a_prepared_reservation() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let probe = Arc::new(DurabilityProbeBroadcaster {
+            persister: Arc::clone(&persister),
+            seen: Mutex::new(None),
+        });
+        let core = crate::CoreWallet::new(
+            Arc::clone(&wallet_arc.core().sdk),
+            Arc::clone(&wallet_arc.core().wallet_manager),
+            wallet_arc.core().wallet_id,
+            Arc::clone(&probe),
+            Arc::clone(wallet_arc.core().generation()),
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let first_output = payment_script(prepared.transaction(), 100_000);
+        *persister.buffered.lock().unwrap() = true;
+        *persister.overtaken_by.lock().unwrap() = Some(wallet_arc.persister().clone());
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a reservation another flush dropped must not be broadcast");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Fatal)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert!(
+            probe.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the failed send released the only coin");
+        assert_eq!(
+            payment_script(retry.transaction(), 100_000),
+            first_output,
+            "the address was released, so the retry pays it"
+        );
+        iw.dashpay()
+            .send_prepared_payment(retry)
+            .await
+            .expect("the retry's reservation is durable");
+        assert!(
+            probe
+                .seen
+                .lock()
+                .unwrap()
+                .is_some_and(|(_, reserved)| reserved),
+            "the retry reached the network with its reservation stored"
+        );
+    }
+
+    /// A prepared payment's reservation is not on disk either while another
+    /// flush of the wallet's records holds it, one that then fails
+    /// transiently and puts it back: nothing is sent, the address and the
+    /// inputs come back, and the error is a flush to be tried again, not a
+    /// lost round.
+    #[tokio::test]
+    async fn should_send_nothing_when_another_flush_took_a_prepared_reservation_and_put_it_back() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xD3, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let probe = Arc::new(DurabilityProbeBroadcaster {
+            persister: Arc::clone(&persister),
+            seen: Mutex::new(None),
+        });
+        let core = crate::CoreWallet::new(
+            Arc::clone(&wallet_arc.core().sdk),
+            Arc::clone(&wallet_arc.core().wallet_manager),
+            wallet_arc.core().wallet_id,
+            Arc::clone(&probe),
+            Arc::clone(wallet_arc.core().generation()),
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        *persister.buffered.lock().unwrap() = true;
+        persister
+            .overtaking_puts_back
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        *persister.overtaken_by.lock().unwrap() = Some(wallet_arc.persister().clone());
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a reservation another flush holds must not be broadcast");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Transient)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert!(
+            probe.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the failed send released the only coin");
+        iw.dashpay()
+            .send_prepared_payment(retry)
+            .await
+            .expect("the retry's reservation is durable");
+        assert!(
+            probe
+                .seen
+                .lock()
+                .unwrap()
+                .is_some_and(|(_, reserved)| reserved),
+            "the retry reached the network with its reservation stored"
+        );
+    }
+
+    /// A direct send's reservation is not on disk when another flush of the
+    /// wallet's records took it first and failed for good, though its own
+    /// flush then succeeded, over nothing: nothing is sent, and the address
+    /// and the inputs come back for the retry.
+    #[tokio::test]
+    async fn should_send_nothing_when_another_flush_dropped_a_send_s_reservation() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xD2, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let sending = with_identity_broadcaster(
+            iw,
+            DurabilityProbeBroadcaster {
+                persister: Arc::clone(&persister),
+                seen: Mutex::new(None),
+            },
+        );
+        *persister.buffered.lock().unwrap() = true;
+        *persister.overtaken_by.lock().unwrap() = Some(wallet_arc.persister().clone());
+        let err = sending
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("a reservation another flush dropped must not be broadcast");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Fatal)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert!(
+            sending.broadcaster.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        sending
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect("the failed send released the only coin");
+        assert!(
+            sending
+                .broadcaster
+                .seen
+                .lock()
+                .unwrap()
+                .is_some_and(|(_, reserved)| reserved),
+            "the retry reached the network with its reservation stored"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the address was released, so the retry pays it"
+        );
     }
 
     /// Broadcaster that, while it holds the transaction, checks whether a
@@ -15170,10 +15550,9 @@ mod tests {
                 )
             })
             .is_some_and(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == address.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == address.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the observed payment's used flag reaches disk");
         let next = iw
@@ -15252,10 +15631,9 @@ mod tests {
                 )
             })
             .is_some_and(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == address.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == address.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the observed payment's used flag reaches disk");
         let next = iw
@@ -15462,10 +15840,9 @@ mod tests {
             .iter()
             .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
             .any(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == paid.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the address found paid reaches disk");
         iw.dashpay().abandon_prepared_payment(prepared).await;
@@ -15758,10 +16135,9 @@ mod tests {
             .iter()
             .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
             .any(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == paid.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the address found paid reaches disk");
     }
@@ -15862,5 +16238,118 @@ mod tests {
             .await
             .expect("the refused send released the only coin");
         iw.dashpay().abandon_prepared_payment(retry).await;
+    }
+
+    /// Broadcaster stub that accepts every transaction and keeps a copy, so a
+    /// send-path test can read the inputs the build selected.
+    struct RecordingBroadcaster {
+        sent: Mutex<Vec<dashcore::Transaction>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for RecordingBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            self.sent
+                .lock()
+                .expect("recorded transactions")
+                .push(transaction.clone());
+            Ok(transaction.txid())
+        }
+    }
+
+    /// A DashPay payment of 1 DASH from a wallet holding a 1,000 DASH
+    /// masternode collateral and a 5 DASH coin spends the 5 DASH coin, and a
+    /// payment only the collateral could cover is refused. The payment path
+    /// selects largest-first, so without the lock the collateral would be the
+    /// first coin it takes.
+    #[tokio::test]
+    async fn should_pay_a_contact_from_the_spare_coin_and_never_the_masternode_collateral() {
+        use crate::test_support::{masternode_registration, MASTERNODE_COLLATERAL_DUFFS};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        const DASH: u64 = 100_000_000;
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        fund_bip44_account_0(&manager, wallet_id, 0xC0, MASTERNODE_COLLATERAL_DUFFS).await;
+        fund_bip44_account_0(&manager, wallet_id, 0xC1, 5 * DASH).await;
+        let collateral = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([0xC0; 32]),
+            vout: 0,
+        };
+        let spare = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([0xC1; 32]),
+            vout: 0,
+        };
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            wm.check_transaction_in_all_wallets(
+                &masternode_registration(collateral),
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    101,
+                    dashcore::BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+                true,
+                true,
+            )
+            .await;
+        }
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
+        let broadcaster = Arc::new(RecordingBroadcaster {
+            sent: Mutex::new(Vec::new()),
+        });
+        let real = wallet.identity();
+        let iw = crate::wallet::identity::IdentityWallet {
+            sdk: Arc::clone(&real.sdk),
+            wallet_manager: Arc::clone(&real.wallet_manager),
+            wallet_id: real.wallet_id,
+            asset_locks: Arc::clone(&real.asset_locks),
+            persister: real.persister.clone(),
+            sync_fault: Arc::clone(&real.sync_fault),
+            durable_cursors: Arc::clone(&real.durable_cursors),
+            generation: Arc::clone(&real.generation),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
+            broadcaster: Arc::clone(&broadcaster),
+            sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+        };
+
+        let err = iw
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 6 * DASH, None, &signer, &provider)
+            .await
+            .expect_err("6 DASH needs the collateral");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(reason)
+                if reason.to_lowercase().contains("insufficient")),
+            "expected a funding shortfall, got {err:?}"
+        );
+
+        iw.dashpay()
+            .send_payment(&owner_id, &contact_id, DASH, None, &signer, &provider)
+            .await
+            .expect("the spare coin covers 1 DASH");
+        let sent = broadcaster.sent.lock().expect("recorded transactions");
+        assert_eq!(sent.len(), 1, "one payment was broadcast");
+        let inputs: Vec<_> = sent[0]
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(inputs, vec![spare], "only the spare coin may be spent");
     }
 }

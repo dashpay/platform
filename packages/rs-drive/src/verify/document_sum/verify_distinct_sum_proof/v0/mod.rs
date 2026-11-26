@@ -40,7 +40,13 @@ impl DriveDocumentSumQuery<'_> {
         let mut out: Vec<SumEntry> = Vec::with_capacity(elements.len());
         for (path, key, elem) in elements {
             if let Some(e) = elem {
-                let sum = e.sum_value_or_default();
+                // At 128 bits, whatever width the type keeps its sums in: for an element holding a
+                // 64-bit sum (every element before protocol version 15) this is that sum widened
+                // (`crate::query::sum_width`). Edited in place in this shipped generation: it
+                // returned the sum at 64 bits and refused a wider one; a verifier runs on the
+                // client and decides nothing in a block, and every sum it verified before is
+                // returned as the same number.
+                let sum = e.big_sum_value_or_default();
                 let in_key = if has_in_on_prefix && path.len() > base_path_len {
                     Some(path[base_path_len].clone())
                 } else {

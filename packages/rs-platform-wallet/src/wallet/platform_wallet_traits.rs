@@ -45,6 +45,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
@@ -62,6 +64,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
@@ -254,10 +258,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
         changed
     }
 
-    fn monitor_revision(&self) -> u64 {
-        self.core_wallet.monitor_revision()
-    }
-
     // Delegate the chain-lock methods to the inner `ManagedWalletInfo`.
     //
     // Without these delegations, `WalletInfoInterface`'s default impls
@@ -359,10 +359,16 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_balance: bool,
     ) -> TransactionCheckResult {
         // TODO: some logic must here - restore
-        let result = self
+        let mut result = self
             .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
             .await;
+        // A tracked masternode's collateral that this transaction pays the
+        // wallet arrives locked. The lock is reported like one the check
+        // itself made, so the wallet event carries it to the persister.
+        if update_state {
+            self.lock_arrived_tracked_collaterals(tx, &mut result);
+        }
         // A transaction first seen, or confirmed, in a ChainLocked block is
         // dropped on the spot: keep what it spent, as `apply_chain_lock`
         // does for the records it promotes. Gate on each record's own
@@ -672,7 +678,7 @@ mod tests {
             .managed_wallet
             .first_bip32_managed_account_mut()
             .expect("BIP32 account")
-            .next_receive_address(Some(&bip32_xpub), true)
+            .next_receive_address(Some(&bip32_xpub))
             .expect("address");
         let to_bip44 = funding(ctx.receive_address.script_pubkey(), 0x52, 6_000);
         let to_bip32 = funding(bip32_address.script_pubkey(), 0x53, 7_000);

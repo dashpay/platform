@@ -7,17 +7,17 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::util::ecdsa;
 use crate::ProtocolError;
+use bech32::primitives::decode::UncheckedHrpstring;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::sha256d;
-use dashcore::{
-    sign_message, signer, Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash,
-};
+use dashcore::{sign_message, Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -277,6 +277,33 @@ pub(crate) fn classify_platform_hrp(hrp: &str) -> Result<bool, ProtocolError> {
     }
 }
 
+/// Decodes a platform bech32m string into whether its HRP is the mainnet
+/// one and its payload bytes.
+///
+/// The HRP is classified before the checksum is checked, so a string of
+/// another chain is reported as not a platform address. Only the Bech32m
+/// checksum is accepted, and the padding bits after the last byte must be
+/// zero. `bech32::decode` also accepts a string carrying the legacy Bech32
+/// checksum, and ignores the padding bits; DIP-0018 allows neither. Such a
+/// string would decode to the same bytes as the canonical one, so one
+/// address would have several spellings.
+pub(crate) fn decode_platform_bech32m(s: &str) -> Result<(bool, Vec<u8>), ProtocolError> {
+    let unchecked = UncheckedHrpstring::new(s)
+        .map_err(|e| ProtocolError::DecodingError(format!("parsing failed: {e}")))?;
+    let is_mainnet = classify_platform_hrp(&unchecked.hrp().to_lowercase())?;
+    let checked = unchecked
+        .validate_and_remove_checksum::<Bech32m>()
+        .map_err(|e| ProtocolError::DecodingError(format!("invalid Bech32m checksum: {e}")))?;
+    // The data part is whole 5-bit groups, so its last group can carry bits
+    // past the last byte. They are dropped when the bytes are collected, so
+    // unless they are required to be zero, strings that differ only there
+    // decode to one address.
+    checked
+        .validate_segwit_padding()
+        .map_err(|e| ProtocolError::DecodingError(format!("invalid Bech32m padding: {e}")))?;
+    Ok((is_mainnet, checked.byte_iter().collect()))
+}
+
 impl PlatformAddress {
     /// Type byte for P2PKH addresses in bech32m encoding (user-facing)
     pub const P2PKH_TYPE: u8 = 0xb0;
@@ -344,10 +371,7 @@ impl PlatformAddress {
     /// - `Err(ProtocolError)` - If the string is malformed or its HRP is not a
     ///   recognized platform HRP
     pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
-        let (hrp, data) =
-            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
-
-        classify_platform_hrp(&hrp.as_str().to_ascii_lowercase())?;
+        let (_, data) = decode_platform_bech32m(s)?;
 
         // Validate payload length: 1 type byte + 20 hash bytes = 21 bytes
         if data.len() != 1 + ADDRESS_HASH_SIZE {
@@ -378,8 +402,8 @@ impl PlatformAddress {
 
     /// Classifies a bech32m platform-address string as mainnet or non-mainnet.
     ///
-    /// Fully decodes `s` (validating checksum and data part) then classifies
-    /// the HRP: `dash` means mainnet, `tdash` means non-mainnet (Testnet /
+    /// Fully decodes `s` (validating its Bech32m checksum and data part) and
+    /// classifies the HRP: `dash` means mainnet, `tdash` means non-mainnet (Testnet /
     /// Devnet / Regtest — these are indistinguishable by HRP alone per DIP-0018).
     ///
     /// # Returns
@@ -387,9 +411,7 @@ impl PlatformAddress {
     /// - `Ok(false)` - non-mainnet (`tdash` HRP: Testnet/Devnet/Regtest)
     /// - `Err(ProtocolError)` - malformed address or non-platform HRP
     pub fn is_mainnet_bech32m(s: &str) -> Result<bool, ProtocolError> {
-        let (hrp, _) =
-            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{e}")))?;
-        classify_platform_hrp(&hrp.to_lowercase())
+        decode_platform_bech32m(s).map(|(is_mainnet, _)| is_mainnet)
     }
 
     /// Converts the PlatformAddress to a dashcore Address with the specified network.
@@ -473,14 +495,19 @@ impl PlatformAddress {
     /// # Arguments
     /// * `witness` - The witness containing signature(s) and either a public key (P2PKH) or redeem script (P2SH)
     /// * `signable_bytes` - The data that was signed (will be double-SHA256 hashed internally)
+    /// * `platform_version` - Selects `verify_hash_signature` for a P2PKH witness: from protocol
+    ///   version 15 a high-S signature and a header naming an uncompressed key are refused.
     ///
     /// # Returns
     /// * `Ok(AddressWitnessVerificationOperations)` - Operations performed if verification succeeds
-    /// * `Err(ProtocolError)` if verification fails
+    /// * `Err(ProtocolError::UnknownVersionMismatch)` if this build does not know the selected
+    ///   `verify_hash_signature` version
+    /// * `Err(ProtocolError)` of another kind if verification fails
     pub fn verify_bytes_against_witness(
         &self,
         witness: &AddressWitness,
         signable_bytes: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<AddressWitnessVerificationOperations, ProtocolError> {
         match (self, witness) {
             (PlatformAddress::P2pkh(pubkey_hash), AddressWitness::P2pkh { signature }) => {
@@ -492,13 +519,18 @@ impl PlatformAddress {
                 // This saves 33 bytes per witness (no need to include pubkey)
                 // at a ~4% CPU cost increase (recovery vs verify).
                 let data_hash = dashcore::signer::double_sha(signable_bytes);
-                signer::verify_hash_signature(&data_hash, signature.as_slice(), pubkey_hash)
-                    .map_err(|e| {
-                        ProtocolError::AddressWitnessError(format!(
-                            "P2PKH signature verification failed: {}",
-                            e
-                        ))
-                    })?;
+                ecdsa::verify_hash_signature(
+                    &data_hash,
+                    signature.as_slice(),
+                    pubkey_hash,
+                    platform_version,
+                )?
+                .map_err(|e| {
+                    ProtocolError::AddressWitnessError(format!(
+                        "P2PKH signature verification failed: {}",
+                        e
+                    ))
+                })?;
 
                 Ok(AddressWitnessVerificationOperations::for_p2pkh(
                     signable_bytes.len(),
@@ -896,7 +928,11 @@ mod tests {
         };
 
         // Verify should succeed
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_ok(),
             "P2PKH verification should succeed: {:?}",
@@ -925,7 +961,8 @@ mod tests {
         };
 
         // Verify should fail (recovered pubkey won't match because message differs)
-        let result = address.verify_bytes_against_witness(&witness, verify_bytes);
+        let result =
+            address.verify_bytes_against_witness(&witness, verify_bytes, PlatformVersion::latest());
         assert!(
             result.is_err(),
             "P2PKH verification should fail with wrong data"
@@ -954,7 +991,11 @@ mod tests {
         };
 
         // Verify should fail (recovered pubkey hash won't match address)
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_err(),
             "P2PKH verification should fail when signed with wrong key"
@@ -995,7 +1036,11 @@ mod tests {
         };
 
         // Verify should succeed
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_ok(),
             "P2SH 2-of-3 multisig verification should succeed: {:?}",
@@ -1032,7 +1077,11 @@ mod tests {
         };
 
         // Verify should succeed
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_ok(),
             "P2SH 2-of-3 multisig with keys 1 and 2 should succeed: {:?}",
@@ -1068,7 +1117,11 @@ mod tests {
         };
 
         // Verify should fail
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_err(),
             "P2SH should fail with only 1 signature when 2 required"
@@ -1107,7 +1160,11 @@ mod tests {
         };
 
         // Verify should fail (script doesn't hash to address)
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_err(),
             "P2SH should fail when script hash doesn't match address"
@@ -1148,8 +1205,11 @@ mod tests {
         let p2pkh_witness = AddressWitness::P2pkh {
             signature: BinaryData::new(p2pkh_sig),
         };
-        let p2pkh_result =
-            p2pkh_address.verify_bytes_against_witness(&p2pkh_witness, signable_bytes);
+        let p2pkh_result = p2pkh_address.verify_bytes_against_witness(
+            &p2pkh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             p2pkh_result.is_ok(),
             "P2PKH redemption should succeed: {:?}",
@@ -1163,7 +1223,11 @@ mod tests {
             signatures: vec![BinaryData::new(p2sh_sig0), BinaryData::new(p2sh_sig2)],
             redeem_script: BinaryData::new(redeem_script),
         };
-        let p2sh_result = p2sh_address.verify_bytes_against_witness(&p2sh_witness, signable_bytes);
+        let p2sh_result = p2sh_address.verify_bytes_against_witness(
+            &p2sh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             p2sh_result.is_ok(),
             "P2SH redemption should succeed: {:?}",
@@ -1192,7 +1256,11 @@ mod tests {
             signatures: vec![BinaryData::new(vec![0x30, 0x44])],
             redeem_script: BinaryData::new(vec![0x52]),
         };
-        let result = p2pkh_address.verify_bytes_against_witness(&p2sh_witness, signable_bytes);
+        let result = p2pkh_address.verify_bytes_against_witness(
+            &p2sh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -1203,7 +1271,11 @@ mod tests {
         let p2pkh_witness = AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44]),
         };
-        let result = p2sh_address.verify_bytes_against_witness(&p2pkh_witness, signable_bytes);
+        let result = p2sh_address.verify_bytes_against_witness(
+            &p2pkh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -1369,6 +1441,56 @@ mod tests {
 
         let result = PlatformAddress::from_bech32m_string(&encoded);
         assert!(result.is_err(), "Should fail with corrupted checksum");
+    }
+
+    #[test]
+    fn should_reject_a_legacy_bech32_checksum_and_accept_bech32m() {
+        // The same HRP and payload under each checksum: only Bech32m is an
+        // address (DIP-0018), so one address has one spelling.
+        let hrp = Hrp::parse(PLATFORM_HRP_TESTNET).unwrap();
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE];
+        payload.extend_from_slice(&[0x11; 20]);
+        let legacy = bech32::encode::<bech32::Bech32>(hrp, &payload).unwrap();
+        let current = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+
+        assert!(PlatformAddress::from_bech32m_string(&legacy).is_err());
+        assert!(PlatformAddress::is_mainnet_bech32m(&legacy).is_err());
+        assert_eq!(
+            PlatformAddress::from_bech32m_string(&current).unwrap(),
+            PlatformAddress::P2pkh([0x11; 20])
+        );
+        assert!(!PlatformAddress::is_mainnet_bech32m(&current).unwrap());
+    }
+
+    #[test]
+    fn should_reject_non_zero_padding_bits_under_a_valid_bech32m_checksum() {
+        use bech32::primitives::iter::{ByteIterExt, Fe32IterExt};
+        use bech32::Fe32;
+
+        // 21 bytes are 168 bits in 34 five-bit groups, so the last group
+        // carries two padding bits. Set one and checksum the result.
+        let hrp = Hrp::parse(PLATFORM_HRP_TESTNET).unwrap();
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE];
+        payload.extend_from_slice(&[0x11; 20]);
+        let mut groups: Vec<Fe32> = payload.iter().copied().bytes_to_fes().collect();
+        let last = groups.pop().unwrap();
+        assert_eq!(last.to_u8() & 0b11, 0, "canonical padding is zero");
+        groups.push(Fe32::try_from(last.to_u8() | 0b01).unwrap());
+        let padded: String = groups
+            .into_iter()
+            .with_checksum::<Bech32m>(&hrp)
+            .chars()
+            .collect();
+
+        let err = PlatformAddress::from_bech32m_string(&padded).unwrap_err();
+        assert!(err.to_string().contains("padding"), "{err}");
+        assert!(PlatformAddress::is_mainnet_bech32m(&padded).is_err());
+
+        let canonical = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+        assert_eq!(
+            PlatformAddress::from_bech32m_string(&canonical).unwrap(),
+            PlatformAddress::P2pkh([0x11; 20])
+        );
     }
 
     #[test]

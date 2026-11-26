@@ -9,11 +9,12 @@ use rusqlite::{Connection, OptionalExtension};
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    PlatformWalletChangeSet, PlatformWalletPersistence, StoreAndCommitError,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use crate::parent_permissions::warn_on_insecure_ancestors;
 use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::{Buffer, PendingWrites};
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
@@ -24,7 +25,9 @@ use crate::sqlite::rehydrate::{
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
-use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
+use crate::sqlite::util::permissions::{
+    apply_secure_permissions, create_owner_only_dirs, precreate_secure,
+};
 use crate::sqlite::util::safe_cast;
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
@@ -261,8 +264,6 @@ impl SqlitePersister {
     /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
     ///   `config.path` does not exist. The persister refuses to create
     ///   parent directories silently.
-    /// - [`WalletStorageError::InsecureParentDir`] — a database ancestor has
-    ///   unsafe replacement permissions or ownership on Unix.
     /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
     ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
     ///   (no FK support compiled in).
@@ -313,14 +314,7 @@ impl SqlitePersister {
                 format!("database parent directory not found: {}", parent.display()),
             )));
         }
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                WalletStorageError::Io(source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                WalletStorageError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
+        warn_on_insecure_ancestors("database", parent);
 
         // Claim the path BEFORE anything touches the file. The registry exists
         // to stop two handles diverging, and the most destructive thing an
@@ -394,7 +388,7 @@ impl SqlitePersister {
             )?;
         }
 
-        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn, config.load_policy)?;
 
         // The open succeeded, so the claim passes to the persister, whose
         // `Drop` releases it.
@@ -444,9 +438,10 @@ impl SqlitePersister {
     /// database restored from a backup and reloaded clean reports clean. A
     /// `load()` that returns `Err` leaves it empty — the error is the
     /// verdict there, not a partial tally.
-    /// [`load_unowned_identities`](Self::load_unowned_identities) *adds*
-    /// into the current snapshot, so its counts read as "since the last
-    /// `load()`". Reading does not clear. The point read
+    /// [`load_unowned_identities`](Self::load_unowned_identities) and
+    /// [`asset_lock_status`](Self::asset_lock_status) *add* into the current
+    /// snapshot, so their counts read as "since the last `load()`". Reading
+    /// does not clear. The point read
     /// [`get_core_tx_record`](PlatformWalletPersistence::get_core_tx_record)
     /// is the exception: its tolerated drift is logged and never tallied,
     /// because one read per transaction folded into a per-load snapshot
@@ -575,14 +570,6 @@ impl SqlitePersister {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                WalletStorageError::Io(source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                WalletStorageError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
 
         // Refuse to overwrite a database a live persister in this process is
         // still holding open: that handle's buffer/connection would silently
@@ -632,6 +619,41 @@ impl SqlitePersister {
     ) -> Result<PruneReport, WalletStorageError> {
         self.ensure_writable("prune_backups")?;
         prune_backups_in(dir, policy)
+    }
+
+    /// One asset lock's persisted status by outpoint, `Consumed` rows
+    /// included, or `None` when `wallet_id` stored none for it.
+    ///
+    /// `load()` does not rehydrate a consumed lock without an operation ID,
+    /// so a lock missing from the live wallet after a reopen may have been
+    /// spent or never stored here;
+    /// this read tells them apart. A wallet delete removes every row, so a
+    /// re-imported wallet reads `None` for locks it held before.
+    ///
+    /// Reads the *committed* table: in [`FlushMode::Manual`] a row still in
+    /// the write buffer is not visible yet.
+    ///
+    /// Status drift between the typed column and the lifecycle blob follows
+    /// the load policy: under [`LoadPolicy::Strict`] it is
+    /// [`WalletStorageError::AssetLockStatusMismatch`]; under
+    /// [`LoadPolicy::Recovery`] the read returns the reconciled status
+    /// (consumption is sticky) and *adds* one `AssetLockStatusDrift` to
+    /// [`last_load_degradation`](Self::last_load_degradation). The tally
+    /// counts reads, not rows: reading the same drifted lock again counts it
+    /// again.
+    pub fn asset_lock_status(
+        &self,
+        wallet_id: &WalletId,
+        outpoint: &dashcore::OutPoint,
+    ) -> Result<
+        Option<platform_wallet::wallet::asset_lock::tracked::AssetLockStatus>,
+        WalletStorageError,
+    > {
+        let conn = self.conn()?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        let status = schema::asset_locks::status_of(&conn, wallet_id, outpoint, &ctx)?;
+        self.merge_load_degradation(ctx.degradation());
+        Ok(status)
     }
 
     /// Read every identity that belongs to NO wallet, each already
@@ -786,6 +808,7 @@ impl SqlitePersister {
                         error_kind = e.error_kind_str(),
                         "buffer restore failed during delete_wallet error path — changeset lost"
                     );
+                    self.buffer.note_dropped(&wallet_id);
                 }
             }
         };
@@ -919,13 +942,21 @@ impl SqlitePersister {
             // here rather than being restored to a buffer no flush could
             // ever drain.
             drop(drained_slot.take());
+            // Counted as a drop for the wallet whatever was staged: what
+            // the pre-flush above did write went with the cascade too, so
+            // a changeset that was buffered when the delete began is on no
+            // disk either way (`buffered_writes_dropped`).
+            self.buffer.note_dropped(&wallet_id);
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
             match self.buffer.take_for_flush(&wallet_id) {
-                Ok(Some(_late)) => tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    "discarded racing buffered changeset after delete_wallet commit"
-                ),
+                Ok(Some(_late)) => {
+                    self.buffer.note_dropped(&wallet_id);
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "discarded racing buffered changeset after delete_wallet commit"
+                    )
+                }
                 Ok(None) => {}
                 // The delete itself already committed, so this still returns
                 // Ok — but a poisoned buffer mutex here is a signal every
@@ -1109,6 +1140,60 @@ impl SqlitePersister {
             .map_err(PersistenceError::from)
     }
 
+    /// Merge `changeset` into `wallet_id`'s buffer and commit that buffer
+    /// under ONE connection guard, in either flush mode.
+    ///
+    /// Every path that drains the buffer takes the same lock and holds it
+    /// across its take, its write and its restore-on-failure
+    /// ([`flush_inner`](Self::flush_inner), so `commit_writes` and the
+    /// trait's `flush`; `delete_wallet`). So from the merge to the end of the
+    /// commit no other drain can own, and fatally drop or put back, the
+    /// changeset merged here, and none that began earlier still holds
+    /// anything it took: the answer is for exactly what this call staged.
+    /// A `Manual`-mode `store` of a changeset without identities merges
+    /// without the connection and can land in the buffer meanwhile; it only
+    /// adds, and is committed with this call or left for a later flush.
+    ///
+    /// The two failures are kept apart. A changeset the merge refused never
+    /// reached the buffer, which is as it was
+    /// ([`StoreAndCommitError::NotStaged`]). One whose commit failed
+    /// ([`StoreAndCommitError::NotCommitted`]) is back in the buffer after a
+    /// transient failure and gone after any other
+    /// ([`handle_flush_error`](Self::handle_flush_error)).
+    ///
+    /// A poisoned lock is never `NotStaged`, although nothing was staged:
+    /// the buffer is not as it was. Finding the connection poisoned discards
+    /// every buffered changeset ([`conn`](Self::conn)), and a poisoned
+    /// buffer lock leaves what it guards out of reach for good. Both are
+    /// reported as `NotCommitted` with [`PersistenceError::LockPoisoned`],
+    /// which is not transient: what the wallet had buffered is gone.
+    ///
+    /// That discard is every wallet's, here as on every other path that
+    /// finds the connection poisoned, and this call answers for its own
+    /// wallet alone. The others are not told by it. They cannot be misled
+    /// either: from then on every `store`, `flush` and `store_and_commit`
+    /// of every wallet on this persister fails with `LockPoisoned`, so none
+    /// is told a record is on disk, and each wallet's next flush or step
+    /// reports the loss to whoever made it.
+    fn stage_and_commit(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), StoreAndCommitError> {
+        let mut conn = self
+            .conn()
+            .map_err(|e| StoreAndCommitError::NotCommitted(PersistenceError::from(e)))?;
+        self.merge_checked(Some(&conn), wallet_id, changeset)
+            .map_err(|refused| match refused {
+                PersistenceError::LockPoisoned => StoreAndCommitError::NotCommitted(refused),
+                refused => StoreAndCommitError::NotStaged(refused),
+            })?;
+        #[cfg(any(test, feature = "__test-helpers"))]
+        self.run_store_flush_seam();
+        self.flush_locked(&mut conn, &wallet_id)
+            .map_err(StoreAndCommitError::NotCommitted)
+    }
+
     /// Classify the failure: transient errors restore the buffer and
     /// surface as `FlushRetryable`; everything else drops the changeset
     /// and returns the original variant.
@@ -1130,6 +1215,7 @@ impl SqlitePersister {
                     restored_field_count = field_count,
                     "buffer restore failed after transient flush error — changeset lost"
                 );
+                self.buffer.note_dropped(wallet_id);
                 return Err(PersistenceError::from(restore_err));
             }
             // Narrow to the rusqlite source for `FlushRetryable`.
@@ -1165,6 +1251,9 @@ impl SqlitePersister {
                 dropped_field_count = field_count,
                 "flush failed fatally — buffer wiped"
             );
+            // Counted while the connection is still held, so the next flush
+            // of this wallet, whoever makes it, finds the count changed.
+            self.buffer.note_dropped(wallet_id);
             drop(cs);
             Err(PersistenceError::from(err))
         }
@@ -1299,15 +1388,34 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    /// In [`FlushMode::Immediate`] a `store` that answers `Ok` is on disk.
+    /// That says nothing of an empty buffer: a `store` or a
+    /// [`store_and_commit`](Self::store_and_commit) whose commit failed
+    /// transiently left its changeset buffered, in this mode too, until the
+    /// next `store`, `flush`, `commit_writes` or `store_and_commit` writes
+    /// it or drops it. A caller that asks whether everything stored is on
+    /// disk flushes, in either mode.
     fn store_commits_inline(&self) -> bool {
         self.config.flush_mode == FlushMode::Immediate
+    }
+
+    /// Every changeset this persister took from `wallet_id`'s buffer and
+    /// dropped without writing it, whichever call drained the buffer:
+    /// `flush`, [`commit_writes`](Self::commit_writes), or the discard of
+    /// every buffer once the connection is unusable. A wallet's deletion
+    /// counts too, whatever it had buffered: what it wrote first went with
+    /// the wallet's rows. The drop is counted while the connection is held,
+    /// before any later flush of the wallet can run.
+    fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
+        Some(self.buffer.dropped(&wallet_id))
     }
 
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
-        // invitations, account pools, tracked asset locks, and
-        // deferred-contact-crypto queue rows.
+        // invitations, account pools, tracked asset locks,
+        // deferred-contact-crypto queue rows, and locked outpoints (applied
+        // by `core_state::apply`, handed back by `load_state`).
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
@@ -1324,7 +1432,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+            .union(PersistenceCapabilities::OUTPOINT_LOCKS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1405,18 +1514,17 @@ impl PlatformWalletPersistence for SqlitePersister {
         // keeps a changeset another caller staged for the same wallet
         // from being dropped as collateral of this one's rejection.
         match self.config.flush_mode {
-            // ONE connection guard spans the merge AND the flush. Every
-            // path that drains the buffer takes the same lock, so no
-            // other flush can own — and fatally drop — the changeset
-            // merged just above: the flush below reports the fate of
-            // exactly what this call staged, which is what the
-            // durability contract above promises.
+            // ONE connection guard spans the merge AND the flush
+            // (`stage_and_commit`), so the flush reports the fate of
+            // exactly what this call staged, which is what the durability
+            // contract above promises. `store` has one error to give, so
+            // a refused merge and a failed commit both come back as it.
             FlushMode::Immediate => {
-                let mut conn = self.conn().map_err(PersistenceError::from)?;
-                self.merge_checked(Some(&conn), wallet_id, changeset)?;
-                #[cfg(any(test, feature = "__test-helpers"))]
-                self.run_store_flush_seam();
-                self.flush_locked(&mut conn, &wallet_id)
+                self.stage_and_commit(wallet_id, changeset)
+                    .map_err(|not_committed| match not_committed {
+                        StoreAndCommitError::NotStaged(e)
+                        | StoreAndCommitError::NotCommitted(e) => e,
+                    })
             }
             // Nothing reaches disk here, so the connection is worth
             // taking only for the identity-slot probe.
@@ -1437,6 +1545,66 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         self.flush_inner(&wallet_id)
+    }
+
+    /// In both flush modes: the connection every drain takes is held from
+    /// the merge to the end of the commit
+    /// ([`stage_and_commit`](Self::stage_and_commit)).
+    fn offers_store_and_commit(&self) -> bool {
+        true
+    }
+
+    /// Merge `changeset` into the wallet's buffer and commit that buffer in
+    /// one transaction, under one connection guard.
+    ///
+    /// In [`FlushMode::Manual`] this is how one changeset is made durable
+    /// with an answer for it alone: `store` followed by `flush` leaves the
+    /// buffer open, between the two calls, to a
+    /// [`commit_writes`](Self::commit_writes) or a `flush` from anywhere
+    /// else, which can take the changeset and drop it on a fatal failure
+    /// while the caller's own flush then succeeds over an empty buffer. It
+    /// commits everything buffered for the wallet, as `flush` does, the
+    /// changeset last. In [`FlushMode::Immediate`] it is `store` with the
+    /// two failures told apart.
+    ///
+    /// # Other processes
+    ///
+    /// The guard is this persister's connection, so the step is one step
+    /// with every drain of THIS persister's buffer. Another process that
+    /// has the same database open buffers on its own. SQLite serializes the
+    /// two transactions, and a later commit by that process lands over this
+    /// one, exactly as it lands over a `store` or a `flush`: nothing in this
+    /// crate orders what two processes hold in memory. As for
+    /// [`delete_wallet`](Self::delete_wallet) and
+    /// [`restore_from`](Self::restore_from), callers that let two processes
+    /// write one wallet serialize them.
+    ///
+    /// # Errors
+    ///
+    /// - [`StoreAndCommitError::NotStaged`]: the changeset never reached the
+    ///   buffer, which is as it was, and nothing was written. Raised under
+    ///   [`LoadPolicy::Recovery`](crate::LoadPolicy) and for an
+    ///   identity-slot conflict
+    ///   ([`WalletStorageError::IdentityIndexConflict`] /
+    ///   [`WalletStorageError::WalletlessIdentityIndex`]).
+    /// - [`StoreAndCommitError::NotCommitted`]: the changeset was merged and
+    ///   the transaction failed. A transient failure
+    ///   ([`WalletStorageError::FlushRetryable`]) restored the buffer, the
+    ///   changeset in it, for a later `flush`, `commit_writes` or
+    ///   `store_and_commit`; any other dropped the buffer. A poisoned lock
+    ///   is reported this way too, as [`PersistenceError::LockPoisoned`]:
+    ///   finding it discards every buffered changeset, so the buffer is not
+    ///   as it was even though this changeset never reached it.
+    fn store_and_commit(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), StoreAndCommitError> {
+        // Refused at the door, as `store` refuses it: a recovery-mode
+        // changeset never reaches the buffer.
+        self.ensure_writable("store_and_commit")
+            .map_err(|e| StoreAndCommitError::NotStaged(PersistenceError::from(e)))?;
+        self.stage_and_commit(wallet_id, changeset)
     }
 
     /// Load every wallet's start-state from disk.
@@ -1687,6 +1855,21 @@ fn load_one_wallet(
     wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    tx.commit()
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    Ok(state)
+}
+
+fn load_wallet_snapshot(
+    conn: &Connection,
+    wallet_id: WalletId,
+    ctx: &LoadCtx,
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
     let (network_str, birth_height) = schema::wallets::fetch(conn, &wallet_id)
         .map_err(PersistenceError::from)?
         .ok_or_else(|| {
@@ -1866,6 +2049,9 @@ fn load_one_wallet(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
+        // This backend restores pools through `apply_persisted_core_state`,
+        // which reports no unreachable funding rows.
+        funding_issuance_floors: Default::default(),
     })
 }
 
@@ -2275,58 +2461,9 @@ pub(crate) fn run_auto_backup(
 }
 
 fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
-    #[cfg(unix)]
-    let mut missing_components = Vec::new();
-    if !dir.exists() {
-        #[cfg(unix)]
-        {
-            let mut component = dir;
-            while !component.exists() && !component.as_os_str().is_empty() {
-                missing_components.push(component.to_path_buf());
-                let Some(parent) = component.parent() else {
-                    break;
-                };
-                component = parent;
-            }
-        }
-        #[cfg(unix)]
-        let create_result = {
-            use std::os::unix::fs::DirBuilderExt;
-            let mut builder = std::fs::DirBuilder::new();
-            builder.recursive(true).mode(0o700).create(dir)
-        };
-        #[cfg(not(unix))]
-        let create_result = std::fs::create_dir_all(dir);
-        create_result.map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
-            dir: dir.to_path_buf(),
-            source,
-        })?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if missing_components.is_empty() {
-            missing_components.push(dir.to_path_buf());
-        }
-        for component in missing_components {
-            std::fs::set_permissions(&component, std::fs::Permissions::from_mode(0o700)).map_err(
-                |source| WalletStorageError::AutoBackupDirUnwritable {
-                    dir: component,
-                    source,
-                },
-            )?;
-        }
-    }
-    crate::parent_permissions::check_parent_perms(dir).map_err(|error| match error {
-        crate::parent_permissions::ParentPermissionsError::Io(source) => {
-            WalletStorageError::AutoBackupDirUnwritable {
-                dir: dir.to_path_buf(),
-                source,
-            }
-        }
-        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-            WalletStorageError::InsecureParentDir { ancestor, reason }
-        }
+    create_owner_only_dirs(dir).map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
+        dir: dir.to_path_buf(),
+        source,
     })?;
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the
@@ -2394,6 +2531,7 @@ mod tests {
             "contacts",
             "core_address_pool",
             "core_instant_locks",
+            "core_locked_outpoints",
             "core_sync_state",
             "core_transactions",
             "core_utxos",
@@ -2409,18 +2547,21 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "dpns_name_states",      // get_dpns_name_state
-            "meta_contact",          // the kv object store
-            "meta_data_versions",    // schema::versions
-            "meta_global",           // the kv object store
-            "meta_identity",         // the kv object store
-            "meta_platform_address", // the kv object store
-            "meta_store_generation", // schema::versions
-            "meta_token",            // the kv object store
-            "meta_wallet",           // the kv object store
-            "tracked_masternodes",   // load_tracked_masternodes
+            "core_transaction_inputs", // core_history::apply
+            "dpns_name_states",        // get_dpns_name_state
+            "meta_contact",            // the kv object store
+            "meta_data_versions",      // schema::versions
+            "meta_global",             // the kv object store
+            "meta_identity",           // the kv object store
+            "meta_platform_address",   // the kv object store
+            "meta_store_generation",   // schema::versions
+            "meta_token",              // the kv object store
+            "meta_wallet",             // the kv object store
+            "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // First pre-repair bytes, retained for recovery.
+        const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.
         #[cfg(feature = "shielded")]
@@ -2462,6 +2603,7 @@ mod tests {
                     && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
                     && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
                     && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !RETAINED_FOR_RECOVERY.contains(&table.as_str())
                     && !FEATURE_GATED.contains(&table.as_str())
                     && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
             })

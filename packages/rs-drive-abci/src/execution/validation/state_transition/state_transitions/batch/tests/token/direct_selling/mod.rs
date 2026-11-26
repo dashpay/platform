@@ -31,12 +31,22 @@ mod token_selling_tests {
             // reads the total supply even though the token sets no max supply. 12_820 credits
             // less in fees: the documents expirations tree joins `Misc` beside the token
             // supplies tree the purchase rewrites, reshaping the `Misc` Merk
-            // PROTOCOL_VERSION_15: 48_640 credits more in fees: the decision proposals and token
-            // market contracts join the genesis contracts tree, which reshapes it so the token
-            // contract's node is billed more bytes to reach
+            // PROTOCOL_VERSION_15: 48_640 credits less in fees: the decision proposals
+            // contract adds one sibling to the genesis contracts tree, which reshapes the tree
+            // so the token contract's node is billed fewer bytes to reach
+            // PROTOCOL_VERSION_16: 97_280 credits more in fees: the token market contract joins
+            // the genesis contracts tree, which reshapes it so the token contract's node is
+            // billed more bytes to reach
             699_868_001_200,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract.
+    /// Pinned so v15 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price_protocol_version_15() {
+        run_successful_direct_purchase_single_price_at_protocol_version(15, 699_868_098_480).await;
     }
 
     /// PROTOCOL_VERSION_13: pre-stamp buyer balance — genesis system documents

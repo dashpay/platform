@@ -377,7 +377,22 @@ export interface DocumentReplaceOptions {
   /**
    * The document with updated data.
    * Must have the same ID as the existing document.
-   * Revision should be set to current revision + 1.
+   *
+   * Its `revision` must be the revision this replace writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   * A document still at revision 1 is sent as a create instead: the create
+   * derives a new document ID, so it can succeed and leave the original
+   * unchanged.
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * document.properties = { ...document.properties, name: 'New name' };
+   * await sdk.documentReplace({ document, identityKey, signer });
    */
   document: Document;
 
@@ -429,6 +444,9 @@ impl WasmSdk {
     /// 2. Validates the new document data against the document type schema
     /// 3. Creates and signs the document replace transition
     /// 4. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this replace writes. A fetched document carries the stored one.
     ///
     /// @param options - Replace options including document, identity key, and signer
     /// @returns Promise that resolves when the document is replaced
@@ -501,6 +519,9 @@ export interface DocumentDeleteOptions {
    *
    * // Using individual fields
    * { document: { id: "...", ownerId: "...", dataContractId: "...", documentTypeName: "note" }, ... }
+   *
+   * Unlike replace, transfer, purchase and setPrice, a delete carries no
+   * revision: pass the document as fetched, without increasing it.
    */
   document: Document | {
     id: IdentifierLike;
@@ -868,6 +889,18 @@ export interface DocumentTransferOptions {
   /**
    * The document to transfer.
    * Must include id, ownerId, dataContractId, documentTypeName, and revision.
+   *
+   * Its `revision` must be the revision this transfer writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentTransfer({ document, recipientId, identityKey, signer });
    */
   document: Document;
 
@@ -923,6 +956,9 @@ impl WasmSdk {
     /// 1. Fetches the data contract from Platform
     /// 2. Creates and signs the document transfer transition
     /// 3. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this transfer writes. A fetched document carries the stored one.
     ///
     /// @param options - Transfer options including document, recipient, and signer
     /// @returns Promise that resolves when the document is transferred
@@ -1001,6 +1037,18 @@ export interface DocumentPurchaseOptions {
   /**
    * The document to purchase.
    * Must include id, ownerId, dataContractId, documentTypeName, and revision.
+   *
+   * Its `revision` must be the revision this purchase writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentPurchase({ document, buyerId, price, identityKey, signer });
    */
   document: Document;
 
@@ -1062,6 +1110,9 @@ impl WasmSdk {
     /// 1. Fetches the data contract from Platform
     /// 2. Creates and signs the document purchase transition
     /// 3. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this purchase writes. A fetched document carries the stored one.
     ///
     /// @param options - Purchase options including document, buyer ID, price, and signer
     /// @returns Promise that resolves when the purchase is complete
@@ -1135,12 +1186,25 @@ export interface DocumentSetPriceOptions {
   /**
    * The document to set a price on.
    * Must include id, ownerId, dataContractId, documentTypeName, and revision.
+   *
+   * Its `revision` must be the revision this price update writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentSetPrice({ document, price: 5000000n, identityKey, signer });
    */
   document: Document;
 
   /**
    * The price in credits.
-   * Set to 0 to remove the price and make the document not for sale.
+   * A price of 0 does not take the document off sale: it stays listed, and
+   * anyone may buy it for 0 credits.
    */
   price: bigint;
 
@@ -1191,6 +1255,9 @@ impl WasmSdk {
     /// 1. Fetches the data contract from Platform
     /// 2. Creates and signs the price update transition
     /// 3. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this price update writes. A fetched document carries the stored one.
     ///
     /// @param options - Set price options including document, price, and signer
     /// @returns Promise that resolves when the price is set

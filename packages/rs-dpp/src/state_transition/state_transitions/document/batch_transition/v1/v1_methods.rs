@@ -127,7 +127,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             amount,
             public_note,
         });
-        // A random amount builds the mint in format version 1 (protocol version 15)
+        // A random amount builds the mint in format version 1 (protocol version 16)
         mint_transition
             .set_random_minimum_amount(options.and_then(|options| options.random_minimum_amount));
 
@@ -298,7 +298,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             shared_encrypted_note,
             private_encrypted_note,
         });
-        // A random amount builds the transfer in format version 1 (protocol version 15)
+        // A random amount builds the transfer in format version 1 (protocol version 16)
         transfer_transition
             .set_random_minimum_amount(options.and_then(|options| options.random_minimum_amount));
 

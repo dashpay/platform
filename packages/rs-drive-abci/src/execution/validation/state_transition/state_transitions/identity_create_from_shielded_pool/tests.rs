@@ -1113,7 +1113,7 @@ fn executed_transition_result_proof_roundtrips() {
     }
 }
 
-/// `validate_shielded_proof` v1 refuses a key bound to a contract group before it verifies
+/// `validate_shielded_proof` v1 and v2 refuse a key bound to a contract group before they verify
 /// proofs of possession or the bundle, and before the Orchard sighash preimage is built.
 #[test]
 fn should_refuse_a_key_bound_to_a_contract_group_before_verifying_the_proof() {
@@ -1157,7 +1157,7 @@ fn should_refuse_a_key_bound_to_a_contract_group_before_verifying_the_proof() {
     );
 }
 
-/// `validate_shielded_proof` v1 refuses a key that carries a budget or an expiry before the
+/// `validate_shielded_proof` v1 and v2 refuse a key that carries a budget or an expiry before the
 /// Orchard sighash preimage is built: the preimage lists the key fields it binds, the limits are
 /// not among them, and when every key is hash based there is no proof of possession that would
 /// bind them instead. A version 1 key without limits holds nothing the preimage misses, so it is

@@ -105,11 +105,11 @@ mod tests {
             &BlockRandomRequests::default(),
             &BlockInfo::default(),
             &transaction,
-            PlatformVersion::get(14).expect("protocol version 14"),
+            PlatformVersion::get(15).expect("protocol version 15"),
         );
         assert!(
             result.is_err(),
-            "the step is not active before protocol version 15"
+            "the step is not active before protocol version 16"
         );
     }
 }

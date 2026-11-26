@@ -41,10 +41,10 @@ fn external_infos(seed_byte: u8) -> Vec<AddressInfo> {
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+            if pool.pool_type() != AddressPoolType::External || pool.addresses().is_empty() {
                 continue;
             }
-            let mut infos: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            let mut infos: Vec<AddressInfo> = pool.addresses().values().cloned().collect();
             infos.sort_by_key(|a| a.index);
             return infos;
         }
@@ -60,7 +60,7 @@ fn utxo_on(info: &AddressInfo, value: u64) -> Utxo {
         },
         txout: dashcore::TxOut {
             value,
-            script_pubkey: info.script_pubkey.clone(),
+            script_pubkey: info.address.script_pubkey(),
         },
         address: info.address.clone(),
         height: 10,
@@ -146,9 +146,9 @@ fn loaded_provider_platform_infos(
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
         .expect("restored platform-node hardened pool")
-        .addresses
+        .addresses()
         .values()
         .cloned()
         .collect()
@@ -679,7 +679,8 @@ fn distinct_account_types_sharing_index_zero_do_not_collide() {
     let id_reg = index_zero_info(0x61, true);
     let prov = index_zero_info(0x62, false);
     assert_ne!(
-        id_reg[0].script_pubkey, prov[0].script_pubkey,
+        id_reg[0].address.script_pubkey(),
+        prov[0].address.script_pubkey(),
         "the two account types must carry distinct scripts to prove no overwrite"
     );
 
@@ -708,14 +709,14 @@ fn distinct_account_types_sharing_index_zero_do_not_collide() {
         &persister,
         &w,
         "identity_registration",
-        id_reg[0].script_pubkey.as_bytes(),
+        id_reg[0].address.script_pubkey().as_bytes(),
         1,
     );
     assert_pool_row(
         &persister,
         &w,
         "provider_voting",
-        prov[0].script_pubkey.as_bytes(),
+        prov[0].address.script_pubkey().as_bytes(),
         0,
     );
     let conn = persister.lock_conn_for_test();
@@ -742,7 +743,8 @@ fn standard_and_coinjoin_index_zero_do_not_collide() {
     let std0 = index_zero_info(0x71, true);
     let cj0 = index_zero_info(0x72, false);
     assert_ne!(
-        std0[0].script_pubkey, cj0[0].script_pubkey,
+        std0[0].address.script_pubkey(),
+        cj0[0].address.script_pubkey(),
         "the two account types must carry distinct scripts to prove no overwrite"
     );
 
@@ -774,14 +776,14 @@ fn standard_and_coinjoin_index_zero_do_not_collide() {
         &persister,
         &w,
         "standard_bip44",
-        std0[0].script_pubkey.as_bytes(),
+        std0[0].address.script_pubkey().as_bytes(),
         1,
     );
     assert_pool_row(
         &persister,
         &w,
         "coinjoin",
-        cj0[0].script_pubkey.as_bytes(),
+        cj0[0].address.script_pubkey().as_bytes(),
         0,
     );
 }
@@ -801,7 +803,8 @@ fn distinct_dashpay_friends_do_not_collide_in_pool() {
     let friend_a = index_zero_info(0x81, true);
     let friend_b = index_zero_info(0x82, false);
     assert_ne!(
-        friend_a[0].script_pubkey, friend_b[0].script_pubkey,
+        friend_a[0].address.script_pubkey(),
+        friend_b[0].address.script_pubkey(),
         "the two contacts must carry distinct scripts to prove no overwrite"
     );
 
@@ -851,8 +854,16 @@ fn distinct_dashpay_friends_do_not_collide_in_pool() {
         );
         assert_eq!(used, want_used, "contact's used flag must survive");
     };
-    assert_friend_row([0x01; 32], friend_a[0].script_pubkey.as_bytes(), 1);
-    assert_friend_row([0x02; 32], friend_b[0].script_pubkey.as_bytes(), 0);
+    assert_friend_row(
+        [0x01; 32],
+        friend_a[0].address.script_pubkey().as_bytes(),
+        1,
+    );
+    assert_friend_row(
+        [0x02; 32],
+        friend_b[0].address.script_pubkey().as_bytes(),
+        0,
+    );
 
     let total: i64 = conn
         .query_row(
@@ -902,10 +913,10 @@ fn platform_node_key_public_keys_survive_sqlite_store_and_load() {
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
         .expect("platform-node hardened pool");
     let addresses = platform_node_pool
-        .addresses
+        .addresses()
         .values()
         .cloned()
         .collect::<Vec<AddressInfo>>();
@@ -973,17 +984,17 @@ fn platform_node_key_public_keys_survive_sqlite_store_and_load() {
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
         .expect("restored platform-node hardened pool");
 
     assert_eq!(
-        restored_platform_node_pool.addresses.len(),
+        restored_platform_node_pool.addresses().len(),
         3,
         "all three platform-node indices must survive SQLite store()->load()"
     );
     for key in &keys {
         let restored_info = restored_platform_node_pool
-            .addresses
+            .addresses()
             .get(&key.index)
             .unwrap_or_else(|| panic!("platform-node index {} did not survive SQLite", key.index));
         let expected = Some(PublicKeyType::EdDSA(key.public_key.to_vec()));

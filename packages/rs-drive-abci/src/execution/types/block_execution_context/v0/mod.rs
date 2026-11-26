@@ -61,7 +61,7 @@ pub struct BlockExecutionContextV0 {
     pub block_platform_state: PlatformState,
     /// The prepare proposal results if proposed by us
     pub proposer_results: Option<ProposerResults>,
-    /// What the block's transitions ask its random beacon for (protocol version 15; empty
+    /// What the block's transitions ask its random beacon for (protocol version 16; empty
     /// before), drawn when `ApplyBlockRandomness` or `FinalizeBlock` hands the beacon over
     pub random_requests: BlockRandomRequests,
     /// The random beacon applied to the block's state in its transaction, if one was

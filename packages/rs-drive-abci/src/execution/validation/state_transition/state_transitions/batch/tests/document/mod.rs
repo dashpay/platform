@@ -1,5 +1,6 @@
 mod action_fees;
 mod agreement_values;
+mod byte_array_members;
 mod commit_reveal_lookup;
 mod contract_owner_requirement;
 mod creation;
@@ -44,6 +45,7 @@ mod repeated_properties_update;
 mod replacement;
 mod required_since;
 mod stored_non_document_reference;
+mod sum_overflow;
 mod system_agreement;
 mod token_cost_policy;
 mod token_market_orders;

@@ -21,7 +21,7 @@ use tenderdash_abci::proto::abci as proto;
 /// Applies the random beacon of a block to the state this node's `ProcessProposal` left for it
 /// in the request's round, and returns the app hash the round's precommits sign.
 ///
-/// Tenderdash calls it from consensus version 2 (protocol version 15): on a validator once the
+/// Tenderdash calls it from consensus version 3 (protocol version 16): on a validator once the
 /// round's prevotes combine into the beacon, before it precommits, and on every path that
 /// finalizes a block from its commit (block sync, replay, a node that did not vote) before
 /// `FinalizeBlock`, with the commit's beacon and round. Tenderdash processes the block in that
@@ -114,7 +114,7 @@ where
 /// the one the round's precommits sign and the block commits. Asked again for the same round
 /// and beacon, it returns that app hash without drawing again; another beacon is refused, as a
 /// round's prevotes combine into exactly one. When the block's protocol version draws nothing
-/// (`apply_random_beacon` is `None`, before 15), nothing is applied and the app hash is the
+/// (`apply_random_beacon` is `None`, before 16), nothing is applied and the app hash is the
 /// block's own.
 ///
 /// Drive does not verify the beacon's BLS signature: the request carries no part-set header,

@@ -611,106 +611,90 @@ mod evidence_policy_tests {
         })
     }
 
+    /// Protocol version 15 installs the zero evidence byte budget: an upgrade into it, or one
+    /// that skips from below it to any later version, carries the full policy.
     #[test]
     fn should_install_zero_evidence_bytes_on_activation_and_skipped_upgrades() {
         let latest = PlatformVersion::latest();
-        for original in 1..latest.protocol_version {
-            for network in [
-                Network::Mainnet,
-                Network::Testnet,
-                Network::Regtest,
-                Network::Devnet,
-            ] {
-                let response = consensus_params_update(
-                    network,
-                    PlatformVersion::get(original).unwrap(),
-                    latest,
-                    &epoch_info(true, 20),
-                )
-                .unwrap()
-                .expect("activation update");
-                let evidence = response
-                    .evidence
-                    .expect("explicit evidence policy on activation");
-                assert_eq!(evidence.max_bytes, 0);
-                assert_eq!(evidence.max_age_num_blocks, 100_000);
-                let duration = evidence.max_age_duration.expect("positive evidence age");
-                assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
-                let version = response.version.unwrap();
-                assert_eq!(version.app_version, latest.protocol_version as u64);
-                assert_eq!(
-                    version.consensus_version,
-                    latest.consensus.tenderdash_consensus_version as i32
-                );
+        for target in [PlatformVersion::get(15).unwrap(), latest] {
+            for original in 1..15 {
+                for network in [
+                    Network::Mainnet,
+                    Network::Testnet,
+                    Network::Regtest,
+                    Network::Devnet,
+                ] {
+                    let response = consensus_params_update(
+                        network,
+                        PlatformVersion::get(original).unwrap(),
+                        target,
+                        &epoch_info(true, 20),
+                    )
+                    .unwrap()
+                    .expect("activation update");
+                    let evidence = response
+                        .evidence
+                        .expect("explicit evidence policy on activation");
+                    assert_eq!(evidence.max_bytes, 0);
+                    assert_eq!(evidence.max_age_num_blocks, 100_000);
+                    let duration = evidence.max_age_duration.expect("positive evidence age");
+                    assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
+                    let version = response.version.unwrap();
+                    assert_eq!(version.app_version, target.protocol_version as u64);
+                    assert_eq!(
+                        version.consensus_version,
+                        target.consensus.tenderdash_consensus_version as i32
+                    );
+                }
             }
         }
     }
 
-    /// The block that switches to protocol version 15 raises Tenderdash to consensus version
-    /// 2, which recovers each block's random beacon and calls `ApplyBlockRandomness`; every
-    /// earlier switch keeps sending consensus version 1.
+    /// Protocol version 16 keeps protocol version 15's evidence policy and raises Tenderdash
+    /// to consensus version 3, which recovers each block's random beacon from its prevotes and
+    /// calls `ApplyBlockRandomness`: the direct upgrade moves the app and consensus versions.
     #[test]
-    fn should_raise_tenderdash_to_consensus_version_2_on_the_switch_to_15() {
+    fn should_raise_tenderdash_to_consensus_version_3_from_protocol_version_15_to_16() {
+        let v15 = PlatformVersion::get(15).unwrap();
+        let v16 = PlatformVersion::get(16).unwrap();
         for network in [
             Network::Mainnet,
             Network::Testnet,
             Network::Regtest,
             Network::Devnet,
         ] {
-            let params = consensus_params_update(
-                network,
-                PlatformVersion::get(14).unwrap(),
-                PlatformVersion::get(15).unwrap(),
-                &epoch_info(true, 20),
-            )
-            .unwrap()
-            .expect("the switch to 15 updates the consensus parameters");
-            let version = params.version.expect("version parameters");
-            assert_eq!(version.app_version, 15);
-            assert_eq!(version.consensus_version, 2);
-
-            for new in 3..=14 {
-                let params = consensus_params_update(
-                    network,
-                    PlatformVersion::get(new - 1).unwrap(),
-                    PlatformVersion::get(new).unwrap(),
-                    &epoch_info(true, 20),
-                )
+            let response = consensus_params_update(network, v15, v16, &epoch_info(true, 20))
                 .unwrap()
-                .expect("a switch of protocol version updates the consensus parameters");
-                assert!(params.evidence.is_none());
-                let version = params.version.expect("version parameters");
-                assert_eq!(version.app_version, new as u64);
-                assert_eq!(version.consensus_version, 1, "switch to {new}");
-            }
+                .expect("upgrade update");
+            assert!(response.evidence.is_none(), "{network:?}: {response:?}");
+            let version = response.version.expect("version update");
+            assert_eq!(version.app_version, 16);
+            assert_eq!(version.consensus_version, 3);
         }
     }
 
-    /// The emergency updates at mainnet epoch 3 and testnet epoch 1480 raised Tenderdash to
-    /// consensus version 1. From protocol version 15 they give the version's own consensus
-    /// version, so a chain reaching those epochs at 15 keeps its random beacon.
     #[test]
-    fn should_not_lower_the_consensus_version_in_an_emergency_update_from_15() {
-        for (network, epoch) in [(Network::Mainnet, 3), (Network::Testnet, 1480)] {
-            let params = consensus_params_update(
-                network,
-                PlatformVersion::get(15).unwrap(),
-                PlatformVersion::get(15).unwrap(),
-                &epoch_info(true, epoch),
-            )
-            .unwrap()
-            .expect("emergency update");
-            assert_eq!(params.version.unwrap().consensus_version, 2);
-
-            let params = consensus_params_update(
-                network,
-                PlatformVersion::get(14).unwrap(),
-                PlatformVersion::get(14).unwrap(),
-                &epoch_info(true, epoch),
-            )
-            .unwrap()
-            .expect("emergency update");
-            assert_eq!(params.version.unwrap().consensus_version, 1);
+    fn should_activate_tenderdash_consensus_version_2_with_protocol_version_15() {
+        let v14 = PlatformVersion::get(14).unwrap();
+        let v15 = PlatformVersion::get(15).unwrap();
+        assert_eq!(v14.consensus.tenderdash_consensus_version, 1);
+        assert_eq!(v15.consensus.tenderdash_consensus_version, 2);
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Regtest,
+            Network::Devnet,
+        ] {
+            for is_epoch_change in [false, true] {
+                let version =
+                    consensus_params_update(network, v14, v15, &epoch_info(is_epoch_change, 20))
+                        .unwrap()
+                        .expect("activation update")
+                        .version
+                        .expect("version params on activation");
+                assert_eq!(version.app_version, 15);
+                assert_eq!(version.consensus_version, 2);
+            }
         }
     }
 
@@ -841,7 +825,8 @@ mod evidence_policy_tests {
                 params.version.unwrap().consensus_version,
                 PlatformVersion::latest()
                     .consensus
-                    .tenderdash_consensus_version as i32
+                    .tenderdash_consensus_version as i32,
+                "an emergency update must not lower the consensus version"
             );
             let params = consensus_params_update(
                 network,
@@ -852,6 +837,12 @@ mod evidence_policy_tests {
             .unwrap()
             .unwrap();
             assert!(params.evidence.is_none());
+            assert_eq!(
+                params.version.unwrap().consensus_version,
+                PlatformVersion::latest()
+                    .consensus
+                    .tenderdash_consensus_version as i32
+            );
         }
     }
 

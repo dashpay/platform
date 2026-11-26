@@ -1,8 +1,10 @@
 package org.dashfoundation.example.services.tokens
 
+import androidx.room.withTransaction
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.dao.TokenDao
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
@@ -31,13 +33,27 @@ object TokenMaterializer {
         ByteBuffer.allocate(36).put(contractId).putInt(position).array()
 
     /**
-     * Parse every token on [contract] and upsert the rows through [dao].
+     * Parse every token on [contract] and upsert the rows into [database].
      * Safe to re-run (upsert by the synthetic id); parse failures on one
      * token skip that token rather than failing the batch.
+     *
+     * `isPaused` comes from the contract's `startAsPaused` only for a new
+     * row. A stored row keeps its flag, which holds the last paused status
+     * read from Platform or set by a pause or resume ([TokenDao.updatePaused]);
+     * re-importing or refreshing the contract says nothing about it. The
+     * read and the upsert share one transaction, so a status write cannot
+     * land between them and be overwritten.
      */
-    suspend fun materialize(contract: DataContractEntity, dao: TokenDao) {
-        for (token in parse(contract)) {
-            dao.upsertToken(token)
+    suspend fun materialize(contract: DataContractEntity, database: DashDatabase) {
+        val tokens = parse(contract)
+        val dao = database.tokenDao()
+        database.withTransaction {
+            for (token in tokens) {
+                val stored = dao.getTokenById(token.id)
+                dao.upsertToken(
+                    if (stored != null) token.copy(isPaused = stored.isPaused) else token,
+                )
+            }
         }
     }
 
@@ -63,6 +79,52 @@ object TokenMaterializer {
         }
         return filled
     }
+
+    /**
+     * Bring the rule columns of every stored token in line with its stored
+     * contract. Builds before this one read the `$type` action-taker maps
+     * rs-dpp writes as "NoOne", so their rows show every rule-gated action
+     * as locked; the contract JSON stored beside them is intact. Only rows
+     * whose rule columns differ are written, and only those columns change:
+     * live columns such as `isPaused` keep their value. Cheap and idempotent,
+     * so it runs on every launch, which also repairs rows an older build
+     * wrote again after a downgrade. Returns the rows rewritten.
+     */
+    suspend fun rederiveRules(contracts: List<DataContractEntity>, dao: TokenDao): Int {
+        var rewritten = 0
+        for (contract in contracts) {
+            for (derived in parse(contract)) {
+                val stored = dao.getTokenById(derived.id) ?: continue
+                if (stored.ruleColumns() != derived.ruleColumns()) {
+                    dao.upsertToken(stored.withRulesOf(derived))
+                    rewritten++
+                }
+            }
+        }
+        return rewritten
+    }
+
+    // TokenEntity.equals compares the id only, so compare the columns themselves.
+    private fun TokenEntity.ruleColumns(): List<String?> = listOf(
+        conventionsChangeRules, maxSupplyChangeRules, manualMintingRules, manualBurningRules,
+        freezeRules, unfreezeRules, destroyFrozenFundsRules, emergencyActionRules,
+        distributionChangeRules, tradeModeChangeRules, mainControlGroupCanBeModified,
+    )
+
+    /** [this] row with every rule column taken from [derived]. */
+    private fun TokenEntity.withRulesOf(derived: TokenEntity): TokenEntity = copy(
+        conventionsChangeRules = derived.conventionsChangeRules,
+        maxSupplyChangeRules = derived.maxSupplyChangeRules,
+        manualMintingRules = derived.manualMintingRules,
+        manualBurningRules = derived.manualBurningRules,
+        freezeRules = derived.freezeRules,
+        unfreezeRules = derived.unfreezeRules,
+        destroyFrozenFundsRules = derived.destroyFrozenFundsRules,
+        emergencyActionRules = derived.emergencyActionRules,
+        distributionChangeRules = derived.distributionChangeRules,
+        tradeModeChangeRules = derived.tradeModeChangeRules,
+        mainControlGroupCanBeModified = derived.mainControlGroupCanBeModified,
+    )
 
     /** Pure parse of [contract]'s tokens map into entity rows. */
     fun parse(contract: DataContractEntity): List<TokenEntity> {
@@ -173,7 +235,8 @@ object TokenMaterializer {
             tradeMode = tradeMode,
             tradeModeChangeRules = tradeModeChange?.toJson(),
             mainControlGroupPosition = dict.int("mainControlGroup"),
-            mainControlGroupCanBeModified = dict.str("mainControlGroupCanBeModified"),
+            mainControlGroupCanBeModified = dict["mainControlGroupCanBeModified"]
+                ?.let(AuthorizedActionTakers::parse),
             tokenDescription = dict.str("description"),
             createdAt = now,
             lastUpdatedAt = now,

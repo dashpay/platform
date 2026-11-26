@@ -3,7 +3,13 @@
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
+use platform_wallet::wallet::platform_addresses::{
+    AddressBalanceChange, AddressBalanceChangeEntry, CompactedAddressBalanceChange,
+    CompactedAddressBalanceChangeEntry,
+};
 use std::collections::BTreeMap;
+use std::ffi::CString;
+use std::os::raw::c_char;
 
 // ---------------------------------------------------------------------------
 // PlatformAddress representation
@@ -536,6 +542,175 @@ impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeS
             updated: updated_ptr,
             updated_count,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Balance change history
+// ---------------------------------------------------------------------------
+
+/// How one block changed a wallet address's balance.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressBalanceChangeKindFFI {
+    /// The balance was set to `credits`.
+    Set = 0,
+    /// `credits` were added to the balance.
+    Added = 1,
+}
+
+/// One recent-zone balance change of a wallet address, from
+/// `platform_address_wallet_balance_history`.
+///
+/// `address_bech32m` is owned by the array it sits in and is freed by
+/// `platform_address_wallet_free_balance_history`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct AddressBalanceChangeEntryFFI {
+    pub block_height: u64,
+    pub address: PlatformAddressFFI,
+    /// NUL-terminated DIP-18 bech32m form of `address` on the wallet's
+    /// network, encoded by Rust.
+    pub address_bech32m: *mut c_char,
+    pub kind: AddressBalanceChangeKindFFI,
+    pub credits: u64,
+}
+
+impl AddressBalanceChangeEntryFFI {
+    /// Marshal `entry`, handing ownership of `address_bech32m` to the
+    /// returned value. Crate-internal so the only arrays of these that
+    /// leave the crate are the ones
+    /// `platform_address_wallet_free_balance_history` releases.
+    pub(crate) fn from_entry(entry: AddressBalanceChangeEntry, address_bech32m: CString) -> Self {
+        let (kind, credits) = match entry.change {
+            AddressBalanceChange::Set(credits) => (AddressBalanceChangeKindFFI::Set, credits),
+            AddressBalanceChange::Added(credits) => (AddressBalanceChangeKindFFI::Added, credits),
+        };
+        Self {
+            block_height: entry.block_height,
+            address: entry.address.into(),
+            address_bech32m: address_bech32m.into_raw(),
+            kind,
+            credits,
+        }
+    }
+
+    /// Release what [`Self::from_entry`] handed over.
+    ///
+    /// # Safety
+    /// `self` must come from [`Self::from_entry`] and be released once.
+    pub(crate) unsafe fn release(&mut self) {
+        if !self.address_bech32m.is_null() {
+            drop(CString::from_raw(self.address_bech32m));
+            self.address_bech32m = std::ptr::null_mut();
+        }
+    }
+}
+
+/// How a compacted block range changed a wallet address's balance.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactedAddressBalanceChangeKindFFI {
+    /// The range ended with the balance set to `credits`; no additions.
+    SetFinal = 0,
+    /// The range only added to the balance; `credits` is their total and
+    /// `additions` lists each one.
+    Additions = 1,
+}
+
+/// One addition inside a compacted range: the block and the credits it added.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct BlockCreditsFFI {
+    pub block_height: u64,
+    pub credits: u64,
+}
+
+/// One compacted balance change of a wallet address, from
+/// `platform_address_wallet_balance_history`.
+///
+/// `address_bech32m` and `additions` are owned by the array they sit in and
+/// are freed by `platform_address_wallet_free_balance_history`; `additions`
+/// is null with `additions_count == 0` for `SetFinal`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct CompactedAddressBalanceChangeEntryFFI {
+    pub start_block_height: u64,
+    pub end_block_height: u64,
+    pub address: PlatformAddressFFI,
+    /// NUL-terminated DIP-18 bech32m form of `address` on the wallet's
+    /// network, encoded by Rust.
+    pub address_bech32m: *mut c_char,
+    pub kind: CompactedAddressBalanceChangeKindFFI,
+    /// The final value for `SetFinal`, the total of `additions` for
+    /// `Additions` (computed by `platform-wallet`).
+    pub credits: u64,
+    /// Newest block first.
+    pub additions: *mut BlockCreditsFFI,
+    pub additions_count: usize,
+}
+
+impl CompactedAddressBalanceChangeEntryFFI {
+    /// Marshal `entry`, handing ownership of `address_bech32m` and of a new
+    /// `additions` buffer to the returned value. Crate-internal so the only
+    /// arrays of these that leave the crate are the ones
+    /// `platform_address_wallet_free_balance_history` releases.
+    pub(crate) fn from_entry(
+        entry: CompactedAddressBalanceChangeEntry,
+        address_bech32m: CString,
+    ) -> Self {
+        let credits = entry.change.credits();
+        let (kind, additions) = match entry.change {
+            CompactedAddressBalanceChange::SetFinal(_) => {
+                (CompactedAddressBalanceChangeKindFFI::SetFinal, Vec::new())
+            }
+            CompactedAddressBalanceChange::Additions(additions) => (
+                CompactedAddressBalanceChangeKindFFI::Additions,
+                additions
+                    .into_iter()
+                    .map(|(block_height, credits)| BlockCreditsFFI {
+                        block_height,
+                        credits,
+                    })
+                    .collect(),
+            ),
+        };
+        let additions_count = additions.len();
+        let additions = if additions.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            Box::into_raw(additions.into_boxed_slice()) as *mut BlockCreditsFFI
+        };
+        Self {
+            start_block_height: entry.start_block_height,
+            end_block_height: entry.end_block_height,
+            address: entry.address.into(),
+            address_bech32m: address_bech32m.into_raw(),
+            kind,
+            credits,
+            additions,
+            additions_count,
+        }
+    }
+
+    /// Release what [`Self::from_entry`] handed over.
+    ///
+    /// # Safety
+    /// `self` must come from [`Self::from_entry`] and be released once.
+    pub(crate) unsafe fn release(&mut self) {
+        if !self.address_bech32m.is_null() {
+            drop(CString::from_raw(self.address_bech32m));
+            self.address_bech32m = std::ptr::null_mut();
+        }
+        if !self.additions.is_null() && self.additions_count > 0 {
+            drop(Vec::from_raw_parts(
+                self.additions,
+                self.additions_count,
+                self.additions_count,
+            ));
+        }
+        self.additions = std::ptr::null_mut();
+        self.additions_count = 0;
     }
 }
 

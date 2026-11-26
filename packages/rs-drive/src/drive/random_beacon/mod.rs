@@ -1,4 +1,4 @@
-//! The values a block's random beacon draws (protocol version 15).
+//! The values a block's random beacon draws (protocol version 16).
 //!
 //! The beacon is the threshold signature the validators' prevotes for a block combine into,
 //! which no one can compute before the block is accepted. Every random value of the block is

@@ -8,7 +8,7 @@
 //! (`regenerate_generated_properties`), and a proof verifier takes it from the proved document
 //! (`adopt_state_generated_properties`).
 //!
-//! Protocol version 15 admits the function (`random_generated_from` 0), whose blocks draw the
+//! Protocol version 16 admits the function (`random_generated_from` 0), whose blocks draw the
 //! values from their random beacon, so these tests parse with the latest platform version.
 
 use super::refusal_test_support::{assert_refused, CONTRACT_ID};

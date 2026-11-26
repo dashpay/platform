@@ -40,7 +40,7 @@ pub mod mint_many;
 pub mod shielded_pool;
 
 /// Pays out the random token transfers and mints of a block from its random beacon
-/// (protocol version 15).
+/// (protocol version 16).
 #[cfg(feature = "server")]
 pub mod settle_random_token_amounts;
 
@@ -60,7 +60,7 @@ pub mod unfreeze;
 #[cfg(feature = "server")]
 pub mod calculate_total_tokens_balance;
 
-/// The escrow of the token marketplace (protocol version 15): the tokens open listings hold and
+/// The escrow of the token marketplace (protocol version 16): the tokens open listings hold and
 /// the credits open offers hold.
 #[cfg(feature = "server")]
 pub mod order_escrow;

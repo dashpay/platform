@@ -1,3 +1,4 @@
+use super::public_note_for_signer;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -28,7 +29,7 @@ pub struct TokenMintTransitionBuilder {
     pub user_fee_increase: Option<UserFeeIncrease>,
     pub using_group_info: Option<GroupStateTransitionInfoStatus>,
     pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
-    /// The least the mint issues when its amount is random (protocol version 15); see
+    /// The least the mint issues when its amount is random (protocol version 16); see
     /// [`Self::with_random_minimum_amount`]
     pub random_minimum_amount: Option<TokenAmount>,
 }
@@ -85,6 +86,10 @@ impl TokenMintTransitionBuilder {
     }
 
     /// Adds a public note to the token mint transition
+    ///
+    /// Only the proposer of a group action writes a note. When the group info marks the
+    /// signer as another signer who is not the proposer, `sign` leaves the note off and
+    /// the action keeps the proposer's note.
     ///
     /// # Arguments
     ///
@@ -160,7 +165,7 @@ impl TokenMintTransitionBuilder {
         self
     }
 
-    /// Makes the mint issue a random amount (protocol version 15): the recipient receives an
+    /// Makes the mint issue a random amount (protocol version 16): the recipient receives an
     /// amount drawn uniformly from `random_minimum_amount` to the builder's amount, both
     /// included, from the random beacon of the block that carries the mint. The token's
     /// maximum supply must have room for the builder's amount, which the block adds to the
@@ -233,7 +238,7 @@ impl TokenMintTransitionBuilder {
             self.token_position,
             self.amount,
             self.recipient_id,
-            self.public_note.clone(),
+            public_note_for_signer(self.public_note, self.using_group_info.as_ref()),
             self.using_group_info,
             identity_public_key,
             identity_contract_nonce,

@@ -582,7 +582,7 @@ impl DriveOperation<'_> {
     /// These writes compute the new value from the one committed before the batch too, but a
     /// transfer writes two balances, a mint or a burn a balance and the supply, and a shield
     /// or an unshield a balance and the pool total, so they cannot be merged into operations
-    /// of their own kinds. A random reservation (protocol version 15) creates its token's
+    /// of their own kinds. A random reservation (protocol version 16) creates its token's
     /// escrow tree when the state before the batch holds none, so a second one of the token
     /// would queue the tree's creation again, which GroveDB's consistency check refuses. No
     /// state transition makes two of them on one key: a batch carries one transition, and each

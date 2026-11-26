@@ -55,7 +55,7 @@ where
         // Tenderdash consensus version unless it switches again, which records that afresh.
         // Added in place to this shipped generation: the field is in memory only, neither
         // saved nor hashed, and only the batch transformer's random beacon gate reads it,
-        // which is inert before protocol version 15.
+        // which is inert before protocol version 16.
         block_platform_state.set_switched_from_protocol_version(None);
 
         // Persist block state

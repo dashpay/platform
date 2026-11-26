@@ -10,7 +10,7 @@ use platform_value::Identifier;
 /// of `owner_id` with `owner_nonce` on `token_id` writes. The writer, the settlement of a
 /// random amount and the proof verifier all find the document by it.
 ///
-/// A random transfer or mint (protocol version 15) passes `random_range`, the least and the
+/// A random transfer or mint (protocol version 16) passes `random_range`, the least and the
 /// most it moves: its id hashes both after the nonce, so the history document of a transfer
 /// or mint of a fixed amount, or of one drawn from another range, has another id and can not
 /// stand for it in a proof. Every other event passes `None` and keeps the id it always had.

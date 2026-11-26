@@ -3,10 +3,12 @@
 //! Validator-verified proof. Production batches remain capped at one.
 
 use super::token_shielded_pool_tests::{
-    assert_tokens_conserved, build_shield_bundle, build_spend_bundle, enable_shielded_pool,
-    insert_token_pool_anchor, nullifier_is_spent, platform_with_latest_version, pool_balance,
-    pool_notes_count, process, spendable_note, SHIELD_AMOUNT,
+    assert_tokens_conserved, assert_tokens_conserved_at_protocol_version, build_shield_bundle,
+    build_spend_bundle, enable_shielded_pool, insert_token_pool_anchor, nullifier_is_spent,
+    platform_with_latest_version, pool_balance, pool_notes_count, process,
+    process_at_protocol_version, spendable_note, SHIELD_AMOUNT,
 };
+use crate::test::helpers::setup::TestPlatformBuilder;
 use super::*;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::processor::traits::identity_balance::StateTransitionIdentityBalanceValidationV0;
@@ -67,9 +69,11 @@ struct FundedPool {
 }
 
 impl FundedPool {
-    async fn sponsored_card(shielded: bool) -> Self {
-        let version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+    async fn sponsored_card(shielded: bool, version: &PlatformVersion) -> Self {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
         let (identity, signer, key) = setup_identity(&mut platform, 70_501, dash_to_credits!(1.0));
         let (sponsor, _, _) = setup_identity(&mut platform, 70_507, dash_to_credits!(1.0));
         let contract_id = DataContract::generate_data_contract_id_v0(sponsor.id(), 1);
@@ -651,6 +655,16 @@ fn cap_two() -> PlatformVersion {
     version
 }
 
+/// How the Debug output of a contract fetch info names the protocol version its contract was
+/// parsed under, for a contract read at `platform_version`. It records which reader parsed the
+/// copy, which the characterizations below do not cover.
+fn parsed_under_debug_field(platform_version: &PlatformVersion) -> String {
+    format!(
+        ", parsed_under_protocol_version: {}",
+        platform_version.protocol_version
+    )
+}
+
 #[tokio::test]
 async fn should_preserve_single_entry_full_processor_fees_and_result() {
     let pool = FundedPool::new().await;
@@ -673,12 +687,15 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 PlatformVersion::latest(),
             )
             .unwrap();
+        // The protocol version the cached contract was parsed under is incidental Debug
+        // output; keep actions, charges and operations in the original pin.
         let snapshot = format!(
             "{:?}/{:?}/{:?}",
             validated,
             context.operations_slice(),
             operations
-        );
+        )
+        .replace(&parsed_under_debug_field(PlatformVersion::latest()), "");
         println!(
             "SINGLE ENTRY VALIDATION {mode:?}/{dry_run}: {}",
             hex::encode(hash_single(snapshot.as_bytes()))
@@ -731,7 +748,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "9401d37544da815c64abeff4aba2c939cddf246f6e56af99e220b78c98514e46"
+        "0d32615dcce391c379ff87ffe632cbe8e389956effde3b68bb8cc6819401d589"
     );
     assert_eq!(
         pool.platform
@@ -1770,9 +1787,33 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
 
 #[tokio::test]
 async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution() {
+    // PROTOCOL_VERSION_16: the token market contract joins the genesis contracts tree, which
+    // changes the actual processing fee.
+    run_real_single_payment_sponsor_at_protocol_version(
+        PlatformVersion::latest().protocol_version,
+        3_870_440,
+        92_739_560,
+    )
+    .await;
+}
+
+/// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract. Pinned so
+/// v15 chain history stays bit-for-bit reproducible.
+#[tokio::test]
+async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution_protocol_version_15(
+) {
+    run_real_single_payment_sponsor_at_protocol_version(15, 3_916_360, 92_785_480).await;
+}
+
+async fn run_real_single_payment_sponsor_at_protocol_version(
+    protocol_version: u32,
+    actual_processing_transparent: u64,
+    actual_processing_shielded: u64,
+) {
+    let version =
+        PlatformVersion::get(protocol_version).expect("expected a known protocol version");
     for shielded in [false, true] {
-        let pool = FundedPool::sponsored_card(shielded).await;
-        let version = PlatformVersion::latest();
+        let pool = FundedPool::sponsored_card(shielded, version).await;
         let mut rng = StdRng::seed_from_u64(70_508);
         let card_type = pool.contract.document_type_for_name("card").unwrap();
         let (document, entropy) = super::document_shielded_token_payment_tests::random_card(
@@ -1884,7 +1925,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             .unwrap()
             .unwrap();
         let before = pool_notes_count(&pool.platform, pool.token_id);
-        let result = process(&pool.platform, &transition);
+        let result = process_at_protocol_version(&pool.platform, &transition, version);
         println!(
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
@@ -1893,9 +1934,19 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (
+                    171_126_000,
+                    213_389_040,
+                    155_142_000,
+                    actual_processing_shielded,
+                )
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (
+                    138_024_000,
+                    117_713_120,
+                    126_468_000,
+                    actual_processing_transparent,
+                )
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -1948,7 +1999,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             assert_eq!(pool_notes_count(&pool.platform, pool.token_id), before);
             assert_eq!(pool_balance(&pool.platform, pool.token_id), 15);
         }
-        assert_tokens_conserved(&pool.platform);
+        assert_tokens_conserved_at_protocol_version(&pool.platform, version);
     }
 }
 
@@ -2144,13 +2195,17 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
-        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
-        // incidental Debug output; keep actions, charges and operations in the original pin.
+        // This non-history fixture cannot erase documents and sums nothing. Its inactive
+        // lifecycle flag, the sum width of its type and index levels, and the protocol version
+        // its cached contract was parsed under are incidental Debug output; keep actions,
+        // charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
         )
-        .replace(", documents_can_be_erased: false", "");
+        .replace(", documents_can_be_erased: false", "")
+        .replace(", big_sums: false", "")
+        .replace(&parsed_under_debug_field(version), "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2185,39 +2240,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "6eec6da9023f5143a81f4ee42f3549b31ea8d7f035cf664b5ec429cc5da4d81a",
+                "6f079f15653c3ce2c060638558199882ab353be971c11dff202f6d1df0a3ab91",
             ),
             "valid-payment" => (
-                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "0c3d3f5692aa6b658389d5b6c477f081dba505f350f65f8c3ee1f28dde3a68f2",
+                "c45968b193c120f67d1e9ff916dec97d4399b2fe6d2d3633d03dc80c50418a3a",
+                "7b9460a2ebc4c106283b81343342c278b52e297d659a305341d4835bc46f7cfd",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "53c5a1d1399e154096559ec2a9a3ba560db72f08c1f6b0cd316e87131af5d657",
+                "11a9cfcb0d3a875989ee38850fff27d81c25b291a5e1f987320261a4db0f1532",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "5766cf0e494a1cae19e034a4336196c62184c699a646d71f0de5e382b6b61fc1",
+                "a56e5d0bc9130717950924fcdfbec2f6bf86f7d7f17889af3cb3ba15d1d41029",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "653f494271acdedb71dc0b9e7a224cc47c84e188a6c5aeb315ff7da2f66627ec",
+                "4279909c02a058aaee818adfcbeb1395ba5adb54b3ee3bf88fb097064ad4544d",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "c4f5e4054bfa4e85548d713765c6da605f38559e871a2824c38bc8209f3b5a17",
+                "1c4fd8a9e9a73b2065e0b5e0ca50c9d6731aa366a213c7e008218c921882a6bc",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "16e25a2c4139c7b5294599a63461d1ecbba5109fcbf16e61a3578fb152ea72b2",
+                "33b3eeab935208cbc0298a8a85383b2086ecfc801f460daf802305c9716748ab",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "f49e470f2f1b5a9ca68245783952dac60d26d7b8b89c20766cc1a3ba43c5e0f5",
+                "0e15d1cbff1f45da08fe0134187cfbd8a3a5c7cc05ba7f74ce43edd92f1ca807",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "3d5beeb201a0a33daacce4469c0a4aec845a82e6b74d31678dfe6aec24481830",
+                "65f79ba0d3a1932a94e7faf6749bea8b43bf4f9066c0a16ee0db6ee57386b860",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

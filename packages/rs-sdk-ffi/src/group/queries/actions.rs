@@ -2,7 +2,7 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
-use dash_sdk::platform::{group_actions::GroupActionsQuery, FetchMany};
+use dash_sdk::platform::{group_actions::GroupActionsQuery, FetchMany, Identifier};
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches group actions
@@ -13,10 +13,15 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `group_contract_position` - Position of the group in the contract
 /// * `status` - Action status (0=Pending, 1=Completed, 2=Expired)
 /// * `start_at_action_id` - Optional starting action ID (Base58-encoded)
-/// * `limit` - Maximum number of actions to return
+/// * `limit` - Maximum number of actions to return; 0 lets Platform use its default
 ///
 /// # Returns
-/// * JSON array of group actions or null if not found
+/// * JSON array of group actions, or null if none was found. Each entry is
+///   `{"id": <base58>, "action": null | {"contract_id": <base58>,
+///   "proposer_id": <base58>, "token_contract_position": <number>,
+///   "event": <object>}}`. `event` is the `GroupActionEvent` in its serde
+///   JSON shape, e.g. `{"$kind": "tokenEvent", "$type": "mint", ...}`
+///   (earlier releases returned a string of Rust `Debug` text here).
 /// * Error message if operation fails
 ///
 /// # Safety
@@ -142,7 +147,9 @@ fn get_group_actions(
             group_contract_position,
             status,
             start_at_action_id,
-            limit: Some(limit),
+            // 0 means "not set", as in the other query entry points: Platform
+            // refuses an explicit limit of 0.
+            limit: if limit == 0 { None } else { Some(limit) },
         };
 
         match GroupAction::fetch_many(&sdk, query).await {
@@ -150,38 +157,42 @@ fn get_group_actions(
                 if actions.is_empty() {
                     return Ok(None);
                 }
-                let actions_json: Vec<String> = actions
-                    .iter()
-                    .map(|(id, action_opt)| {
-                        if let Some(action) = action_opt {
-                            // Manually create JSON for GroupAction
-                            let event_str = format!("{:?}", action.event()); // Using Debug format for now
-                            let action_json = format!(
-                                r#"{{"contract_id":"{}","proposer_id":"{}","token_contract_position":{},"event":"{}"}}"#,
-                                bs58::encode(action.contract_id().as_bytes()).into_string(),
-                                bs58::encode(action.proposer_id().as_bytes()).into_string(),
-                                action.token_contract_position(),
-                                event_str
-                            );
-                            format!(
-                                r#"{{"id":"{}","action":{}}}"#,
-                                bs58::encode(id.as_bytes()).into_string(),
-                                action_json
-                            )
-                        } else {
-                            format!(
-                                r#"{{"id":"{}","action":null}}"#,
-                                bs58::encode(id.as_bytes()).into_string()
-                            )
-                        }
-                    })
-                    .collect();
-
-                Ok(Some(format!("[{}]", actions_json.join(","))))
+                group_actions_json(actions.iter()).map(Some)
             }
             Err(e) => Err(format!("Failed to fetch group actions: {}", e)),
         }
     })
+}
+
+/// The response JSON for [`dash_sdk_group_get_actions`]; see its "Returns".
+fn group_actions_json<'a>(
+    actions: impl IntoIterator<Item = (&'a Identifier, &'a Option<GroupAction>)>,
+) -> Result<String, String> {
+    let entries = actions
+        .into_iter()
+        .map(|(id, action_opt)| {
+            let action_json = match action_opt {
+                Some(action) => {
+                    // The event in its serde wire shape, e.g.
+                    // {"$kind":"tokenEvent","$type":"mint",...}.
+                    let event = serde_json::to_value(action.event())
+                        .map_err(|e| format!("Failed to encode group action event: {}", e))?;
+                    serde_json::json!({
+                        "contract_id": bs58::encode(action.contract_id().as_bytes()).into_string(),
+                        "proposer_id": bs58::encode(action.proposer_id().as_bytes()).into_string(),
+                        "token_contract_position": action.token_contract_position(),
+                        "event": event,
+                    })
+                }
+                None => serde_json::Value::Null,
+            };
+            Ok(serde_json::json!({
+                "id": bs58::encode(id.as_bytes()).into_string(),
+                "action": action_json,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(serde_json::Value::Array(entries).to_string())
 }
 
 #[cfg(test)]
@@ -213,5 +224,61 @@ mod tests {
             assert!(!result.error.is_null());
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
+    }
+
+    #[test]
+    fn should_encode_group_actions_as_json_with_an_object_event() {
+        use dash_sdk::dpp::group::action_event::GroupActionEvent;
+        use dash_sdk::dpp::group::group_action::v0::GroupActionV0;
+        use dash_sdk::dpp::tokens::token_event::TokenEvent;
+
+        let action_id = Identifier::new([1; 32]);
+        let closed_id = Identifier::new([2; 32]);
+        let contract_id = Identifier::new([3; 32]);
+        let proposer_id = Identifier::new([4; 32]);
+        let recipient = Identifier::new([5; 32]);
+        // A note with quotes and a backslash: the old hand-built JSON broke on it.
+        let note = r#"pay "Alice" \ now"#.to_string();
+        let action = Some(GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id,
+            token_contract_position: 2,
+            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(
+                777,
+                recipient,
+                Some(note.clone()),
+            )),
+        }));
+        let actions = [(action_id, action), (closed_id, None)];
+
+        let json = group_actions_json(actions.iter().map(|(id, a)| (id, a))).expect("encodes");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+
+        let first = &parsed[0];
+        assert_eq!(
+            first["id"],
+            bs58::encode(action_id.as_bytes()).into_string()
+        );
+        let encoded = &first["action"];
+        assert_eq!(
+            encoded["contract_id"],
+            bs58::encode(contract_id.as_bytes()).into_string()
+        );
+        assert_eq!(
+            encoded["proposer_id"],
+            bs58::encode(proposer_id.as_bytes()).into_string()
+        );
+        assert_eq!(encoded["token_contract_position"], 2);
+        let event = &encoded["event"];
+        assert!(event.is_object(), "event must be an object, got {event}");
+        assert_eq!(event["$kind"], "tokenEvent");
+        assert_eq!(event["$type"], "mint");
+        assert_eq!(event["publicNote"].as_str(), Some(note.as_str()));
+        assert_eq!(
+            parsed[1]["id"],
+            bs58::encode(closed_id.as_bytes()).into_string()
+        );
+        // An explicit null, not a missing key (indexing a missing key yields Null too).
+        assert_eq!(parsed[1].get("action"), Some(&serde_json::Value::Null));
     }
 }

@@ -554,7 +554,7 @@ pub(super) fn stop_height_reached(limit: Option<u64>, known_height: Option<u64>)
     matches!((limit, known_height), (Some(limit), Some(height)) if height >= limit)
 }
 
-/// The app hash the block commits: from consensus version 2 the commit's, the state after the
+/// The app hash the block commits: from consensus version 3 the commit's, the state after the
 /// block's random draws, which the header's (the state before them) is not; before, the
 /// header's.
 fn extract_expected_app_hash(request: &RequestFinalizeBlock) -> Option<Vec<u8>> {
@@ -673,7 +673,7 @@ mod tests {
         assert_eq!(hash, Some(vec![1, 2, 3, 4]));
     }
 
-    /// From consensus version 2 the block commits the state after its random draws, which the
+    /// From consensus version 3 the block commits the state after its random draws, which the
     /// commit carries and the header does not.
     #[test]
     fn should_expect_the_commit_app_hash_from_consensus_version_2() {
