@@ -56,7 +56,10 @@ export default class GroupReindexCommand extends GroupBaseCommand {
     // one by one, and a member that cannot start again would be found only
     // after the ones before it went down.
     try {
-      configGroup.forEach((config) => assertPlatformCanStart(config));
+      await configGroup.reduce(
+        (checked, config) => checked.then(() => assertPlatformCanStart(config)),
+        Promise.resolve(),
+      );
     } catch (e) {
       throw printUnwrapped(e);
     }

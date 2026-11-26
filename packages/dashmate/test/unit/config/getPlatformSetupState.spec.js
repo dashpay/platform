@@ -1,6 +1,7 @@
 import HomeDir from '../../../src/config/HomeDir.js';
 import getPlatformSetupState, {
   PLATFORM_SETUP_STATE,
+  addReusableZeroSslCertificate,
   describePlatformSetupState,
 } from '../../../src/config/getPlatformSetupState.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
@@ -216,9 +217,18 @@ describe('getPlatformSetupState', () => {
 
       expect(setupState.state).to.equal(PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED);
 
-      const text = describePlatformSetupState(setupState, 'testnet');
+      // The key existed only in memory, so the certificate cannot be used.
+      const text = describePlatformSetupState({
+        ...setupState,
+        reusableCertificate: {
+          isReusable: false,
+          status: 'pending_validation',
+          reason: 'the private key it was requested with is not on this node',
+        },
+      }, 'testnet');
 
-      expect(text).to.include('dashmate ssl obtain --force --config testnet');
+      expect(text).to.include('dashmate ssl obtain --force --config testnet')
+        .and.include('the private key it was requested with is not on this node');
       // `ssl cleanup` cancels every unfinished certificate of the account.
       expect(text).to.include(`cancel certificate ${'c'.repeat(32)} in the ZeroSSL dashboard`);
     });
@@ -260,8 +270,105 @@ describe('getPlatformSetupState', () => {
         certificate: { isUsable: false, directories: [] },
       });
 
-      expect(describePlatformSetupState(setupState, 'testnet'))
-        .to.include('dashmate ssl obtain --force --config testnet');
+      expect(setupState.isCertificateInstalled).to.be.false();
+    });
+
+    // Whether the gateway can serve the files and whether ZeroSSL can send
+    // the certificate again are two questions. ZeroSSL saves the certificate
+    // ID before verification and the files are written last.
+    describe('whose certificate the gateway cannot serve', () => {
+      let config;
+      let findReusableZeroSslCertificate;
+
+      /**
+       * @return {Promise<string>} the advice
+       */
+      async function advice() {
+        const setupState = await addReusableZeroSslCertificate(
+          stateOf(config, { certificate: { isUsable: false, directories: [] } }),
+          config,
+          findReusableZeroSslCertificate,
+        );
+
+        return describePlatformSetupState(setupState, 'testnet');
+      }
+
+      beforeEach(async function beforeEach() {
+        config = await hardResetPlatform(setUp('testnet', { masternode: true }));
+        config.set('platform.drive.tenderdash.node.key', setUp('testnet', { masternode: true }).get('platform.drive.tenderdash.node.key'));
+        config.set('platform.gateway.ssl.provider', 'zerossl');
+        config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+        config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+
+        findReusableZeroSslCertificate = this.sinon.stub();
+      });
+
+      // A full disk stopped the bundle's write after the key was written.
+      it('should install an issued certificate again rather than create one', async () => {
+        findReusableZeroSslCertificate.resolves({ isReusable: true, status: 'issued', reason: null });
+
+        const text = await advice();
+
+        expect(findReusableZeroSslCertificate).to.have.been.calledOnceWith(config);
+        expect(text).to.include('dashmate ssl obtain --config testnet')
+          .and.include('ZeroSSL issued its certificate')
+          .and.include('c'.repeat(32))
+          .and.not.include('--force')
+          .and.not.include('port 80');
+      });
+
+      it('should finish a certificate ZeroSSL still validates rather than create one', async () => {
+        findReusableZeroSslCertificate.resolves({ isReusable: true, status: 'pending_validation', reason: null });
+
+        const text = await advice();
+
+        expect(text).to.include('open inbound TCP port 80')
+          .and.include('dashmate ssl obtain --config testnet')
+          .and.not.include('--force');
+      });
+
+      ['cancelled', 'expired'].forEach((status) => {
+        it(`should create a new certificate when ZeroSSL reports the saved one ${status}`, async () => {
+          findReusableZeroSslCertificate.resolves({
+            isReusable: false, status, reason: `ZeroSSL reports it ${status}`,
+          });
+
+          expect(await advice()).to.include('dashmate ssl obtain --force --config testnet')
+            .and.include(`ZeroSSL reports it ${status}`);
+        });
+      });
+
+      it('should create a new certificate when no certificate ID is saved', () => {
+        const text = describePlatformSetupState({
+          ...stateOf(config, { certificate: { isUsable: false, directories: [] } }),
+          reusableCertificate: { isReusable: false, status: null, reason: 'no certificate ID is saved' },
+        }, 'testnet');
+
+        expect(text).to.include('dashmate ssl obtain --force --config testnet');
+      });
+
+      // A plain obtain decides by the same validation, and asks for a new
+      // certificate only when the saved one cannot be used.
+      it('should not ask for a new certificate when ZeroSSL could not be asked', async () => {
+        findReusableZeroSslCertificate.resolves({ isReusable: null, status: null, reason: 'fetch failed' });
+
+        const text = await advice();
+
+        expect(text).to.include('could not ask ZeroSSL')
+          .and.include('fetch failed')
+          .and.include('dashmate ssl obtain --config testnet')
+          .and.not.include('--force');
+      });
+
+      it('should not ask ZeroSSL when the gateway can serve the installed certificate', async () => {
+        await addReusableZeroSslCertificate(
+          stateOf(config, { certificate: { isUsable: true, directories: [] } }),
+          config,
+          findReusableZeroSslCertificate,
+        );
+
+        expect(findReusableZeroSslCertificate).to.not.have.been.called();
+      });
     });
   });
 });

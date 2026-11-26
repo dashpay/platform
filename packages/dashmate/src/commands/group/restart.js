@@ -41,7 +41,10 @@ export default class GroupRestartCommand extends GroupBaseCommand {
     // Every member before any is stopped: a restart that cannot start again
     // would leave the group down.
     try {
-      configGroup.forEach((config) => assertPlatformCanStart(config));
+      await configGroup.reduce(
+        (checked, config) => checked.then(() => assertPlatformCanStart(config)),
+        Promise.resolve(),
+      );
     } catch (e) {
       throw printUnwrapped(e);
     }

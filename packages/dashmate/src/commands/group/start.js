@@ -37,7 +37,10 @@ export default class GroupStartCommand extends GroupBaseCommand {
   ) {
     // Every member before any starts.
     try {
-      configGroup.forEach((config) => assertPlatformCanStart(config));
+      await configGroup.reduce(
+        (checked, config) => checked.then(() => assertPlatformCanStart(config)),
+        Promise.resolve(),
+      );
     } catch (e) {
       throw printUnwrapped(e);
     }

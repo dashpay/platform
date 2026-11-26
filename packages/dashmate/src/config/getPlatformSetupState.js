@@ -86,8 +86,9 @@ export default function getPlatformSetupState(config, {
 
   // ZeroSSL saves every answer as soon as it creates a certificate. If the
   // run stops before it ends, the answers stay and TLS stays off. Whether
-  // the issued pair reached the disk whole decides how to finish: a plain
-  // obtain does not write files it finds there again.
+  // the gateway can serve the files on disk is one half of how to finish;
+  // whether ZeroSSL can send the certificate again is the other
+  // (addReusableZeroSslCertificate).
   if (ssl.provider === 'zerossl' && zeroSsl.id !== null && ssl.enabled === false && key !== null) {
     return {
       state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
@@ -128,6 +129,108 @@ export default function getPlatformSetupState(config, {
 }
 
 /**
+ * Add whether ZeroSSL can still install the certificate an interrupted setup
+ * saved, when the advice depends on it
+ *
+ * Only an interrupted ZeroSSL setup whose certificate the gateway cannot
+ * serve depends on it, and ZeroSSL is asked only then.
+ *
+ * @param {Object} setupState - by getPlatformSetupState
+ * @param {Config} config
+ * @param {findReusableZeroSslCertificate} findReusableZeroSslCertificate
+ * @return {Promise<Object>} the state, with `reusableCertificate` when asked
+ */
+export async function addReusableZeroSslCertificate(
+  setupState,
+  config,
+  findReusableZeroSslCertificate,
+) {
+  if (setupState.state !== PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED
+    || setupState.isCertificateInstalled) {
+    return setupState;
+  }
+
+  return {
+    ...setupState,
+    reusableCertificate: await findReusableZeroSslCertificate(config),
+  };
+}
+
+/**
+ * How to finish an interrupted ZeroSSL setup whose certificate the gateway
+ * cannot serve
+ *
+ * Whether ZeroSSL can still send the certificate decides it. Only when it
+ * cannot is a new certificate requested, and when ZeroSSL could not be asked
+ * a plain obtain decides by the same validation.
+ *
+ * @param {string} configName
+ * @param {string} certificateId
+ * @param {{ isReusable: boolean|null, status: string|null, reason: string|null }}
+ *  [reusableCertificate] - by findReusableZeroSslCertificate; not known when absent
+ * @return {string[]}
+ */
+function describeUninstalledZeroSslCertificate(configName, certificateId, reusableCertificate) {
+  const flag = renderConfigFlag(configName);
+  const { isReusable = null, status = null, reason = null } = reusableCertificate ?? {};
+
+  const ending = [
+    `then continue with 'dashmate update ${flag}' and start the node.`,
+    'Do not reset Platform in between: that removes the certificate ID and the API key from',
+    'the config.',
+  ];
+
+  if (isReusable === true && status === 'issued') {
+    return [
+      `An earlier Platform setup of ${configName} stopped after ZeroSSL issued its certificate`,
+      `${certificateId}, before the certificate was installed. Its answers and the certificate's`,
+      'private key were saved, so it can be installed without a new one:',
+      `  dashmate ssl obtain ${flag}    (downloads it again)`,
+      ...ending,
+    ];
+  }
+
+  if (isReusable === true) {
+    return [
+      `An earlier Platform setup of ${configName} stopped while ZeroSSL validated its certificate`,
+      `${certificateId}. Its answers and the certificate's private key were saved, so the`,
+      'certificate can be finished without a new one:',
+      '  1. open inbound TCP port 80 to this node',
+      `  2. dashmate ssl obtain ${flag}`,
+      ...ending,
+    ];
+  }
+
+  if (isReusable === null) {
+    return [
+      `An earlier Platform setup of ${configName} stopped after it created ZeroSSL certificate`,
+      `${certificateId}, before the certificate was installed. Its answers were saved. dashmate`,
+      `could not ask ZeroSSL whether that certificate can still be installed${reason ? `: ${reason}` : ''}.`,
+      'To finish the setup:',
+      '  1. open inbound TCP port 80 to this node',
+      `  2. dashmate ssl obtain ${flag}`,
+      '     It installs the certificate if ZeroSSL issued it or still validates it, and',
+      '     otherwise asks for a new one or names the command that does.',
+      ...ending,
+    ];
+  }
+
+  return [
+    `An earlier Platform setup of ${configName} stopped after it created a ZeroSSL certificate`,
+    'and before the certificate was installed. Its answers were saved, but that certificate',
+    `cannot be completed${reason ? `: ${reason}` : ''}. To finish the setup:`,
+    '  1. open inbound TCP port 80 to this node',
+    `  2. dashmate ssl obtain --force ${flag}    (creates a new certificate)`,
+    `  3. cancel certificate ${certificateId} in the ZeroSSL dashboard, or revoke it if it`,
+    '     was issued',
+    `then continue with 'dashmate update ${flag}' and start the node.`,
+    `('dashmate ssl cleanup ${flag}' would cancel every unfinished certificate of the`,
+    'API key\'s account, other nodes\' included.) Do not reset Platform in between: that',
+    'removes the certificate ID and the API key from the config.',
+  ];
+}
+
+/**
  * What the state means for the operator and what to run
  *
  * @param {{
@@ -136,6 +239,7 @@ export default function getPlatformSetupState(config, {
  *   certificateId?: string,
  *   isCertificateInstalled?: boolean,
  *   certificateDirectories?: string[],
+ *   reusableCertificate?: Object,
  * }} setupState
  * @param {string} configName
  * @return {string}
@@ -146,6 +250,7 @@ export function describePlatformSetupState({
   certificateId,
   isCertificateInstalled,
   certificateDirectories = [],
+  reusableCertificate,
 }, configName) {
   const flag = renderConfigFlag(configName);
   const setupCommand = `dashmate setup --platform ${flag}`;
@@ -184,17 +289,7 @@ export function describePlatformSetupState({
 
       return [
         ...removeDirectories,
-        `An earlier Platform setup of ${configName} stopped after it created a ZeroSSL certificate`,
-        'and before the certificate was installed. Its answers were saved, but that certificate',
-        'cannot be completed. To finish the setup:',
-        '  1. open inbound TCP port 80 to this node',
-        `  2. dashmate ssl obtain --force ${flag}    (creates a new certificate)`,
-        `  3. cancel certificate ${certificateId} in the ZeroSSL dashboard, or revoke it if it`,
-        '     was issued',
-        `then continue with 'dashmate update ${flag}' and start the node.`,
-        `('dashmate ssl cleanup ${flag}' would cancel every unfinished certificate of the`,
-        'API key\'s account, other nodes\' included.) Do not reset Platform in between: that',
-        'removes the certificate ID and the API key from the config.',
+        ...describeUninstalledZeroSslCertificate(configName, certificateId, reusableCertificate),
       ].join('\n');
     }
 

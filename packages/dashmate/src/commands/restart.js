@@ -40,7 +40,7 @@ export default class RestartCommand extends ConfigBaseCommand {
     // Before the node is stopped: a restart that cannot start again would
     // leave it down.
     try {
-      assertPlatformCanStart(config);
+      await assertPlatformCanStart(config);
     } catch (e) {
       throw printUnwrapped(e);
     }

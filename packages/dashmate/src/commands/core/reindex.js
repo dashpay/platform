@@ -49,7 +49,7 @@ export default class ReindexCommand extends ConfigBaseCommand {
   ) {
     // The reindex renders its own Core config and then starts the whole node.
     try {
-      assertPlatformCanStart(config);
+      await assertPlatformCanStart(config);
     } catch (e) {
       throw printUnwrapped(e);
     }

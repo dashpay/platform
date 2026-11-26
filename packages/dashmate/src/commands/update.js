@@ -90,7 +90,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
     // certificate. The certificate check is skipped until then: its remedies
     // (an obtain, `ssl obtain`) would configure TLS behind setup's back, and
     // setup would then refuse to run.
-    const platformSetupError = assertPlatformCanStart.findPendingSetup(config);
+    const platformSetupError = await assertPlatformCanStart.findPendingSetup(config);
 
     if (platformSetupError !== null) {
       const heading = platformSetupError.canStart

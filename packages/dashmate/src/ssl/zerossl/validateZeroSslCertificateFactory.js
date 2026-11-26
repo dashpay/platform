@@ -16,6 +16,22 @@ export const ERRORS = {
 };
 
 /**
+ * Whether a validation result leaves the saved certificate to finish rather
+ * than to replace
+ *
+ * An obtain without --force downloads a certificate ZeroSSL issued again,
+ * and validates one ZeroSSL still validates, without asking for another. The
+ * validation reaches these results only when the private key the certificate
+ * was requested with is on this node and the address matches.
+ *
+ * @param {string|undefined} error - from validateZeroSslCertificate
+ * @return {boolean}
+ */
+export function isSavedCertificateReusable(error) {
+  return error === undefined || error === ERRORS.CERTIFICATE_IS_NOT_VALIDATED;
+}
+
+/**
  * @param {string} filePath
  * @return {boolean}
  */
@@ -33,9 +49,11 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
    * @typedef {validateZeroSslCertificate}
    * @param {Config} config
    * @param {number} expirationDays
+   * @param {Object} [options]
+   * @param {AbortSignal} [options.signal] - ends the request to ZeroSSL
    * @return {Promise<{ [error: String], [data: Object] }>}
    */
-  async function validateZeroSslCertificate(config, expirationDays) {
+  async function validateZeroSslCertificate(config, expirationDays, { signal } = {}) {
     const data = {};
 
     data.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
@@ -85,7 +103,7 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
     // This function will throw an error if certificate with specified ID is not present
     try {
-      data.certificate = await getCertificate(data.apiKey, certificateId);
+      data.certificate = await getCertificate(data.apiKey, certificateId, { signal });
     } catch (e) {
       if (e.code) {
         data.error = e;

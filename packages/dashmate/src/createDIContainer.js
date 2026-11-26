@@ -139,6 +139,7 @@ import verifySystemRequirementsTaskFactory
 import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
 import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
 import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCertificateFactory.js';
+import findReusableZeroSslCertificateFactory from './ssl/zerossl/findReusableZeroSslCertificateFactory.js';
 import validateLetsEncryptCertificateFactory from './ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import setupPlatformTaskFactory from './listr/tasks/setup/platform/setupPlatformTaskFactory.js';
 import getPlatformArtefactsFactory from './config/getPlatformArtefactsFactory.js';
@@ -368,6 +369,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
+    findReusableZeroSslCertificate: asFunction(findReusableZeroSslCertificateFactory).singleton(),
     validateLetsEncryptCertificate: asFunction(validateLetsEncryptCertificateFactory).singleton(),
     checkGatewayCertificate: asFunction(checkGatewayCertificateFactory).singleton(),
     getCertificate: asValue(getCertificate),

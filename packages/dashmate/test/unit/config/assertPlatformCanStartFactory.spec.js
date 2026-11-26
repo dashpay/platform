@@ -7,6 +7,10 @@ import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdas
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
 import { issueCertificate } from '../../../src/test/certificateFixtures.js';
+import validateZeroSslCertificateFactory from '../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import findReusableZeroSslCertificateFactory from '../../../src/ssl/zerossl/findReusableZeroSslCertificateFactory.js';
+import Certificate from '../../../src/ssl/zerossl/Certificate.js';
+import ProviderUnreachableError from '../../../src/ssl/errors/ProviderUnreachableError.js';
 
 describe('assertPlatformCanStart', () => {
   let homeDir;
@@ -14,6 +18,7 @@ describe('assertPlatformCanStart', () => {
   let setUp;
   let hardResetPlatform;
   let assertPlatformCanStart;
+  let getCertificate;
 
   /**
    * Write node_key.json as rendering does
@@ -36,11 +41,11 @@ describe('assertPlatformCanStart', () => {
 
   /**
    * @param {Config} config
-   * @return {Error|null}
+   * @return {Promise<Error|null>}
    */
-  function refusalOf(config) {
+  async function refusalOf(config) {
     try {
-      assertPlatformCanStart(config);
+      await assertPlatformCanStart(config);
     } catch (e) {
       return e;
     }
@@ -48,32 +53,59 @@ describe('assertPlatformCanStart', () => {
     return null;
   }
 
-  beforeEach(() => {
+  /**
+   * What ZeroSSL answers about the saved certificate
+   *
+   * @param {string} status
+   * @return {Certificate}
+   */
+  function zeroSslCertificate(status) {
+    const pad = (number) => String(number).padStart(2, '0');
+    const toZeroSslDate = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+      + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+    return new Certificate({
+      id: 'c'.repeat(32),
+      common_name: '1.2.3.4',
+      status,
+      created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+      expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
+    });
+  }
+
+  beforeEach(function beforeEach() {
     homeDir = HomeDir.createTemp();
     ({ defaultConfigs, setUp, hardResetPlatform } = createPlatformSetupConfigs(homeDir));
-    assertPlatformCanStart = assertPlatformCanStartFactory(homeDir, defaultConfigs);
+    getCertificate = this.sinon.stub().resolves(zeroSslCertificate('issued'));
+    assertPlatformCanStart = assertPlatformCanStartFactory(
+      homeDir,
+      defaultConfigs,
+      findReusableZeroSslCertificateFactory(
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+      ),
+    );
   });
 
   afterEach(() => {
     homeDir.remove();
   });
 
-  it('should let a set up evonode start', () => {
+  it('should let a set up evonode start', async () => {
     const config = setUp('testnet', { masternode: true });
     renderNodeKey(config);
 
-    expect(refusalOf(config)).to.be.null();
+    expect(await refusalOf(config)).to.be.null();
   });
 
   // A fullnode needs no registered identity: any key serves it.
-  it('should leave fullnodes that are set up and nodes without Platform alone', () => {
+  it('should leave fullnodes that are set up and nodes without Platform alone', async () => {
     const fullnode = setUp('testnet', { masternode: false });
     const regular = setUp('testnet', { masternode: true, evo: false });
     const coreOnly = setUp('testnet', { masternode: false, evo: false });
 
-    expect(refusalOf(fullnode)).to.be.null();
-    expect(refusalOf(regular)).to.be.null();
-    expect(refusalOf(coreOnly)).to.be.null();
+    expect(await refusalOf(fullnode)).to.be.null();
+    expect(await refusalOf(regular)).to.be.null();
+    expect(await refusalOf(coreOnly)).to.be.null();
   });
 
   // After `reset --platform --hard` a testnet Evo fullnode keeps Platform
@@ -83,7 +115,7 @@ describe('assertPlatformCanStart', () => {
   it('should refuse an Evo fullnode reset with --hard and point to setup --platform', async () => {
     const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
 
-    const refusal = refusalOf(config);
+    const refusal = await refusalOf(config);
 
     expect(refusal.problem).to.equal('its Platform part is not set up');
     expect(refusal.remedy).to.include('dashmate setup --platform --config testnet')
@@ -94,11 +126,11 @@ describe('assertPlatformCanStart', () => {
   // provider, so a fullnode whose Platform was set up has TLS on or files of
   // its own.
   describe('a fullnode whose Platform was set up', () => {
-    it('should start with a self-signed certificate', () => {
+    it('should start with a self-signed certificate', async () => {
       const config = setUp('testnet', { masternode: false });
       config.set('platform.gateway.ssl.provider', 'self-signed');
 
-      expect(refusalOf(config)).to.be.null();
+      expect(await refusalOf(config)).to.be.null();
     });
 
     it('should start with certificate files that dashmate does not manage', async () => {
@@ -108,7 +140,7 @@ describe('assertPlatformCanStart', () => {
       fs.writeFileSync(path.join(sslDir, 'bundle.crt'), 'certificate');
       fs.writeFileSync(path.join(sslDir, 'private.key'), 'key');
 
-      expect(refusalOf(config)).to.be.null();
+      expect(await refusalOf(config)).to.be.null();
     });
 
     // Rootful Docker mounts what the CLI user may not read: files the user
@@ -130,7 +162,7 @@ describe('assertPlatformCanStart', () => {
       fs.chmodSync(protectedDir, 0o000);
 
       try {
-        expect(refusalOf(config)).to.be.null();
+        expect(await refusalOf(config)).to.be.null();
       } finally {
         fs.chmodSync(protectedDir, 0o700);
       }
@@ -147,9 +179,9 @@ describe('assertPlatformCanStart', () => {
       seed.set('platform.drive.tenderdash.mode', 'seed');
 
       expect(mainnet.get('platform.enable')).to.be.false();
-      expect(refusalOf(mainnet)).to.be.null();
-      expect(refusalOf(custom)).to.be.null();
-      expect(refusalOf(seed)).to.be.null();
+      expect(await refusalOf(mainnet)).to.be.null();
+      expect(await refusalOf(custom)).to.be.null();
+      expect(await refusalOf(seed)).to.be.null();
     });
   });
 
@@ -197,7 +229,7 @@ describe('assertPlatformCanStart', () => {
     it('should refuse it after a failed verification, with the commands that finish it', async () => {
       const config = await stoppedAfterZeroSslSave();
 
-      const refusal = refusalOf(config);
+      const refusal = await refusalOf(config);
 
       expect(refusal.problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
       expect(refusal.remedy).to.include('dashmate ssl obtain --force --config testnet');
@@ -207,7 +239,7 @@ describe('assertPlatformCanStart', () => {
       const config = await stoppedAfterZeroSslSave();
       installCertificateFiles({ 'bundle.crt': pair.pem });
 
-      expect(refusalOf(config).remedy).to.include('dashmate ssl obtain --force --config testnet');
+      expect((await refusalOf(config)).remedy).to.include('dashmate ssl obtain --force --config testnet');
     });
 
     // Compose creates a missing bind-mount source as a directory, so a start
@@ -217,7 +249,7 @@ describe('assertPlatformCanStart', () => {
       fs.mkdirSync(path.join(sslDir, 'bundle.crt'), { recursive: true });
       fs.mkdirSync(path.join(sslDir, 'private.key'));
 
-      const { remedy } = refusalOf(config);
+      const { remedy } = await refusalOf(config);
 
       expect(remedy).to.include(`rmdir ${path.join(sslDir, 'bundle.crt')}`)
         .and.include(`rmdir ${path.join(sslDir, 'private.key')}`)
@@ -231,7 +263,7 @@ describe('assertPlatformCanStart', () => {
       fs.symlinkSync(path.join(sslDir, 'gone.crt'), path.join(sslDir, 'bundle.crt'));
       fs.symlinkSync(path.join(sslDir, 'gone.key'), path.join(sslDir, 'private.key'));
 
-      expect(refusalOf(config).remedy).to.include('dashmate ssl obtain --force --config testnet');
+      expect((await refusalOf(config)).remedy).to.include('dashmate ssl obtain --force --config testnet');
     });
 
     // The gateway cannot serve a pair that does not load or match.
@@ -239,27 +271,74 @@ describe('assertPlatformCanStart', () => {
       const config = await stoppedAfterZeroSslSave();
       installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': other.keyPem });
 
-      expect(refusalOf(config).problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
+      expect((await refusalOf(config)).problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
 
       installCertificateFiles({ 'bundle.crt': '', 'private.key': '' });
 
-      expect(refusalOf(config)).to.not.be.null();
+      expect(await refusalOf(config)).to.not.be.null();
     });
 
     // A run that stopped while writing the bundle, out of disk space say,
-    // leaves part of it next to an intact key.
-    it('should refuse it with a truncated bundle, and not call the certificate installed', async () => {
+    // leaves part of it next to an intact key. ZeroSSL issued the
+    // certificate, and a plain obtain downloads it again.
+    it('should refuse it with a truncated bundle, and install the issued certificate again', async () => {
       const config = await stoppedAfterZeroSslSave();
       installCertificateFiles({
         'bundle.crt': pair.pem.slice(0, pair.pem.length / 2),
         'private.key': pair.keyPem,
       });
 
-      const refusal = refusalOf(config);
+      const refusal = await refusalOf(config);
 
       expect(refusal.problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
-      expect(refusal.remedy).to.include('dashmate ssl obtain --force --config testnet');
-      expect(assertPlatformCanStart.findPendingSetup(config).canStart).to.be.undefined();
+      expect(refusal.remedy).to.include('ZeroSSL issued its certificate')
+        .and.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+      expect(getCertificate).to.have.been.calledWith('k'.repeat(32), 'c'.repeat(32));
+
+      const pending = await assertPlatformCanStart.findPendingSetup(config);
+
+      expect(pending.canStart).to.be.undefined();
+      expect(pending.remedy).to.equal(refusal.remedy);
+    });
+
+    ['cancelled', 'expired'].forEach((status) => {
+      it(`should advise a new certificate when ZeroSSL reports the saved one ${status}`, async () => {
+        getCertificate.resolves(zeroSslCertificate(status));
+        const config = await stoppedAfterZeroSslSave();
+        installCertificateFiles({
+          'bundle.crt': pair.pem.slice(0, pair.pem.length / 2),
+          'private.key': pair.keyPem,
+        });
+
+        expect((await refusalOf(config)).remedy)
+          .to.include('dashmate ssl obtain --force --config testnet')
+          .and.include(`ZeroSSL reports it ${status}`);
+      });
+    });
+
+    // A plain obtain decides by the same validation once ZeroSSL answers.
+    it('should advise a plain obtain when ZeroSSL cannot be asked', async () => {
+      getCertificate.rejects(new ProviderUnreachableError('fetch failed'));
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles({
+        'bundle.crt': pair.pem.slice(0, pair.pem.length / 2),
+        'private.key': pair.keyPem,
+      });
+
+      expect((await refusalOf(config)).remedy)
+        .to.include('could not ask ZeroSSL')
+        .and.include('fetch failed')
+        .and.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+    });
+
+    it('should not ask ZeroSSL while the gateway can serve the installed certificate', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': pair.keyPem });
+
+      expect(await refusalOf(config)).to.be.null();
+      expect(getCertificate).to.not.have.been.called();
     });
 
     // Clients refuse an expired certificate, so the gateway serves no TLS.
@@ -269,7 +348,7 @@ describe('assertPlatformCanStart', () => {
       const config = await stoppedAfterZeroSslSave();
       installCertificateFiles({ 'bundle.crt': expired.pem, 'private.key': expired.keyPem });
 
-      expect(refusalOf(config).problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
+      expect((await refusalOf(config)).problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
     });
 
     // TLS works from the installed pair: only renewal is not managed yet,
@@ -278,8 +357,8 @@ describe('assertPlatformCanStart', () => {
       const config = await stoppedAfterZeroSslSave();
       installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': pair.keyPem });
 
-      expect(refusalOf(config)).to.be.null();
-      const pending = assertPlatformCanStart.findPendingSetup(config);
+      expect(await refusalOf(config)).to.be.null();
+      const pending = await assertPlatformCanStart.findPendingSetup(config);
       expect(pending.canStart).to.be.true();
       expect(pending.remedy).to.include('dashmate ssl obtain --config testnet');
     });
@@ -302,7 +381,7 @@ describe('assertPlatformCanStart', () => {
       fs.chmodSync(protectedDir, 0o000);
 
       try {
-        expect(refusalOf(config)).to.be.null();
+        expect(await refusalOf(config)).to.be.null();
       } finally {
         fs.chmodSync(protectedDir, 0o700);
       }
@@ -313,8 +392,8 @@ describe('assertPlatformCanStart', () => {
       installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': pair.keyPem });
       config.set('platform.gateway.ssl.enabled', true);
 
-      expect(refusalOf(config)).to.be.null();
-      expect(assertPlatformCanStart.findPendingSetup(config)).to.be.null();
+      expect(await refusalOf(config)).to.be.null();
+      expect(await assertPlatformCanStart.findPendingSetup(config)).to.be.null();
     });
   });
 
@@ -324,42 +403,42 @@ describe('assertPlatformCanStart', () => {
     const config = await hardResetPlatform(setUp('testnet', { masternode: true }));
     renderNodeKey(config);
 
-    const refusal = refusalOf(config);
+    const refusal = await refusalOf(config);
 
     expect(refusal.message).to.include('dashmate setup --platform --config testnet');
   });
 
-  it('should refuse a masternode whose Tenderdash does not validate', () => {
+  it('should refuse a masternode whose Tenderdash does not validate', async () => {
     const config = setUp('testnet', { masternode: true });
     config.set('platform.drive.tenderdash.mode', 'full');
     renderNodeKey(config);
 
-    expect(refusalOf(config).message)
+    expect((await refusalOf(config)).message)
       .to.include('dashmate config set platform.drive.tenderdash.mode validator --config testnet');
   });
 
   // An untouched testnet preset enables Platform on a masternode by default.
-  it('should point a preset that was never set up to full setup', () => {
-    expect(refusalOf(defaultConfigs.get('testnet')).message).to.include('dashmate setup testnet');
+  it('should point a preset that was never set up to full setup', async () => {
+    expect((await refusalOf(defaultConfigs.get('testnet'))).message).to.include('dashmate setup testnet');
   });
 
   // config.json is authoritative and written first, so a run killed before
   // rendering leaves Tenderdash an older identity.
-  it('should refuse while the rendered node key is not the configured one', () => {
+  it('should refuse while the rendered node key is not the configured one', async () => {
     const config = setUp('testnet', { masternode: true });
     const other = generateTenderdashNodeKey();
     renderNodeKey(config, { id: deriveTenderdashNodeId(other), key: other });
 
-    expect(refusalOf(config).message).to.include('dashmate config render --config testnet');
+    expect((await refusalOf(config)).message).to.include('dashmate config render --config testnet');
   });
 
-  it('should refuse while no node key has been rendered', () => {
+  it('should refuse while no node key has been rendered', async () => {
     const config = setUp('testnet', { masternode: true });
 
-    expect(refusalOf(config).message).to.include('dashmate config render --config testnet');
+    expect((await refusalOf(config)).message).to.include('dashmate config render --config testnet');
   });
 
-  it('should give the finishing commands of an interrupted ZeroSSL setup', () => {
+  it('should give the finishing commands of an interrupted ZeroSSL setup', async () => {
     const config = setUp('testnet', { masternode: true });
     config.set('platform.gateway.ssl.enabled', false);
     config.set('platform.gateway.ssl.provider', 'zerossl');
@@ -367,12 +446,12 @@ describe('assertPlatformCanStart', () => {
     config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
     renderNodeKey(config, { id: null, key: null });
 
-    expect(refusalOf(config).message).to.include('dashmate ssl obtain --force --config testnet');
+    expect((await refusalOf(config)).message).to.include('dashmate ssl obtain --force --config testnet');
   });
 
   // The local group's members are masternodes set up by `setup local`, which
   // registers their keys itself.
-  it('should let a local group member start', () => {
+  it('should let a local group member start', async () => {
     const options = defaultConfigs.get('local').getStoredOptions();
     const config = new Config('local_1', options);
     const key = generateTenderdashNodeKey();
@@ -384,7 +463,7 @@ describe('assertPlatformCanStart', () => {
     config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(key));
     renderNodeKey(config);
 
-    expect(refusalOf(config)).to.be.null();
+    expect(await refusalOf(config)).to.be.null();
   });
 
   /**
@@ -404,10 +483,10 @@ describe('assertPlatformCanStart', () => {
   // member moved to another group would be taken back and given a new key.
   // Neither is advised; the remedy is the setting itself, as for every other
   // masternode.
-  it('should name the settings to fix for a local group member without a key, and advise no reset or setup', () => {
+  it('should name the settings to fix for a local group member without a key, and advise no reset or setup', async () => {
     const config = keylessLocalMember();
 
-    const refusal = refusalOf(config);
+    const refusal = await refusalOf(config);
 
     expect(refusal.problem).to.equal('this masternode has no Platform node key');
     expect(refusal.remedy).to.include('platform.drive.tenderdash.node.key')
@@ -446,7 +525,7 @@ describe('assertPlatformCanStart', () => {
       it(`should name the setting to fix for ${description}, and advise no reset`, async () => {
         const config = await keyless(name, group);
 
-        const refusal = refusalOf(config);
+        const refusal = await refusalOf(config);
 
         expect(refusal.problem).to.equal('this masternode has no Platform node key');
         expect(refusal.remedy).to.include('platform.drive.tenderdash.node.key')
@@ -465,7 +544,7 @@ describe('assertPlatformCanStart', () => {
   it('should carry the problem and the remedy apart', async () => {
     const config = await hardResetPlatform(setUp('testnet', { masternode: true }));
 
-    const refusal = refusalOf(config);
+    const refusal = await refusalOf(config);
 
     expect(refusal.problem).to.equal('this masternode has no Platform node key');
     expect(refusal.remedy).to.include('dashmate setup --platform --config testnet')
@@ -474,19 +553,19 @@ describe('assertPlatformCanStart', () => {
 
   // Tenderdash derives its ID from the key, so the id field alone proves
   // nothing.
-  it('should refuse a rendered key of another node behind the right id field', () => {
+  it('should refuse a rendered key of another node behind the right id field', async () => {
     const config = setUp('testnet', { masternode: true });
     renderNodeKey(config, {
       id: config.get('platform.drive.tenderdash.node.id'),
       key: generateTenderdashNodeKey(),
     });
 
-    expect(refusalOf(config).message).to.include('dashmate config render --config testnet');
+    expect((await refusalOf(config)).message).to.include('dashmate config render --config testnet');
   });
 
   // ssl obtain cannot write a certificate file over a directory that a
   // start of Compose left in its place.
-  it('should tell a masternode to remove directories where the certificate files go', () => {
+  it('should tell a masternode to remove directories where the certificate files go', async () => {
     const config = setUp('testnet', { masternode: true });
     config.set('platform.gateway.ssl.enabled', false);
     config.set('platform.gateway.ssl.provider', 'zerossl');
@@ -497,14 +576,14 @@ describe('assertPlatformCanStart', () => {
     fs.mkdirSync(path.join(sslDir, 'bundle.crt'), { recursive: true });
     fs.mkdirSync(path.join(sslDir, 'private.key'));
 
-    const { remedy } = refusalOf(config);
+    const { remedy } = await refusalOf(config);
 
     expect(remedy).to.include(`rmdir ${path.join(sslDir, 'bundle.crt')}`)
       .and.include('dashmate ssl obtain --force --config testnet');
   });
 
   // `config render` writes the saved identity, but TLS stays off.
-  it('should refuse an interrupted ZeroSSL setup even once its files are rendered', () => {
+  it('should refuse an interrupted ZeroSSL setup even once its files are rendered', async () => {
     const config = setUp('testnet', { masternode: true });
     config.set('platform.gateway.ssl.enabled', false);
     config.set('platform.gateway.ssl.provider', 'zerossl');
@@ -512,7 +591,7 @@ describe('assertPlatformCanStart', () => {
     config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
     renderNodeKey(config);
 
-    expect(refusalOf(config).message).to.include('dashmate ssl obtain --force --config testnet');
+    expect((await refusalOf(config)).message).to.include('dashmate ssl obtain --force --config testnet');
   });
 
   describe('a setup an update has to wait for', () => {
@@ -520,34 +599,34 @@ describe('assertPlatformCanStart', () => {
     it('should find an Evo fullnode reset with --hard', async () => {
       const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
 
-      expect(assertPlatformCanStart.findPendingSetup(config).remedy)
+      expect((await assertPlatformCanStart.findPendingSetup(config)).remedy)
         .to.include('dashmate setup --platform --config testnet');
     });
 
     it('should find what keeps a masternode from starting', async () => {
       const config = await hardResetPlatform(setUp('testnet', { masternode: true }));
 
-      expect(assertPlatformCanStart.findPendingSetup(config).problem)
+      expect((await assertPlatformCanStart.findPendingSetup(config)).problem)
         .to.equal('this masternode has no Platform node key');
     });
 
-    it('should find nothing on a node that is set up, or not a preset', () => {
+    it('should find nothing on a node that is set up, or not a preset', async () => {
       const config = setUp('testnet', { masternode: false });
       const other = new Config('local_seed', defaultConfigs.get('local').getStoredOptions());
       other.set('core.masternode.enable', false);
       other.set('platform.drive.tenderdash.mode', 'seed');
 
-      expect(assertPlatformCanStart.findPendingSetup(config)).to.be.null();
-      expect(assertPlatformCanStart.findPendingSetup(other)).to.be.null();
+      expect(await assertPlatformCanStart.findPendingSetup(config)).to.be.null();
+      expect(await assertPlatformCanStart.findPendingSetup(other)).to.be.null();
     });
   });
 
-  it('should never print the node key', () => {
+  it('should never print the node key', async () => {
     const config = setUp('testnet', { masternode: true });
     config.set('platform.drive.tenderdash.mode', 'full');
     renderNodeKey(config);
 
-    expect(refusalOf(config).message)
+    expect((await refusalOf(config)).message)
       .to.not.include(config.get('platform.drive.tenderdash.node.key').slice(0, 16));
   });
 });

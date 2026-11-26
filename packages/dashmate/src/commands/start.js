@@ -44,7 +44,7 @@ export default class StartCommand extends ConfigBaseCommand {
     assertPlatformCanStart,
   ) {
     try {
-      assertPlatformCanStart(config);
+      await assertPlatformCanStart(config);
     } catch (e) {
       throw printUnwrapped(e);
     }

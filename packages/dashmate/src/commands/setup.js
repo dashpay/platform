@@ -11,6 +11,7 @@ import Config from '../config/Config.js';
 import { findCertificateFiles, inspectCertificateFiles } from '../config/getPlatformArtefactsFactory.js';
 import getPlatformSetupState, {
   PLATFORM_SETUP_STATE,
+  addReusableZeroSslCertificate,
   describePlatformSetupState,
 } from '../config/getPlatformSetupState.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
@@ -118,6 +119,7 @@ export default class SetupCommand extends BaseCommand {
    * @param {HomeDir} homeDir
    * @param {StartedContainers} startedContainers
    * @param {Docker} docker
+   * @param {findReusableZeroSslCertificate} findReusableZeroSslCertificate
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -133,6 +135,7 @@ export default class SetupCommand extends BaseCommand {
     homeDir,
     startedContainers,
     docker,
+    findReusableZeroSslCertificate,
   ) {
     if (flags.platform) {
       return this.runPlatformSetup(args, flags, {
@@ -144,6 +147,7 @@ export default class SetupCommand extends BaseCommand {
         homeDir,
         startedContainers,
         docker,
+        findReusableZeroSslCertificate,
       });
     }
 
@@ -385,7 +389,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
     await SetupCommand.stopStartedContainers(dependencies, flags);
 
     if (failure) {
-      SetupCommand.reportPlatformSetupFailure(context, dependencies.homeDir);
+      await SetupCommand.reportPlatformSetupFailure(context, dependencies);
 
       throw new MuteOneLineError(failure);
     }
@@ -465,6 +469,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
     defaultConfigs,
     getPlatformArtefacts,
     homeDir,
+    findReusableZeroSslCertificate,
   }) {
     const fullSetupFlags = FULL_SETUP_FLAGS.filter((name) => flags[name] !== undefined);
     if (fullSetupFlags.length > 0) {
@@ -507,7 +512,10 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
       certificate: inspectCertificateFiles(homeDir, preset),
     });
     if (setupState.state !== PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED) {
-      refuse(describePlatformSetupState(setupState, preset));
+      refuse(describePlatformSetupState(
+        await addReusableZeroSslCertificate(setupState, config, findReusableZeroSslCertificate),
+        preset,
+      ));
     }
 
     let artefacts;
@@ -807,9 +815,12 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
    * run finds it.
    *
    * @param {Object} ctx
-   * @param {HomeDir} homeDir
+   * @param {Object} dependencies
+   * @param {HomeDir} dependencies.homeDir
+   * @param {findReusableZeroSslCertificate} dependencies.findReusableZeroSslCertificate
+   * @return {Promise<void>}
    */
-  static reportPlatformSetupFailure(ctx, homeDir) {
+  static async reportPlatformSetupFailure(ctx, { homeDir, findReusableZeroSslCertificate }) {
     const flag = renderConfigFlag(ctx.preset);
     const certificateFiles = findCertificateFiles(homeDir, ctx.preset);
     const certificate = inspectCertificateFiles(homeDir, ctx.preset);
@@ -824,13 +835,13 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         `then continue with 'dashmate update ${flag}' and start the node.`,
       ].join('\n');
     } else if (ctx.isZeroSslCertificateRecorded) {
-      message = describePlatformSetupState({
+      message = describePlatformSetupState(await addReusableZeroSslCertificate({
         state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
         markers: certificateFiles,
         certificateId: ctx.config.get('platform.gateway.ssl.providerConfigs.zerossl.id'),
         isCertificateInstalled: certificate.isUsable,
         certificateDirectories: certificate.directories,
-      }, ctx.preset);
+      }, ctx.config, findReusableZeroSslCertificate), ctx.preset);
     } else if (ctx.isCertificateStepStarted) {
       const lines = ['Platform setup did not finish, and nothing was saved.'];
 

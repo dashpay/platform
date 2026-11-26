@@ -12,6 +12,9 @@ import MuteOneLineError from '../../../src/oclif/errors/MuteOneLineError.js';
 import StartedContainers from '../../../src/docker/StartedContainers.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
 import { issueCertificate } from '../../../src/test/certificateFixtures.js';
+import validateZeroSslCertificateFactory from '../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import findReusableZeroSslCertificateFactory from '../../../src/ssl/zerossl/findReusableZeroSslCertificateFactory.js';
+import Certificate from '../../../src/ssl/zerossl/Certificate.js';
 
 describe('Setup command', () => {
   let homeDir;
@@ -31,6 +34,27 @@ describe('Setup command', () => {
   let stderr;
   let startedContainers;
   let docker;
+  let getCertificate;
+
+  /**
+   * What ZeroSSL answers about the saved certificate
+   *
+   * @param {string} status
+   * @return {Certificate}
+   */
+  function zeroSslCertificate(status) {
+    const pad = (number) => String(number).padStart(2, '0');
+    const toZeroSslDate = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+      + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+    return new Certificate({
+      id: 'c'.repeat(32),
+      common_name: '1.2.3.4',
+      status,
+      created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+      expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
+    });
+  }
 
   /**
    * @param {Config[]} configs
@@ -65,6 +89,9 @@ describe('Setup command', () => {
         homeDir,
         startedContainers,
         docker,
+        findReusableZeroSslCertificateFactory(
+          validateZeroSslCertificateFactory(homeDir, getCertificate),
+        ),
       );
     } catch (e) {
       return e instanceof MuteOneLineError ? e.getError() : e;
@@ -113,6 +140,7 @@ describe('Setup command', () => {
     dockerCompose = { isServiceRunning: this.sinon.stub().resolves(true) };
     startedContainers = new StartedContainers();
     docker = { getContainer: this.sinon.stub() };
+    getCertificate = this.sinon.stub().resolves(zeroSslCertificate('issued'));
 
     artefacts = { certificateFiles: [], dataVolumes: [], activeServices: [] };
     getPlatformArtefacts = this.sinon.stub().callsFake(async () => artefacts);
@@ -562,10 +590,18 @@ describe('Setup command', () => {
     function failAfterInstalling({
       failure = new Error('Platform services were started while setup ran'),
       files = { 'bundle.crt': 'certificate', 'private.key': 'key' },
+      recordsZeroSsl = false,
       ...ctxFields
     } = {}) {
       setupPlatformTask.callsFake(() => new Listr([{
         task: (ctx) => {
+          // What ZeroSSL's mid-run save records.
+          if (recordsZeroSsl) {
+            ctx.config.set('platform.gateway.ssl.provider', 'zerossl');
+            ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+            ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+          }
+
           Object.assign(ctx, { isCertificateStepStarted: true }, ctxFields);
           fs.mkdirSync(sslDir, { recursive: true });
           Object.entries(files)
@@ -651,24 +687,44 @@ describe('Setup command', () => {
     });
 
     // A disk that filled while ZeroSSL's bundle was written leaves part of it
-    // next to an intact key. A plain obtain finds the bundle there and would
-    // not write it again.
-    it('should not call a truncated ZeroSSL bundle installed', async () => {
+    // next to an intact key. ZeroSSL issued the certificate, and a plain
+    // obtain downloads it again.
+    it('should not call a truncated ZeroSSL bundle installed, and install the issued certificate again', async () => {
       failAfterInstalling({
         createdCertificate: true,
         isZeroSslCertificateRecorded: true,
+        recordsZeroSsl: true,
         failure: new Error('ENOSPC: no space left on device'),
         files: { 'bundle.crt': pair.pem.slice(0, pair.pem.length / 2), 'private.key': pair.keyPem },
       });
 
       await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
 
-      expect(stderr).to.include('dashmate ssl obtain --force --config testnet');
+      expect(stderr).to.include('ZeroSSL issued its certificate')
+        .and.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+      expect(getCertificate).to.have.been.calledWith('k'.repeat(32), 'c'.repeat(32));
+    });
+
+    it('should advise a new certificate when ZeroSSL reports the one it recorded cancelled', async () => {
+      getCertificate.resolves(zeroSslCertificate('cancelled'));
+      failAfterInstalling({
+        createdCertificate: true,
+        isZeroSslCertificateRecorded: true,
+        recordsZeroSsl: true,
+        failure: new Error('ENOSPC: no space left on device'),
+        files: { 'bundle.crt': pair.pem.slice(0, pair.pem.length / 2), 'private.key': pair.keyPem },
+      });
+
+      await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(stderr).to.include('dashmate ssl obtain --force --config testnet')
+        .and.include('ZeroSSL reports it cancelled');
     });
 
     // The next run refuses the interrupted setup, and its advice has to be
     // the same.
-    it('should give a retry over a truncated ZeroSSL bundle the commands that create a new certificate', async () => {
+    it('should give a retry over a truncated ZeroSSL bundle the command that installs the issued certificate again', async () => {
       const config = configFile.getConfig('testnet');
       config.set('platform.drive.tenderdash.node.key', nodeKey);
       config.set('platform.gateway.ssl.provider', 'zerossl');
@@ -680,7 +736,14 @@ describe('Setup command', () => {
 
       const error = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
 
-      expect(error.message).to.include('dashmate ssl obtain --force --config testnet');
+      expect(error.message).to.include('ZeroSSL issued its certificate')
+        .and.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+
+      getCertificate.resolves(zeroSslCertificate('expired'));
+
+      expect((await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile })).message)
+        .to.include('dashmate ssl obtain --force --config testnet');
 
       fs.writeFileSync(path.join(sslDir, 'bundle.crt'), pair.pem);
 

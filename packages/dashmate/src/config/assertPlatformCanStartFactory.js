@@ -2,6 +2,7 @@ import fs from 'fs';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import getPlatformSetupState, {
   PLATFORM_SETUP_STATE,
+  addReusableZeroSslCertificate,
   describePlatformSetupState,
 } from './getPlatformSetupState.js';
 import { findCertificateFiles, inspectCertificateFiles } from './getPlatformArtefactsFactory.js';
@@ -13,9 +14,14 @@ const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
+ * @param {findReusableZeroSslCertificate} findReusableZeroSslCertificate
  * @return {assertPlatformCanStart}
  */
-export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
+export default function assertPlatformCanStartFactory(
+  homeDir,
+  defaultConfigs,
+  findReusableZeroSslCertificate,
+) {
   /**
    * The node ID Tenderdash will start with: the one its rendered key derives
    * to, whatever the file's id field says
@@ -41,16 +47,18 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
 
   /**
    * @param {Config} config
-   * @return {Object}
+   * @return {Promise<Object>}
    */
-  function getSetupState(config) {
+  async function getSetupState(config) {
     const name = config.getName();
 
-    return getPlatformSetupState(config, {
+    const setupState = getPlatformSetupState(config, {
       defaultConfig: defaultConfigs.has(name) ? defaultConfigs.get(name) : undefined,
       certificateFiles: findCertificateFiles(homeDir, name),
       certificate: inspectCertificateFiles(homeDir, name),
     });
+
+    return addReusableZeroSslCertificate(setupState, config, findReusableZeroSslCertificate);
   }
 
   /**
@@ -91,12 +99,14 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
    * the command that sets it right.
    *
    * The error carries `problem` and `remedy`, for callers that word the
-   * refusal themselves.
+   * refusal themselves. Only the advice for an interrupted ZeroSSL setup
+   * whose certificate the gateway cannot serve waits for ZeroSSL.
    *
    * @typedef {function} assertPlatformCanStart
    * @param {Config} config
+   * @return {Promise<void>}
    */
-  function assertPlatformCanStart(config) {
+  async function assertPlatformCanStart(config) {
     if (!config.get('platform.enable')) {
       return;
     }
@@ -109,7 +119,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
         return;
       }
 
-      const setupState = getSetupState(config);
+      const setupState = await getSetupState(config);
 
       if (setupState.state === PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED) {
         refuse(name, 'its Platform part is not set up', [
@@ -136,7 +146,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
     const { id, key } = config.get('platform.drive.tenderdash.node');
     const mode = config.get('platform.drive.tenderdash.mode');
 
-    const setupState = getSetupState(config);
+    const setupState = await getSetupState(config);
 
     if (key === null) {
       const problem = 'this masternode has no Platform node key';
@@ -203,12 +213,12 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
    * Platform setup refuse.
    *
    * @param {Config} config
-   * @return {Error|null} with `problem` and `remedy`, and `canStart` when
-   *  start lets the node through
+   * @return {Promise<Error|null>} with `problem` and `remedy`, and `canStart`
+   *  when start lets the node through
    */
-  function findPendingPlatformSetup(config) {
+  async function findPendingPlatformSetup(config) {
     try {
-      assertPlatformCanStart(config);
+      await assertPlatformCanStart(config);
     } catch (e) {
       return e;
     }
@@ -218,7 +228,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
       return null;
     }
 
-    const setupState = getSetupState(config);
+    const setupState = await getSetupState(config);
 
     if (![PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED, PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED]
       .includes(setupState.state)) {
