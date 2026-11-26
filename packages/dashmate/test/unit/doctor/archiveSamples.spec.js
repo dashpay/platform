@@ -57,6 +57,29 @@ describe('archiveSamples', () => {
     expect(unarchived.date.toISOString()).to.equal('2026-11-26T10:15:30.123Z');
   });
 
+  // The archive holds diagnostics about the node, and it is written under a
+  // temporary name first: if renaming and removing it both fail, it stays
+  // behind, so it is created readable by its owner only
+  it('should create the archive accessible to its owner only', async function it() {
+    if (process.platform === 'win32') {
+      // Windows does not express access through file modes
+      this.skip();
+    }
+
+    // A umask that leaves files readable by others, as most systems have
+    const previousUmask = process.umask(0o022);
+
+    let archiveFilePath;
+    try {
+      archiveFilePath = await archiveSamples(samples, outputDir);
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    // eslint-disable-next-line no-bitwise
+    expect(fs.statSync(archiveFilePath).mode & 0o777).to.equal(0o600);
+  });
+
   // Packing succeeded, but the archive could not be put under its name
   it('should not leave the packed archive behind when it cannot be renamed into place', async () => {
     fs.mkdirSync(path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz'));
