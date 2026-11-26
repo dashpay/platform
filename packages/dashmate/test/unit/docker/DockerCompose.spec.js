@@ -118,7 +118,7 @@ describe('DockerCompose service selection', () => {
       listContainers: sandbox.stub().resolves([]),
       getVolume: sandbox.stub().callsFake((name) => ({
         inspect: async () => {
-          if (!dockerVolumeLabels[name]) {
+          if (!Object.hasOwn(dockerVolumeLabels, name)) {
             throw Object.assign(new Error(`no such volume: ${name}`), { statusCode: 404 });
           }
 
@@ -245,6 +245,54 @@ describe('DockerCompose service selection', () => {
 
       expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    // Docker gives no labels at all for a volume nothing labelled.
+    it('should leave out a volume with no labels', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = null;
+
+      describeDriveAbci(
+        [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
+        { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
+    });
+
+    // Two keys can name the same Docker volume, and Docker labels it with
+    // the key Compose created it for.
+    it('should return a volume two keys name when Docker labels it with either', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeDriveAbci(
+        [
+          { type: 'volume', source: 'drive_abci_data', target: '/data' },
+          { type: 'volume', source: 'drive_abci_alias', target: '/alias' },
+        ],
+        {
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+          drive_abci_alias: { name: 'dashmate_project_node_drive_abci_data' },
+        },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    // Only a missing volume means there is nothing to remove.
+    it('should fail when Docker cannot tell whose a volume is', async () => {
+      docker.getVolume.callsFake(() => ({
+        inspect: () => Promise.reject(Object.assign(new Error('Docker unavailable'), { statusCode: 500 })),
+      }));
+
+      describeDriveAbci(
+        [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
+        { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
+      );
+
+      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.be.rejectedWith('Docker unavailable');
     });
 
     // Nothing to remove for a volume that was never created.

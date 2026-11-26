@@ -523,6 +523,7 @@ export default class DockerCompose {
       return services[serviceName].volumes ?? [];
     });
 
+    // Docker name to the mounted keys that name it
     const candidates = new Map();
     mounts
       .filter((mount) => mount.type === 'volume' && mount.source)
@@ -530,11 +531,11 @@ export default class DockerCompose {
       .forEach((mount) => {
         const name = volumes[mount.source]?.name ?? `${projectName}_${mount.source}`;
 
-        candidates.set(name, mount.source);
+        candidates.set(name, (candidates.get(name) ?? new Set()).add(mount.source));
       });
 
     const ownedNames = await Promise.all(
-      Array.from(candidates).map(async ([name, key]) => {
+      Array.from(candidates).map(async ([name, keys]) => {
         let labels;
         try {
           ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
@@ -548,7 +549,7 @@ export default class DockerCompose {
         }
 
         const isOwned = labels?.['com.docker.compose.project'] === projectName
-          && labels?.['com.docker.compose.volume'] === key;
+          && keys.has(labels?.['com.docker.compose.volume']);
 
         return isOwned ? name : null;
       }),
