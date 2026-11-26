@@ -1,5 +1,7 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import forge from 'node-forge';
 import obtainZeroSSLCertificateTaskFactory from '../../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
@@ -7,6 +9,7 @@ import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFi
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
+import generateCertificateRequest from '../../../../src/ssl/zerossl/generateCsr.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
 import { issueCertificate } from '../../../../src/test/certificateFixtures.js';
 
@@ -489,6 +492,8 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }
 
+    let generateKeyPair;
+
     function buildTask() {
       const getCertificate = this.sinon.stub().resolves(new Certificate({
         id: CERTIFICATE_ID,
@@ -499,8 +504,8 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       }));
 
       return obtainZeroSSLCertificateTaskFactory(
-        this.sinon.stub(),
-        this.sinon.stub(),
+        generateCertificateRequest,
+        generateKeyPair,
         createCertificate,
         this.sinon.stub(),
         downloadCertificate,
@@ -537,6 +542,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
 
       createCertificate = this.sinon.stub().rejects(new Error('a new certificate was requested'));
       downloadCertificate = this.sinon.stub().resolves(pair.pem);
+      generateKeyPair = this.sinon.stub().rejects(new Error('a new key was generated'));
     });
 
     afterEach(() => {
@@ -553,6 +559,25 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(downloadCertificate).to.have.been.calledOnceWith(CERTIFICATE_ID);
       expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
       expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+    });
+
+    // Renewal requests the next certificate with csr.pem, and only the key on
+    // disk serves it.
+    it('should write a missing certificate request for the key on disk', async function it() {
+      this.timeout(30000);
+      fs.rmSync(path.join(sslConfigDir, 'csr.pem'));
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(generateKeyPair).to.not.have.been.called();
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(pair.keyPem);
+
+      const request = forge.pki.certificationRequestFromPem(
+        fs.readFileSync(path.join(sslConfigDir, 'csr.pem'), 'utf8'),
+      );
+      const asSpki = (pem) => crypto.createPublicKey(pem).export({ type: 'spki', format: 'pem' });
+
+      expect(asSpki(forge.pki.publicKeyToPem(request.publicKey))).to.equal(asSpki(pair.keyPem));
     });
 
     // A response cut short says nothing about the issuance, and the next

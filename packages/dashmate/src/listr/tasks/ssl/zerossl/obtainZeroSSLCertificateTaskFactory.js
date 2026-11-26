@@ -1,6 +1,7 @@
 import { Listr } from 'listr2';
 
 import chalk from 'chalk';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import lodash from 'lodash';
@@ -168,8 +169,24 @@ export default function obtainZeroSSLCertificateTaskFactory(
       {
         title: 'Generate a keypair',
         enabled: (ctx) => !ctx.isCsrFilePresent,
-        task: async (ctx) => {
-          ctx.keyPair = await generateKeyPair();
+        task: async (ctx, task) => {
+          // A saved certificate was requested with the key on disk, and
+          // renewal requests the next one with the request written here: one
+          // for a new key would be issued for a key this node does not keep.
+          if (ctx.isPrivateKeyFilePresent) {
+            const privateKey = fs.readFileSync(ctx.privateKeyFilePath, 'utf8');
+
+            ctx.keyPair = {
+              privateKey,
+              publicKey: crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }),
+            };
+
+            // eslint-disable-next-line no-param-reassign
+            task.title = 'Use the private key on disk';
+          } else {
+            ctx.keyPair = await generateKeyPair();
+          }
+
           ctx.privateKeyFile = ctx.keyPair.privateKey;
         },
       },
