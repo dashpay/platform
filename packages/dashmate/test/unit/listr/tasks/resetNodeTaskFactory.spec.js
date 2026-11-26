@@ -805,7 +805,7 @@ describe('resetNodeTaskFactory', () => {
       );
 
       expect(error.message).to.match(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
-      expect(error.message).to.not.include('sudo');
+      expect(error.message.split('\n').filter((line) => /^\s*sudo\b/.test(line))).to.be.empty();
     });
 
     // What the check cannot foresee, such as a file in a sticky directory or
@@ -826,7 +826,8 @@ describe('resetNodeTaskFactory', () => {
       );
 
       expect(error.message).to.include('EPERM: operation not permitted, rm');
-      expect(error.message.split('\n')).to.include(`  sudo rm -rf ${homeDir.joinPath('testnet', 'platform')}`);
+      expect(error.message.split('\n'))
+        .to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
       expect(error.message).to.include('dashmate config render --config testnet');
       expect(dockerCompose.rm).to.have.been.calledOnce();
     });
