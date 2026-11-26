@@ -878,6 +878,20 @@ pub enum PlatformWalletFFIResultCode {
     /// reports its busy case as [`Self::ErrorWalletOperation`] (6).
     ErrorShieldedBalanceBusy = 87,
 
+    /// Maps `PlatformWalletError::ShieldedMerkleWitnessUnavailable`: no
+    /// checkpoint of the wallet's local commitment tree covers a selected note
+    /// yet (its position was appended after the latest checkpoint). Raised
+    /// while the spend is assembled, before any proof is built or anything
+    /// broadcast, and the note reservations are released, so nothing left the
+    /// wallet: RETRYABLE after the next shielded sync, which checkpoints the
+    /// tree at its size. Only that case: a store that cannot produce the path
+    /// (unreadable, poisoned, or a covered position the tree cannot witness)
+    /// is `ShieldedStoreError`, which keeps the generic code. Returned by every
+    /// note spend (transfer, unshield, withdrawal, identity top-up and identity
+    /// create from the pool, private document create). Distinct from
+    /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
+    ErrorShieldedMerkleWitnessUnavailable = 88,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1155,6 +1169,13 @@ fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIRe
     }
 }
 
+/// The message of a shielded spend refused until the next shielded sync
+/// (codes 19 and 88): what a host can show the user, with the wallet's own
+/// diagnostic after it.
+pub(crate) fn retry_after_sync_message(error: &PlatformWalletError) -> String {
+    format!("Wallet is still syncing to a confirmed state — try again shortly. ({error})")
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
         // Preserve the SDK's submission phase before any diagnostic can be
@@ -1238,6 +1259,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            // Raised before the proof and the broadcast: nothing was sent, so
+            // it keeps a retryable code instead of the catch-all a host must
+            // read as possibly sent.
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
             }
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
@@ -1584,7 +1611,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }) => PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive,
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        PlatformWalletFFIResult::err(code, error.to_string()).with_consensus_of(&error)
+        // A spend refused until the next sync says so in words a host can
+        // show, as the spend contract (`map_spend_result`) words it.
+        let message = match &error {
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
+                retry_after_sync_message(&error)
+            }
+            _ => error.to_string(),
+        };
+        PlatformWalletFFIResult::err(code, message).with_consensus_of(&error)
     }
 }
 
@@ -3634,6 +3669,23 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
         );
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A note no checkpoint covers yet is refused before the proof and the
+    /// broadcast, so it reaches the host by its own retryable code and code
+    /// 19's wording, never as the catch-all a host reads as possibly sent.
+    #[test]
+    fn should_report_an_unavailable_merkle_witness_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable("position 7".to_string()),
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+        );
+        assert_eq!(result.code as u32, 88);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
+        assert!(message.contains("try again shortly"), "{message}");
     }
 
     /// A public contact request a loaded wallet refuses until its private

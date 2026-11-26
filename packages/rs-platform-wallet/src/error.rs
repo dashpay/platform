@@ -1404,6 +1404,18 @@ pub enum PlatformWalletError {
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
 
+    /// No checkpoint of the local commitment tree covers a note selected for a
+    /// shielded spend yet: the note's position was appended after the latest
+    /// checkpoint (a sync pass that appended and stopped before checkpointing).
+    ///
+    /// Raised while the spend is assembled, **before** any proof is built or
+    /// anything is broadcast; the caller's generic error path releases the
+    /// note reservations, so nothing left the wallet. **Retryable**: the next
+    /// shielded sync checkpoints the tree at its size. Only this case: a store
+    /// that cannot produce the path (unreadable, poisoned, a position the tree
+    /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
+    /// which no sync repairs. FFI mirror:
+    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 
