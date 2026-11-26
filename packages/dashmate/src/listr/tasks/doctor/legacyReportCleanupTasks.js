@@ -18,7 +18,8 @@ function describeLeft({ dir, error, restricted }) {
  * What they left looks the same as a report an operator unpacked there and
  * kept, so the directories found are listed and only removed once the
  * operator agrees. Anything that does not hold exactly what an earlier
- * version staged is left in place and listed with why.
+ * version staged is left in place and listed with why, and so is what a
+ * removal that did not finish left behind.
  *
  * @param {string} tempDir
  * @return {Object[]} Listr task definitions
@@ -28,7 +29,9 @@ export default function createLegacyReportCleanupTasks(tempDir) {
     {
       title: 'Look for files left by earlier reports',
       task: async (ctx, task) => {
-        const { found, left, scanFailure } = findLegacyReportStagingDirs(tempDir);
+        const {
+          found, left, recovery, scanFailure,
+        } = findLegacyReportStagingDirs(tempDir);
 
         ctx.legacyReportDirs = found;
 
@@ -36,6 +39,7 @@ export default function createLegacyReportCleanupTasks(tempDir) {
           ...(scanFailure
             ? [`Could not look in ${scanFailure.dir} for files left by earlier reports: ${scanFailure.error.message}`]
             : []),
+          ...recovery.map(({ dir }) => `Found ${dir}, left by a removal that did not finish: check what it holds and remove it yourself`),
           ...left.map(describeLeft),
           ...found.map(({ dir }) => `Found ${dir}`),
         ];

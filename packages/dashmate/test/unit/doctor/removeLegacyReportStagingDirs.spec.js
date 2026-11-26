@@ -230,6 +230,27 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(fs.readdirSync(tempDir)).to.deep.equal([legacyName]);
   });
 
+  // What a removal that stopped partway left can be anything by now, so it is
+  // pointed out for the operator to look at, and never touched
+  it('should list the holding directories of removals that did not finish without touching them', () => {
+    const holding = path.join(tempDir, '.dashmate-report-removal-Ab12Cd');
+    fs.mkdirSync(holding, { mode: 0o700 });
+    const moved = makeStagingDir(legacyName, holding);
+
+    fs.symlinkSync(outsideDir, path.join(tempDir, '.dashmate-report-removal-link01'));
+    fs.writeFileSync(path.join(tempDir, '.dashmate-report-removal-file01'), '');
+
+    const { found, left, recovery } = findLegacyReportStagingDirs(tempDir);
+
+    expect(found).to.be.empty();
+    expect(left).to.be.empty();
+    expect(recovery).to.deep.equal([{ dir: holding }]);
+
+    expect(removeLegacyReportStagingDirs(found).removed).to.be.empty();
+    expect(fs.existsSync(path.join(moved, 'date.txt'))).to.be.true();
+    expect(modeOf(holding)).to.equal(0o700);
+  });
+
   it('should leave nothing of its own behind once a directory is removed', () => {
     makeStagingDir(legacyName);
 

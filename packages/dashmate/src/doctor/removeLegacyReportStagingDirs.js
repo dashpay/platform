@@ -5,6 +5,12 @@ import process from 'process';
 const LEGACY_STAGING_DIR_PREFIX = 'dashmate-report-';
 
 /**
+ * The prefix of the directory a staging directory is moved into to be
+ * removed. One left behind means a removal stopped before it finished.
+ */
+const HOLDING_DIR_PREFIX = '.dashmate-report-removal-';
+
+/**
  * The name earlier versions staged a report under: the report name with the
  * collection time, and nothing after it. The current version adds a random
  * suffix, so a report being written right now never matches.
@@ -298,23 +304,31 @@ function verifyStagingDir(dir, uid, tempDev, state) {
  * Every directory looked at is closed to other users first. One that does
  * not hold exactly what an earlier version staged is left in place.
  *
+ * The user's own directories that a removal moved a staging directory into
+ * and did not get to remove are listed too, and never touched: what they
+ * hold by now is for the operator to look at.
+ *
  * @param {string} tempDir - the directory reports were staged in
  * @return {{
  *   found: {dir: string, dev: number, ino: number, tempDev: number, tempIno: number}[],
  *   left: {dir: string, error: Error, restricted: boolean}[],
+ *   recovery: {dir: string}[],
  *   scanFailure: {dir: string, error: Error}|null,
  * }} each found directory with its identity and its temp directory's, so a
  *   different directory put at the same path is not taken for it;
  *   `restricted` says whether a directory left in place was closed to other
- *   users; `scanFailure` says the temp directory itself could not be looked
- *   in
+ *   users; `recovery` lists the directories removals left behind;
+ *   `scanFailure` says the temp directory itself could not be looked in
  */
 export function findLegacyReportStagingDirs(tempDir) {
   const found = [];
   const left = [];
+  const recovery = [];
 
   if (typeof process.getuid !== 'function') {
-    return { found, left, scanFailure: null };
+    return {
+      found, left, recovery, scanFailure: null,
+    };
   }
 
   const uid = process.getuid();
@@ -342,7 +356,25 @@ export function findLegacyReportStagingDirs(tempDir) {
     tempStat = fs.lstatSync(resolvedTempDir);
     names = fs.readdirSync(resolvedTempDir);
   } catch (error) {
-    return { found, left, scanFailure: { dir: resolvedTempDir ?? tempDir, error } };
+    return {
+      found, left, recovery, scanFailure: { dir: resolvedTempDir ?? tempDir, error },
+    };
+  }
+
+  for (const name of names.filter((entry) => entry.startsWith(HOLDING_DIR_PREFIX))) {
+    const dir = path.join(resolvedTempDir, name);
+
+    try {
+      // Not followed, and only the user's own: anything else under that name
+      // is not something a removal of theirs left
+      const stat = fs.lstatSync(dir);
+
+      if (stat.isDirectory() && stat.uid === uid) {
+        recovery.push({ dir });
+      }
+    } catch {
+      // Gone since it was listed
+    }
   }
 
   for (const name of names.filter(isLegacyStagingDirName)) {
@@ -369,7 +401,9 @@ export function findLegacyReportStagingDirs(tempDir) {
     }
   }
 
-  return { found, left, scanFailure: null };
+  return {
+    found, left, recovery, scanFailure: null,
+  };
 }
 
 /**
@@ -389,7 +423,7 @@ export function findLegacyReportStagingDirs(tempDir) {
  * @param {{restricted: boolean}} state
  */
 function removeVerified(dir, { dev, ino }, uid, tempDev, state) {
-  const holding = fs.mkdtempSync(path.join(path.dirname(dir), '.dashmate-report-removal-'));
+  const holding = fs.mkdtempSync(path.join(path.dirname(dir), HOLDING_DIR_PREFIX));
   const moved = path.join(holding, path.basename(dir));
 
   try {
