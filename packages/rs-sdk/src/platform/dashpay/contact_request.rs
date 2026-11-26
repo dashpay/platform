@@ -529,14 +529,7 @@ impl Sdk {
         let recipient_public_key = PublicKey::from_slice(recipient_public_key_data.as_slice())
             .map_err(|e| Error::Generic(format!("Invalid recipient public key: {}", e)))?;
 
-        // The contract is resolved, and a shielded address refused where contact requests
-        // carry none, before the host is asked for a secret or a key: a hardware or keychain
-        // prompt is not spent on a request the network refuses, and a callback that fails
-        // does not hide that refusal.
         let contact_request_document_type = prepared.contact_request_document_type();
-        if input.shielded_address.is_some() {
-            ensure_carries_shielded_address(contact_request_document_type)?;
-        }
 
         // Derive shared secret using ECDH (either client-side or SDK-side)
         let shared_key = match ecdh_provider {
