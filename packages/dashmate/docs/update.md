@@ -30,7 +30,7 @@ Download the new package before you stop the node, so a failed download never le
 DASHMATE_VERSION=""
 if sudo apt update --error-on=any; then
   DASHMATE_INSTALLED="$(dpkg-query -W -f='${Version}' dashmate)"
-  DASHMATE_CANDIDATE="$(apt-cache policy dashmate | awk '$1 == "Candidate:" { print $2 }')"
+  DASHMATE_CANDIDATE="$(LC_ALL=C apt-cache policy dashmate | awk '$1 == "Candidate:" { print $2 }')"
   if [ -n "$DASHMATE_INSTALLED" ] && [ -n "$DASHMATE_CANDIDATE" ] \
     && dpkg --compare-versions "$DASHMATE_CANDIDATE" gt "$DASHMATE_INSTALLED"; then
     if sudo apt install --only-upgrade --download-only "dashmate=$DASHMATE_CANDIDATE"; then
