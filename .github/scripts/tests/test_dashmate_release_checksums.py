@@ -209,7 +209,8 @@ class ReleaseChecksumsTests(unittest.TestCase):
                'LANG': 'en_US.UTF-8', 'GITHUB_REPOSITORY': 'dashpay/platform', 'GITHUB_RUN_ID': '4462',
                'GITHUB_RUN_ATTEMPT': '3', 'GH_JOBS': '[]', 'GH_JOB_LOGS': str(self.tmp / 'job-logs'),
                'GH_LOG': str(self.tmp / 'gh.log'), 'GH_ASSETS': json.dumps(list(assets)),
-               'UPLOADED': str(self.tmp / 'uploaded'), **knobs}
+               'UPLOADED': str(self.tmp / 'uploaded'),
+               'GITHUB_OUTPUT': str(self.tmp / 'github-output'), **knobs}
         env.update({key: evaluate(value, **context) for key, value in step_env(name).items()})
         return subprocess.run(['/bin/bash', '-c', step_script(name)], capture_output=True, text=True, env=env,
                               cwd=cwd or self.tmp)
@@ -559,6 +560,15 @@ class ReleaseChecksumsTests(unittest.TestCase):
                 expression = re.search(r"sed -nE '([^']+)'", script).group(1)
                 read = subprocess.run(['sed', '-nE', expression], capture_output=True, text=True, input=log)
                 self.assertEqual(read.stdout, f'4242 {sums}\n')
+                # The apt publish asks for exactly this file, by its sha256, through a job output.
+                self.assertEqual((self.tmp / 'github-output').read_text(), f'sha256={sums}\n')
+                (self.tmp / 'github-output').unlink()
+
+    def test_should_hand_the_sha256_of_the_attached_file_to_the_jobs_that_need_it(self):
+        checksums = job('release-dashmate-checksums').splitlines()
+        self.assertEqual(mapping(checksums, '    outputs:', 6),
+                         {'sha256sums_sha256': '${{ steps.attach.outputs.sha256 }}'})
+        self.assertIn('        id: attach', step_block('Attach SHA256SUMS to the release'))
 
     def test_should_not_record_an_asset_that_is_not_the_file_it_uploaded(self):
         published = self.generated()
@@ -571,6 +581,7 @@ class ReleaseChecksumsTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('::error::', result.stdout)
                 self.assertNotIn('SHA256SUMS attached: asset', result.stdout)
+                self.assertFalse((self.tmp / 'github-output').exists())
 
     def test_should_never_replace_a_signed_sha256sums(self):
         published = self.generated()

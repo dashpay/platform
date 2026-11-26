@@ -740,6 +740,209 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  // Platform 5.1 needs Dash Core 24. A node whose operator pinned a Core 23 release
+  // or build of dashpay/dashd, rather than the `23` tag earlier releases stored,
+  // would otherwise stay on Core 23 after the upgrade. The 5.1 prereleases before
+  // this one stamped configs without moving those images, so their formats move too.
+  ['5.0.3', '5.1.0-dev.1', '5.1.0-dev.3', '5.1.0-dev.4', '5.1.0-rc.1'].forEach((fromVersion) => {
+    it(`should move a node on any Core 23 image of dashpay/dashd to Core 24 from config format ${fromVersion}`, function it() {
+      const warn = this.sinon.stub(console, 'warn');
+
+      const core23Images = [
+        'dashpay/dashd:23',
+        'dashpay/dashd:23.1',
+        'dashpay/dashd:23.0.2',
+        'dashpay/dashd:23.1.4',
+        'dashpay/dashd:23-nightly',
+        'dashpay/dashd:23.1.8-nightly.2026.09.22',
+        `dashpay/dashd:23@sha256:${'0'.repeat(64)}`,
+        `dashpay/dashd:23.1.4@sha256:${'ab'.repeat(32)}`,
+        // Docker resolves every Docker Hub spelling to the same repository.
+        'docker.io/dashpay/dashd:23.0.2',
+        'index.docker.io/dashpay/dashd:23.1',
+        'registry-1.docker.io/dashpay/dashd:23',
+        `docker.io/dashpay/dashd:23.1.4@sha256:${'cd'.repeat(32)}`,
+      ];
+
+      const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+      const nodeNames = core23Images.map((image, i) => {
+        const network = i % 2 === 0 ? 'mainnet' : 'testnet';
+        const name = `${network}_${i}`;
+        configFileData.configs[name] = structuredClone(configFileData.configs[network]);
+        configFileData.configs[name].core.docker.image = image;
+
+        return name;
+      });
+      configFileData.configs.local.core.docker.image = 'dashpay/dashd:23.1.4';
+
+      const migrated = migrateConfigFile(
+        configFileData,
+        fromVersion,
+        container.resolve('configFormatVersion'),
+      );
+
+      nodeNames.forEach((name, i) => {
+        expect(migrated.configs[name].core.docker.image, core23Images[i])
+          .to.equal('dashpay/dashd:24');
+      });
+      expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24');
+      expect(warn).to.not.have.been.called();
+
+      for (const [name, options] of Object.entries(migrated.configs)) {
+        expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+      }
+    });
+  });
+
+  // 5.1.0-rc.1 was released without this migration and stamps configs with its own
+  // version, so the move has to run for that format whichever release ships it.
+  ['5.1.0-rc.2', '5.1.0'].forEach((release) => {
+    it(`should move a Core 23 pin stamped by 5.1.0-rc.1 when ${release} ships the move`, function it() {
+      this.sinon.stub(console, 'warn');
+
+      const configFileData = getConfigFileDataWrittenBy('5.1.0-rc.1', null);
+      configFileData.configs.mainnet.core.docker.image = 'dashpay/dashd:23.0.2';
+
+      const migrated = migrateConfigFile(configFileData, '5.1.0-rc.1', release);
+
+      expect(migrated.configs.mainnet.core.docker.image).to.equal('dashpay/dashd:24');
+      expect(migrated.configFormatVersion).to.equal(release);
+    });
+  });
+
+  it('should keep a Core image from another repository and warn when it may not be Core 24', function it() {
+    // An image from another repository is the operator's own build, so dashmate
+    // cannot pick its replacement. The operator still has to learn that Platform
+    // 5.1 refuses less than Core 24 when the tag names an older Core or none.
+    const warn = this.sinon.stub(console, 'warn');
+    const fromVersion = '5.0.3';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    const addNode = (name, network, image) => {
+      configFileData.configs[name] = structuredClone(configFileData.configs[network]);
+      configFileData.configs[name].core.docker.image = image;
+    };
+
+    const mayNotBeCore24 = {
+      mainnet: 'myorg/dashd:23.0.2-patched',
+      testnet: 'myorg/dashd:patched',
+      mainnet_digest: `dashpay/dashd@sha256:${'ab'.repeat(32)}`,
+      testnet_registry: 'registry.example.org:5000/dashd:23.1.4',
+      // The same path on another registry is another repository.
+      mainnet_ghcr: 'ghcr.io/dashpay/dashd:23.0.2',
+    };
+    const core24 = {
+      mainnet_core24: 'myorg/dashd:24.0.3',
+      local: 'dashpay/dashd:24.1.0-nightly',
+    };
+    configFileData.configs.mainnet.core.docker.image = mayNotBeCore24.mainnet;
+    configFileData.configs.testnet.core.docker.image = mayNotBeCore24.testnet;
+    addNode('mainnet_digest', 'mainnet', mayNotBeCore24.mainnet_digest);
+    addNode('testnet_registry', 'testnet', mayNotBeCore24.testnet_registry);
+    addNode('mainnet_ghcr', 'mainnet', mayNotBeCore24.mainnet_ghcr);
+    addNode('mainnet_core24', 'mainnet', core24.mainnet_core24);
+    configFileData.configs.local.core.docker.image = core24.local;
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    const warnings = warn.getCalls().map(({ args: [message] }) => message);
+
+    for (const [name, image] of Object.entries({ ...mayNotBeCore24, ...core24 })) {
+      expect(migrated.configs[name].core.docker.image, name).to.equal(image);
+    }
+
+    expect(warnings).to.have.lengthOf(Object.keys(mayNotBeCore24).length);
+    for (const [name, image] of Object.entries(mayNotBeCore24)) {
+      const warning = warnings.find((message) => message.includes(`'${name}'`));
+
+      expect(warning, `no warning for ${name}`).to.be.a('string');
+      expect(warning).to.include(image);
+      expect(warning).to.include('Core 24');
+      expect(warning).to.include(`dashmate config set core.docker.image dashpay/dashd:24 --config=${name}`);
+    }
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should keep a Core image pinned by digest and warn even when its tag names Core 24', function it() {
+    // Docker runs the image the digest names, whatever the tag says. A tag changed
+    // to 24 next to a Core 23 digest still runs Core 23, so the tag cannot vouch
+    // for the version.
+    const warn = this.sinon.stub(console, 'warn');
+    const fromVersion = '5.1.0-rc.1';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    const pinnedByDigest = {
+      mainnet: `myorg/dashd:24.0.3@sha256:${'ab'.repeat(32)}`,
+      testnet: `dashpay/dashd:24.0.1@sha256:${'cd'.repeat(32)}`,
+    };
+    for (const [name, image] of Object.entries(pinnedByDigest)) {
+      configFileData.configs[name].core.docker.image = image;
+    }
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    const warnings = warn.getCalls().map(({ args: [message] }) => message);
+
+    expect(warnings).to.have.lengthOf(Object.keys(pinnedByDigest).length);
+    for (const [name, image] of Object.entries(pinnedByDigest)) {
+      expect(migrated.configs[name].core.docker.image, name).to.equal(image);
+
+      const warning = warnings.find((message) => message.includes(`'${name}'`));
+
+      expect(warning, `no warning for ${name}`).to.be.a('string');
+      expect(warning).to.include(image);
+      expect(warning).to.include('pinned by a digest');
+      expect(warning).to.include(`dashmate config set core.docker.image dashpay/dashd:24 --config=${name}`);
+    }
+  });
+
+  it('should keep a local network or devnet on a pinned Core 23 image', function it() {
+    // The same reason as for the `23` tag: Core 24 discards the sporks Core 23
+    // stored, and dashmate signs a local network's sporks only while setting it up.
+    const warn = this.sinon.stub(console, 'warn');
+    const fromVersion = '5.1.0-rc.1';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    for (const name of ['local_seed', 'local_1']) {
+      configFileData.configs[name] = structuredClone(configFileData.configs.local);
+      configFileData.configs[name].group = 'local';
+      configFileData.configs[name].core.docker.image = 'dashpay/dashd:23.1.4';
+    }
+    configFileData.configs.devnet_1 = structuredClone(configFileData.configs.testnet);
+    configFileData.configs.devnet_1.network = 'devnet';
+    configFileData.configs.devnet_1.core.devnet.name = 'one';
+    configFileData.configs.devnet_1.core.docker.image = 'dashpay/dashd:23.0.2';
+    configFileData.configs.local.core.docker.image = 'dashpay/dashd:23.1.4';
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    expect(migrated.configs.local_seed.core.docker.image).to.equal('dashpay/dashd:23.1.4');
+    expect(migrated.configs.local_1.core.docker.image).to.equal('dashpay/dashd:23.1.4');
+    expect(migrated.configs.devnet_1.core.docker.image).to.equal('dashpay/dashd:23.0.2');
+    // The preset a new local network is set up from moves.
+    expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(warn).to.not.have.been.called();
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It
