@@ -87,9 +87,12 @@ impl<'a> InFlight<'a> {
 
     /// Record the backend's answer, `failure` being how its write of what
     /// it took from the buffer failed, if it did: a failure is counted, and
-    /// counted as lost too when it is for good and the backend buffers.
+    /// counted as lost too when it is for good and the backend buffers. A
+    /// failure raised after the buffer was committed
+    /// ([`PersistenceError::left_buffer_committed`]) took nothing from it and
+    /// is recorded as a flush that succeeded.
     fn record(&mut self, failure: Option<&PersistenceError>) {
-        if let Some(error) = failure {
+        if let Some(error) = failure.filter(|error| !error.left_buffer_committed()) {
             self.ledger
                 .record_failure(self.buffers && !error.is_transient());
         }
@@ -191,7 +194,9 @@ impl FlushLedger {
     /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`]),
     /// counted as a flush: a backend writes what it buffered before the
     /// recipient, so one that fails for good there drops what others stored,
-    /// and their callers must learn of it.
+    /// and their callers must learn of it. A refusal or failure of the
+    /// recipient's own write after that commit dropped nothing, and the
+    /// backend says so ([`PersistenceError::after_buffer_committed`]).
     pub(crate) fn assign_identity_recipient(
         &self,
         backend: &dyn PlatformWalletPersistence,

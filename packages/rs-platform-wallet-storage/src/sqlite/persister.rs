@@ -1568,10 +1568,11 @@ impl PlatformWalletPersistence for SqlitePersister {
             .map_err(PersistenceError::from)?;
         let mut conn = self.conn().map_err(PersistenceError::from)?;
         self.flush_locked(&mut conn, &wallet_id)?;
+        // Past the commit above, a failure or refusal dropped nothing buffered.
         let refusal = match schema::asset_locks::assign_identity_recipient(
             &mut conn, &wallet_id, &out_point, &identity,
         )
-        .map_err(PersistenceError::from)?
+        .map_err(|e| PersistenceError::from(e).after_buffer_committed())?
         {
             IdentityRecipientAssignment::Assigned
             | IdentityRecipientAssignment::AlreadyRecorded => return Ok(()),
@@ -1584,7 +1585,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         Err(PersistenceError::backend_with_kind(
             PersistenceErrorKind::Constraint,
             format!("identity recipient not assigned at {out_point}: {refusal}"),
-        ))
+        )
+        .after_buffer_committed())
     }
 
     /// The wallet's buffered writes are committed first, under the same
@@ -1611,7 +1613,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             index,
             address.script_pubkey().as_bytes(),
         )
-        .map_err(PersistenceError::from)
+        .map_err(|e| PersistenceError::from(e).after_buffer_committed())
     }
 
     /// In both flush modes: the connection every drain takes is held from
