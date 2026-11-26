@@ -386,27 +386,26 @@ describe('archiveSamples', () => {
     });
 
     // Core's and Tenderdash's answers keep only the facts doctor decides on,
-    // found by the keys that lead to them; everything else in them is
-    // scrubbed, however much it looks like one of those facts. A key with a
-    // dot in it, or an empty one, is a key of its own, never a path.
+    // found by the keys that lead to them, even when a secret is spelled
+    // like one; the same value anywhere else in them is scrubbed. A key with
+    // a dot in it, or an empty one, is a key of its own, never a path.
     it('should keep only the facts of an RPC answer that are where they should be', async () => {
       const nodeIdSecret = '5b'.repeat(20);
       const stateSecret = 'PLANTED_STATE_SECRET';
-      const nodeId = 'a'.repeat(40);
 
       config.set('core.rpc.users.tenderdash.password', nodeIdSecret);
       config.set('core.rpc.users.dashmate.password', stateSecret);
 
       samples.setServiceInfo('core', 'masternodeStatus', {
-        state: 'POSE_BANNED',
+        state: stateSecret,
         'dmnState.platformNodeID': nodeIdSecret,
         '': { state: stateSecret },
-        dmnState: { platformNodeID: nodeId, ownerAddress: nodeIdSecret },
+        dmnState: { platformNodeID: nodeIdSecret, ownerAddress: nodeIdSecret },
       });
       samples.setServiceInfo('drive_tenderdash', 'status', {
-        value: { result: { node_info: { id: nodeId } }, 'result.node_info.id': nodeIdSecret },
+        value: { result: { node_info: { id: nodeIdSecret } }, 'result.node_info.id': nodeIdSecret },
       });
-      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', nodeId);
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', nodeIdSecret);
 
       const restored = await unarchiveSamplesFactory(() => [{ name: 'core' }, { name: 'drive_tenderdash' }])(
         await archiveSamples(samples, archiveRoot, config),
@@ -415,15 +414,15 @@ describe('archiveSamples', () => {
       const maskedNodeId = '*'.repeat(nodeIdSecret.length);
 
       expect(restored.getServiceInfo('core', 'masternodeStatus')).to.deep.equal({
-        state: 'POSE_BANNED',
+        state: stateSecret,
         'dmnState.platformNodeID': maskedNodeId,
         '': { state: '*'.repeat(stateSecret.length) },
-        dmnState: { platformNodeID: nodeId, ownerAddress: maskedNodeId },
+        dmnState: { platformNodeID: nodeIdSecret, ownerAddress: maskedNodeId },
       });
       expect(restored.getServiceInfo('drive_tenderdash', 'status')).to.deep.equal({
-        value: { result: { node_info: { id: nodeId } }, 'result.node_info.id': maskedNodeId },
+        value: { result: { node_info: { id: nodeIdSecret } }, 'result.node_info.id': maskedNodeId },
       });
-      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(nodeId);
+      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(nodeIdSecret);
     });
 
     // Where a fact belongs, what is kept is only what looks like that fact
