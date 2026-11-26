@@ -215,6 +215,18 @@ function omitContainerCommand(inspect) {
     holder[field] = REDACTED_VALUE;
   }
 
+  // What the health check printed goes with its command: a probe can print a
+  // value the image brings. Its status, times and exit code stay.
+  const healthLog = inspect?.State?.Health?.Log;
+
+  if (Array.isArray(healthLog)) {
+    for (const entry of healthLog) {
+      if (entry !== null && typeof entry === 'object' && 'Output' in entry) {
+        entry.Output = REDACTED_VALUE;
+      }
+    }
+  }
+
   return values;
 }
 

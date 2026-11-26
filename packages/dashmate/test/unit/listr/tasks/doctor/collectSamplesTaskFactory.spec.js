@@ -816,6 +816,43 @@ describe('collectSamplesTaskFactory', () => {
       });
     });
 
+    // A health check prints whatever its probe prints, which can be a value
+    // the image brings and the config does not know. No analyser reads it, so
+    // it goes with the probe command; what says how the check went stays.
+    it('should leave health check output out of the archive and keep its results', async () => {
+      const secret = 'probeOutputSecret7Qx';
+      const healthLog = {
+        Start: '2026-11-26T10:00:00.000000000Z',
+        End: '2026-11-26T10:00:01.000000000Z',
+        ExitCode: 1,
+        Output: `curl: (22) auth as probe:${secret} refused\n`,
+      };
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: { Image: 'example/service:test', Env: [] },
+        State: {
+          Status: 'running',
+          Restarting: false,
+          ExitCode: 0,
+          Health: { Status: 'unhealthy', FailingStreak: 3, Log: [healthLog] },
+        },
+      });
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain(secret);
+
+      const { Health: health } = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getServiceInfo(SERVICE.name, 'dockerInspect').State;
+
+      expect(health).to.deep.equal({
+        Status: 'unhealthy',
+        FailingStreak: 3,
+        Log: [{ ...healthLog, Output: '<redacted>' }],
+      });
+    });
+
     it('should collect a container whose command has more arguments than a call can take', async () => {
       const command = Array.from({ length: 200_000 }, (_, index) => `-o${index}=v${index}`);
 
