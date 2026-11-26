@@ -265,14 +265,51 @@ describe('validateZeroSslCertificateFactory', () => {
       realHomeDir.remove();
     });
 
-    it('should count a bundle the gateway can serve with the key as downloaded', async () => {
+    it('should count the bundle of the saved certificate as downloaded', async function it() {
+      fs.writeFileSync(path.join(sslConfigDir, 'bundle.crt'), pair.pem);
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
+      getCertificate.resolves({
+        common_name: '1.2.3.4',
+        status: 'issued',
+        fingerprint_sha1: new crypto.X509Certificate(pair.pem).fingerprint.replaceAll(':', '').toLowerCase(),
+        isExpiredInDays: this.sinon.stub().returns(false),
+      });
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.error).to.be.undefined();
+      expect(result.data.isBundleFilePresent).to.be.true();
+    });
+
+    // Renewal saves the new certificate's ID before its bundle is written,
+    // and the bundle of the certificate it replaces serves until it expires.
+    it('should not count the bundle of another certificate for the key as downloaded', async function it() {
+      const renewed = issueCertificate({ ip: '1.2.3.4', keys: pair.keys, days: 60 });
+      fs.writeFileSync(path.join(sslConfigDir, 'bundle.crt'), pair.pem);
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
+      getCertificate.resolves({
+        common_name: '1.2.3.4',
+        status: 'issued',
+        fingerprint_sha1: new crypto.X509Certificate(renewed.pem).fingerprint,
+        isExpiredInDays: this.sinon.stub().returns(false),
+      });
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.error).to.be.undefined();
+      expect(result.data.isBundleFilePresent).to.be.false();
+    });
+
+    // Without ZeroSSL's fingerprint nothing ties the bundle to the saved ID,
+    // and downloading it by that ID costs nothing.
+    it('should not count a bundle as downloaded when ZeroSSL gives no fingerprint', async () => {
       fs.writeFileSync(path.join(sslConfigDir, 'bundle.crt'), pair.pem);
       fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
 
       const result = await validateZeroSslCertificate(config, expirationDays);
 
       expect(result.error).to.be.undefined();
-      expect(result.data.isBundleFilePresent).to.be.true();
+      expect(result.data.isBundleFilePresent).to.be.false();
     });
 
     // A full disk cuts the bundle short after the key was written.

@@ -493,6 +493,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     }
 
     let generateKeyPair;
+    let fingerprint;
 
     function buildTask() {
       const getCertificate = this.sinon.stub().resolves(new Certificate({
@@ -501,6 +502,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         status: 'issued',
         created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
         expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
+        fingerprint_sha1: fingerprint,
       }));
 
       return obtainZeroSSLCertificateTaskFactory(
@@ -543,6 +545,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       createCertificate = this.sinon.stub().rejects(new Error('a new certificate was requested'));
       downloadCertificate = this.sinon.stub().resolves(pair.pem);
       generateKeyPair = this.sinon.stub().rejects(new Error('a new key was generated'));
+      fingerprint = null;
     });
 
     afterEach(() => {
@@ -602,6 +605,43 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
 
       expect(written.verify()).to.be.true();
       expect(asSpki(forge.pki.publicKeyToPem(written.publicKey))).to.equal(asSpki(pair.keyPem));
+    });
+
+    // Renewal saves the new certificate's ID before it installs the bundle,
+    // and the bundle of the certificate it replaces still serves. A retry
+    // after a rejected download has to install the saved certificate rather
+    // than report the old one installed.
+    it('should not report the bundle of the certificate it renews as the saved one', async function it() {
+      this.timeout(30000);
+      const renewed = issueCertificate({ ip: '1.2.3.4', keys: pair.keys, days: 60 });
+      fs.writeFileSync(bundleFilePath, pair.pem);
+      fingerprint = new crypto.X509Certificate(renewed.pem).fingerprint;
+      downloadCertificate.resolves(renewed.pem.slice(0, renewed.pem.length / 2));
+
+      await expect(buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS }))
+        .to.be.rejectedWith('run the obtain command again');
+
+      expect(downloadCertificate).to.have.been.calledOnceWith(CERTIFICATE_ID);
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.false();
+
+      downloadCertificate.resolves(renewed.pem);
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(createCertificate).to.not.have.been.called();
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(renewed.pem);
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+    });
+
+    it('should leave the bundle of the saved certificate as it is', async function it() {
+      fs.writeFileSync(bundleFilePath, pair.pem);
+      fingerprint = new crypto.X509Certificate(pair.pem).fingerprint;
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(downloadCertificate).to.not.have.been.called();
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
     });
 
     // A response cut short says nothing about the issuance, and the next

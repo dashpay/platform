@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import forge from 'node-forge';
 import findCertificatePairProblem from '../findCertificatePairProblem.js';
-import { findPrivateKeyProblem } from '../selectLeafCertificate.js';
+import selectLeafCertificate, { findPrivateKeyProblem } from '../selectLeafCertificate.js';
 
 export const ERRORS = {
   API_KEY_IS_NOT_SET: 'API_KEY_IS_NOT_SET',
@@ -140,20 +140,42 @@ function isCsrUsable(csrFilePath, privateKeyFilePath) {
 }
 
 /**
+ * @param {string|null|undefined} fingerprint - hexadecimal, separators and
+ *  case aside
+ * @return {string|null}
+ */
+function normalizeFingerprint(fingerprint) {
+  if (typeof fingerprint !== 'string') {
+    return null;
+  }
+
+  const hex = fingerprint.replace(/[^0-9a-f]/gi, '').toLowerCase();
+
+  return hex.length > 0 ? hex : null;
+}
+
+/**
  * Whether an obtain leaves the bundle on disk as it is rather than download
  * the certificate again
  *
- * A missing bundle is downloaded, and so is a pair of regular files this
- * process reads and the gateway could not serve: one a full disk cut short,
- * or one that belongs to another key. Anything else is left for the obtain's
- * last check to report. A file this process cannot read may be one the
- * gateway reads, and a named pipe blocks a read and a write alike.
+ * Only the bundle of the saved certificate is kept: one whose first
+ * certificate has the SHA-1 fingerprint ZeroSSL reports for the saved ID.
+ * Renewal saves the new ID before it installs the new bundle, and the bundle
+ * of the certificate it replaces still serves until it expires. Without
+ * ZeroSSL's fingerprint nothing ties the bundle to the saved ID, and it is
+ * downloaded by that ID. A missing bundle is downloaded, and so is a pair of
+ * regular files this process reads and the gateway could not serve: one a
+ * full disk cut short, or one that belongs to another key. Anything else is
+ * left for the obtain's last check to report. A file this process cannot
+ * read may be one the gateway reads, and a named pipe blocks a read and a
+ * write alike.
  *
  * @param {string} bundleFilePath
  * @param {string} privateKeyFilePath
+ * @param {string|null|undefined} fingerprint - ZeroSSL's for the saved ID
  * @return {boolean}
  */
-function isBundleKept(bundleFilePath, privateKeyFilePath) {
+function isBundleKept(bundleFilePath, privateKeyFilePath, fingerprint) {
   let stats;
   try {
     stats = fs.statSync(bundleFilePath, { throwIfNoEntry: false });
@@ -178,7 +200,14 @@ function isBundleKept(bundleFilePath, privateKeyFilePath) {
     return true;
   }
 
-  return findCertificatePairProblem(bundlePem, privateKeyPem) === null;
+  if (findCertificatePairProblem(bundlePem, privateKeyPem) !== null) {
+    return false;
+  }
+
+  const expected = normalizeFingerprint(fingerprint);
+  const { leaf } = selectLeafCertificate(bundlePem, privateKeyPem);
+
+  return expected !== null && normalizeFingerprint(leaf.fingerprint) === expected;
 }
 
 /**
@@ -236,8 +265,6 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     // here: doctor archives this data.
     data.isCsrFilePresent = isCsrUsable(data.csrFilePath, data.privateKeyFilePath);
     data.isPrivateKeyFilePresent = isPrivateKeyUsable(data.privateKeyFilePath);
-    data.isBundleFilePresent = data.isPrivateKeyFilePresent
-      && isBundleKept(data.bundleFilePath, data.privateKeyFilePath);
 
     // This function will throw an error if certificate with specified ID is not present
     try {
@@ -254,6 +281,9 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
       throw e;
     }
+
+    data.isBundleFilePresent = data.isPrivateKeyFilePresent
+      && isBundleKept(data.bundleFilePath, data.privateKeyFilePath, data.certificate.fingerprint_sha1);
 
     data.isExpiresSoon = data.certificate.isExpiredInDays(expirationDays);
 
