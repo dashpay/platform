@@ -892,8 +892,10 @@ describe('resetNodeTaskFactory', () => {
   // Run against the real Compose model and DockerCompose, with only the
   // `docker compose` process replaced by a stand-in that answers as Compose
   // does: a `--profile` selection that leaves out Core makes the quorum list's
-  // dependency on Core invalid, and a service named explicitly brings the
-  // services it depends on into the model.
+  // dependency on Core invalid, a service named explicitly brings the
+  // services it depends on into the model, a service whose profile is not
+  // enabled is left out of it, and so is a volume key no service in it
+  // mounts.
   describe('Compose commands of a Platform reset', () => {
     const ALL_PROFILES = ['core', 'platform', 'platform-quorum'];
 
@@ -920,6 +922,7 @@ describe('resetNodeTaskFactory', () => {
 
     let composeCalls;
     let serviceVolumes;
+    let overrideServices;
     let volumeDefinitions;
     let dockerVolumeLabels;
     let removedVolumes;
@@ -989,6 +992,8 @@ describe('resetNodeTaskFactory', () => {
 
       serviceVolumes = structuredClone(SERVICE_VOLUMES);
       createProjectVolumes();
+      // Services an override adds, each in profiles of its own
+      overrideServices = {};
 
       removedVolumes = [];
       runningContainers = [];
@@ -1046,6 +1051,15 @@ describe('resetNodeTaskFactory', () => {
           return Promise.reject(configFailure);
         }
 
+        if (command === 'config' && commandOptions.includes('--profiles')) {
+          const declaredProfiles = new Set([
+            ...ALL_PROFILES,
+            ...Object.values(overrideServices).flatMap((service) => service.profiles),
+          ]);
+
+          return { exitCode: 0, err: '', out: `${Array.from(declaredProfiles).join('\n')}\n` };
+        }
+
         if (command === 'config' && commandOptions.includes('--volumes')) {
           return { exitCode: 0, err: '', out: Object.values(serviceVolumes).flat().map(({ source }) => source).join('\n') };
         }
@@ -1055,11 +1069,20 @@ describe('resetNodeTaskFactory', () => {
           const serviceNames = args.length > 0
             ? [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
             : [...PLATFORM_SERVICES, 'core', 'dashmate_helper', ...Object.keys(serviceVolumes)];
-          const services = Object.fromEntries(
-            serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
-          );
+          const services = Object.fromEntries([
+            ...serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
+            ...Object.entries(overrideServices)
+              .filter(([, service]) => service.profiles.some((profile) => profiles.includes(profile)))
+              .map(([name, service]) => [name, { volumes: service.volumes }]),
+          ]);
 
-          const volumes = volumeDefinitionsByConfig[options.env?.CONFIG_NAME] ?? volumeDefinitions;
+          const mountedKeys = new Set(Object.values(services)
+            .flatMap((service) => service.volumes ?? [])
+            .map(({ source }) => source));
+
+          const volumes = Object.fromEntries(Object.entries(
+            volumeDefinitionsByConfig[options.env?.CONFIG_NAME] ?? volumeDefinitions,
+          ).filter(([key]) => mountedKeys.has(key)));
 
           return {
             exitCode: 0,
@@ -1133,10 +1156,11 @@ describe('resetNodeTaskFactory', () => {
       expect(selectedProfiles(rmCall.composeOptions)).to.have.members(ALL_PROFILES);
     });
 
+    // The volume lookup asks Compose for the profiles, then for the model.
     it('should run no Compose command but the volume lookup and removal', async () => {
       await platformReset();
 
-      expect(composeCalls.map(({ command }) => command)).to.deep.equal(['config', 'rm']);
+      expect(composeCalls.map(({ command }) => command)).to.deep.equal(['config', 'config', 'rm']);
     });
 
     // Anonymous volumes are data too, and go unless data is kept.
@@ -1179,8 +1203,29 @@ describe('resetNodeTaskFactory', () => {
         'docker_rs-dapi-access-logs',
       ]);
 
-      const [configCall] = composeCalls.filter(({ command }) => command === 'config');
-      expect(selectedProfiles(configCall.composeOptions)).to.have.members(ALL_PROFILES);
+      const [modelCall] = composeCalls
+        .filter(({ command, commandOptions }) => command === 'config' && commandOptions.includes('--format'));
+      expect(selectedProfiles(modelCall.composeOptions)).to.have.members(ALL_PROFILES);
+    });
+
+    // An override can add a service in a profile none of dashmate's Compose
+    // files declares, and mount a Platform volume into it, under an external
+    // key or under the Platform key itself. Compose leaves a service whose
+    // profile is not enabled out of the model, with the keys only it mounts,
+    // while Docker still labels the volume for the Platform key.
+    it('should keep a volume a service in a profile only an override declares mounts too', async () => {
+      overrideServices.drive_backup = {
+        profiles: ['backup'],
+        volumes: [
+          { type: 'volume', source: 'drive_backup_data', target: '/backup/drive' },
+          { type: 'volume', source: 'drive_tenderdash', target: '/backup/tenderdash' },
+        ],
+      };
+      volumeDefinitions.drive_backup_data = { name: 'docker_drive_abci_data', external: true };
+
+      await platformReset();
+
+      expect(removedVolumes).to.have.members(['docker_rs-dapi-access-logs']);
     });
 
     // An override can mount into a Platform service a volume the operator
@@ -1313,11 +1358,16 @@ describe('resetNodeTaskFactory', () => {
         () => new Listr([]),
       );
 
-      const callsFor = (command) => composeCalls
-        .filter((call) => call.command === command)
+      const callsFor = (command, commandOption = undefined) => composeCalls
+        .filter((call) => call.command === command
+          && (!commandOption || call.commandOptions.includes(commandOption)))
         .map(({ configName }) => configName);
 
-      expect(callsFor('config')).to.have.members(['node_1', 'node_2']);
+      // The volume lookup asks for the profiles, then for the model, once
+      // for each member.
+      expect(callsFor('config', '--profiles')).to.have.members(['node_1', 'node_2']);
+      expect(callsFor('config', '--format')).to.have.members(['node_1', 'node_2']);
+      expect(callsFor('config')).to.have.lengthOf(4);
       expect(callsFor('rm')).to.deep.equal(['node_1', 'node_2']);
       expect(composeCalls.findIndex(({ command }) => command === 'rm'))
         .to.be.above(composeCalls.map(({ command }) => command).lastIndexOf('config'));

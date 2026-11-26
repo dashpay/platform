@@ -507,7 +507,6 @@ export default function resetNodeTaskFactory(
       : await dockerCompose.getVolumeCandidates(config, {
         serviceNames,
         removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
-        profiles,
       });
 
     // Whose a volume is counts only when it is removed, but asking Docker now

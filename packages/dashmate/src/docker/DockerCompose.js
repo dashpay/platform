@@ -488,9 +488,12 @@ export default class DockerCompose {
    *
    * Docker knows a volume by its name, and several keys of the Compose files
    * can give the same one, so each check is on that name. The project's whole
-   * model is read, every profile given enabled: given service names, Compose
-   * describes only them and what they depend on, and the services that mount
-   * the same volume would go unseen.
+   * model is read, with every profile its Compose files declare enabled, as
+   * Compose lists them: given service names, Compose describes only them and
+   * what they depend on, and it leaves out a service whose profile is not
+   * enabled, with the keys only that service mounts. Either way the services
+   * that mount the same volume would go unseen. Only Compose sees every file
+   * it loads, an override that declares a profile of its own included.
    *
    * A volume is left out when any key that names it is external, since the
    * operator manages it, and when a service that is not removed with the
@@ -506,20 +509,34 @@ export default class DockerCompose {
    *  looked up
    * @param {string[]} [options.removedServiceNames] - every service removed
    *  with them, the given ones included
-   * @param {string[]} [options.profiles] - Profiles to enable, so that every
-   *  service of the Compose files is part of the model
    * @return {Promise<VolumeCandidate[]>}
    */
   async getVolumeCandidates(config, {
     serviceNames,
     removedServiceNames = serviceNames,
-    profiles = [],
   }) {
     if (serviceNames.length === 0) {
       return [];
     }
 
     await this.throwErrorIfNotInstalled();
+
+    // Compose lists the profiles of every service, enabled or not.
+    let profiles;
+    try {
+      const { out } = await dockerCompose.execCompose('config', [], {
+        ...this.#createOptions(config),
+        commandOptions: ['--profiles'],
+      });
+
+      profiles = out.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
+    } catch (e) {
+      throw new Error(
+        'Cannot tell which volumes only the services to remove use: Docker Compose could not'
+          + ` list the profiles of the project's Compose files: ${new DockerComposeError(e).message}`,
+        { cause: e },
+      );
+    }
 
     let project;
     try {
