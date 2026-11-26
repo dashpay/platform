@@ -3,9 +3,10 @@ pub mod v0;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+    AppliedRandomness, BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0OwnedGetters, BlockExecutionContextV0Setters, ProposerResults,
 };
+use crate::execution::types::block_random_requests::BlockRandomRequests;
 use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
@@ -58,6 +59,18 @@ impl BlockExecutionContextV0Getters for BlockExecutionContext {
             BlockExecutionContext::V0(v0) => v0.proposer_results.as_ref(),
         }
     }
+
+    fn random_requests(&self) -> &BlockRandomRequests {
+        match self {
+            BlockExecutionContext::V0(v0) => &v0.random_requests,
+        }
+    }
+
+    fn applied_randomness(&self) -> Option<&AppliedRandomness> {
+        match self {
+            BlockExecutionContext::V0(v0) => v0.applied_randomness.as_ref(),
+        }
+    }
 }
 
 impl BlockExecutionContextV0Setters for BlockExecutionContext {
@@ -88,6 +101,12 @@ impl BlockExecutionContextV0Setters for BlockExecutionContext {
     fn set_proposer_results(&mut self, results: Option<ProposerResults>) {
         match self {
             BlockExecutionContext::V0(v0) => v0.proposer_results = results,
+        }
+    }
+
+    fn set_applied_randomness(&mut self, applied_randomness: Option<AppliedRandomness>) {
+        match self {
+            BlockExecutionContext::V0(v0) => v0.applied_randomness = applied_randomness,
         }
     }
 }

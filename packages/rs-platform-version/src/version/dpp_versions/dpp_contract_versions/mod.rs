@@ -6,6 +6,7 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
+pub mod v8;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPContractVersions {
@@ -256,9 +257,10 @@ pub struct DocumentTypeSchemaVersions {
     /// Admits the `generatedFrom` function `sys.random.uniform` in `apply_generated_from` 1:
     /// an integer property the platform draws from the block's random beacon once the block's
     /// transitions are accepted. `None` refuses the function at registration, which every
-    /// table does for now, protocol version 16's included: block execution does not draw the
-    /// values yet (`draw_random_document_properties` waits for the beacon Tenderdash
-    /// delivers), so a document would keep its placeholder for good. 0 parses it.
+    /// table before `CONTRACT_VERSIONS_V8` (protocol version 16) does: a block of theirs
+    /// receives no random beacon, so a document would keep its placeholder for good. 0 admits
+    /// it, where `apply_random_beacon` draws the values with the beacon Tenderdash delivers
+    /// from consensus version 3 on.
     pub random_generated_from: OptionalFeatureVersion,
     /// `DocumentType::expand_property_type_shorthands`: rewrites the property
     /// type shorthands of a document type schema and of the contract's

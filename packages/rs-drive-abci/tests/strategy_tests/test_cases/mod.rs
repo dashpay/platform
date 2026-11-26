@@ -11,6 +11,7 @@ mod identity_and_document_tests;
 mod identity_create_proposal_tests;
 mod identity_transfer_tests;
 mod process_proposal_collision_tests;
+mod random_beacon_tests;
 mod required_since_update_tests;
 // TODO: re-enable once OperationType shielded variants are implemented
 // mod shielded_tests;

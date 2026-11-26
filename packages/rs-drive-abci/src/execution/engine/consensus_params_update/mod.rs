@@ -641,16 +641,20 @@ mod evidence_policy_tests {
                     assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
                     let version = response.version.unwrap();
                     assert_eq!(version.app_version, target.protocol_version as u64);
-                    assert_eq!(version.consensus_version, 2);
+                    assert_eq!(
+                        version.consensus_version,
+                        target.consensus.tenderdash_consensus_version as i32
+                    );
                 }
             }
         }
     }
 
-    /// Protocol version 16 keeps protocol version 15's evidence policy and Tenderdash
-    /// consensus version: the direct upgrade moves the app version alone.
+    /// Protocol version 16 keeps protocol version 15's evidence policy and raises Tenderdash
+    /// to consensus version 3, which recovers each block's random beacon from its prevotes and
+    /// calls `ApplyBlockRandomness`: the direct upgrade moves the app and consensus versions.
     #[test]
-    fn should_move_only_the_app_version_from_protocol_version_15_to_16() {
+    fn should_raise_tenderdash_to_consensus_version_3_from_protocol_version_15_to_16() {
         let v15 = PlatformVersion::get(15).unwrap();
         let v16 = PlatformVersion::get(16).unwrap();
         for network in [
@@ -665,7 +669,7 @@ mod evidence_policy_tests {
             assert!(response.evidence.is_none(), "{network:?}: {response:?}");
             let version = response.version.expect("version update");
             assert_eq!(version.app_version, 16);
-            assert_eq!(version.consensus_version, 2);
+            assert_eq!(version.consensus_version, 3);
         }
     }
 
@@ -819,7 +823,9 @@ mod evidence_policy_tests {
             );
             assert_eq!(
                 params.version.unwrap().consensus_version,
-                2,
+                PlatformVersion::latest()
+                    .consensus
+                    .tenderdash_consensus_version as i32,
                 "an emergency update must not lower the consensus version"
             );
             let params = consensus_params_update(
@@ -831,7 +837,12 @@ mod evidence_policy_tests {
             .unwrap()
             .unwrap();
             assert!(params.evidence.is_none());
-            assert_eq!(params.version.unwrap().consensus_version, 2);
+            assert_eq!(
+                params.version.unwrap().consensus_version,
+                PlatformVersion::latest()
+                    .consensus
+                    .tenderdash_consensus_version as i32
+            );
         }
     }
 

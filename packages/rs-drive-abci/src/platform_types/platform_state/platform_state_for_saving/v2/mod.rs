@@ -247,6 +247,8 @@ impl PlatformStateForSavingV2 {
             heavy_fields_dirty: true,
             masternode_changes: EntryChanges::default(),
             validator_set_changes: EntryChanges::default(),
+            // Never saved: a state read back is a committed one
+            switched_from_protocol_version: None,
         })
     }
 }

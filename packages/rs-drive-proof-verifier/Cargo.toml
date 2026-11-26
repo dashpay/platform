@@ -34,7 +34,7 @@ dash-context-provider = { path = "../rs-context-provider", features = [
 bincode = { workspace = true, features = ["serde"] }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization" }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v2.0.0-dev.2", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "7da53f92fd659619cd75ea79774e6b3ee2391f2b", features = [
   "crypto",
 ], default-features = false }
 tracing = { version = "0.1.41" }

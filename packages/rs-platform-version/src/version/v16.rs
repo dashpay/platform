@@ -1,3 +1,9 @@
+use crate::version::consensus_versions::ConsensusVersions;
+use crate::version::dpp_versions::dpp_contract_versions::v8::CONTRACT_VERSIONS_V8;
+use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v5::STATE_TRANSITION_SERIALIZATION_VERSIONS_V5;
+use crate::version::dpp_versions::DPPVersion;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v12::DRIVE_ABCI_METHOD_VERSIONS_V12;
+use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v11::DRIVE_VERSION_V11;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v5::SYSTEM_DATA_CONTRACT_VERSIONS_V5;
@@ -35,7 +41,7 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///      registered at genesis and stored without storage flags by the upgrade. Its `ask` and
 ///      `bid` types hold the open orders.
 ///
-/// 2. **Properties drawn at random, inactive**: `apply_generated_from` 1
+/// 2. **Properties drawn at random**: `apply_generated_from` 1
 ///    (`CONTRACT_VERSIONS_V7`, as at protocol version 15) parses the `generatedFrom` function
 ///    `sys.random.uniform`, which takes no `params` (they may be left out, or be an empty
 ///    list), on an integer property of at most 64 bits declaring both a `minimum` and a
@@ -54,16 +60,16 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///    take, which the draw writes again unbilled (`prepay_random_document_index_entries` 0).
 ///    The compiled form of a contract (format version 2) stores the range with the
 ///    declaration, and reading one back refuses a range upside down or of more than 2^64
-///    values. The function stays inactive: `CONTRACT_VERSIONS_V7`'s `random_generated_from`
-///    is `None`, as in every earlier table, so registration refuses it with
-///    `InvalidContractStructure` until block execution draws the values from the beacon
-///    Tenderdash delivers, which a later change wires and activates. Protocol v15 refuses it
-///    with the code it gives an unknown function, as it did before the function existed. The
-///    call sites this extended in place (the document create and replace transformers, the
-///    parser's read checks, the reference validation's referenced side, the create's
-///    prepay) are inert at every version, where no type declares such a function.
+///    values. Registration admits the function: `CONTRACT_VERSIONS_V8`'s
+///    `random_generated_from` is `Some(0)` (`None` in every earlier table, where registration
+///    refuses it with `InvalidContractStructure`), since block execution draws the values from
+///    the beacon Tenderdash delivers (note 4). Protocol v15 refuses it with the code it gives
+///    an unknown function, as it did before the function existed. The call sites this
+///    extended in place (the document create and replace transformers, the parser's read
+///    checks, the reference validation's referenced side, the create's prepay) are inert at
+///    every earlier version, where no type declares such a function.
 ///
-/// 3. **Token amounts drawn at random, inactive**: format version 1 of the token transfer and
+/// 3. **Token amounts drawn at random**: format version 1 of the token transfer and
 ///    the token mint (`TokenTransferTransitionV1`, `TokenMintTransitionV1`) carries
 ///    `random_minimum_amount`: the amount that reaches the recipient is drawn from it to
 ///    `amount`, both included, out of the block's random beacon once the block's transitions
@@ -78,17 +84,54 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///    settlement rewrites. The settlement (`settle_random_token_amounts` 0, in
 ///    `DRIVE_TOKEN_METHOD_VERSIONS_V3` with the escrow) removes the reservation, pays out the
 ///    drawn amount, releases the rest and rewrites the history's amount, unbilled. The
-///    formats stay inactive: `random_token_amount` is `None` in every serialization table,
-///    including `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4`, which this version takes from
-///    protocol version 15, so a batch carrying one is refused at decode
-///    (`StateTransition::active_version_range`) until block execution settles them from the
-///    beacon Tenderdash delivers. Activating them sets it in a serialization table this
-///    version alone selects: a test holds every table of protocol version 15 and earlier to
-///    `None`, and every table admitting them to a Drive version with the escrow and the
-///    settlement.
+///    formats are active from this version, whose block execution settles them from the
+///    beacon Tenderdash delivers (note 4): `STATE_TRANSITION_SERIALIZATION_VERSIONS_V5`,
+///    selected by this version alone, sets `random_token_amount` to `Some(0)`, and every
+///    earlier table keeps it `None`, so a batch carrying one is refused at decode there
+///    (`StateTransition::active_version_range`). A test holds every table admitting them to a
+///    Drive version with the escrow and the settlement.
+///
+/// 4. **Same-block randomness**: `tenderdash_consensus_version` is 3, which consensus
+///    parameter update 2 sends Tenderdash on the block that switches to this version, so
+///    Tenderdash recovers a random beacon from each block's prevotes from the next height on,
+///    hands it to Drive in `ApplyBlockRandomness` before the precommit (or before
+///    `FinalizeBlock` with the commit's beacon), and has the precommits sign the app hash Drive
+///    returns. Consensus version 2 (protocol version 15, proposer liveness) stays as it is:
+///    version 3 adds the beacon on top of it. `DRIVE_ABCI_METHOD_VERSIONS_V12` sets
+///    `block_end.apply_random_beacon` to `Some(0)`: a block collects the documents it creates
+///    and its random token transfers and mints, and the beacon fills their `sys.random`
+///    properties (`draw_random_document_properties`) and settles their amounts
+///    (`settle_random_token_amounts`). Every earlier table keeps it `None` and a consensus
+///    version below 3, where nothing is collected and Tenderdash sends no beacon.
+///
+///    The block that switches to this version still runs under consensus version 2, as
+///    Tenderdash applies the consensus parameters a block returns from the next height on, so
+///    it receives no beacon and nothing would draw what it asks for. The batch transformer
+///    refuses, unpaid, what would ask that block for a random value: a random token transfer
+///    or mint, and a create of a document whose type declares a `sys.random` property
+///    (`RandomBeaconUnavailableError`). Both are accepted from the next block on.
+///    `run_block_proposal` records the protocol version a block switches from on the block's
+///    platform state (`switched_from_protocol_version`, never saved, and cleared when the
+///    block is committed), whose `tenderdash_consensus_platform_version` the gate reads.
+///    From consensus version 3 on, `FinalizeBlock` also refuses a commit whose app hash is
+///    not the state after the block's draws, or whose block id carries a state id other than
+///    the hash of the header's state id with that app hash.
 pub const PLATFORM_V16: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_16,
-    drive: DRIVE_VERSION_V11, // changed: create_initial_state_structure 5 creates the token order escrow trees; the token methods of the marketplace and the deeper escrow layer estimates (note 1); draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays, which nothing calls while the function is inactive (note 2); settle_random_token_amounts Some(0) in DRIVE_TOKEN_METHOD_VERSIONS_V3 settles random token amounts, which nothing decodes while the format is inactive (note 3)
+    drive: DRIVE_VERSION_V11, // changed: create_initial_state_structure 5 creates the token order escrow trees; the token methods of the marketplace and the deeper escrow layer estimates (note 1); draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays, (note 2); settle_random_token_amounts Some(0) in DRIVE_TOKEN_METHOD_VERSIONS_V3 settles random token amounts (note 3)
+    dpp: DPPVersion {
+        contract_versions: CONTRACT_VERSIONS_V8, // changed: random_generated_from 0 admits sys.random.uniform (note 2)
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V5, // changed: random_token_amount 0 activates version 1 token transfers and mints (note 3)
+        ..PLATFORM_V15.dpp
+    },
+    drive_abci: DriveAbciVersion {
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V12, // changed: block_end.apply_random_beacon 0 applies each block's random beacon (note 4)
+        ..PLATFORM_V15.drive_abci
+    },
+    consensus: ConsensusVersions {
+        tenderdash_consensus_version: 3, // changed: Tenderdash recovers each block's random beacon and calls ApplyBlockRandomness (note 4)
+        ..PLATFORM_V15.consensus
+    },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V5, // changed: the token market contract v1 (note 1)
     ..PLATFORM_V15
 };

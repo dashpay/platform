@@ -9,6 +9,7 @@ mod freeze;
 mod mint;
 mod mint_many;
 mod non_transferable;
+mod random_amount;
 mod shielded;
 mod transfer;
 mod unfreeze;

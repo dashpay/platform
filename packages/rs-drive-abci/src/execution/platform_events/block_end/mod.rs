@@ -15,5 +15,9 @@ pub(in crate::execution) mod update_checkpoints;
 /// Deletes documents whose time to live has passed, after the block's state transitions
 pub(in crate::execution) mod expire_documents;
 
+/// Draws a block's random values from its random beacon (called from `ApplyBlockRandomness`
+/// and `FinalizeBlock`)
+pub(crate) mod apply_random_beacon;
+
 /// Creates a GroveDB checkpoint (called after transaction commit)
 pub(crate) mod create_grovedb_checkpoint;

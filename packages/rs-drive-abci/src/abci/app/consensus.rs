@@ -203,6 +203,13 @@ where
         handler::extend_vote(self, request).map_err(error_into_exception)
     }
 
+    fn apply_block_randomness(
+        &self,
+        request: proto::RequestApplyBlockRandomness,
+    ) -> Result<proto::ResponseApplyBlockRandomness, proto::ResponseException> {
+        handler::apply_block_randomness(self, request).map_err(error_into_exception)
+    }
+
     fn finalize_block(
         &self,
         request: proto::RequestFinalizeBlock,

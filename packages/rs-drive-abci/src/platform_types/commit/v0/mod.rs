@@ -45,6 +45,13 @@ impl CommitV0 {
                 quorum_hash: ci.quorum_hash.to_vec(),
                 threshold_block_signature: ci.block_signature.to_vec(),
                 threshold_vote_extensions: ci.threshold_vote_extensions.to_vec(),
+                // Not signed: the commit's signature covers the block id, whose state id binds
+                // the app hash, and the beacon is a signature of its own
+                beacon: ci.beacon.map(|beacon| beacon.to_vec()).unwrap_or_default(),
+                app_hash: ci
+                    .app_hash
+                    .map(|app_hash| app_hash.to_vec())
+                    .unwrap_or_default(),
             },
         }
     }
@@ -68,6 +75,8 @@ impl CommitV0 {
                 quorum_hash: ci.quorum_hash,
                 threshold_block_signature: ci.block_signature,
                 threshold_vote_extensions: ci.threshold_vote_extensions,
+                beacon: ci.beacon,
+                app_hash: ci.app_hash,
             },
         }
     }
@@ -159,6 +168,8 @@ mod test {
             quorum_hash: QUORUM_HASH,
             block_signature: [0u8; 96],
             threshold_vote_extensions: Vec::new(),
+            beacon: None,
+            app_hash: None,
         };
         let app_hash = [1u8, 2, 3, 4].repeat(8);
 
