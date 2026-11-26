@@ -10,22 +10,20 @@ const SHELL_SAFE = /^[A-Za-z0-9._@%+=:,/-]+$/;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/u;
 
 /**
- * @param {string} character
- * @return {string} the character as a dollar-single-quoted string holds it
+ * Whether a value can be one argument of a printed command, on one line, that
+ * every POSIX shell reads the same way
+ *
+ * Plain single quotes are that quoting, and they keep a control character as
+ * it is: a line break would split the command in two, the second line reading
+ * as a command of its own. Dollar-single quotes escape it, but older shells,
+ * such as dash (Debian's and Ubuntu's /bin/sh), read them as a dollar sign
+ * and a quoted string, and the command would act on another value.
+ *
+ * @param {string} value
+ * @return {boolean}
  */
-function escapeForDollarQuotes(character) {
-  if (character === '\\' || character === "'") {
-    return `\\${character}`;
-  }
-
-  if (!CONTROL_CHARACTER.test(character)) {
-    return character;
-  }
-
-  // Three octal digits always end the escape, whatever follows.
-  return Array.from(Buffer.from(character, 'utf8'))
-    .map((byte) => `\\${byte.toString(8).padStart(3, '0')}`)
-    .join('');
+export function isShellQuotable(value) {
+  return !CONTROL_CHARACTER.test(String(value));
 }
 
 /**
@@ -34,12 +32,9 @@ function escapeForDollarQuotes(character) {
  *
  * Single quotes keep everything literal but a single quote, which is written
  * as a quote that ends the quoting, an escaped quote and a quote that starts
- * it again. Control characters would go into the printed command as they are,
- * a line break splitting it in two, so a value holding one is written as a
- * dollar-single-quoted string (POSIX.1-2024, bash, zsh, ksh) with each of them
- * escaped, which keeps the command on one line.
+ * it again.
  *
- * @param {string} value
+ * @param {string} value - one isShellQuotable accepts
  * @return {string}
  */
 export default function quoteShellArgument(value) {
@@ -49,9 +44,9 @@ export default function quoteShellArgument(value) {
     return text;
   }
 
-  if (!CONTROL_CHARACTER.test(text)) {
-    return `'${text.replace(/'/g, "'\\''")}'`;
+  if (!isShellQuotable(text)) {
+    throw new Error('A value holding control characters cannot be quoted for a POSIX shell');
   }
 
-  return `$'${Array.from(text).map(escapeForDollarQuotes).join('')}'`;
+  return `'${text.replace(/'/g, "'\\''")}'`;
 }

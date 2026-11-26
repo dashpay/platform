@@ -552,10 +552,12 @@ describe('resetNodeTaskFactory', () => {
     /**
      * Move the test to a home directory whose path a shell must be given
      * quoted, with the same files as the one it replaces
+     *
+     * @param {string} [prefix] - the start of the directory's name
      */
-    function useHomeDirWithApostrophe() {
+    function useHomeDirWithApostrophe(prefix = "dashmate-o'brien-") {
       homeDir.remove();
-      homeDir = new HomeDir(fs.mkdtempSync(path.join(os.tmpdir(), "dashmate-o'brien-")));
+      homeDir = new HomeDir(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 
       useConfigs([config]);
 
@@ -620,6 +622,59 @@ describe('resetNodeTaskFactory', () => {
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
         .to.be.rejectedWith(`  sudo rm -rf '${platformPath.split("'").join("'\\''")}'\n`);
+    });
+
+    // Plain single quotes keep a line break, which splits the command, and
+    // dash, Debian's and Ubuntu's /bin/sh, reads dollar-single quotes as a
+    // dollar sign and a quoted string: a printed command would act on another
+    // path. Such a path gets no command to paste, only the commands to run on
+    // it and the path escaped, for reading.
+    it('should give no command to paste for a path holding a control character', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe('dashmate-line\nbreak-');
+
+      lockDirectory('testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+
+      expect(lines.filter((line) => /^\s*(sudo|chmod|chown)\b/.test(line))).to.be.empty();
+      const { uid, gid } = os.userInfo();
+      expect(lines).to.include(`  'sudo chown -R ${uid}:${gid}' and then 'chmod -R u+rwX' on the path below.`);
+      expect(lines).to.include(`  '${platformPath.replace('\n', '\\n')}'`);
+    });
+
+    it('should give no removal to paste for a path holding a control character', async function test() {
+      useHomeDirWithApostrophe('dashmate-line\nbreak-');
+
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error('EPERM: operation not permitted, unlink');
+          error.code = 'EPERM';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+
+      expect(lines.filter((line) => /^\s*sudo\b/.test(line))).to.be.empty();
+      expect(lines).to.include("  'sudo rm -rf' on the path below.");
+      expect(lines).to.include(`  '${platformPath.replace('\n', '\\n')}'`);
     });
 
     // A file name can hold a line break or a terminal control sequence. Shown

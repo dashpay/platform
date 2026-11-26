@@ -5,7 +5,7 @@ import path from 'path';
 import wait from '../../util/wait.js';
 import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
-import quoteShellArgument from '../../util/quoteShellArgument.js';
+import quoteShellArgument, { isShellQuotable } from '../../util/quoteShellArgument.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 // More paths than this are counted rather than listed.
@@ -52,6 +52,29 @@ function escapeForDisplay(text) {
  */
 function formatPath(shownPath) {
   return `'${escapeForDisplay(shownPath).replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * Lines that give commands to run on a path
+ *
+ * A path that holds a control character cannot be given to every POSIX shell
+ * on one line, so no command is printed for it to paste: the commands are
+ * named, and the path is shown escaped, for reading.
+ *
+ * @param {string[]} commands - each without the path, which goes last
+ * @param {string} targetPath
+ * @return {string[]}
+ */
+function formatPathCommands(commands, targetPath) {
+  if (isShellQuotable(targetPath)) {
+    return commands.map((command) => `  ${command} ${quoteShellArgument(targetPath)}`);
+  }
+
+  return [
+    `  ${commands.map((command) => `'${command}'`).join(' and then ')} on the path below.`,
+    '  It holds control characters, so it is shown escaped, to read rather than paste:',
+    `  ${formatPath(targetPath)}`,
+  ];
 }
 
 /**
@@ -344,14 +367,8 @@ export default function resetNodeTaskFactory(
     // holds.
     const parentPath = path.dirname(targetPath);
     const remedy = deniedPaths.includes(parentPath)
-      ? [
-        `  sudo chown ${uid}:${gid} ${quoteShellArgument(parentPath)}`,
-        `  chmod u+rwx ${quoteShellArgument(parentPath)}`,
-      ]
-      : [
-        `  sudo chown -R ${uid}:${gid} ${quoteShellArgument(targetPath)}`,
-        `  chmod -R u+rwX ${quoteShellArgument(targetPath)}`,
-      ];
+      ? formatPathCommands([`sudo chown ${uid}:${gid}`, 'chmod u+rwx'], parentPath)
+      : formatPathCommands([`sudo chown -R ${uid}:${gid}`, 'chmod -R u+rwX'], targetPath);
 
     throw new Error([
       `Cannot reset config '${config.getName()}': this user cannot remove`
@@ -415,7 +432,7 @@ export default function resetNodeTaskFactory(
       `Could not remove ${deniedPaths.length} path(s) under ${formatPath(targetPath)} for lack of permission:`,
       ...formatDeniedPaths(deniedPaths),
       'Remove them with sufficient rights, for example:',
-      `  sudo rm -rf ${quoteShellArgument(targetPath)}`,
+      ...formatPathCommands(['sudo rm -rf'], targetPath),
       ...recovery,
     ].join('\n'));
   }
