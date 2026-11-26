@@ -288,14 +288,7 @@ mod tests {
         let measure = |ops: Vec<crate::util::batch::DriveOperation>| {
             let drive = setup_drive_with_initial_state_structure(None);
             drive
-                .apply_drive_operations(
-                    ops,
-                    true,
-                    &BlockInfo::default(),
-                    None,
-                    platform_version,
-                    None,
-                )
+                .apply_drive_operations(ops, true, &BlockInfo::default(), None, platform_version)
                 .expect("apply")
         };
         let fee_one = compute_shielded_unshield_fee(1, platform_version).expect("fee");

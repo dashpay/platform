@@ -126,6 +126,9 @@ use crate::version::system_limits::SystemLimits;
 ///   the keys of unsigned integer index values, applying its moves in batches of 10,000 moves
 ///   (`max_rekey_batch_moves`). `None` in the earlier tables, which never run the rewrite.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: None,
+    max_enum_violation_listed_values: None,
+    max_enum_violation_listed_bytes: None,
     // The page matches one notes-tree chunk (2^11). A batch holds at most that
     // page's missing rhos; GroveDB accepts a Vec of operations with no smaller API cap.
     credit_pool_nullifier_backfill_page_size: 2048,
@@ -136,9 +139,24 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
+    max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
+    max_contract_schema_patterns: 32, // schema pattern bounds (consensus from v15, mempool policy before): a contract holds at most 32 patterns
+    max_schema_pattern_compiled_size: 131_072, // and each compiles within 128 KiB
+    max_schema_pattern_bytes: 256,    // each takes at most 256 bytes as written
+    max_contract_schema_pattern_bytes: 4096, // and all of them at most 4 KiB together, one in `$defs` once for each document type
+    max_schema_pattern_case_folded_code_points: 4096, // and each is estimated to case-fold at most 4096 code points when it is translated
+    max_compiled_contract_size: None, // no contract is stored compiled before protocol version 15
+    max_private_document_entry_size: None, // no private document type before protocol version 15
+    private_document_store_target_chunk_bytes: None,
+    private_document_store_min_chunk_power: None,
+    private_document_store_max_chunk_power: None,
+    max_private_document_entries_per_transition: None,
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
+    max_document_type_requirement_slots: 4, // backfilled: dynamic references parse from protocol version 15
+    max_document_type_requirement_condition_nodes: 16, // backfilled: a slot `when` parses from protocol version 15
+    max_document_type_requirement_condition_text_length: 256, // backfilled: a slot `when` parses from protocol version 15
     max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
     max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
     max_property_constraint_aggregates: 4, // propertyConstraints countOf / sumOf (new in v14): contract registration caps the distinct totals one document type's rules read
@@ -165,6 +183,13 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderators: 16,
     max_contract_suspension_until: 9_007_199_254_740_991,
     max_contract_moderation_reason_length: 1024,
+    max_yes_no_vote_poll_minimum_voting_power: 2000,
+    max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
+    max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+    min_yes_no_vote_poll_duration_ms: 604_800_000,   // one week
+    min_yes_no_vote_poll_supermajority_percent: 50,  // a simple majority
+    yes_no_vote_poll_masternode_vote_strength: 1,
+    yes_no_vote_poll_evonode_vote_strength: 4,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
     min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day
@@ -195,9 +220,12 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
+    max_summed_value_magnitude_without_type_total: None,       // read from protocol version 15
+    max_summed_value_magnitude_in_64_bit_sums: None,           // read from protocol version 15
     max_indexed_array_items: Some(16), // typed array element indexes (new in v14): an indexed typed array holds at most 16 elements
     max_windowed_indexed_array_items: Some(4), // typed array element indexes (new in v14): at most 4 when the index also has a timeRange or integerRange window
     max_index_entries_per_document: Some(256), // typed array element indexes (new in v14): one document of a type with an indexed array writes at most 256 index entries
     max_choose_first_candidates: 1_000, // refersTo chooseFirst (new in v14): competitors a create reads, oldest first
     max_rekey_batch_moves: Some(10_000), // the protocol version 14 rewrite of unsigned index value keys applies its moves in batches of this many moves
+    max_history_migration_batch_operations: None, // read only by the protocol version 15 upgrade
 };

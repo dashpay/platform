@@ -236,6 +236,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         create_contact_request_data_trigger: 1,
                         validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 1,
+                        delete_domain_data_trigger: None,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,
@@ -255,6 +256,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
+                document_erase_transition_structure_validation: None,
                 document_replace_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom` refusal in place, inert before this version
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
@@ -263,11 +265,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 1, // changed: v1 judges the document type's `deleteConstraints` on the stored document
                 document_index_only_delete_transition_state_validation: 0,
+                document_erase_transition_state_validation: None,
+                document_erase_transition_refund_recipient_reservation: None,
                 document_replace_transition_state_validation: 1,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
                 document_reference_validation: 0,
+                choose_first_reservation: 0,
+                reference_lookup_reservation: 0,
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
@@ -437,6 +443,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             token_purchase_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            private_document_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None, // no private document create before protocol version 15
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,

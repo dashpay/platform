@@ -1,6 +1,6 @@
 pub mod v0;
 
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::Document;
 #[cfg(feature = "json-conversion")]
@@ -21,7 +21,7 @@ use platform_version::version::PlatformVersion;
 
 /// Represents a contender in the contested document vote poll.
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone, From)]
 pub enum Contender {
@@ -32,7 +32,7 @@ pub enum Contender {
 /// Represents a contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -149,6 +149,56 @@ impl ContenderWithSerializedDocument {
         match self {
             ContenderWithSerializedDocument::V0(v0) => Ok(v0
                 .try_to_contender(document_type_ref, platform_version)?
+                .into()),
+        }
+    }
+
+    pub fn try_into_contender_bounded(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Contender, ProtocolError> {
+        match self {
+            ContenderWithSerializedDocument::V0(v0) => Ok(v0
+                .try_into_contender_bounded(document_type_ref, platform_version)?
+                .into()),
+        }
+    }
+
+    pub fn try_to_contender_bounded(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Contender, ProtocolError> {
+        match self {
+            ContenderWithSerializedDocument::V0(v0) => Ok(v0
+                .try_to_contender_bounded(document_type_ref, platform_version)?
+                .into()),
+        }
+    }
+
+    pub fn try_into_contender_with_budget(
+        self,
+        document_type_ref: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<Contender, ProtocolError> {
+        match self {
+            ContenderWithSerializedDocument::V0(v0) => Ok(v0
+                .try_into_contender_with_budget(document_type_ref, budget, platform_version)?
+                .into()),
+        }
+    }
+
+    pub fn try_to_contender_with_budget(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<Contender, ProtocolError> {
+        match self {
+            ContenderWithSerializedDocument::V0(v0) => Ok(v0
+                .try_to_contender_with_budget(document_type_ref, budget, platform_version)?
                 .into()),
         }
     }

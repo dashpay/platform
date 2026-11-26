@@ -13,6 +13,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
@@ -95,6 +96,8 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?
     pub(in crate::data_contract) documents_can_be_deleted: bool,
+    /// Whether a deleted document's retained revisions may be erased.
+    pub(in crate::data_contract) documents_can_be_erased: bool,
     /// Whether the documents of this type leave state only when a `refersTo` with
     /// `consume` deletes them (`canBeDeleted: "onlyWhenConsumed"`, protocol version 14).
     /// Only ever `true` beside a `false` `documents_can_be_deleted`: the owner can not
@@ -141,6 +144,16 @@ pub struct DocumentTypeV2 {
     /// [`Self::documents_summable`] is `Some` — enforced by
     /// [`crate::data_contract::document_type::accessors::DocumentTypeV2Setters::set_range_summable`].
     pub(in crate::data_contract) range_summable: bool,
+    /// Whether every tree holding a sum of this type's summed property keeps a 128-bit total
+    /// rather than a 64-bit one: the primary key tree of a `documentsSummable` type and the
+    /// trees of its summing indexes (which carry the same fact as
+    /// [`IndexLevelTypeInfo::big_sums`]). Set by the document type parser from the bounds the
+    /// summed property declares (`SystemLimits::max_summed_value_magnitude_in_64_bit_sums`);
+    /// `false` on a type that sums nothing and on every type parsed under a protocol version
+    /// before 15.
+    ///
+    /// [`IndexLevelTypeInfo::big_sums`]: crate::data_contract::document_type::IndexLevelTypeInfo::big_sums
+    pub(in crate::data_contract) big_sums: bool,
     /// When true, documents of this type are **indexOnly**: nothing is
     /// written to primary storage (there is no `[0]` primary-key tree at
     /// all) — the index entries are the rows, each terminating in an `Item`
@@ -264,6 +277,13 @@ pub struct DocumentTypeV2 {
     /// it writes or removes index entries. Empty on document types that declare
     /// none and on those that predate them.
     pub(in crate::data_contract) derived_index_properties: BTreeMap<String, DerivedIndexProperty>,
+    /// What the `private` keyword (protocol version 15) declares: the type's documents are
+    /// fixed-size encrypted entries an anonymous shielded transition appends, and the chain
+    /// never reads one. The parser (`apply_private_document`) holds such a type to the
+    /// keywords a private type may declare: no index, no history, no transfer or trade, no
+    /// cost, rule or reference, and documents neither mutable nor deletable. `None` on every
+    /// other type and on every contract that predates the keyword.
+    pub(in crate::data_contract) private_document: Option<PrivateDocumentConfig>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {
@@ -356,6 +376,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_can_be_erased: false,
             documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
@@ -373,6 +394,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            big_sums: false,
             index_only: false,
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
@@ -388,6 +410,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
+            private_document: None,
         }
     }
 }
@@ -419,6 +442,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_can_be_erased: false,
             documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
@@ -436,6 +460,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            big_sums: false,
             index_only: false,
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
@@ -451,6 +476,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
+            private_document: None,
         }
     }
 }

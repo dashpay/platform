@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
@@ -11,11 +11,14 @@ use platform_version::version::PlatformVersion;
 
 /// Represents a contender in the contested document vote poll.
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct ContenderV0 {
-    /// The identity ID of the contender.
+    /// The id the contest names the contender by: the contending identity's id, or, in a
+    /// vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the
+    /// contending document's id. There the identity that entered the document is the
+    /// document's `owner_id`, and one identity may have entered several contenders.
     pub identity_id: Identifier,
     /// The document associated with the contender.
     pub document: Option<Document>,
@@ -26,7 +29,7 @@ pub struct ContenderV0 {
 /// Represents a contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
@@ -36,7 +39,10 @@ pub struct ContenderV0 {
     serde(rename_all = "camelCase")
 )]
 pub struct ContenderWithSerializedDocumentV0 {
-    /// The identity ID of the contender.
+    /// The id the contest names the contender by: the contending identity's id, or, in a
+    /// vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the
+    /// contending document's id. There the identity that entered the document is the
+    /// document's `owner_id`, and one identity may have entered several contenders.
     pub identity_id: Identifier,
     /// The serialized document associated with the contender.
     pub serialized_document: Option<Vec<u8>>,
@@ -94,10 +100,9 @@ impl ContenderV0 {
 }
 
 impl ContenderWithSerializedDocumentV0 {
-    pub fn try_into_contender(
+    fn try_into_contender_with(
         self,
-        document_type_ref: DocumentTypeRef,
-        platform_version: &PlatformVersion,
+        decode: impl FnOnce(&[u8]) -> Result<Document, ProtocolError>,
     ) -> Result<ContenderV0, ProtocolError> {
         let ContenderWithSerializedDocumentV0 {
             identity_id,
@@ -108,18 +113,15 @@ impl ContenderWithSerializedDocumentV0 {
         Ok(ContenderV0 {
             identity_id,
             document: serialized_document
-                .map(|document| {
-                    Document::from_bytes(document.as_slice(), document_type_ref, platform_version)
-                })
+                .map(|document| decode(document.as_slice()))
                 .transpose()?,
             vote_tally,
         })
     }
 
-    pub fn try_to_contender(
+    fn try_to_contender_with(
         &self,
-        document_type_ref: DocumentTypeRef,
-        platform_version: &PlatformVersion,
+        decode: impl FnOnce(&[u8]) -> Result<Document, ProtocolError>,
     ) -> Result<ContenderV0, ProtocolError> {
         let ContenderWithSerializedDocumentV0 {
             identity_id,
@@ -131,11 +133,71 @@ impl ContenderWithSerializedDocumentV0 {
             identity_id: *identity_id,
             document: serialized_document
                 .as_ref()
-                .map(|document| {
-                    Document::from_bytes(document.as_slice(), document_type_ref, platform_version)
-                })
+                .map(|document| decode(document.as_slice()))
                 .transpose()?,
             vote_tally: *vote_tally,
+        })
+    }
+
+    pub fn try_into_contender(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_into_contender_with(|bytes| {
+            Document::from_bytes(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_to_contender(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_to_contender_with(|bytes| {
+            Document::from_bytes(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_into_contender_bounded(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_into_contender_with(|bytes| {
+            Document::from_bytes_bounded(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_to_contender_bounded(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_to_contender_with(|bytes| {
+            Document::from_bytes_bounded(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_into_contender_with_budget(
+        self,
+        document_type_ref: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_into_contender_with(|bytes| {
+            Document::from_bytes_with_budget(bytes, document_type_ref, budget, platform_version)
+        })
+    }
+
+    pub fn try_to_contender_with_budget(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_to_contender_with(|bytes| {
+            Document::from_bytes_with_budget(bytes, document_type_ref, budget, platform_version)
         })
     }
 }

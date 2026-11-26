@@ -4,19 +4,32 @@ mod property;
 pub use property::*;
 pub mod class_methods;
 mod index;
+mod index_only_delete_values;
 pub mod methods;
 pub use index::*;
+pub use index_only_delete_values::{missing_required_value_path, undeclared_value_path};
 mod index_level;
+mod private_document;
 pub mod property_constraints;
 pub use index_level::IndexLevel;
 pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
+pub(crate) use private_document::PRIVATE_DOCUMENT_TYPE_KEYWORDS;
+pub use private_document::{
+    decode_private_document_payload, encode_private_document_payload,
+    largest_private_document_payload_size, minimum_private_document_entry_size,
+    validate_private_document_entry_size, PrivateDocumentConfig,
+    PRIVATE_DOCUMENT_ENVELOPE_V1_BODY_HEADER_BYTES, PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES,
+    PRIVATE_DOCUMENT_ENVELOPE_V1_WRAPPER_BYTES,
+};
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod restricted_creation;
 pub mod schema;
+pub mod serialized_version;
 
+mod summed_properties;
 mod token_costs;
 mod validate_required_since_within_contract_version;
 pub(crate) use validate_required_since_within_contract_version::validate_required_since_within_contract_version;
@@ -43,6 +56,13 @@ pub const DEFAULT_HASH_SIZE: usize = 32;
 pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
+/// The longest base 58 text an identifier written as text can decode to an index key from:
+/// every longer one decodes to more than [`MAX_INDEX_SIZE`] bytes. A text of n characters, z of
+/// them leading `1`s, decodes to z zero bytes and the bytes of a number of at least
+/// 58^(n - z - 1); a `1` takes a byte of its own and any other character less than one, so the
+/// fewest bytes n characters decode to is the length of 58^(n - 1). 58^349 is past 256^255,
+/// and 58^348, the 349 characters `2` and `1` 348 times, is 255 bytes.
+pub const MAX_BASE58_INDEX_KEY_LENGTH: usize = 349;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 /// Worst-case byte length of the contract-version stamp written by document
 /// serialization format 3: a u32 varint.
@@ -56,6 +76,7 @@ pub(crate) mod property_names {
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    pub const CAN_BE_ERASED: &str = "canBeErased";
     /// The `canBeDeleted` value saying a document leaves state only when a
     /// `refersTo` with `consume` deletes it, never by its owner's delete.
     /// Meta-schema v3+ (protocol version 14).
@@ -72,6 +93,7 @@ pub(crate) mod property_names {
     pub const INDICES: &str = "indices";
     pub const NULL_SEARCHABLE: &str = "nullSearchable";
     pub const PROPERTIES: &str = "properties";
+    pub const ADDITIONAL_PROPERTIES: &str = "additionalProperties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";
@@ -112,12 +134,17 @@ pub(crate) mod property_names {
     pub const MINIMUM: &str = "minimum";
     pub const ENUM: &str = "enum";
     pub const MAXIMUM: &str = "maximum";
+    pub const EXCLUSIVE_MINIMUM: &str = "exclusiveMinimum";
+    pub const EXCLUSIVE_MAXIMUM: &str = "exclusiveMaximum";
+    pub const MULTIPLE_OF: &str = "multipleOf";
+    pub const CONST: &str = "const";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const ITEMS: &str = "items";
     pub const UNIQUE_ITEMS: &str = "uniqueItems";
     pub const MIN_PROPERTIES: &str = "minProperties";
     pub const MAX_PROPERTIES: &str = "maxProperties";
+    pub const DEPENDENT_REQUIRED: &str = "dependentRequired";
     pub const CONTAINS: &str = "contains";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
@@ -155,6 +182,10 @@ pub(crate) mod property_names {
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
+    /// What the document type a dynamic reference names must look like: named slots, each
+    /// describing a property it must have, and which of them must be filled (protocol
+    /// version 15).
+    pub const DOCUMENT_TYPE_REQUIREMENTS: &str = "documentTypeRequirements";
     /// `identityPublicKey` reference on the key id property itself: whose key
     /// the value names (`"$ownerId"`, the writer). Takes the place of
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
@@ -361,6 +392,16 @@ pub(crate) mod property_names {
     /// contested index, and fixed when the document type is created. Meta-schema v3+
     /// (protocol version 14). See `apply_documents_ttl` in `try_from_schema::common`.
     pub const TTL: &str = "ttl";
+    /// Doctype-level object declaring a **private** document type (`{ "entrySize": n }`):
+    /// its documents are fixed-size encrypted entries of `entrySize` bytes that an anonymous
+    /// transition paid from the shielded pool appends, and the chain never reads. The type
+    /// declares no index and nothing else a document type promises about its documents; its
+    /// `properties` describe the plaintext. Admitted only by the native schema check of
+    /// protocol version 15, and fixed when the document type is created. See
+    /// `apply_private_document` in `try_from_schema::common`.
+    pub const PRIVATE: &str = "private";
+    /// The one key of the `private` object: how many bytes each entry takes.
+    pub const ENTRY_SIZE: &str = "entrySize";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

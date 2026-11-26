@@ -43,6 +43,9 @@ import kotlinx.serialization.Serializable
 /** One account's addresses/UTXOs (← `AccountDetailView.swift`). */
 @Serializable data class AccountDetail(val walletIdHex: String, val accountId: Long)
 
+/** One core address and its gated private-key reveal (← `CoreAddressDetailView`, `StorageRecordDetailViews.swift`). */
+@Serializable data class CoreAddressDetail(val walletIdHex: String, val address: String)
+
 /** Send form (← `SendTransactionView.swift` + `SendViewModel.swift`). */
 @Serializable data class SendTransaction(val walletIdHex: String)
 
@@ -105,6 +108,9 @@ import kotlinx.serialization.Serializable
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
 
+/** Delete or tombstone one owned DPNS name (← `GiveUpNameView.swift`). */
+@Serializable data class GiveUpName(val identityIdHex: String, val name: String)
+
 /** Browse, buy and manage DPNS marketplace names for one wallet identity. */
 @Serializable data class DpnsMarketplace(val identityIdHex: String)
 
@@ -113,6 +119,12 @@ import kotlinx.serialization.Serializable
 
 /** One public key's detail + private-key reveal (← `KeyDetailView.swift`). */
 @Serializable data class KeyDetail(val identityIdHex: String, val keyId: Int)
+
+/**
+ * Raise one key's budget or expiry (<- `UpdateKeyLimitsView.swift`). Carries the identity id
+ * and the key id only, never key material.
+ */
+@Serializable data class UpdateKeyLimits(val identityIdHex: String, val keyId: Int)
 
 /** Add a public key to an identity (← `AddIdentityKeyView.swift`). */
 @Serializable data class AddIdentityKey(val identityIdHex: String)
@@ -133,6 +145,9 @@ import kotlinx.serialization.Serializable
 
 /** Withdraw credits identity → L1 address (← `WithdrawCreditsView.swift`). */
 @Serializable data class WithdrawCredits(val identityIdHex: String)
+
+/** Where an identity's withdrawals to Core stand (← `IdentityWithdrawalsView.swift`). */
+@Serializable data class IdentityWithdrawals(val identityIdHex: String)
 
 // ── State-transition catalog (← StateTransitions/PlatformStateTransitions) ──
 
@@ -172,6 +187,12 @@ import kotlinx.serialization.Serializable
  * L1 address (← `WithdrawPlatformAddressView.swift`, ADDR-04). Wallet-scoped.
  */
 @Serializable data class WithdrawPlatformAddress(val walletIdHex: String)
+
+/**
+ * Balance change history of a wallet's Platform addresses
+ * (← `PlatformAddressBalanceHistoryView.swift`, ADDR-10). Wallet-scoped.
+ */
+@Serializable data class PlatformBalanceHistory(val walletIdHex: String)
 
 /**
  * Live address-funding progress (← `AddressFundFromAssetLockProgressView.swift`).
@@ -217,6 +238,26 @@ import kotlinx.serialization.Serializable
 /** Shielded activity timeline for a wallet (← `ShieldedActivityView.swift`). */
 @Serializable data class ShieldedActivity(val walletIdHex: String)
 
+/**
+ * The tokens a wallet holds in the token shielded pools it watches
+ * (← `ShieldedTokenPoolsView.swift`).
+ */
+@Serializable data class ShieldedTokens(val walletIdHex: String)
+
+/** Send one row's tokens within their shielded pool, type 26 (← `ShieldedTokenSendSheet`). */
+@Serializable data class ShieldedTokenSend(
+    val walletIdHex: String,
+    val tokenIdHex: String,
+    val account: Int,
+)
+
+/** Unshield one row's tokens to an identity, type 27 (← `ShieldedTokenUnshieldSheet`). */
+@Serializable data class ShieldedTokenUnshield(
+    val walletIdHex: String,
+    val tokenIdHex: String,
+    val account: Int,
+)
+
 // ── DashPay graph (hosted under the DashPay tab, ← the DashPay/ views) ──
 
 /** Established-contacts list for an identity (← `ContactsView.swift`). */
@@ -232,6 +273,18 @@ import kotlinx.serialization.Serializable
 @Serializable data class DashPayContactDetail(
     val identityIdHex: String,
     val contactIdHex: String,
+)
+
+/**
+ * Send a shielded tip from [identityIdHex] to a DashPay username
+ * ([org.dashfoundation.example.ui.dashpay.SendShieldedTipScreen]). From a
+ * contact, [contactIdHex] is the contact's identity and [contactUsername]
+ * its saved DPNS name (fixed); both null from the DashPay tab.
+ */
+@Serializable data class DashPaySendShieldedTip(
+    val identityIdHex: String,
+    val contactIdHex: String? = null,
+    val contactUsername: String? = null,
 )
 
 /** Read-only own-profile sheet (← `DashPayProfileView.swift`). */
@@ -267,6 +320,9 @@ import kotlinx.serialization.Serializable
 
 /** Document-type schema drill-in (← `DocumentTypeDetailsView.swift`). */
 @Serializable data class DocumentTypeDetail(val contractIdHex: String, val typeName: String)
+
+/** Contract moderation and fee pots of a saved contract (← `ContractModerationView.swift`). */
+@Serializable data class ContractModerationHub(val contractIdHex: String)
 
 /** Document query builder + results (query role of `DocumentsView.swift`). */
 @Serializable data class Documents(val contractIdHex: String, val typeName: String)
@@ -401,6 +457,26 @@ import kotlinx.serialization.Serializable
  */
 @Serializable object AddressQueries
 
+/** Recent address balance changes (← `GetRecentBalanceChangesView`, ADDR-11). */
+@Serializable object AddressRecentBalanceChangesQuery
+
+/** Compacted address balance changes (← `GetCompactedBalanceChangesView`, ADDR-11). */
+@Serializable object AddressCompactedBalanceChangesQuery
+
+/** The address tree's trunk state (← `GetTrunkStateView`, ADDR-11). */
+@Serializable object AddressTrunkStateQuery
+
+/**
+ * One branch of the address tree (← `GetBranchStateView`, ADDR-11). Empty fields by
+ * default; the trunk screen's "Query this branch" fills them from a leaf boundary.
+ */
+@Serializable data class AddressBranchStateQuery(
+    val keyHex: String = "",
+    val expectedHashHex: String = "",
+    val checkpointHeight: String = "",
+    val depth: String = "",
+)
+
 /** DAPI address ban list (← `BannedAddressesView.swift`). */
 @Serializable object BannedAddresses
 
@@ -415,11 +491,70 @@ import kotlinx.serialization.Serializable
 )
 
 /**
+ * Decision proposal listings: the open ones, a local identity's, the newest
+ * (← `DecisionProposalsView.swift`). Reached from the Platform Queries list.
+ */
+@Serializable object DecisionProposalsList
+
+/** File a new decision proposal (← `CreateDecisionProposalView`). */
+@Serializable object CreateDecisionProposal
+
+/**
+ * One decision proposal: its rule, its poll's state, the edit and the
+ * masternode vote (← `DecisionProposalDetailView.swift`). [proposalId] is
+ * base58.
+ */
+@Serializable data class DecisionProposalDetail(val proposalId: String)
+
+/**
+ * Multiple choice proposal listings: a local identity's and the newest
+ * (← `MultipleChoiceProposalsView.swift`). Reached from the Platform Queries list, beside
+ * [DecisionProposalsList].
+ */
+@Serializable object MultipleChoiceProposalsList
+
+/** File a new multiple choice proposal (← `CreateMultipleChoiceProposalView`). */
+@Serializable object CreateMultipleChoiceProposal
+
+/**
+ * One multiple choice proposal: its choices and their tallies, how the vote ended, entering
+ * a choice, the edit and the masternode vote (← `MultipleChoiceProposalDetailView.swift`).
+ * [proposalId] is base58.
+ */
+@Serializable data class MultipleChoiceProposalDetail(val proposalId: String)
+
+/**
  * One contract group's members + live proposals (← `GroupDetailView.swift`).
  * [position] is the group contract position inside the contract's
  * `groups` map.
  */
 @Serializable data class GroupDetail(val contractIdHex: String, val position: Int)
+
+/**
+ * The entries of a private document type the device's wallets can open (protocol version 15,
+ * ← `PrivateDocumentEntriesView.swift`). Reached from a private type's detail screen.
+ */
+@Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
+
+/**
+ * Create one entry of a private document type, paid from the shielded pool (protocol version
+ * 15, type 29, ← `PrivateDocumentEntryCreateView.swift`). Reached from a private type's detail
+ * screen.
+ */
+@Serializable data class PrivateDocumentEntryCreate(val contractIdHex: String, val typeName: String)
+
+/**
+ * Block explorer: blocks with their state transitions, and one identity's transitions in a
+ * block (← `PlatformBlocksView.swift`, protocol version 15). Reached from the Platform Queries
+ * list.
+ */
+@Serializable object BlockExplorer
+
+/**
+ * A state transition's status by hash, proved by its block (← `TransitionStatusCheckView.swift`,
+ * protocol version 15). Reached from the Platform Queries list.
+ */
+@Serializable object TransitionStatusCheck
 
 /** Query test-runner + environment snapshot (← `DiagnosticsView.swift`). */
 @Serializable object Diagnostics

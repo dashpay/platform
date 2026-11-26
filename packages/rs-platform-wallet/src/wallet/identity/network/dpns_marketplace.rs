@@ -9,8 +9,10 @@
 //!
 //! - resolving a name to its `domain` document (with `$price` and the
 //!   document id, which the SDK's `DpnsUsername` drops),
-//! - automatic signing-key selection (AUTHENTICATION / ECDSA at the
-//!   document type's required security level — no hardcoded key ids),
+//! - no signing key picked here: the generic writes select the key
+//!   (`select_document_signing_key`: AUTHENTICATION / ECDSA at the
+//!   document type's required security level, with contract bounds
+//!   allowing `domain` — no hardcoded key ids),
 //! - typed pre-flight checks (not-found / contested / not-for-sale /
 //!   price-changed / insufficient credits),
 //! - local persistence of sale state through the changeset pipeline
@@ -26,6 +28,7 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
+use super::contact_requests::GatedSigner;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -33,9 +36,8 @@ use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose};
+use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
@@ -45,17 +47,21 @@ use dash_sdk::drive::query::{OrderClause, SelectProjection, WhereClause, WhereOp
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username};
 use dash_sdk::platform::{DocumentQuery, FetchMany};
 
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-
 use crate::changeset::{
     DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, PersistenceError,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
-use super::document::allowed_signing_security_levels;
 use super::*;
+
+mod give_up;
+
+pub(crate) use give_up::DpnsOperationGate;
+pub use give_up::{
+    give_up_clears_main_dpns_name, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod,
+    DpnsNameGiveUpOutcome, DpnsNameGivenUp,
+};
 
 /// DPNS document type carrying registered names.
 const DPNS_DOCUMENT_TYPE: &str = "domain";
@@ -872,11 +878,7 @@ impl IdentityWallet {
         identity_id: Option<&Identifier>,
     ) -> Result<Vec<DpnsNameStateEntry>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
+        let info = self.current_wallet_info(&wm)?;
         Ok(info
             .dpns_name_states
             .values()
@@ -942,58 +944,6 @@ impl IdentityWallet {
     }
 
     // -----------------------------------------------------------------
-    // Signing-key selection
-    // -----------------------------------------------------------------
-
-    /// Auto-select the signing key for a DPNS `domain` state transition
-    /// on `identity_id`: the identity's first AUTHENTICATION-purpose
-    /// ECDSA_SECP256K1 key whose security level satisfies the document
-    /// type's requirement (the same consensus rule
-    /// [`allowed_signing_security_levels`] encodes). Replaces the app
-    /// layer's hardcoded "key id 1".
-    async fn select_dpns_signing_key(
-        &self,
-        identity_id: &Identifier,
-    ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        let contract = self.dpns_contract().await?;
-        let required_level = contract
-            .document_type_for_name(DPNS_DOCUMENT_TYPE)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "DPNS contract has no {DPNS_DOCUMENT_TYPE:?} document type: {e}"
-                ))
-            })?
-            .security_level_requirement();
-        let allowed_levels = allowed_signing_security_levels(required_level);
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
-        let identity = info
-            .identity_manager
-            .wallet_identity(&self.wallet_id, identity_id)
-            .map(|m| m.identity.clone())
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        identity
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                allowed_levels.iter().copied().collect(),
-                [KeyType::ECDSA_SECP256K1].into(),
-                false,
-            )
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No ECDSA authentication key at a security level satisfying \
-                     {required_level} found on identity {identity_id} \
-                     (required to sign a DPNS domain state transition)"
-                ))
-            })
-    }
-
-    // -----------------------------------------------------------------
     // Local bookkeeping
     // -----------------------------------------------------------------
 
@@ -1013,7 +963,7 @@ impl IdentityWallet {
         }
         cs.removed.extend(removed);
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         info.dpns_name_states.extend(cs.names.clone());
@@ -1037,7 +987,7 @@ impl IdentityWallet {
         acquired_at: Option<u64>,
     ) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info
@@ -1063,7 +1013,7 @@ impl IdentityWallet {
     /// in this wallet.
     async fn remove_dpns_label(&self, identity_id: &Identifier, label: &str) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info
@@ -1075,10 +1025,25 @@ impl IdentityWallet {
         managed.remove_dpns_name(label, &self.persister);
     }
 
+    /// `error` from a write signed through `gated`, reported as
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`] when the wallet was
+    /// removed or re-created while the host signed: then nothing was sent.
+    pub(super) fn removed_while_signing<S: ?Sized>(
+        &self,
+        gated: &GatedSigner<'_, S, crate::broadcaster::SpvBroadcaster>,
+        error: PlatformWalletError,
+    ) -> PlatformWalletError {
+        if gated.removed() {
+            PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
+        } else {
+            error
+        }
+    }
+
     /// Whether `identity_id` is one of this wallet's identities.
     async fn is_wallet_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
-        wm.get_wallet_info(&self.wallet_id)
+        self.current_wallet_info(&wm)
             .map(|info| {
                 info.identity_manager
                     .wallet_identity(&self.wallet_id, identity_id)
@@ -1150,8 +1115,10 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .set_document_price_with_signer(
                 owner_identity_id,
@@ -1159,10 +1126,10 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 price,
-                signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         self.record_dpns_name_states(
             vec![confirmed_state.to_entry(*owner_identity_id, DpnsNameSaleStatus::Owned, now_ms())],
@@ -1202,8 +1169,10 @@ impl IdentityWallet {
                 document_id: state.document_id,
             });
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .transfer_document_with_signer(
                 owner_identity_id,
@@ -1211,10 +1180,10 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 owner_identity_id,
-                signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         if confirmed_state.price.is_some() || confirmed_state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
@@ -1263,8 +1232,10 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .transfer_document_with_signer(
                 owner_identity_id,
@@ -1272,10 +1243,10 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 recipient_id,
-                signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         let now = now_ms();
         self.remove_dpns_label(owner_identity_id, &confirmed_state.label)
@@ -1363,11 +1334,7 @@ impl IdentityWallet {
         // local balance.
         let available = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info(&wm)?;
             info.identity_manager
                 .wallet_identity(&self.wallet_id, purchaser_identity_id)
                 .map(|m| m.balance())
@@ -1383,8 +1350,10 @@ impl IdentityWallet {
                 available,
             });
         }
-        let signing_key = self.select_dpns_signing_key(purchaser_identity_id).await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .purchase_document_with_signer(
                 purchaser_identity_id,
@@ -1392,10 +1361,10 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 expected_price,
-                signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         let now = now_ms();
         let seller_id = state.owner_id;
@@ -1576,11 +1545,7 @@ impl IdentityWallet {
         // Snapshot identity ids, their label lists, and the current rows.
         let (identity_ids, labels_by_identity, previous_rows) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info(&wm)?;
             let ids = info.identity_manager.wallet_identity_ids(&self.wallet_id);
             let labels: BTreeMap<Identifier, Vec<DpnsNameInfo>> = info
                 .identity_manager
@@ -1779,6 +1744,13 @@ impl IdentityWallet {
         for seller in sellers_to_refresh {
             self.refresh_identity_after_trade(&seller, "marketplace sync (sold name)")
                 .await;
+        }
+        // A pass that finished after this wallet was removed and re-created under its id
+        // applied nothing (every write above is fenced to this handle's generation), so it
+        // is reported as discarded, not as a refresh the host could record
+        {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?;
         }
         summary.sync_unix_ms = now_ms();
         Ok(summary)
@@ -2264,7 +2236,19 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 
 #[cfg(test)]
 mod tests {
+    mod give_up;
+
+    use super::super::signing_key::tests::{identity, lock_checking_signer, KeyFilter};
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use crate::wallet::core::WalletGeneration;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::KeyType;
+    use dpp::identity::Purpose;
+    use dpp::identity::SecurityLevel;
 
     fn name_state_entry(
         document_id: Identifier,
@@ -2418,6 +2402,16 @@ mod tests {
         /// The DPNS label list of every identity snapshot handed to
         /// [`Self::store`], in order, keyed by identity id.
         stored_identity_labels: std::sync::Mutex<Vec<(Identifier, Vec<String>)>>,
+        /// When set, every [`Self::store`] fails and records nothing, as a
+        /// backend that rejects the whole changeset does.
+        fail_stores: std::sync::atomic::AtomicBool,
+        /// When set, every store carrying an identity snapshot fails.
+        fail_identity_stores: std::sync::atomic::AtomicBool,
+        /// When set, every flush fails: a store is buffered but never committed.
+        fail_flushes: std::sync::atomic::AtomicBool,
+        /// What each successful store carried, in order: `"rows"` for DPNS name-state rows,
+        /// `"identity"` for identity snapshots.
+        store_order: std::sync::Mutex<Vec<&'static str>>,
     }
 
     impl MirrorPersister {
@@ -2436,7 +2430,34 @@ mod tests {
                 fail: std::sync::Mutex::new(None),
                 stored_dpns: std::sync::Mutex::new(Vec::new()),
                 stored_identity_labels: std::sync::Mutex::new(Vec::new()),
+                fail_stores: std::sync::atomic::AtomicBool::new(false),
+                fail_identity_stores: std::sync::atomic::AtomicBool::new(false),
+                fail_flushes: std::sync::atomic::AtomicBool::new(false),
+                store_order: std::sync::Mutex::new(Vec::new()),
             }
+        }
+
+        /// Make every later store fail.
+        fn fail_stores(&self) {
+            self.fail_stores
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// Make every later store of an identity snapshot fail.
+        fn fail_identity_stores(&self) {
+            self.fail_identity_stores
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// Make every later flush fail, so nothing stored is committed.
+        fn fail_flushes(&self) {
+            self.fail_flushes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// What the successful stores carried, in order.
+        fn store_order(&self) -> Vec<&'static str> {
+            self.store_order.lock().expect("store order").clone()
         }
 
         /// Holds `rows`, but every read fails with `kind` until
@@ -2490,6 +2511,26 @@ mod tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if self.fail_stores.load(std::sync::atomic::Ordering::SeqCst)
+                || (changeset.identities.is_some()
+                    && self
+                        .fail_identity_stores
+                        .load(std::sync::atomic::Ordering::SeqCst))
+            {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Fatal,
+                    "simulated store failure",
+                ));
+            }
+            {
+                let mut order = self.store_order.lock().expect("store order");
+                if changeset.dpns_name_states.is_some() {
+                    order.push("rows");
+                }
+                if changeset.identities.is_some() {
+                    order.push("identity");
+                }
+            }
             if let Some(cs) = changeset.dpns_name_states {
                 self.stored_dpns.lock().expect("stored log").push(cs);
             }
@@ -2507,6 +2548,12 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if self.fail_flushes.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Fatal,
+                    "simulated commit failure",
+                ));
+            }
             Ok(())
         }
 
@@ -3894,6 +3941,12 @@ mod tests {
         let wallet_id = wm
             .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
             .expect("create wallet");
+        // The live generation, as `PlatformWallet::new` takes it.
+        let generation = Arc::clone(
+            &wm.get_wallet_info(&wallet_id)
+                .expect("the wallet's info")
+                .generation,
+        );
         let wallet_manager = Arc::new(RwLock::new(wm));
 
         let persister = WalletPersister::new(wallet_id, mirror);
@@ -3918,11 +3971,166 @@ mod tests {
             persister,
             sync_fault: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             durable_cursors: crate::changeset::DurableCursors::default(),
+            generation,
             broadcaster,
             sdk_writer: Arc::new(super::super::sdk_writer::SdkWriter::new(sdk)),
-            dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            document_erase_gate: Default::default(),
+            dpns_operation_gate: Default::default(),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: Default::default(),
         }
+    }
+
+    /// A sync pass on a handle whose wallet was removed and re-created under its id is
+    /// reported as discarded (the wallet is not found), not as a successful refresh. Here the
+    /// replacement happens before the pass, so its snapshot read refuses it; a pass that
+    /// resumes after a replacement is refused the same way by the check before it returns.
+    #[tokio::test]
+    async fn a_sync_pass_of_a_replaced_generation_reports_the_wallet_gone() {
+        let identity_id = Identifier::from([0xE4; 32]);
+        let sdk = sdk_for_departed_identity_sync(&identity_id, DEPARTED_LABEL).await;
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::new(MirrorPersister::hydrated(Vec::new())),
+            sdk,
+        );
+        // The wallet is replaced before the pass gets to apply anything
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .expect("wallet info")
+            .generation = Arc::new(WalletGeneration::new());
+
+        let error = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect_err("the pass is discarded");
+        assert!(
+            matches!(error, PlatformWalletError::WalletNotFound(_)),
+            "{error:?}"
+        );
+    }
+
+    /// A trade write's key, which the generic write selects, must be allowed the `domain`
+    /// type: a signer-reachable key bound to another contract is skipped for a later key
+    /// without bounds.
+    #[tokio::test]
+    async fn trade_writes_skip_a_key_bound_to_another_contract() {
+        let wallet = mirror_backed_identity_wallet(Arc::new(MirrorPersister::hydrated(Vec::new())));
+        let owner_id = Identifier::from([0xE3; 32]);
+        let mut owner = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        owner.set_id(owner_id);
+        let mut bound = owner.public_keys().get(&1).cloned().expect("key 1");
+        if let IdentityPublicKey::V0(key) = &mut bound {
+            key.contract_bounds = Some(ContractBounds::SingleContract {
+                id: Identifier::from([0x0E; 32]),
+            });
+        }
+        owner.add_public_key(bound);
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .add_identity(owner, 0, wallet.wallet_id, &wallet.persister)
+            .expect("add identity");
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+
+        let domain = contract
+            .document_type_cloned_for_name(DPNS_DOCUMENT_TYPE)
+            .expect("the domain type");
+
+        let key = wallet
+            .select_document_signing_key(&owner_id, &domain, &KeyFilter(|_| true))
+            .await
+            .expect("a key is selected");
+        assert_eq!(key.id(), 2, "the key bound to another contract is skipped");
+    }
+
+    /// A handle whose wallet was removed and re-created under the same id (a new
+    /// generation) writes nothing into the replacement: a marketplace pass or trade that
+    /// started on the old generation finishes without touching the new one's labels, rows
+    /// or persister.
+    #[tokio::test]
+    async fn a_handle_of_a_replaced_generation_writes_nothing() {
+        let mirror = Arc::new(MirrorPersister::hydrated(Vec::new()));
+        let wallet = mirror_backed_identity_wallet(Arc::clone(&mirror));
+        let mut owner = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let owner_id = Identifier::from([0xE1; 32]);
+        owner.set_id(owner_id);
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(owner, 0, wallet.wallet_id, &wallet.persister)
+                .expect("add identity");
+            info.identity_manager
+                .managed_identity_mut(&owner_id)
+                .expect("the identity")
+                .set_dpns_names(
+                    vec![DpnsNameInfo {
+                        label: DEPARTED_LABEL.to_string(),
+                        acquired_at: Some(1),
+                    }],
+                    &wallet.persister,
+                );
+            // The wallet is removed and re-created under its id
+            info.generation = Arc::new(WalletGeneration::new());
+        }
+        let stores_before = mirror.store_order().len();
+
+        let mut row = name_state_entry(
+            Identifier::from([0xE2; 32]),
+            owner_id,
+            DpnsNameSaleStatus::Owned,
+        );
+        row.label = "Bob".to_string();
+        wallet.record_dpns_name_states(vec![row], vec![]).await;
+        wallet.remove_dpns_label(&owner_id, DEPARTED_LABEL).await;
+        wallet
+            .add_dpns_label_if_missing(&owner_id, "Bob", Some(2))
+            .await;
+
+        assert_eq!(
+            mirror.store_order().len(),
+            stores_before,
+            "nothing is stored"
+        );
+        assert!(!wallet.is_wallet_identity(&owner_id).await);
+        let wm = wallet.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id).expect("wallet info");
+        assert!(info.dpns_name_states.is_empty(), "no row is written");
+        let labels: Vec<String> = info
+            .identity_manager
+            .managed_identity(&owner_id)
+            .expect("the identity")
+            .dpns_names
+            .iter()
+            .map(|name| name.label.clone())
+            .collect();
+        assert_eq!(
+            labels,
+            vec![DEPARTED_LABEL.to_string()],
+            "labels are untouched"
+        );
     }
 
     // -----------------------------------------------------------------
@@ -3976,6 +4184,65 @@ mod tests {
             Arc::new(MirrorPersister::hydrated(Vec::new())),
             sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await,
         )
+    }
+
+    /// The price write selects its own key once it has read the domain document: a signer
+    /// that holds no eligible key keeps the structured key-unavailable failure through the
+    /// marketplace call.
+    #[tokio::test]
+    async fn should_preserve_unavailable_signer_when_setting_dpns_price() {
+        let owner = Identifier::from([0xB2; 32]);
+        let document_id = Identifier::from([0xB1; 32]);
+        let listed = listed_domain_document(document_id, owner, None);
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(document_id, Some(listed.clone()));
+        let mut sdk = mock_sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await;
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+        // The price write reads the current document by id before it selects a key.
+        sdk.mock()
+            .expect_fetch(
+                DocumentQuery::new(Arc::new(contract), DPNS_DOCUMENT_TYPE)
+                    .expect("the domain type")
+                    .with_document_id(&document_id),
+                Some(listed),
+            )
+            .await
+            .expect("expects the document read");
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::new(MirrorPersister::hydrated(Vec::new())),
+            Arc::new(sdk),
+        );
+        let mut identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        identity.set_id(owner);
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .add_identity(identity, 0, wallet.wallet_id, &wallet.persister)
+            .unwrap();
+
+        let error = wallet
+            .set_dpns_name_price(&owner, DEPARTED_LABEL, 1000, &lock_checking_signer(&wallet))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
+                    if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "expected signer-unavailable error, got {error:?}"
+        );
     }
 
     /// The purchase pre-flight's rejection ORDER, as a pure decision.

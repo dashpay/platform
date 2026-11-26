@@ -154,6 +154,57 @@ internal object IdentityNative {
     ): Array<ByteArray>
 
     /**
+     * DashPay Connect key derivation at the DIP-13 sub-feature paths
+     * `m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`
+     * (dashpay/dips#191). Bridges `dash_sdk_derive_connect_key_v2_with_resolver`,
+     * a pure resolver-keyed derive like the slot derives above. Renamed from
+     * `deriveConnectKeyWithResolver` when the rotation argument was added, so a
+     * stale native library fails with `UnsatisfiedLinkError` instead of
+     * receiving mismatched arguments.
+     *
+     * @param subFeature 6 (session authentication; [leaf] is the request
+     *   id) or 7 (app encryption; [leaf] is the bound contract's id).
+     * @param identityId the identity's 32-byte id (a DIP-14 hardened child).
+     * @param leaf the 32-byte leaf (a DIP-14 hardened child).
+     * @param purpose 0 with sub-feature 6 (no purpose level), or the half
+     *   of an encryption pair with sub-feature 7: 1 ENCRYPTION,
+     *   2 DECRYPTION.
+     * @param rotation 0 with sub-feature 6 (no rotation level), or the
+     *   non-negative `rotation'` level with sub-feature 7 (0 for the first
+     *   pair). Any other combination throws.
+     * @return `[privateKey(32), publicKey(33)]`.
+     */
+    external fun deriveConnectKeyV2WithResolver(
+        networkOrd: Int,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        subFeature: Int,
+        identityId: ByteArray,
+        leaf: ByteArray,
+        purpose: Int,
+        rotation: Int,
+    ): Array<ByteArray>
+
+    /**
+     * Pre-rotation DashPay Connect app encryption key at
+     * `m/9'/coin'/5'/7'/0'/identityId'/contractId'/purpose'` (no
+     * `rotation'` level), for recognising keys registered on testnet/devnet
+     * before DIP-13 gained that level. Bridges
+     * `dash_sdk_derive_legacy_app_encryption_key_with_resolver`.
+     *
+     * @param purpose 1 ENCRYPTION or 2 DECRYPTION; anything else throws.
+     * @return `[privateKey(32), publicKey(33)]`.
+     */
+    external fun deriveLegacyAppEncryptionKeyWithResolver(
+        networkOrd: Int,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        identityId: ByteArray,
+        contractId: ByteArray,
+        purpose: Int,
+    ): Array<ByteArray>
+
+    /**
      * Register a new identity funded from the wallet's Core balance. The
      * single FFI entry point the registration coordinator's body invokes.
      *
@@ -263,10 +314,12 @@ internal object IdentityNative {
      * the wallet selects the key internally.
      *
      * [documentsSchemaJson] is required; the rest are optional (`null` or
-     * empty ⇒ the section is omitted). Returns the 32-byte updated contract
-     * id.
+     * empty ⇒ the section is omitted). [expectedCurrentVersion] is the
+     * contract version the caller reviewed: the wallet refuses the update
+     * when Platform holds another version; 0 means no check. Returns the
+     * 32-byte updated contract id.
      */
-    external fun updateDataContract(
+    external fun updateDataContractAtReviewedVersion(
         walletHandle: Long,
         ownerIdentityId: ByteArray,
         contractId: ByteArray,
@@ -276,6 +329,7 @@ internal object IdentityNative {
         keywordsJson: String?,
         description: String?,
         configJson: String?,
+        expectedCurrentVersion: Long,
         signerHandle: Long,
     ): ByteArray
 }

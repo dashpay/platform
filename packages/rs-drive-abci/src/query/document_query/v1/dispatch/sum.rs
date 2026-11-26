@@ -83,12 +83,7 @@ impl<C> Platform<C> {
         // `SumMode` mirrors `CountMode` 1:1 — same four variants
         // computed via the same `compute_aggregate_mode_and_check_limit`
         // helper. Map across the isomorphism.
-        let sum_mode = match mode {
-            CountMode::Aggregate => SumMode::Aggregate,
-            CountMode::GroupByIn => SumMode::GroupByIn,
-            CountMode::GroupByRange => SumMode::GroupByRange,
-            CountMode::GroupByCompound => SumMode::GroupByCompound,
-        };
+        let sum_mode = SumMode::from(mode);
 
         let drive_request = DocumentSumRequest {
             contract: contract_ref,
@@ -138,7 +133,7 @@ impl<C> Platform<C> {
                     let mut total: i64 = 0;
                     let mut overflow = false;
                     for e in &entries {
-                        match total.checked_add(e.sum.unwrap_or(0)) {
+                        match wire_sum(e.sum).ok().and_then(|sum| total.checked_add(sum)) {
                             Some(t) => total = t,
                             None => {
                                 overflow = true;
@@ -167,11 +162,21 @@ impl<C> Platform<C> {
                         ),
                     }
                 } else {
+                    let entries = match entries
+                        .into_iter()
+                        .map(into_v1_sum_entry)
+                        .collect::<Result<Vec<_>, _>>()
+                    {
+                        Ok(entries) => entries,
+                        Err(e) => {
+                            return Ok(QueryValidationResult::new_with_error(QueryError::Query(e)))
+                        }
+                    };
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
                             variant: Some(result_data::Variant::Sums(SumResults {
                                 variant: Some(sum_results::Variant::Entries(SumEntries {
-                                    entries: entries.into_iter().map(into_v1_sum_entry).collect(),
+                                    entries,
                                 })),
                             })),
                         })),
@@ -197,12 +202,24 @@ impl<C> Platform<C> {
 
 /// Translate an rs-drive `SumEntry` into the wire `SumEntry`. Mirror
 /// of [`into_v1_entry`] for the sum surface.
-fn into_v1_sum_entry(e: DriveSumEntry) -> SumEntry {
-    SumEntry {
+fn into_v1_sum_entry(e: DriveSumEntry) -> Result<SumEntry, QuerySyntaxError> {
+    Ok(SumEntry {
         in_key: e.in_key,
         key: e.key,
         // `sum` is `sint64` on the wire — same `None`-rounds-to-0
         // contract as `into_v1_entry`.
-        sum: e.sum.unwrap_or(0),
-    }
+        sum: wire_sum(e.sum)?,
+    })
+}
+
+/// A Drive sum as the wire's `sint64` carries it, `None` (proven absent) as 0. Drive keeps a
+/// sum at 128 bits ([`DriveSumEntry::sum`]), and its unproven reads refuse one past 64 bits,
+/// so every sum reaching this response fits; one that did not would be refused here, never
+/// truncated.
+pub(super) fn wire_sum(sum: Option<i128>) -> Result<i64, QuerySyntaxError> {
+    i64::try_from(sum.unwrap_or(0)).map_err(|_| {
+        QuerySyntaxError::Unsupported(
+            "the sum does not fit the 64 bits a sum result carries".to_string(),
+        )
+    })
 }

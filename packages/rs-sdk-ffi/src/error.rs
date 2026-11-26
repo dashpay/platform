@@ -1,5 +1,8 @@
 //! Error handling for FFI layer
 
+use dash_sdk::dapi_client::transport::TransportError;
+use dash_sdk::dapi_client::DapiClientError;
+use dash_sdk::dapi_grpc::tonic::Code;
 use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::ProtocolError;
 use std::ffi::{CString, NulError};
@@ -12,7 +15,8 @@ use thiserror::Error;
 pub enum DashSDKErrorCode {
     /// Operation completed successfully
     Success = 0,
-    /// Invalid parameter passed to function
+    /// Invalid parameter passed to function, including a query no node can answer as the
+    /// requested result
     InvalidParameter = 1,
     /// SDK not initialized or in invalid state
     InvalidState = 2,
@@ -32,6 +36,9 @@ pub enum DashSDKErrorCode {
     NotImplemented = 9,
     /// Drive returned an internal error (e.g., storage-level constraint violation)
     DriveInternalError = 10,
+    /// The transition may have executed, but its result could not be verified.
+    /// Reconcile the original operation before submitting another transition.
+    StateTransitionResultUnconfirmed = 11,
     /// Internal error
     InternalError = 99,
 }
@@ -205,9 +212,20 @@ fn consensus_code_of(error: &dash_sdk::Error) -> Option<u32> {
     }
 }
 
+/// Whether the SDK has no context provider, or one set up so that it cannot serve: the host
+/// has to configure the SDK differently, and no node or retry changes that, whatever words
+/// the message holds.
+fn is_context_provider_misconfigured(error: &dash_sdk::Error) -> bool {
+    matches!(
+        error,
+        dash_sdk::Error::ContextProviderError(dash_sdk::error::ContextProviderError::Config(_))
+    )
+}
+
 impl FFIError {
     /// `source` with the message `"{context}: {source}"`, keeping the SDK
-    /// error so its consensus code and quorum-source category reach the host.
+    /// error so its consensus code, quorum-source category and context-provider
+    /// misconfiguration reach the host.
     pub fn sdk_call_failed(context: impl Into<String>, source: dash_sdk::Error) -> Self {
         FFIError::SDKCallFailed {
             context: context.into(),
@@ -221,8 +239,12 @@ impl From<FFIError> for DashSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKCallFailed { source, .. } => {
-                let code = if source.is_quorum_source_unavailable() {
+                let code = if source.is_state_transition_result_unconfirmed() {
+                    DashSDKErrorCode::StateTransitionResultUnconfirmed
+                } else if source.is_quorum_source_unavailable() {
                     DashSDKErrorCode::NetworkError
+                } else if is_context_provider_misconfigured(source) {
+                    DashSDKErrorCode::InvalidState
                 } else {
                     DashSDKErrorCode::InternalError
                 };
@@ -236,13 +258,26 @@ impl From<FFIError> for DashSDKError {
                 // substrings inside Drive messages (e.g., "data contract not found"
                 // emitted as a DriveInternalError would otherwise be misclassified
                 // as NotFound).
-                let (code, detailed_msg) = if let dash_sdk::Error::DriveInternalError(inner) =
-                    sdk_err
-                {
+                let (code, detailed_msg) = if sdk_err.is_state_transition_result_unconfirmed() {
+                    (
+                        DashSDKErrorCode::StateTransitionResultUnconfirmed,
+                        error_str,
+                    )
+                } else if let dash_sdk::Error::DriveInternalError(inner) = sdk_err {
                     // The DriveInternalError code already conveys the classification;
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::MissingDependency(..)) {
+                    // A proved absence of something the request needs. Its message names
+                    // the missing object by its id, a base58 string that can hold
+                    // "dapi", "timeout" or "connection", so it is classified by its
+                    // variant before the substring fallbacks below.
+                    (DashSDKErrorCode::NotFound, error_str)
+                } else if let dash_sdk::Error::InvalidRequest(reason) = sdk_err {
+                    // The caller's request has to change: no node answers it as the
+                    // requested result type, whatever words its message holds.
+                    (DashSDKErrorCode::InvalidParameter, reason.clone())
                 } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
                     // The SDK refused a request the network cannot serve yet, without
                     // sending it, and retrying sooner does not help. Unless the query for
@@ -258,6 +293,10 @@ impl From<FFIError> for DashSDKError {
                         Some(cause) => (code, format!("{error_str}: {cause}")),
                         None => (code, error_str),
                     }
+                } else if let Some(code) = node_refusal_code(sdk_err) {
+                    // The request itself was refused as invalid: the caller has to change
+                    // it. Not a network failure, and never an empty result.
+                    (code, error_str)
                 } else if matches!(
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
@@ -280,6 +319,8 @@ impl From<FFIError> for DashSDKError {
                     // answer, so a proof could not be checked: transient and
                     // network-side, whatever words its message happens to hold.
                     (DashSDKErrorCode::NetworkError, error_str)
+                } else if is_context_provider_misconfigured(sdk_err) {
+                    (DashSDKErrorCode::InvalidState, error_str)
                 } else if matches!(sdk_err, dash_sdk::Error::TimeoutReached(_, _))
                     || error_str.contains("timeout")
                     || error_str.contains("Timeout")
@@ -377,10 +418,145 @@ macro_rules! ffi_result {
     };
 }
 
+/// The error code of a refusal of the request itself, read from a gRPC `InvalidArgument`
+/// status (for example a moderation list the contract does not keep): the caller has to change
+/// the request. `None` for every other status and every transport failure, which stay network
+/// failures. A gRPC `NotFound` among them: a node's word that something is absent is not
+/// proved, and `NotFound` is kept for an absence a proof showed (`Error::MissingDependency`).
+fn node_refusal_code(error: &dash_sdk::Error) -> Option<DashSDKErrorCode> {
+    let dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) =
+        error
+    else {
+        return None;
+    };
+    match status.code() {
+        Code::InvalidArgument => Some(DashSDKErrorCode::InvalidParameter),
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::ffi::CStr;
+
+    mod unconfirmed_result {
+        use super::*;
+        use crate::types::{dash_sdk_result_free, DashSDKResult};
+        use dash_sdk::dpp::address_funds::PlatformAddress;
+        use dash_sdk::dpp::consensus::state::address_funds::AddressInvalidNonceError;
+        use dash_sdk::dpp::consensus::ConsensusError;
+        use std::time::Duration;
+
+        fn nonce_refusal() -> dash_sdk::Error {
+            let consensus: ConsensusError =
+                AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into();
+            consensus.into()
+        }
+
+        /// Both public error ownership paths must retain the phase and copyable
+        /// diagnostics, even if retry exhaustion surrounds the SDK marker.
+        #[test]
+        fn should_preserve_unconfirmed_results_through_both_ffi_wrappers_and_free_paths() {
+            for contextual in [false, true] {
+                for retry_envelopes in 0..=2 {
+                    for source in [
+                        dash_sdk::Error::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                        dash_sdk::Error::InvalidProvedResponse(
+                            "unexpected identity in proof".into(),
+                        ),
+                        nonce_refusal(),
+                    ] {
+                        let diagnostic = source.to_string();
+                        let mut source =
+                            dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(source));
+                        for _ in 0..retry_envelopes {
+                            source = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(source));
+                        }
+                        let direct_message = source.to_string();
+                        let error = if contextual {
+                            FFIError::sdk_call_failed("Failed to top up identity and wait", source)
+                        } else {
+                            FFIError::SDKError(source)
+                        };
+                        let expected_message = if contextual {
+                            error.to_string()
+                        } else {
+                            direct_message
+                        };
+                        let mut result = DashSDKResult::error(error.into());
+                        assert!(result.data.is_null());
+                        let message = unsafe {
+                            let converted = &*result.error;
+                            assert_eq!(
+                                converted.code,
+                                DashSDKErrorCode::StateTransitionResultUnconfirmed
+                            );
+                            assert_eq!(converted.code as u32, 11);
+                            assert_eq!(converted.consensus_code, 0);
+                            assert_eq!(
+                                converted.consensus_kind,
+                                DashSDKConsensusErrorKind::ConsensusErrorKindNone
+                            );
+                            let message = CStr::from_ptr(converted.message)
+                                .to_str()
+                                .unwrap()
+                                .to_owned();
+                            if contextual {
+                                dash_sdk_result_free(&mut result);
+                                assert!(result.error.is_null());
+                                dash_sdk_result_free(&mut result);
+                            } else {
+                                // The direct Swift top-up wrapper uses this free function.
+                                dash_sdk_error_free(result.error);
+                            }
+                            message
+                        };
+                        assert_eq!(message, expected_message);
+                        assert!(message.contains(&diagnostic));
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn should_keep_definite_nonce_refusals_and_unmarked_failures_unchanged() {
+            for contextual in [false, true] {
+                for (source, expected_code, expected_consensus) in [
+                    (nonce_refusal(), DashSDKErrorCode::ProtocolError, 40603),
+                    (
+                        dash_sdk::Error::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                        DashSDKErrorCode::Timeout,
+                        0,
+                    ),
+                    (
+                        dash_sdk::Error::InvalidProvedResponse("unexpected identity".into()),
+                        DashSDKErrorCode::InternalError,
+                        0,
+                    ),
+                ] {
+                    let error = if contextual {
+                        FFIError::sdk_call_failed("Failed before submission", source)
+                    } else {
+                        FFIError::SDKError(source)
+                    };
+                    let mut result = DashSDKResult::error(error.into());
+                    unsafe {
+                        assert_eq!(
+                            (*result.error).code,
+                            if contextual {
+                                DashSDKErrorCode::InternalError
+                            } else {
+                                expected_code
+                            }
+                        );
+                        assert_eq!((*result.error).consensus_code, expected_consensus);
+                        dash_sdk_result_free(&mut result);
+                    }
+                    assert!(result.error.is_null());
+                }
+            }
+        }
+    }
 
     fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
         let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
@@ -392,6 +568,42 @@ mod tests {
             }
         }
         code
+    }
+
+    /// An SDK without a context provider cannot verify any proof. The host has to set the
+    /// SDK up differently, so it reads an invalid state that says what is missing, not a
+    /// proof failure it might blame on the network, also when the error carries the context
+    /// of the operation that failed.
+    #[test]
+    fn should_map_a_missing_context_provider_to_invalid_state() {
+        let missing = || dash_sdk::Error::from(dash_sdk::ProofVerifierError::ContextProviderNotSet);
+        for contextual in [false, true] {
+            let error = if contextual {
+                FFIError::sdk_call_failed("Failed to put identity and wait", missing())
+            } else {
+                FFIError::SDKError(missing())
+            };
+            let expected_message = if contextual {
+                error.to_string()
+            } else {
+                missing().to_string()
+            };
+            let dash_sdk_error: DashSDKError = error.into();
+            let message = unsafe {
+                let message = CStr::from_ptr(dash_sdk_error.message)
+                    .to_string_lossy()
+                    .into_owned();
+                let _ = CString::from_raw(dash_sdk_error.message);
+                message
+            };
+            assert_eq!(
+                dash_sdk_error.code,
+                DashSDKErrorCode::InvalidState,
+                "contextual {contextual}: {message}"
+            );
+            assert_eq!(message, expected_message);
+            assert!(message.contains("context provider is not set"), "{message}");
+        }
     }
 
     /// The quorum service that vouches for quorum keys gave no answer: a
@@ -539,6 +751,7 @@ mod tests {
             let err = dash_sdk::Error::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 13,
                 pinned,
                 cause: cause.map(Box::new),
@@ -557,6 +770,24 @@ mod tests {
                 message.contains("connection refused"),
                 has_cause,
                 "{message}"
+            );
+        }
+    }
+
+    /// A request no node answers as the requested result type is the caller's to change,
+    /// whatever words its message holds: an invalid parameter, never the protocol, not-found
+    /// or internal code its message text would otherwise select.
+    #[test]
+    fn should_map_a_request_no_node_can_answer_as_its_result_type_to_invalid_parameter() {
+        for reason in [
+            "the documents projection cannot be grouped; protocol version 14",
+            "document type not found in contract",
+            "expected one document, the verified answer holds 2",
+        ] {
+            assert_eq!(
+                classify(dash_sdk::Error::InvalidRequest(reason.to_string())),
+                DashSDKErrorCode::InvalidParameter,
+                "{reason}"
             );
         }
     }
@@ -589,10 +820,38 @@ mod tests {
     /// What the SDK's retry loop ends a document request with when its node answered at an
     /// older protocol version than the SDK's and then no node was left to ask.
     async fn every_node_answered_at_an_older_protocol_version() -> dash_sdk::Error {
+        every_node_answered_with(|| {
+            dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::ProtocolVersion {
+                expected_protocol_version: 14,
+                received_protocol_version: 13,
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node gave an answer this build
+    /// could not read, on a network proven to run a protocol version newer than the build
+    /// knows, and then no node was left to ask. The verifier's own text holds words the
+    /// fallbacks below read as a timeout, a connection failure and a DAPI error.
+    async fn every_node_answered_in_a_form_of_a_newer_protocol_version() -> dash_sdk::Error {
+        every_node_answered_with(|| {
+            dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version: 15,
+                network_protocol_version: 16,
+                error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                    error: "timeout on a DAPI connection".to_string(),
+                }),
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node answered with `spared`,
+    /// an answer that does not get the node banned, and then no node was left to ask.
+    async fn every_node_answered_with(spared: fn() -> dash_sdk::Error) -> dash_sdk::Error {
         use dash_sdk::dapi_client::{
             Address, AddressList, DapiClientError, ExecutionError, ExecutionResponse,
         };
-        use dash_sdk::error::StaleNodeError;
         use std::sync::atomic::{AtomicBool, Ordering};
 
         let node: Address = "http://127.0.0.1:1".parse().expect("address");
@@ -609,15 +868,14 @@ mod tests {
             async move {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
-                        inner: dash_sdk::Error::StaleNode(StaleNodeError::ProtocolVersion {
-                            expected_protocol_version: 14,
-                            received_protocol_version: 13,
-                        }),
+                        possibly_accepted: false,
+                        inner: spared(),
                         retries: 0,
                         address: Some(node),
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: dash_sdk::Error::DapiClientError(
                             DapiClientError::NoAvailableAddresses,
                         ),
@@ -639,6 +897,20 @@ mod tests {
     ) {
         let error = every_node_answered_at_an_older_protocol_version().await;
 
+        assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
+    }
+
+    /// No node can help an SDK older than its network: the app has to update it. The host
+    /// gets a protocol error whatever the verifier said about the answer it could not read.
+    #[tokio::test]
+    async fn should_report_a_request_no_node_could_answer_readably_on_a_newer_network_as_protocol_error(
+    ) {
+        let error = every_node_answered_in_a_form_of_a_newer_protocol_version().await;
+
+        assert!(
+            matches!(&error, dash_sdk::Error::Config(reason) if reason.contains("update the SDK")),
+            "{error:?}"
+        );
         assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
     }
 
@@ -670,6 +942,61 @@ mod tests {
         };
         assert_eq!(dash_sdk_error.code, DashSDKErrorCode::DriveInternalError);
         assert_eq!(message, "storage layer constraint");
+    }
+
+    fn grpc_error(status: dash_sdk::dapi_grpc::tonic::Status) -> dash_sdk::Error {
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)))
+    }
+
+    #[test]
+    fn should_map_a_refused_request_to_the_callers_error_and_not_to_a_network_failure() {
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        // A list the contract does not keep: the request has to change
+        assert_eq!(
+            classify(grpc_error(Status::invalid_argument(
+                "contract does not keep a suspension list"
+            ))),
+            DashSDKErrorCode::InvalidParameter
+        );
+    }
+
+    #[test]
+    fn should_keep_transport_failures_and_unproved_absences_as_network_errors() {
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        // A node's NotFound is its word, not a proof: NotFound is kept for a proved absence
+        // (MissingDependency), so the node's status stays a network failure.
+        for status in [
+            Status::unavailable("node is down"),
+            Status::deadline_exceeded("too slow"),
+            Status::internal("boom"),
+            Status::not_found("data contract not found"),
+        ] {
+            let code = status.code();
+            assert_eq!(
+                classify(grpc_error(status)),
+                DashSDKErrorCode::NetworkError,
+                "{code:?}"
+            );
+        }
+        assert_eq!(
+            classify(dash_sdk::Error::DapiClientError(
+                DapiClientError::NoAvailableAddresses
+            )),
+            DashSDKErrorCode::NetworkError
+        );
+    }
+
+    #[test]
+    fn missing_dependency_maps_to_not_found_whatever_its_id_spells() {
+        // A base58 id can spell words the substring fallbacks look for; a proved absence
+        // stays NotFound rather than surfacing as a timeout or a network failure.
+        for id in ["3dapiXk9", "7timeoutQ2", "connection8Zz", "DAPItimeout"] {
+            let err =
+                dash_sdk::Error::MissingDependency("DataContract".to_string(), id.to_string());
+            assert_eq!(classify(err), DashSDKErrorCode::NotFound, "{id}");
+        }
     }
 
     #[test]

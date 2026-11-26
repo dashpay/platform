@@ -578,6 +578,9 @@ struct TransitionDetailView: View {
     case "documentDelete":
       return try await executeDocumentDelete(sdk: sdk)
 
+    case "documentErase":
+      return try await executeDocumentErase(sdk: sdk)
+
     case "documentTransfer":
       return try await executeDocumentTransfer(sdk: sdk)
 
@@ -984,8 +987,9 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("Invalid amount")
     }
 
-    // Normalize the recipient identity ID to base58
-    let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
+    // The recipient, decoded once to its 32 bytes and checked: a known
+    // voter identity is refused, and exactly the checked id is sent.
+    let normalizedToIdentityId = try await checkedRecipient(toIdentityId, network: fromIdentity.network)
 
     // Use the convenience method with DPPIdentity
     let dppIdentity = DPPIdentity(
@@ -1221,6 +1225,73 @@ struct TransitionDetailView: View {
     _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
     return ["message": "Document deleted successfully"]
+  }
+
+  private func executeDocumentErase(sdk: SDK) async throws -> Any {
+    guard !selectedIdentityId.isEmpty,
+          let signingIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+      throw SDKError.invalidParameter("No identity selected")
+    }
+    guard let walletId = signingIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter("Identity has no wallet linkage; cannot erase document history")
+    }
+    guard let contractText = formInputs["contractId"],
+          let contractId = Data.identifier(fromBase58: contractText) else {
+      throw SDKError.invalidParameter("Data contract is required")
+    }
+    guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+      throw SDKError.invalidParameter("Document type is required")
+    }
+    guard let documentText = formInputs["documentId"],
+          let documentId = Data.identifier(fromBase58: documentText) else {
+      throw SDKError.invalidParameter("Document ID is required")
+    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+    let outcome: DocumentEraseOutcome
+    do {
+      outcome = try await wallet.eraseDocumentAndObserve(
+        submittingIdentityId: signingIdentity.identityId,
+        contractId: contractId,
+        documentType: documentType,
+        documentId: documentId,
+        signer: signer
+      )
+    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+      throw PlatformWalletError.transactionBroadcastUnconfirmed(
+        "Erase outcome unknown; do not resubmit automatically; read history first."
+      )
+    }
+    var result: [String: Any] = ["message": describeDocumentEraseOutcome(outcome)]
+    let observation: DocumentHistoryLifecycle?
+    switch outcome {
+    case .notSubmitted(_, let before): observation = before
+    case .submitted(_, let after): observation = after
+    }
+    if let observation {
+      result["lifecycle"] = observation.state.rawValue
+      result["remainingRevisions"] = observation.remainingRevisions
+    }
+    // Once Rust observes the document ABSENT after this submission, drop
+    // the local copy so the Documents list stops showing it. A failed local
+    // save is reported, not thrown: the erase is on chain either way.
+    // Nothing is removed when nothing was submitted: the network code does
+    // not tell two devnets apart, so the row may belong to another chain.
+    // The erase sheet offers that removal on an explicit tap instead.
+    if case .submitted = outcome, observation?.state == .absent {
+      if let warning = DocumentPersistence.removeErasedLocalCopy(
+        networkRaw: signingIdentity.networkRaw,
+        contractId: contractId.toBase58String(),
+        documentType: documentType,
+        documentId: documentId.toBase58String(),
+        modelContext: modelContext
+      ) {
+        result["localCopyWarning"] = warning
+      }
+    } else if case .notSubmitted = outcome, observation?.state == .absent {
+      result["localCopy"] = "Kept. To remove a stale copy saved on this device, use Documents → the document → ⋯ → Erase History… → Remove Local Copy."
+    }
+    return result
   }
 
   private func executeDocumentTransfer(sdk: SDK) async throws -> Any {
@@ -1887,6 +1958,9 @@ struct TransitionDetailView: View {
     guard let recipientId = formInputs["recipientId"], !recipientId.isEmpty else {
       throw SDKError.invalidParameter("Recipient identity ID is required")
     }
+    // Tokens sent to a known voter identity could not be spent either; the
+    // checked id is the one sent.
+    let checkedRecipientId = try await checkedRecipient(recipientId, network: identity.network)
 
     guard let amountString = formInputs["amount"], !amountString.isEmpty else {
       throw SDKError.invalidParameter("Amount is required")
@@ -1911,7 +1985,7 @@ struct TransitionDetailView: View {
 
     let result = try await sdk.tokenTransfer(
       contractId: contractId,
-      recipientId: recipientId,
+      recipientId: checkedRecipientId,
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: transferKey.id,
@@ -2464,21 +2538,30 @@ struct TransitionDetailView: View {
     formInputs["documentFields"] = schemaTemplate
   }
 
-  private func normalizeIdentityId(_ identityId: String) -> String {
-    // Remove any prefix
-    let cleanId = identityId
-      .replacingOccurrences(of: "id:", with: "")
-      .replacingOccurrences(of: "0x", with: "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-
-    // If it's hex (64 chars = 32 bytes), convert to base58
-    if AddressValidator.isHexIdentityId(cleanId), let data = Data(hexString: cleanId) {
-      return data.toBase58String()
+  /// The recipient typed or picked as `text` (an optional leading `id:` or
+  /// `0x`, then 64 hex characters or Base58), decoded once to exactly 32
+  /// bytes (`AddressTransformer.identityId(fromInput:)`) and returned in
+  /// canonical Base58, so
+  /// the id that is sent is the id that was checked. Throws for text that
+  /// does not decode to an identity id, and for an identity this device
+  /// stores on `network` as a masternode's voter identity, which holds only
+  /// a voting key: what is sent to it could not be spent. An unknown id
+  /// passes.
+  private func checkedRecipient(_ text: String, network: Network) async throws -> String {
+    guard let identityId = AddressTransformer.identityId(fromInput: text) else {
+      throw SDKError.invalidParameter(
+        "The recipient identity ID must be 64 hex characters or a Base58 identity ID."
+      )
     }
-
-    // Otherwise assume it's already base58
-    return cleanId
+    let isVotingOnly = try await MainActor.run {
+      try PersistentIdentity.isKnownVotingOnlyIdentity(identityId, on: network, in: modelContext)
+    }
+    if isVotingOnly {
+      throw SDKError.invalidParameter(PersistentIdentity.votingOnlyRecipientMessage)
+    }
+    return identityId.toBase58String()
   }
+
 }
 
 // IdentityModel's `displayName` extension is gone — the same

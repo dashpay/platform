@@ -12,6 +12,7 @@ use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
 
+use dash_sdk::platform::identity_withdrawals::IdentityWithdrawal;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::withdraw_from_identity::{
     WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
@@ -20,6 +21,7 @@ use dash_sdk::platform::transition::withdraw_from_identity::{
 use crate::error::PlatformWalletError;
 use crate::BlockTime;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs`/`transfer.rs` for the same
@@ -101,7 +103,7 @@ impl IdentityWallet {
                 Some(to_address.clone()),
                 amount,
                 None, // core_fee_per_byte
-                None, // signing_withdrawal_key_to_use
+                Some(credit_signing_key(&identity, None, signer, true)?),
                 SignerRef(signer),
                 settings,
             )
@@ -138,6 +140,26 @@ impl IdentityWallet {
         Ok(())
     }
 
+    /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
+    /// first, read with proofs as the withdrawals system contract stood at one block height:
+    /// each one's amount, destination, status, and the asset unlock transaction that carries
+    /// it once Platform pooled it. A read whose pages keep coming back at different heights
+    /// fails after a few walks and can be tried again; see
+    /// [`Sdk::fetch_all_identity_withdrawals`](dash_sdk::Sdk::fetch_all_identity_withdrawals).
+    ///
+    /// Any identity can be asked for, not only the wallet's. Withdrawals from Platform
+    /// addresses and from the shielded pool are not found: the withdrawals contract stores
+    /// them under its own owner, not under anything the wallet keeps.
+    pub async fn identity_withdrawals(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Vec<IdentityWithdrawal>, PlatformWalletError> {
+        Ok(self
+            .sdk
+            .fetch_all_identity_withdrawals(*identity_id)
+            .await?)
+    }
+
     /// Withdraw credits using an externally-provided identity and signer.
     ///
     /// Unlike [`Self::withdraw_credits_with_external_signer`], this method does
@@ -158,13 +180,15 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
+        let signing_key =
+            credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
         identity
             .withdraw(
                 &self.sdk,
                 to_address,
                 amount,
                 Some(1), // core_fee_per_byte
-                signing_withdrawal_key_to_use,
+                Some(signing_key),
                 signer,
                 settings,
             )

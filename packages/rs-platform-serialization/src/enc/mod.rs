@@ -68,10 +68,10 @@ pub(crate) fn encode_slice_len<E: Encoder>(encoder: &mut E, len: usize) -> Resul
 #[allow(clippy::drop_non_drop)]
 mod tests {
     use super::*;
-    use bincode::config;
+    use crate::PLATFORM_BINCODE_CONFIG;
 
     fn cfg() -> impl bincode::config::Config {
-        config::standard().with_big_endian().with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     #[test]

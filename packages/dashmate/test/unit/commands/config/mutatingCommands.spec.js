@@ -8,6 +8,7 @@ import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFact
 import ConfigCreateCommand from '../../../../src/commands/config/create.js';
 import ConfigDefaultCommand from '../../../../src/commands/config/default.js';
 import ConfigRemoveCommand from '../../../../src/commands/config/remove.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
 
 /**
  * These commands change the config file as one locked step rather than mutating
@@ -150,6 +151,31 @@ describe('Config mutating commands', () => {
       )).to.be.rejectedWith("Config with name 'NODE1' already present");
 
       expect(reread().isConfigExists('NODE1')).to.be.false();
+    });
+
+    it('should save an identity for a config created from a fullnode without one', async () => {
+      const configFile = reread();
+      configFile.createConfig('full', 'base');
+      configFile.getConfig('full').set('core.masternode.enable', false);
+      configFile.getConfig('full').set('platform.enable', true);
+      fs.writeFileSync(
+        homeDir.joinPath('config.json'),
+        `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`,
+        'utf8',
+      );
+
+      await new ConfigCreateCommand().runWithDependencies(
+        { config: 'node1', from: 'full' },
+        flags,
+        loadedConfigFile,
+        configFileRepository,
+        noTemplates,
+        homeDir,
+      );
+
+      const { key, id } = reread().getConfig('node1').get('platform.drive.tenderdash.node');
+      expect(key).to.be.a('string');
+      expect(id).to.equal(deriveTenderdashNodeId(key));
     });
   });
 

@@ -29,79 +29,168 @@ public struct DocumentCountResult: Sendable {
 
 /// Result of ``SDK/documentSum(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
 ///
-/// Mirrors the FFI's `{"sums": {"<hexKey>": <i64>}}` payload. Keys are the
-/// hex-encoded group keys; for an ungrouped (aggregate) sum there is a single
-/// entry under the empty-string key, exposed via ``total``. Values are signed
-/// (`Int64`) to match grovedb's `SumValue = i64`.
+/// Mirrors the FFI's `{"grouped": <bool>, "sums": {"<hexKey>": "<decimal>"}}`
+/// payload. `grouped` is the FFI's statement of whether `group_by` was
+/// requested; it is the only thing that tells the total from the groups. For
+/// an ungrouped (aggregate) sum there is a single entry under the empty-string
+/// key, exposed via ``total``. For a grouped sum every key, including the
+/// empty one, is a group: the empty key holds the documents missing an
+/// optional range property. Each sum arrives as a base-10 string and is held
+/// as an `Int128`: from protocol version 15 a document type can keep its sums
+/// in 128-bit trees, so a sum can pass `Int64`.
 public struct DocumentSumResult: Sendable {
-    /// Hex-encoded group key → sum. The empty-string key holds the aggregate
-    /// total for an ungrouped sum.
-    public let sums: [String: Int64]
+    /// Whether the request was grouped, as reported by the FFI.
+    public let isGrouped: Bool
+    /// Hex-encoded group key → sum. Ungrouped: one entry under the empty key,
+    /// the aggregate total. Grouped: one entry per group, where the empty key
+    /// is a group like any other.
+    public let sums: [String: Int128]
 
-    public init(sums: [String: Int64]) {
+    public init(isGrouped: Bool, sums: [String: Int128]) {
+        self.isGrouped = isGrouped
         self.sums = sums
     }
 
-    /// The aggregate total for an ungrouped sum: `sums[""]`. `nil` when the
-    /// request was grouped (no empty-string entry).
-    public var total: Int64? {
-        sums[""]
+    /// Parse the FFI's decoded JSON object. Throws
+    /// ``SDKError/serializationError(_:)`` when `grouped` is missing or not a
+    /// boolean, `sums` is missing, or any value is not a base-10 integer
+    /// string, rather than dropping or narrowing it.
+    init(json: [String: Any]) throws {
+        let isGrouped = try parseGroupedFlag(json, response: "document sum")
+        guard let sumsObject = json["sums"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'sums' object in document sum response")
+        }
+        var sums: [String: Int128] = [:]
+        for (key, value) in sumsObject {
+            sums[key] = try parseDecimalInt128(value, field: "sums[\"\(key)\"]")
+        }
+        self.init(isGrouped: isGrouped, sums: sums)
     }
 
-    /// `true` when the result carries per-group sums (any non-empty key).
-    public var isGrouped: Bool {
-        sums.keys.contains { !$0.isEmpty }
+    /// The aggregate total for an ungrouped sum: `sums[""]`. `nil` when the
+    /// request was grouped, where the empty key is a group, not a total.
+    public var total: Int128? {
+        isGrouped ? nil : sums[""]
     }
 }
 
-/// One `(count, sum)` pair returned by the average aggregation FFI for a single
-/// key. Mirrors the FFI's `{"count": <u64>, "sum": <i64>}` object. The FFI
-/// returns the raw pair un-divided so callers pick their own precision; compute
-/// ``average`` (`sum / count`) at the point of display.
+/// One entry returned by the average aggregation FFI for a single key.
+/// Mirrors the FFI's `{"count": <u64>, "sum": "<decimal>", "average":
+/// "<decimal>" | null}` object. The average is computed in Rust, exactly, to 4
+/// decimal places; display ``average`` as is rather than dividing.
 public struct DocumentAverageEntry: Sendable {
     /// Number of documents folded into this entry. Unsigned (`UInt64`).
     public let count: UInt64
-    /// Sum of the numeric property over those documents. Signed (`Int64`) to
-    /// match grovedb's `SumValue = i64`.
-    public let sum: Int64
+    /// Sum of the numeric property over those documents. `Int128` because a
+    /// 128-bit sum tree (protocol version 15) can hold more than `Int64`.
+    public let sum: Int128
+    /// `sum / count` as the decimal string Rust computed (for example
+    /// `"9223372036854775807.0000"`), or `nil` when `count == 0` (no documents
+    /// matched, so there is no average).
+    public let average: String?
 
-    public init(count: UInt64, sum: Int64) {
+    public init(count: UInt64, sum: Int128, average: String?) {
         self.count = count
         self.sum = sum
+        self.average = average
     }
 
-    /// `sum / count` as a `Double`, or `nil` when `count == 0` (no documents
-    /// matched, so the average is undefined).
-    public var average: Double? {
-        count > 0 ? Double(sum) / Double(count) : nil
+    /// Parse one decoded entry object. Throws
+    /// ``SDKError/serializationError(_:)`` when `count` is not a number, `sum`
+    /// is not a base-10 integer string, or `average` is neither a string nor
+    /// `null`.
+    init(json value: Any, key: String) throws {
+        guard let entry = value as? [String: Any] else {
+            throw SDKError.serializationError("Expected an object for averages[\"\(key)\"]")
+        }
+        guard let countNumber = entry["count"] as? NSNumber else {
+            throw SDKError.serializationError("Expected a number for averages[\"\(key)\"].count")
+        }
+        let average: String?
+        switch entry["average"] {
+        case let text as String:
+            average = text
+        case is NSNull:
+            average = nil
+        default:
+            throw SDKError.serializationError("Expected a string or null for averages[\"\(key)\"].average")
+        }
+        self.init(
+            count: countNumber.uint64Value,
+            sum: try parseDecimalInt128(entry["sum"], field: "averages[\"\(key)\"].sum"),
+            average: average
+        )
     }
 }
 
 /// Result of ``SDK/documentAverage(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
 ///
-/// Mirrors the FFI's `{"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}`
-/// payload. Keys are the hex-encoded group keys; for an ungrouped (aggregate)
-/// average there is a single entry under the empty-string key, exposed via
-/// ``total``.
+/// Mirrors the FFI's
+/// `{"grouped": <bool>, "averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}`
+/// payload. `grouped` is the FFI's statement of whether `group_by` was
+/// requested; it is the only thing that tells the total from the groups. For
+/// an ungrouped (aggregate) average there is a single entry under the
+/// empty-string key, exposed via ``total``. For a grouped average every key,
+/// including the empty one, is a group: the empty key holds the documents
+/// missing an optional range property.
 public struct DocumentAverageResult: Sendable {
-    /// Hex-encoded group key → `(count, sum)` pair. The empty-string key holds
-    /// the aggregate total for an ungrouped average.
+    /// Whether the request was grouped, as reported by the FFI.
+    public let isGrouped: Bool
+    /// Hex-encoded group key → `(count, sum, average)` entry. Ungrouped: one
+    /// entry under the empty key, the aggregate total. Grouped: one entry per
+    /// group, where the empty key is a group like any other.
     public let averages: [String: DocumentAverageEntry]
 
-    public init(averages: [String: DocumentAverageEntry]) {
+    public init(isGrouped: Bool, averages: [String: DocumentAverageEntry]) {
+        self.isGrouped = isGrouped
         self.averages = averages
     }
 
-    /// The aggregate `(count, sum)` for an ungrouped average: `averages[""]`.
-    /// `nil` when the request was grouped (no empty-string entry).
-    public var total: DocumentAverageEntry? {
-        averages[""]
+    /// Parse the FFI's decoded JSON object. Throws
+    /// ``SDKError/serializationError(_:)`` when `grouped` is missing or not a
+    /// boolean, `averages` is missing, or any entry is malformed (see
+    /// ``DocumentAverageEntry``).
+    init(json: [String: Any]) throws {
+        let isGrouped = try parseGroupedFlag(json, response: "document average")
+        guard let averagesObject = json["averages"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'averages' object in document average response")
+        }
+        var averages: [String: DocumentAverageEntry] = [:]
+        for (key, value) in averagesObject {
+            averages[key] = try DocumentAverageEntry(json: value, key: key)
+        }
+        self.init(isGrouped: isGrouped, averages: averages)
     }
 
-    /// `true` when the result carries per-group averages (any non-empty key).
-    public var isGrouped: Bool {
-        averages.keys.contains { !$0.isEmpty }
+    /// The aggregate entry for an ungrouped average: `averages[""]`. `nil`
+    /// when the request was grouped, where the empty key is a group, not a
+    /// total.
+    public var total: DocumentAverageEntry? {
+        isGrouped ? nil : averages[""]
     }
+}
+
+/// Read the `grouped` flag the sum and average FFIs write. Throws
+/// ``SDKError/serializationError(_:)`` when it is missing or not a JSON
+/// boolean. `JSONSerialization` decodes both booleans and numbers to
+/// `NSNumber`, so the value is checked against the boolean type itself; a
+/// number such as `1` is refused rather than read as `true`.
+private func parseGroupedFlag(_ json: [String: Any], response: String) throws -> Bool {
+    guard let number = json["grouped"] as? NSNumber,
+          CFGetTypeID(number) == CFBooleanGetTypeID() else {
+        throw SDKError.serializationError("Expected a boolean 'grouped' in \(response) response")
+    }
+    return number.boolValue
+}
+
+/// Read an aggregate the FFI wrote as a base-10 string (`"-5"`,
+/// `"18446744073709551614"`). Throws ``SDKError/serializationError(_:)`` for
+/// anything else, including a JSON number, so a value is never narrowed.
+private func parseDecimalInt128(_ value: Any?, field: String) throws -> Int128 {
+    guard let text = value as? String, let parsed = Int128(text) else {
+        throw SDKError.serializationError("Expected a base-10 integer string for \(field)")
+    }
+    return parsed
 }
 
 /// One element returned by ``SDK/systemPathElements(path:keys:)``.
@@ -122,6 +211,148 @@ public struct PathElement: Sendable {
         self.key = key
         self.element = element
         self.type = type
+    }
+}
+
+/// Which revisions of a keep-history document to read. Exactly one
+/// filter applies per `documentGetHistory` call.
+public enum DocumentHistoryFilter: Sendable {
+    /// Revisions written at or after the time, oldest first. Zero reads
+    /// the first page of the whole history.
+    case startAtTime(ms: UInt64)
+    /// Revisions after the complete cursor of the last entry received.
+    case startAfter(timeMs: UInt64, revision: UInt64)
+    /// Revisions from the history sequence number onwards.
+    case startAtRevision(UInt64)
+    /// Exactly the revision at the history sequence number; the limit
+    /// must be one.
+    case revision(UInt64)
+
+    var ffiValue: UInt32 {
+        switch self {
+        case .startAtTime: return HistoryStartAtTime.rawValue
+        case .startAfter: return HistoryStartAfter.rawValue
+        case .startAtRevision: return HistoryStartAtRevision.rawValue
+        case .revision: return HistoryRevision.rawValue
+        }
+    }
+
+    var timeMs: UInt64 {
+        switch self {
+        case .startAtTime(let ms): return ms
+        case .startAfter(let timeMs, _): return timeMs
+        case .startAtRevision, .revision: return 0
+        }
+    }
+
+    var revisionValue: UInt64 {
+        switch self {
+        case .startAtTime: return 0
+        case .startAfter(_, let revision): return revision
+        case .startAtRevision(let revision), .revision(let revision): return revision
+        }
+    }
+}
+
+/// Where a keep-history document stands in its lifecycle, as the history
+/// query authenticates it.
+public enum DocumentLifecycleState: String, Sendable {
+    /// Visible to ordinary reads.
+    case active = "ACTIVE"
+    /// Deleted with its revisions retained.
+    case deleted = "DELETED"
+    /// An authorized erasure has begun and revisions are being removed.
+    case erasing = "ERASING"
+    /// Nothing is left.
+    case absent = "ABSENT"
+}
+
+/// The `lifecycle` block of a `documentGetHistory` result.
+public struct DocumentHistoryLifecycle: Sendable {
+    public let state: DocumentLifecycleState
+    /// Exact count of revisions still retained (zero when absent).
+    public let remainingRevisions: UInt64
+    /// Deletion time while deleted or erasing; zero otherwise.
+    public let deletedAtMs: UInt64
+    /// Erase start time while erasing; zero otherwise.
+    public let erasingStartedAtMs: UInt64
+    /// Newest retained revision's time when erasure began; zero unless erasing.
+    public let erasingFromTimeMs: UInt64
+    /// History sequence number of that revision; zero unless erasing.
+    public let erasingFromRevision: UInt64
+
+    /// Parses the `lifecycle` dictionary of a `documentGetHistory`
+    /// result; nil when the block, its state, or any of its numbers is
+    /// missing, unknown, or not a non-negative integer, so a partial block
+    /// is never read as zeros.
+    public init?(json: [String: Any]) {
+        guard let stateRaw = json["state"] as? String,
+              let state = DocumentLifecycleState(rawValue: stateRaw) else {
+            return nil
+        }
+        func value(_ key: String) -> UInt64? {
+            // JSONSerialization preserves Rust's integer JSON in NSNumber.
+            // Reject booleans and parse its decimal representation exactly,
+            // avoiding Double rounding at the upper UInt64 boundary.
+            guard let number = json[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                return nil
+            }
+            return UInt64(number.stringValue)
+        }
+        guard let remainingRevisions = value("remaining_revisions"),
+              let deletedAtMs = value("deleted_at_ms"),
+              let erasingStartedAtMs = value("erasing_started_at_ms"),
+              let erasingFromTimeMs = value("erasing_from_time_ms"),
+              let erasingFromRevision = value("erasing_from_revision") else {
+            return nil
+        }
+        self.state = state
+        self.remainingRevisions = remainingRevisions
+        self.deletedAtMs = deletedAtMs
+        self.erasingStartedAtMs = erasingStartedAtMs
+        self.erasingFromTimeMs = erasingFromTimeMs
+        self.erasingFromRevision = erasingFromRevision
+    }
+
+    init(ffi: DocumentLifecycleObservationFFI) throws {
+        switch ffi.state {
+        case 1: state = .active
+        case 2: state = .absent
+        case 3: state = .deleted
+        case 4: state = .erasing
+        default: throw DocumentEraseResultUnreadable()
+        }
+        remainingRevisions = ffi.remaining_revisions
+        deletedAtMs = ffi.deleted_at_ms
+        erasingStartedAtMs = ffi.erasing_started_at_ms
+        erasingFromTimeMs = ffi.erasing_from_time_ms
+        erasingFromRevision = ffi.erasing_from_revision
+    }
+
+    /// Words for what an erase achieved, from the lifecycle read before it
+    /// was submitted (nil when not read) and the one read after its absence
+    /// was observed. The erase result itself proves only that the document
+    /// is absent from ordinary reads, which it already was, so a document
+    /// still DELETED with the same retained count is reported as not
+    /// established, never as an accepted or completed erase.
+    public static func describeEraseProgress(
+        before: DocumentHistoryLifecycle?,
+        after: DocumentHistoryLifecycle
+    ) -> String {
+        switch after.state {
+        case .absent:
+            return "Erasure complete: no retained revisions remain."
+        case .erasing:
+            return "Erasure in progress: \(after.remainingRevisions) revisions still retained; submit another erase to continue."
+        case .deleted:
+            if let before, before.state == .deleted, before.remainingRevisions == after.remainingRevisions {
+                return "Not established: the document is still DELETED with \(after.remainingRevisions) revisions retained, so the history shows nothing this erase removed."
+            }
+            return "The document is DELETED with \(after.remainingRevisions) revisions retained; no erasure has been recorded."
+        case .active:
+            return "The document is active; an erase applies only after it has been deleted."
+        }
     }
 }
 
@@ -217,21 +448,15 @@ extension SDK {
     // MARK: - Identity Queries
 
     /// Get an identity by ID
-    @MainActor
-    public func identityGet(identityId: String) async throws -> [String: Any] {
-        print("🔵 SDK.identityGet: Called with ID: \(identityId)")
-
-        guard let sdkHandle = handle else {
-            print("❌ SDK.identityGet: SDK handle is nil")
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func identityGet(identityId: String) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_identity_fetch(handle, identityId))
         }
-
-        print("🔵 SDK.identityGet: SDK handle exists: \(sdkHandle)")
-        print("🔵 SDK.identityGet: About to call dash_sdk_identity_fetch with handle and ID: \(identityId)")
-
-        // Make the FFI call directly and return the parsed JSON
-        let result = dash_sdk_identity_fetch(sdkHandle, identityId)
-        return try processJSONResult(result)
+        return try Self.parseJSONObject(json)
     }
 
     /// Get identity keys
@@ -252,7 +477,23 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the key Platform's current-key reference names for each
+    /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
+    /// response. What that reference holds, and which purposes can ever have a key, is described
+    /// on rs-sdk's `IdentitiesContractKeysQuery`; see also
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
+    /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
+    /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
+    /// `"0"` to `"3"`, and a number outside `"0"` to `"6"` throws, also when there are no identity
+    /// ids. An empty array asks for no purposes, which throws (invalid parameter) when there are
+    /// identity ids. An empty
+    /// `documentType` is the same as `nil`; any other name is asked for as given. No identity ids
+    /// answer an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
@@ -266,7 +507,7 @@ extension SDK {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
-        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
         let result = dash_sdk_identities_fetch_contract_keys(
@@ -426,7 +667,7 @@ extension SDK {
 
     // MARK: - Trusted Context Management
 
-    /// Add a data contract to the trusted context provider cache
+    /// Add a data contract to the SDK's context provider cache
     /// This allows the SDK to use the contract without fetching it from the network
     public func addContractToContext(contractId: String, binaryData: Data) throws {
         guard self.handle != nil else {
@@ -539,6 +780,60 @@ extension SDK {
     }
 
     // MARK: - Document Queries
+
+    /// Read where a keep-history document stands right now: its lifecycle
+    /// state and the exact number of revisions still retained. A current
+    /// observation, not the outcome of any particular transition.
+    public func documentGetLifecycle(
+        dataContractId: String,
+        documentType: String,
+        documentId: String
+    ) async throws -> DocumentHistoryLifecycle {
+        let page = try await documentGetHistory(
+            dataContractId: dataContractId,
+            documentType: documentType,
+            documentId: documentId,
+            filter: .startAtTime(ms: 0),
+            limit: 1
+        )
+        guard let lifecycleJSON = page["lifecycle"] as? [String: Any],
+              let lifecycle = DocumentHistoryLifecycle(json: lifecycleJSON) else {
+            throw SDKError.serializationError("Document history response carried no complete lifecycle block")
+        }
+        return lifecycle
+    }
+
+    /// Get a page of a keep-history document's revision history with its
+    /// lifecycle state.
+    ///
+    /// Returns the FFI's JSON object: `entries` (each with `time_ms`,
+    /// `revision` and the canonical `document`) and `lifecycle` (see
+    /// `DocumentHistoryLifecycle`). Pass the last entry's `time_ms` and
+    /// `revision` back as `.startAfter` for the next page. At most ten
+    /// entries per page; `limit` nil takes the default. Needs the protocol-15
+    /// history layout: a page served from the earlier layout has no lifecycle
+    /// block and the FFI refuses it.
+    public nonisolated func documentGetHistory(
+        dataContractId: String,
+        documentType: String,
+        documentId: String,
+        filter: DocumentHistoryFilter = .startAtTime(ms: 0),
+        limit: UInt32? = nil
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_document_fetch_history(
+                handle,
+                dataContractId,
+                documentType,
+                documentId,
+                filter.ffiValue,
+                filter.timeMs,
+                filter.revisionValue,
+                limit ?? 0
+            ))
+        }
+        return try Self.parseJSONObject(json)
+    }
 
     /// List documents
     ///
@@ -877,7 +1172,8 @@ extension SDK {
     /// (same precedent as `documentCount`), marshals the document type + the
     /// required `sumProperty` + optional `where`/`order_by`/`group_by` JSON +
     /// the `limit` sentinel in, calls the FFI, and marshals the
-    /// `{"sums": {"<hexKey>": <i64>}}` payload out. All aggregation is done on
+    /// `{"grouped": <bool>, "sums": {"<hexKey>": "<decimal>"}}` payload out,
+    /// parsing each decimal string into an `Int128`. All aggregation is done on
     /// the Rust side; nothing is decided here.
     ///
     /// - Parameters:
@@ -895,9 +1191,13 @@ extension SDK {
     ///   - limit: Sentinel-encoded `int64`. `-1` = server default (the
     ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
     ///     so the wrapper rejects it before calling.
-    /// - Returns: A ``DocumentSumResult`` mapping hex-encoded group key → sum.
-    ///   For an ungrouped sum the total lives under the empty-string key and is
-    ///   surfaced via ``DocumentSumResult/total``.
+    /// - Returns: A ``DocumentSumResult`` mapping hex-encoded group key → sum,
+    ///   with ``DocumentSumResult/isGrouped`` as the FFI reported it. For an
+    ///   ungrouped sum the total lives under the empty-string key and is
+    ///   surfaced via ``DocumentSumResult/total``; for a grouped sum the empty
+    ///   key is a group (documents missing an optional range property).
+    /// - Throws: ``SDKError/serializationError(_:)`` when `grouped` is not a
+    ///   boolean or a sum in the payload is not a base-10 integer string.
     @MainActor
     public func documentSum(
         dataContractId: String,
@@ -959,21 +1259,8 @@ extension SDK {
             }
         }
 
-        let json = try processJSONResult(result)
-
-        // Payload shape: {"sums": {"<hexKey>": <i64>}}.
-        guard let sumsObject = json["sums"] as? [String: Any] else {
-            throw SDKError.serializationError("Expected 'sums' object in document sum response")
-        }
-
-        var sums: [String: Int64] = [:]
-        for (key, value) in sumsObject {
-            if let num = value as? NSNumber {
-                sums[key] = num.int64Value
-            }
-        }
-
-        return DocumentSumResult(sums: sums)
+        // Payload shape: {"grouped": <bool>, "sums": {"<hexKey>": "<decimal>"}}.
+        return try DocumentSumResult(json: processJSONResult(result))
     }
 
     /// Average a numeric property of a document type, optionally filtered by
@@ -983,11 +1270,11 @@ extension SDK {
     /// handle, marshals the document type + the required `sumProperty` +
     /// optional `where`/`order_by`/`group_by` JSON + the `limit` sentinel in,
     /// calls the FFI, and marshals the
-    /// `{"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}` payload
-    /// out. The FFI returns the raw `(count, sum)` pair un-divided so callers
-    /// pick their own precision; the wrapper preserves that pair verbatim and
-    /// leaves the division to the caller. All aggregation is done on the Rust
-    /// side; nothing is decided here.
+    /// `{"grouped": <bool>, "averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}`
+    /// payload out. Rust computes the average exactly to 4 decimal places; the
+    /// wrapper passes that string through verbatim and parses `sum` into an
+    /// `Int128`. All aggregation and division is done on the Rust side;
+    /// nothing is decided here.
     ///
     /// - Parameters:
     ///   - dataContractId: Base58 id of the data contract holding the type.
@@ -1005,8 +1292,13 @@ extension SDK {
     ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
     ///     so the wrapper rejects it before calling.
     /// - Returns: A ``DocumentAverageResult`` mapping hex-encoded group key →
-    ///   `(count, sum)`. For an ungrouped average the total lives under the
-    ///   empty-string key and is surfaced via ``DocumentAverageResult/total``.
+    ///   `(count, sum, average)`, with ``DocumentAverageResult/isGrouped`` as
+    ///   the FFI reported it. For an ungrouped average the total lives under
+    ///   the empty-string key and is surfaced via
+    ///   ``DocumentAverageResult/total``; for a grouped average the empty key
+    ///   is a group (documents missing an optional range property).
+    /// - Throws: ``SDKError/serializationError(_:)`` when `grouped` is not a
+    ///   boolean or an entry in the payload is malformed.
     @MainActor
     public func documentAverage(
         dataContractId: String,
@@ -1068,27 +1360,9 @@ extension SDK {
             }
         }
 
-        let json = try processJSONResult(result)
-
-        // Payload shape: {"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}.
-        guard let averagesObject = json["averages"] as? [String: Any] else {
-            throw SDKError.serializationError("Expected 'averages' object in document average response")
-        }
-
-        var averages: [String: DocumentAverageEntry] = [:]
-        for (key, value) in averagesObject {
-            guard let entry = value as? [String: Any],
-                  let countNum = entry["count"] as? NSNumber,
-                  let sumNum = entry["sum"] as? NSNumber else {
-                continue
-            }
-            averages[key] = DocumentAverageEntry(
-                count: countNum.uint64Value,
-                sum: sumNum.int64Value
-            )
-        }
-
-        return DocumentAverageResult(averages: averages)
+        // Payload shape:
+        // {"grouped": <bool>, "averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}.
+        return try DocumentAverageResult(json: processJSONResult(result))
     }
 
     /// Call `body` with a `const char *` for an optional Swift string,
@@ -1108,16 +1382,23 @@ extension SDK {
     // MARK: - DPNS Queries
 
     /// Get DPNS usernames for identity
-    @MainActor
-    public func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the lookup blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> sending [[String: Any]] {
+        let json: String? = try await performBlockingQuery { handle in
+            let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
+            // No data and no error means no usernames.
+            if result.error == nil && result.data == nil {
+                return nil
+            }
+            return try Self.consumeStringResult(result)
         }
-
-        // Call native FFI function with identity ID as string
-        let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
-
-        return try processJSONArrayResult(result)
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
     /// Check DPNS name availability
@@ -1207,13 +1488,19 @@ extension SDK {
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
                         // The spelling this contender actually requested
                         // ("pizza"), where the contest key is the normalized
-                        // form ("p1zza"). Absent when the FFI could not decode
+                        // form ("p1zza"). Absent when the SDK could not decode
                         // their document. Prefer the typed
                         // `dpnsActiveContests` / `dpnsContestsForIdentity`,
                         // which also give the tally as an integer.
                         if let labelPtr = contender.label {
                             let label = String(cString: labelPtr)
                             if !label.isEmpty { contenderDict["label"] = label }
+                        }
+                        // When this contender submitted its request, in
+                        // milliseconds since the epoch (as `endTime`), 0
+                        // included. Absent when the document carries no date.
+                        if contender.has_created_at {
+                            contenderDict["createdAt"] = contender.created_at
                         }
 
                         contenders.append(contenderDict)
@@ -1262,37 +1549,92 @@ extension SDK {
         return result
     }
 
-    /// Get the vote state for a contested DPNS username
-    @MainActor
-    public func dpnsGetContestedVoteState(name: String, limit: UInt32 = 100) async throws -> [String: Any] {
-        guard let handle = self.handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    /// Get the vote state for a contested DPNS username. `name` is a label or
+    /// a full name in any case ("alice", "Alice.DASH"); the SDK normalizes it.
+    /// A name holding a NUL is refused with ``SDKError/invalidParameter(_:)``.
+    ///
+    /// `nonisolated`: the query blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetContestedVoteState(
+        name: String,
+        limit: UInt32 = 100
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                name, field: "name", invalid: SDKError.invalidParameter
+            ) { namePtr in
+                try Self.consumeStringResult(
+                    dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit))
+            }
         }
-        let result = name.withCString { namePtr in
-            dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit)
+        return try Self.parseJSONObject(json)
+    }
+
+    /// Get the masternodes that voted for `contestantId` (base58) in the
+    /// contest for a DPNS username. `name` is a label or a full name in any
+    /// case ("alice", "Alice.DASH"); the SDK normalizes it and reads the
+    /// voters in pages. `limit` 0 returns every voter. Each element is
+    /// `["voter_id": base58]`.
+    ///
+    /// Live contests only: finalization moves the votes into the contest's
+    /// stored record and deletes the live ones this reads, so a contest that
+    /// has ended throws ``SDKError`` saying so instead of returning `[]`.
+    /// `[]` means no live voter entries were found; the contest or the
+    /// contestant may not exist, so it does not show a live contestant with
+    /// no votes. A string holding a NUL is refused with
+    /// ``SDKError/invalidParameter(_:)``.
+    ///
+    /// `nonisolated`: the query blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetContestedVotersForIdentity(
+        name: String,
+        contestantId: String,
+        limit: UInt32 = 0
+    ) async throws -> sending [[String: Any]] {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                name, field: "name", invalid: SDKError.invalidParameter
+            ) { namePtr in
+                try withDecisionProposalCString(
+                    contestantId, field: "contestantId", invalid: SDKError.invalidParameter
+                ) { contestantIdPtr in
+                    try Self.consumeStringResult(
+                        dash_sdk_dpns_get_contested_voters_for_identity(
+                            handle, namePtr, contestantIdPtr, limit))
+                }
+            }
         }
+        return try Self.parseJSONArray(json)
+    }
 
-        // Check for error
-        if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+    /// Get the contested DPNS usernames: the normalized labels with a contest
+    /// on record, in ascending order. The SDK reads them in pages until
+    /// `limit` labels are read or none are left.
+    ///
+    /// `nonisolated`: the paged reads block on the network inside Rust, so
+    /// they run on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    ///
+    /// - Parameters:
+    ///   - limit: Maximum number of labels; 0 returns every label.
+    ///   - startAfter: A normalized label to list after (exclusive), or `nil`
+    ///     to start from the first label. A label holding a NUL is refused
+    ///     with ``SDKError/invalidParameter(_:)``.
+    public nonisolated func dpnsGetAllContestedUsernames(limit: UInt32, startAfter: String?) async throws -> [String] {
+        try await performBlockingQuery { handle in
+            let json = try withDecisionProposalCString(
+                startAfter, field: "startAfter", invalid: SDKError.invalidParameter
+            ) { startAfterPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_dpns_get_all_contested_usernames(handle, limit, startAfterPtr))
+            }
+            guard let labels = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String] else {
+                throw SDKError.serializationError("Failed to parse contested usernames JSON")
+            }
+            return labels
         }
-
-        // Parse the JSON result
-        guard let dataPtr = result.data else {
-            throw SDKError.notFound("No data returned")
-        }
-
-        let jsonString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
-        dash_sdk_string_free(dataPtr.assumingMemoryBound(to: CChar.self))
-
-        guard let jsonData = jsonString.data(using: .utf8),
-              let voteState = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
-            throw SDKError.serializationError("Failed to parse vote state JSON")
-        }
-
-        return voteState
     }
 
     /// Get contested DPNS usernames that are not yet resolved
@@ -1348,13 +1690,19 @@ extension SDK {
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
                         // The spelling this contender actually requested
                         // ("pizza"), where the contest key is the normalized
-                        // form ("p1zza"). Absent when the FFI could not decode
+                        // form ("p1zza"). Absent when the SDK could not decode
                         // their document. Prefer the typed
                         // `dpnsActiveContests` / `dpnsContestsForIdentity`,
                         // which also give the tally as an integer.
                         if let labelPtr = contender.label {
                             let label = String(cString: labelPtr)
                             if !label.isEmpty { contenderDict["label"] = label }
+                        }
+                        // When this contender submitted its request, in
+                        // milliseconds since the epoch (as `endTime`), 0
+                        // included. Absent when the document carries no date.
+                        if contender.has_created_at {
+                            contenderDict["createdAt"] = contender.created_at
                         }
 
                         contenders.append(contenderDict)
@@ -1415,109 +1763,186 @@ extension SDK {
 
     // MARK: - Voting & Contested Resources Queries
 
-    /// Get contested resources
+    /// Get contested resources: the values of the first index property not
+    /// fixed by `startIndexValues` (and, when given, followed by
+    /// `endIndexValues`). For DPNS usernames pass `startIndexValues: ["dash"]`
+    /// to list the contested labels; with no start values only the parent
+    /// level (`dash`) is listed.
+    ///
+    /// Index values are strings the FFI reads in this order: a value starting
+    /// with a backslash (`\`) is text with that one backslash removed; else a
+    /// `"0x"`-prefixed value is hex bytes; else the value is text. Encode text
+    /// with ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    /// `0xf0rd` must be sent as `\0xf0rd`) and bytes with
+    /// ``ContestedIndexValue/bytes(_:)``.
+    ///
+    /// Each returned resource carries `id` (its own index value) and
+    /// `index_values` (the path to pass to
+    /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:count:)``),
+    /// both already encoded this way. See ``ContestedIndexValue`` for when
+    /// they can be passed back unchanged.
     public func getContestedResources(
         documentTypeName: String,
         dataContractId: String,
         indexName: String,
-        resultType: String,
-        allowIncludeLockedAndAbstainingVoteTally: Bool,
-        startAtValue: String?,
+        startIndexValues: [String]? = nil,
+        endIndexValues: [String]? = nil,
         limit: UInt32?,
-        offset: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
+        let startIndexValuesJson = try startIndexValues.map { try Self.indexValuesJson($0) }
+        let endIndexValuesJson = try endIndexValues.map { try Self.indexValuesJson($0) }
 
-        let result = dash_sdk_contested_resource_get_resources(
-            handle,
-            dataContractId,
-            documentTypeName,
-            indexName,
-            startAtValue,
-            nil, // end_index_values_json
-            limit ?? 100,
-            orderAscending
-        )
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeOptionalStringResult(
+                dash_sdk_contested_resource_get_resources(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    startIndexValuesJson,
+                    endIndexValuesJson,
+                    limit ?? 100,
+                    orderAscending
+                ))
+        }
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
-    /// Get contested resource vote state
+    /// Encode index values as the JSON string array the contested-resource
+    /// FFI queries read.
+    private static func indexValuesJson(_ values: [String]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: values)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw SDKError.serializationError("Failed to encode index values")
+        }
+        return json
+    }
+
+    /// Get contested resource vote state.
+    ///
+    /// `indexValues` is the poll's full index key, one value per index
+    /// property (for DPNS: `["dash", <normalized label>]`). Drive refuses a
+    /// key of the wrong length.
+    ///
+    /// `resultType` names the FFI result type: `"documents"`, `"vote_tally"`
+    /// or `"documents_and_vote_tally"`. The result is the FFI's JSON object,
+    /// or an empty dictionary when the poll has no data. Every field except
+    /// `contenders` may be absent, so decode each as optional, not as zero:
+    /// a contender's `vote_count` is left out when its tally was not read
+    /// (`"documents"` mode); `abstain_vote_tally` and `lock_vote_tally` are
+    /// left out when not returned; `winner_info` (with `block_info`) is
+    /// present only once the poll has ended.
+    ///
+    /// `count` is the limit of a single request (nil sends 100); a finished
+    /// poll answers with every contender of its record whatever the limit.
+    /// `"documents"` mode does not read a finalized poll's stored record: for
+    /// a contest that ended use a tally-bearing mode (`"vote_tally"` or
+    /// `"documents_and_vote_tally"`), where the contenders' document bytes
+    /// may be unavailable.
+    ///
+    /// Index values are strings the FFI reads in this order: a value starting
+    /// with a backslash (`\`) is text with that one backslash removed; else a
+    /// `"0x"`-prefixed value is hex bytes; else the value is text. Encode text
+    /// with ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    /// `0xf0rd` must be sent as `\0xf0rd`) and bytes with
+    /// ``ContestedIndexValue/bytes(_:)``.
     public func getContestedResourceVoteState(
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
-        indexValues: [String]? = nil,
+        indexValues: [String],
         resultType: String,
         allowIncludeLockedAndAbstainingVoteTally: Bool,
-        startAtIdentifierInfo: String?,
-        count: UInt32?,
-        orderAscending: Bool
-    ) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+        count: UInt32?
+    ) async throws -> [String: Any] {
+        // Map the result type name to the FFI discriminant.
+        let resultTypeInt: UInt8
+        switch resultType {
+        case "documents": resultTypeInt = 0
+        case "vote_tally": resultTypeInt = 1
+        case "documents_and_vote_tally": resultTypeInt = 2
+        default:
+            throw SDKError.invalidParameter(
+                "resultType must be documents, vote_tally or documents_and_vote_tally, got \(resultType)"
+            )
         }
 
-        // Convert result type to integer
-        let resultTypeInt: UInt8 = switch resultType {
-        case "contenders": 0
-        case "abstainers": 1
-        case "locked": 2
-        default: 0
+        let indexValuesJson = try Self.indexValuesJson(indexValues)
+
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeOptionalStringResult(
+                dash_sdk_contested_resource_get_vote_state(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    indexValuesJson,
+                    resultTypeInt,
+                    allowIncludeLockedAndAbstainingVoteTally,
+                    count ?? 100
+                ))
         }
-
-        // Create index values JSON array
-        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues ?? [])
-        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
-
-        let result = dash_sdk_contested_resource_get_vote_state(
-            handle,
-            dataContractId,
-            documentTypeName,
-            indexName,
-            indexValuesJson,
-            resultTypeInt,
-            allowIncludeLockedAndAbstainingVoteTally,
-            count ?? 100
-        )
-        return try processJSONArrayResult(result)
+        guard let json else {
+            return [:]
+        }
+        return try Self.parseJSONObject(json)
     }
 
-    /// Get contested resource voters for identity
+    /// Get contested resource voters for identity.
+    ///
+    /// Reads the live votes only. After a contest ends its live votes are
+    /// removed and this returns `[]`, so an empty result does not mean
+    /// nobody voted. For a DPNS username use
+    /// ``dpnsGetContestedVotersForIdentity(name:contestantId:limit:)``,
+    /// which reports a contest that ended.
+    ///
+    /// `indexValues` is the poll's full index key, one value per index
+    /// property (for DPNS: `["dash", <normalized label>]`). Drive refuses a
+    /// key of the wrong length.
+    ///
+    /// Index values are strings the FFI reads in this order: a value starting
+    /// with a backslash (`\`) is text with that one backslash removed; else a
+    /// `"0x"`-prefixed value is hex bytes; else the value is text. Encode text
+    /// with ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    /// `0xf0rd` must be sent as `\0xf0rd`) and bytes with
+    /// ``ContestedIndexValue/bytes(_:)``.
     public func getContestedResourceVotersForIdentity(
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
-        indexValues: [String]? = nil,
+        indexValues: [String],
         contestantId: String,
-        startAtIdentifierInfo: String?,
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+        let indexValuesJson = try Self.indexValuesJson(indexValues)
+
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeOptionalStringResult(
+                dash_sdk_contested_resource_get_voters_for_identity(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    indexValuesJson,
+                    contestantId,
+                    count ?? 100,
+                    orderAscending
+                ))
         }
-
-        // Create index values JSON array
-        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues ?? [])
-        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
-
-        let result = dash_sdk_contested_resource_get_voters_for_identity(
-            handle,
-            dataContractId,
-            documentTypeName,
-            indexName,
-            indexValuesJson,
-            contestantId,
-            count ?? 100,
-            orderAscending
-        )
-        return try processJSONArrayResult(result)
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
-    /// Get contested resource identity votes
+    /// Get contested resource identity votes. Each vote carries `vote_poll_id`,
+    /// `resource_vote_choice` and `vote_count`, the number of times the identity has
+    /// voted on that vote poll.
     public func getContestedResourceIdentityVotes(
         identityId: String,
         limit: UInt32?,
@@ -1562,7 +1987,12 @@ extension SDK {
     ///   - documentTypeName: Contested document type (e.g. `"domain"`).
     ///   - indexName: Contested index name (e.g. `"parentNameAndLabel"`).
     ///   - indexValues: Index values identifying the contested resource
-    ///     (e.g. `["dash", "alice"]`).
+    ///     (e.g. `["dash", "a11ce"]`). A value starting with a backslash (`\`)
+    ///     is text with that one backslash removed; else a `"0x"`-prefixed
+    ///     value is hex bytes; else the value is text. Encode text with
+    ///     ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    ///     `0xf0rd` must be sent as `\0xf0rd`), or use
+    ///     ``DPNSVotePoll/indexValues(normalizedLabel:)`` for a DPNS contest.
     ///   - choice: TowardsIdentity / Abstain / Lock.
     ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order** — the
     ///     orientation `Txid` stores, which is what a parsed ProRegTx yields
@@ -1578,7 +2008,11 @@ extension SDK {
     ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
     ///     matching `ECDSA_HASH160` voting public key and the signer are
     ///     derived from this on the Rust side; the key bytes are not retained.
-    public func castContestedResourceVote(
+    ///
+    /// `nonisolated`: the broadcast blocks on the network inside Rust, so it
+    /// runs on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    public nonisolated func castContestedResourceVote(
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
@@ -1587,9 +2021,6 @@ extension SDK {
         proTxHash: Data,
         votingPrivateKey: Data
     ) async throws {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
         guard proTxHash.count == 32 else {
             throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
         }
@@ -1605,32 +2036,145 @@ extension SDK {
             if case let .towardsIdentity(id) = choice { return id }
             return nil
         }()
+        try Self.refuseEmbeddedNul([
+            ("dataContractId", dataContractId),
+            ("documentTypeName", documentTypeName),
+            ("indexName", indexName),
+            ("indexValues", indexValuesJson),
+            ("contenderId", contenderId),
+        ])
         let networkValue = network.ffiValue
 
-        let result = proTxHash.withUnsafeBytes { proTxPtr in
-            votingPrivateKey.withUnsafeBytes { keyPtr in
-                dash_sdk_contested_resource_cast_vote(
-                    handle,
-                    dataContractId,
-                    documentTypeName,
-                    indexName,
-                    indexValuesJson,
-                    voteChoiceTag,
-                    contenderId,
-                    proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    networkValue
-                )
+        try await performBlockingQuery { handle in
+            let result = proTxHash.withUnsafeBytes { proTxPtr in
+                votingPrivateKey.withUnsafeBytes { keyPtr in
+                    dash_sdk_contested_resource_cast_vote(
+                        handle,
+                        dataContractId,
+                        documentTypeName,
+                        indexName,
+                        indexValuesJson,
+                        voteChoiceTag,
+                        contenderId,
+                        proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        networkValue
+                    )
+                }
             }
+            try Self.processVoidResult(result)
+        }
+    }
+
+    /// Cast a masternode contested-resource (DPNS) vote signed by `signer`
+    /// and wait for the platform response.
+    ///
+    /// Thin bridge over `dash_sdk_contested_resource_cast_vote_with_signer`:
+    /// the same vote as
+    /// ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``,
+    /// but no key bytes cross the FFI. The Rust side builds the masternode's
+    /// voting key from `votingAddress` (id 0, `VOTING`, `ECDSA_HASH160`) and
+    /// asks `signer` to sign with it, so the signer is asked for the 20-byte
+    /// voting address with key type `ECDSA_HASH160`. Use
+    /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``
+    /// to make a loaded masternode identity's stored voting key signable for
+    /// the call.
+    ///
+    /// - Parameters:
+    ///   - dataContractId, documentTypeName, indexName, indexValues, choice:
+    ///     As for
+    ///     ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order**,
+    ///     exactly as
+    ///     ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``
+    ///     takes it: NOT the byte order of the hex Core displays, which is its
+    ///     reverse. The Rust side reverses these bytes before deriving the
+    ///     voter identity.
+    ///   - votingAddress: The masternode's 20-byte voting address, the
+    ///     hash160 of the voting public key.
+    ///   - signer: Signs with the voting key. Kept alive for the whole call.
+    ///
+    /// `nonisolated`: the broadcast blocks on the network inside Rust, so it
+    /// runs on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    public nonisolated func castContestedResourceVote(
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        indexValues: [String],
+        choice: ContestedResourceVoteChoice,
+        proTxHash: Data,
+        votingAddress: Data,
+        signer: KeychainSigner
+    ) async throws {
+        guard proTxHash.count == 32 else {
+            throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        guard votingAddress.count == 20 else {
+            throw SDKError.invalidParameter("votingAddress must be exactly 20 bytes")
         }
 
-        try processVoidResult(result)
+        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues)
+        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
+
+        let voteChoiceTag = choice.ffiTag
+        let contenderId: String? = {
+            if case let .towardsIdentity(id) = choice { return id }
+            return nil
+        }()
+        try Self.refuseEmbeddedNul([
+            ("dataContractId", dataContractId),
+            ("documentTypeName", documentTypeName),
+            ("indexName", indexName),
+            ("indexValues", indexValuesJson),
+            ("contenderId", contenderId),
+        ])
+
+        try await performBlockingQuery { handle in
+            // The signer's FFI handle holds an unretained pointer to
+            // `signer`, so pin it for the whole call (see the lifetime
+            // contract on `KeychainSigner`).
+            let result = withExtendedLifetime(signer) {
+                proTxHash.withUnsafeBytes { proTxPtr in
+                    votingAddress.withUnsafeBytes { addressPtr in
+                        dash_sdk_contested_resource_cast_vote_with_signer(
+                            handle,
+                            dataContractId,
+                            documentTypeName,
+                            indexName,
+                            indexValuesJson,
+                            voteChoiceTag,
+                            contenderId,
+                            proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            addressPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            signer.handle
+                        )
+                    }
+                }
+            }
+            // Keeps the Rust error code (e.g. InvalidParameter); no data on success.
+            try DecisionProposalFFI.throwIfFailed(result)
+        }
+    }
+
+    /// Refuses, as `SDKError.invalidParameter` naming the field, a string
+    /// with an embedded NUL: C reads each string only up to its first NUL, so
+    /// it would act on a prefix. The same check the proposal wrappers make
+    /// (``withDecisionProposalCString(_:field:invalid:_:)``); `nil` passes.
+    private nonisolated static func refuseEmbeddedNul(_ fields: [(name: String, value: String?)]) throws {
+        for field in fields {
+            try withDecisionProposalCString(
+                field.value,
+                field: field.name,
+                invalid: SDKError.invalidParameter
+            ) { _ in }
+        }
     }
 
     /// Process a `DashSDKResult` that carries no payload on success (the
     /// broadcast / put-style FFIs return `NoData`). Throws on the error arm,
     /// otherwise returns. Frees the FFI-owned error string on the failure path.
-    private func processVoidResult(_ result: DashSDKResult) throws {
+    private nonisolated static func processVoidResult(_ result: DashSDKResult) throws {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
@@ -1706,17 +2250,29 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    /// Read the cached authenticated network version; this does not make a request.
+    public func protocolVersionInfo() throws -> ProtocolVersionInfo {
+        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
+        let json = try Self.consumeStringResult(dash_sdk_get_protocol_version_info(handle))
+        return try JSONDecoder().decode(ProtocolVersionInfo.self, from: Data(json.utf8))
+    }
+
     // MARK: - Epoch & Block Queries
 
     /// Get epochs info
     public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let startEpochString = startEpoch.map { String($0) }
-        let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+            if result.error == nil && result.data == nil {
+                return "[]"
+            }
+            return try Self.consumeStringResult(result)
+        }
+        guard let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
+            throw SDKError.serializationError("Expected epochs array")
+        }
+        return result
     }
 
     /// Get the current (newest started) epoch — same keys as one
@@ -1774,6 +2330,77 @@ extension SDK {
             nil  // start_at parameter - not used in this implementation
         )
         return try processJSONArrayResult(result)
+    }
+
+    /// Up to `count` consecutive blocks from `startHeight`, each with every state transition
+    /// it holds and its result (`dash_sdk_system_get_blocks`, protocol version 15). The node
+    /// accepts a count from 1 to 10 and refuses any other.
+    public func getBlocks(startHeight: UInt64, count: UInt32) async throws -> PlatformBlocks {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_system_get_blocks(handle, startHeight, count))
+        }
+        return try JSONDecoder.platformBlocks.decode(PlatformBlocks.self, from: Data(json.utf8))
+    }
+
+    /// The state transitions the identity `ownerId` (base58) owns in the block at `height`
+    /// (`dash_sdk_system_get_owner_transactions_in_block`, protocol version 15). Proved per
+    /// transition, not proved complete. An `ownerId` holding a NUL is refused with
+    /// ``SDKError/invalidParameter(_:)`` before the FFI call.
+    public func getOwnerTransactionsInBlock(height: UInt64, ownerId: String) async throws -> OwnerTransactionsInBlock {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                ownerId, field: "ownerId", invalid: SDKError.invalidParameter
+            ) { ownerIdPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_system_get_owner_transactions_in_block(handle, height, ownerIdPtr)
+                )
+            }
+        }
+        return try JSONDecoder.platformBlocks.decode(OwnerTransactionsInBlock.self, from: Data(json.utf8))
+    }
+
+    /// What one node says of the transition with this hash (64 hex characters), without
+    /// waiting (`dash_sdk_system_get_recent_state_transition_status`, protocol version 15).
+    /// Unproved.
+    ///
+    /// Privacy: the hash goes to this SDK's nodes, not to the node the transition was
+    /// broadcast to, so asking links the caller to that transition in front of them. Use it
+    /// for public transitions only, not for shielded or private document transitions. A
+    /// `transitionHash` holding a NUL is refused with ``SDKError/invalidParameter(_:)`` before
+    /// the FFI call.
+    public func getRecentStateTransitionStatus(transitionHash: String) async throws -> NodeTransitionStatus {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                transitionHash, field: "transitionHash", invalid: SDKError.invalidParameter
+            ) { hashPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_system_get_recent_state_transition_status(handle, hashPtr)
+                )
+            }
+        }
+        return try JSONDecoder.platformBlocks.decode(NodeTransitionStatus.self, from: Data(json.utf8))
+    }
+
+    /// The status of the transition with this hash (64 hex characters), proved by its block
+    /// when the node says it is committed and that block holds it
+    /// (`dash_sdk_system_get_state_transition_status_by_hash`, protocol version 15).
+    ///
+    /// Privacy: the hash goes to this SDK's nodes, not to the node the transition was
+    /// broadcast to, so asking links the caller to that transition in front of them. Use it
+    /// for public transitions only, not for shielded or private document transitions. A
+    /// `transitionHash` holding a NUL is refused with ``SDKError/invalidParameter(_:)`` before
+    /// the FFI call.
+    public func getStateTransitionStatusByHash(transitionHash: String) async throws -> TransitionStatusByHash {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                transitionHash, field: "transitionHash", invalid: SDKError.invalidParameter
+            ) { hashPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_system_get_state_transition_status_by_hash(handle, hashPtr)
+                )
+            }
+        }
+        return try JSONDecoder.platformBlocks.decode(TransitionStatusByHash.self, from: Data(json.utf8))
     }
 
     // MARK: - Token Queries
@@ -1986,6 +2613,30 @@ extension SDK {
 
         let result = dash_sdk_group_get_info(handle, contractId, UInt16(groupContractPosition))
         return try processJSONResult(result)
+    }
+
+    /// The stored information of a contract group, read with a proof.
+    ///
+    /// The result holds `ownerId` (base58), `adminIds` (base58, empty for a
+    /// single owner) and, when the group has them, `name` and `description`.
+    /// Throws `SDKError.notFound("Contract group not found")` when the proof
+    /// shows no such group; a failed fetch throws the FFI's error instead.
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func getContractGroupInfo(
+        contractGroupId: String
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_contract_group_get_info(handle, contractGroupId)
+            // No data and no error is the FFI's proved absence.
+            if result.error == nil && result.data == nil {
+                throw SDKError.notFound("Contract group not found")
+            }
+            return try Self.consumeStringResult(result)
+        }
+        return try Self.parseJSONObject(json)
     }
 
     /// Get group infos
@@ -2351,6 +3002,16 @@ extension SDK {
         return string
     }
 
+    /// ``consumeStringResult(_:)`` for a query that answers "nothing" with no
+    /// data and no error: that case is `nil`. Takes ownership of `result` on
+    /// every path.
+    fileprivate nonisolated static func consumeOptionalStringResult(_ result: DashSDKResult) throws -> String? {
+        if result.error == nil && result.data == nil {
+            return nil
+        }
+        return try consumeStringResult(result)
+    }
+
     /// Parse a JSON object payload returned by a query.
     fileprivate nonisolated static func parseJSONObject(_ json: String) throws -> sending [String: Any] {
         guard let data = json.data(using: .utf8),
@@ -2358,5 +3019,14 @@ extension SDK {
             throw SDKError.serializationError("Failed to parse JSON data")
         }
         return object
+    }
+
+    /// Parse a JSON array payload returned by a query.
+    fileprivate nonisolated static func parseJSONArray(_ json: String) throws -> sending [[String: Any]] {
+        guard let data = json.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw SDKError.serializationError("Failed to parse JSON array")
+        }
+        return array
     }
 }

@@ -1,10 +1,17 @@
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { expect } from 'chai';
+import lockfile from 'proper-lockfile';
+import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
+import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
+import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
+import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
+import getConfigFormatVersion from '../../../../src/config/configFile/getConfigFormatVersion.js';
+import migrateConfigFileFactory from '../../../../src/config/configFile/migrateConfigFileFactory.js';
 
 const CURRENT_FORMAT_VERSION = '4.1.0';
 
@@ -57,6 +64,40 @@ describe('ConfigFileJsonRepository', () => {
 
       return configFile;
     };
+  });
+
+  ['mainnet', 'testnet'].forEach(network => {
+    it(`should refresh ${network} stock seeds under lock without a format bump and retry a failed render`, () => {
+      const originalDefaults = structuredClone(tenderdashSeeds[network]);
+      try {
+        const data = JSON.parse(seedConfigFile());
+        data.configs.base.network = network;
+        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        const original = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, original);
+        tenderdashSeeds[network].previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+        tenderdashSeeds[network].seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+        expect(() => repository.readAndMigrate({}, ([config]) => {
+          expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.equal(true);
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(tenderdashSeeds[network].seeds);
+          throw new Error('render failed');
+        })).to.throw('render failed');
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+        repository.readAndMigrate({}, configs => expect(configs).to.have.length(1));
+        const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+        expect(saved.configFormatVersion).to.equal(CURRENT_FORMAT_VERSION);
+        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal(tenderdashSeeds[network].seeds);
+        repository.readAndMigrate({}, () => { throw new Error('must not render twice'); });
+      } finally {
+        tenderdashSeeds[network] = originalDefaults;
+      }
+    });
   });
 
   afterEach(() => {
@@ -154,6 +195,46 @@ describe('ConfigFileJsonRepository', () => {
       expect(() => repository.read({ skipValidation: skipBaseValidation }))
         .to.throw('network must be equal to one of the allowed values');
     });
+
+    it('should honor recovery validation bypasses when refreshing seeds and completing a fullnode identity', () => {
+      const defaults = tenderdashSeeds.mainnet;
+      const oldSeeds = defaults.seeds.slice(0, 1);
+      const history = defaults.previousSeedSetHashes;
+      try {
+        defaults.previousSeedSetHashes = [...history, seedSetHash(oldSeeds)];
+        const data = JSON.parse(seedConfigFile());
+        data.configs.node1 = structuredClone(data.configs.base);
+        Object.assign(data.configs.node1, { network: 'mainnet', description: { invalid: true } });
+        data.configs.node1.core.masternode.enable = false;
+        data.configs.node1.platform.drive.tenderdash.p2p.seeds = oldSeeds;
+        const original = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, original);
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+        const render = renderServiceTemplatesFactory(renderTemplateFactory());
+        expect(() => repository.read()).to.throw('description');
+
+        for (const skipValidation of [true, ({ name }) => name === 'node1']) {
+          fs.writeFileSync(configFilePath, original);
+          let renderedKey;
+          const { configFile } = repository.readAndMigrate({ skipValidation }, ([config]) => {
+            renderedKey = JSON.parse(render(config)['platform/drive/tenderdash/node_key.json']).priv_key.value;
+          });
+          const config = configFile.getConfig('node1');
+          expect(config.get('description')).to.deep.equal({ invalid: true });
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(defaults.seeds);
+          expect(renderedKey).to.be.a('string').and.not.to.equal('null');
+          const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+          expect(saved.configs.node1.platform.drive.tenderdash.node.key).to.equal(renderedKey);
+        }
+      } finally {
+        defaults.previousSeedSetHashes = history;
+      }
+    });
   });
 
   describe('#write', () => {
@@ -213,6 +294,28 @@ describe('ConfigFileJsonRepository', () => {
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('second');
+    });
+
+    it('should store a changed fullnode without generating a node identity', () => {
+      // A node's private key comes from the command that needs it. Saving
+      // must not invent one - every incidental save, and the rescue copy
+      // written after losing the lock, would otherwise carry a fresh key.
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+      const configFile = createDefaults();
+      configFile.createConfig('node1', 'base');
+      configFile.getConfig('node1').set('core.masternode.enable', false);
+
+      repository.write(configFile);
+
+      const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      expect(saved.configs.node1.platform.drive.tenderdash.node)
+        .to.deep.equal({ id: null, key: null });
+      expect(configFile.getConfig('node1').get('platform.drive.tenderdash.node.key')).to.equal(null);
     });
   });
 
@@ -290,6 +393,46 @@ describe('ConfigFileJsonRepository', () => {
       expect(retried).to.be.true();
       expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
         .to.equal('9.9.9');
+    });
+
+    it('should retry every migrated identity when rendering fails before the save', () => {
+      const configFile = createDefaults();
+      for (const name of ['node1', 'node2']) {
+        configFile.createConfig(name, 'base');
+        configFile.getConfig(name).set('core.masternode.enable', false);
+      }
+      const original = JSON.stringify(configFile.toObject());
+      fs.writeFileSync(configFilePath, original);
+      const repository = new ConfigFileJsonRepository(
+        (data) => ({ ...data, configFormatVersion: '9.9.9' }),
+        homeDir,
+        createDefaults,
+        '9.9.9',
+      );
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
+
+      expect(() => repository.readAndMigrate({}, (configs) => {
+        const firstNode = configs.find(config => config.getName() === 'node1');
+        render(firstNode);
+        expect(firstNode.get('platform.drive.tenderdash.node.key')).to.be.a('string');
+        throw new Error('template write failed');
+      })).to.throw('template write failed');
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+
+      const rendered = {};
+      repository.readAndMigrate({}, (configs) => {
+        configs.forEach(config => {
+          rendered[config.getName()] = JSON.parse(
+            render(config)['platform/drive/tenderdash/node_key.json'],
+          );
+        });
+      });
+      const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      expect(saved.configFormatVersion).to.equal('9.9.9');
+      for (const name of ['node1', 'node2']) {
+        expect(saved.configs[name].platform.drive.tenderdash.node.key)
+          .to.equal(rendered[name].priv_key.value).and.to.be.a('string');
+      }
     });
 
     it('should not wait for a lock when reading does not migrate', () => {
@@ -798,6 +941,298 @@ describe('ConfigFileJsonRepository', () => {
       expect(reread.getConfig('base').get('core.rpc.port')).to.equal(30000);
 
       lockHolder.on('exit', () => done());
+    });
+  });
+
+  // The dashmate helper container keeps running the version that started it
+  // after the CLI is upgraded by hand, and an older binary can stay on PATH.
+  // Migrating only runs forward, so such a build reads a file a newer build
+  // already migrated as if it were current. Saving from there would write its
+  // own state under the newer stamp, and the newer build would never migrate
+  // it again.
+  describe('a config file updated by a newer dashmate', () => {
+    const NEWER_IMAGE = 'dashpay/envoy:newer-migration';
+    const NEWER_FORMAT_ERROR = /updated by a newer dashmate/;
+
+    let newerFormatVersion;
+    let newer;
+    let older;
+
+    beforeEach(() => {
+      const migrations = {
+        '4.2.0': (data) => {
+          Object.values(data.configs).forEach((options) => {
+            // eslint-disable-next-line no-param-reassign
+            options.platform.gateway.docker.image = NEWER_IMAGE;
+          });
+
+          return data;
+        },
+      };
+      const { version } = JSON.parse(fs.readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'));
+
+      newerFormatVersion = getConfigFormatVersion(migrations, version);
+
+      newer = new ConfigFileJsonRepository(
+        migrateConfigFileFactory(() => migrations),
+        homeDir,
+        createDefaults,
+        newerFormatVersion,
+      );
+      older = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+        { acquireTimeout: 50 },
+      );
+
+      seedConfigFile();
+      newer.readAndMigrate({}, () => {});
+    });
+
+    it('should refuse to save an older build\'s state over the newer migration', () => {
+      const migrated = fs.readFileSync(configFilePath, 'utf8');
+
+      expect(JSON.parse(migrated).configFormatVersion).to.equal(newerFormatVersion);
+
+      // What an older `dashmate update` or helper renewal does: read, set a
+      // value it owns with its own meaning, save.
+      const configFile = older.read();
+      configFile.getConfig('base').set('platform.gateway.docker.image', 'dashpay/envoy:older');
+
+      expect(() => older.write(configFile)).to.throw(NEWER_FORMAT_ERROR);
+
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(migrated);
+      expect(newer.read().getConfig('base').get('platform.gateway.docker.image')).to.equal(NEWER_IMAGE);
+    });
+
+    // Renewal reports a refusal from acquire() as one that asked the authority
+    // for nothing. A refusal at a later save can follow a certificate request,
+    // so it must not be marked the same way.
+    it('should mark only the refusal made when the lock is taken as before any work', () => {
+      const refusalOf = (fn) => {
+        try {
+          fn();
+        } catch (e) {
+          return e;
+        }
+
+        return null;
+      };
+
+      expect(refusalOf(() => older.acquire())).to.have.property('isBeforeAnyWork', true);
+      expect(refusalOf(() => older.write(older.read()))).to.have.property('isBeforeAnyWork', false);
+      expect(refusalOf(() => older.update(() => {}))).to.have.property('isBeforeAnyWork', false);
+    });
+
+    // Diagnostic only. A restart reloads the gateway from the certificate files
+    // on disk, which nothing here has checked, so the refusal must not advise one.
+    it('should name both versions and the newer dashmate in the refusal, without advising a restart', () => {
+      expect(() => older.write(older.read())).to.throw(Error)
+        .with.property('message')
+        .that.includes(newerFormatVersion)
+        .and.includes(CURRENT_FORMAT_VERSION)
+        .and.includes('newer dashmate')
+        .and.not.includes('dashmate restart');
+    });
+
+    it('should refuse update() without running onSaved and release the lock', function it() {
+      const migrated = fs.readFileSync(configFilePath, 'utf8');
+      const onSaved = this.sinon.stub();
+
+      expect(() => older.update((configFile) => {
+        configFile.getConfig('base').set('description', 'older edit');
+      }, { onSaved })).to.throw(NEWER_FORMAT_ERROR);
+
+      expect(onSaved).to.not.have.been.called();
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(migrated);
+      expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
+    it('should name the newer format, not a schema error, when update() meets a newer shape', () => {
+      const data = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      data.configs.base.platform.gateway.optionOnlyANewerBuildKnows = true;
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      expect(() => older.read()).to.throw(/Invalid .* config format/);
+      expect(() => older.update(() => {})).to.throw(NEWER_FORMAT_ERROR);
+    });
+
+    // A lock-holding command or a certificate renewal does its long work after
+    // acquiring. Refusing only at the save would let a renewal spend a
+    // certificate issuance first.
+    it('should refuse acquire() before any work and leave the lock free', () => {
+      expect(() => older.acquire()).to.throw(NEWER_FORMAT_ERROR);
+
+      expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+
+      // Nothing is left held: release() is a no-op and the newer build gets
+      // the lock straight away.
+      older.release();
+      newer.acquire();
+      newer.release();
+    });
+
+    it('should still read the file, so an older build can report', () => {
+      expect(older.read().getConfig('base').get('platform.gateway.docker.image')).to.equal(NEWER_IMAGE);
+      expect(older.readAndMigrate().configFile.getConfigFormatVersion()).to.equal(newerFormatVersion);
+    });
+
+    ['mainnet', 'testnet'].forEach((network) => {
+      it(`should not refresh ${network} stock seeds or render from an older build`, function it() {
+        const originalDefaults = structuredClone(tenderdashSeeds[network]);
+
+        try {
+          const data = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+          data.configs.base.network = network;
+          data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+          const original = JSON.stringify(data);
+          fs.writeFileSync(configFilePath, original);
+
+          // The older build ships a seed table that wants to replace these.
+          tenderdashSeeds[network].previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+          tenderdashSeeds[network].seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+
+          const onMigrated = this.sinon.stub();
+          // Reading is all this build may do with the file, and a read takes
+          // no lock - so it cannot hold up the newer build either.
+          this.sinon.spy(lockfile, 'lockSync');
+
+          const { configFile } = older.readAndMigrate({}, onMigrated);
+
+          expect(lockfile.lockSync).to.not.have.been.called();
+          expect(onMigrated).to.not.have.been.called();
+          expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+
+          // What `config get --raw` reports has to be what the file holds. The
+          // older build's replacement was never saved, so showing it would
+          // describe a configuration this node does not have.
+          const seedsPath = 'platform.drive.tenderdash.p2p.seeds';
+          [configFile, older.read()].forEach((read) => {
+            expect(read.getConfig('base').getStored(seedsPath)).to.deep.equal(originalDefaults.seeds);
+            expect(read.isChanged()).to.be.false();
+          });
+        } finally {
+          tenderdashSeeds[network] = originalDefaults;
+        }
+      });
+    });
+
+    // The probe that decides whether to take the lock reads without it. A newer
+    // build can migrate the file while this one waits, and what it then reads
+    // under the lock is what counts.
+    it('should not render when a newer build migrates the file while waiting for the lock', function it() {
+      const originalDefaults = structuredClone(tenderdashSeeds.testnet);
+
+      try {
+        const data = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+        data.configs.base.network = 'testnet';
+        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        const migratedByNewer = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, JSON.stringify({
+          ...data,
+          configFormatVersion: CURRENT_FORMAT_VERSION,
+        }));
+
+        tenderdashSeeds.testnet.previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+        tenderdashSeeds.testnet.seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+
+        const { lockSync } = lockfile;
+        this.sinon.stub(lockfile, 'lockSync').callsFake((...args) => {
+          fs.writeFileSync(configFilePath, migratedByNewer);
+
+          return lockSync(...args);
+        });
+
+        const onMigrated = this.sinon.stub();
+
+        const { configFile } = older.readAndMigrate({}, onMigrated);
+
+        expect(lockfile.lockSync).to.have.been.calledOnce();
+        expect(onMigrated).to.not.have.been.called();
+        expect(configFile.getConfigFormatVersion()).to.equal(newerFormatVersion);
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(migratedByNewer);
+        expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+      } finally {
+        tenderdashSeeds.testnet = originalDefaults;
+      }
+    });
+
+    it('should let an older build create the file when there is none', () => {
+      fs.rmSync(configFilePath);
+
+      older.update(() => {});
+
+      expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
+        .to.equal(CURRENT_FORMAT_VERSION);
+    });
+  });
+
+  // Skipping the seed refresh is for a file a newer build owns. Anything this
+  // build cannot order as newer still gets the refresh it always had.
+  [
+    ['an older stamp', '4.0.0', CURRENT_FORMAT_VERSION],
+    ['a stamp that is not semver', 'not-a-version', CURRENT_FORMAT_VERSION],
+    ['no format version of its own', '9.0.0', undefined],
+  ].forEach(([name, recorded, own]) => {
+    it(`should still refresh obsolete stock seeds for ${name}`, () => {
+      const originalDefaults = structuredClone(tenderdashSeeds.testnet);
+
+      try {
+        const data = JSON.parse(seedConfigFile());
+        data.configFormatVersion = recorded;
+        data.configs.base.network = 'testnet';
+        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+        tenderdashSeeds.testnet.previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+        tenderdashSeeds.testnet.seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+
+        const configFile = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, own).read();
+
+        expect(configFile.getConfig('base').getStored('platform.drive.tenderdash.p2p.seeds'))
+          .to.deep.equal(tenderdashSeeds.testnet.seeds);
+        expect(configFile.isChanged()).to.be.true();
+      } finally {
+        tenderdashSeeds.testnet = originalDefaults;
+      }
+    });
+  });
+
+  describe('format version order', () => {
+    /**
+     * @param {string} recorded - stamped on disk
+     * @param {string} own - the format the writing build produces
+     */
+    function writeOver(recorded, own) {
+      const data = JSON.parse(seedConfigFile());
+      data.configFormatVersion = recorded;
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, own);
+
+      return () => repository.write(repository.read());
+    }
+
+    [
+      ['5.1.0-dev.3', '5.0.2'],
+      ['5.1.0-dev.7', '5.1.0-dev.5'],
+      ['5.1.0', '5.1.0-dev.9'],
+    ].forEach(([recorded, own]) => {
+      it(`should refuse a ${own} build writing over ${recorded}`, () => {
+        expect(writeOver(recorded, own)).to.throw(/updated by a newer dashmate/);
+      });
+    });
+
+    [
+      ['5.1.0', '5.1.0'],
+      ['5.1.0-dev.7', '5.1.0'],
+      ['5.0.2', '5.1.0-dev.3'],
+    ].forEach(([recorded, own]) => {
+      it(`should let a ${own} build write over ${recorded}`, () => {
+        expect(writeOver(recorded, own)).to.not.throw();
+      });
     });
   });
 });

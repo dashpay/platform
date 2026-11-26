@@ -232,9 +232,11 @@ impl Serialize for DocumentReferenceLookup {
 /// ascending or descending, through its index over `among` followed by those properties; a
 /// last `$id` may stand outside that index when it is not unique, whose entries are kept by
 /// id in the direction of its last property (ascending under `among` alone), the direction
-/// the last `$id` must run in. A create whose found commitment is preceded by a valid one is refused
-/// (`ReferencedDocumentPrecededError`), and two commitments equal on every `by` property
-/// precede neither other.
+/// the last `$id` must run in. Two commitments equal on every `by` property precede neither
+/// other. A create whose found commitment is preceded by a valid one is refused
+/// (`ReferencedDocumentPrecededError`), unless, from protocol version 15, it opens or joins a
+/// contest and the commitments are to the contest's values alone, ranked by
+/// `$createdAtBlockHeight` ascending alone and at least `minimumAgeBlocks` old.
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct LookupChooseFirst {
     /// The property of the referenced document type whose value groups the commitments: the
@@ -743,6 +745,14 @@ impl DocumentReferenceLookup {
         reference_property: Option<&str>,
         referenced: DocumentTypeRef,
     ) -> Option<String> {
+        // A private type has no index and its entries are encrypted: nothing a lookup could
+        // find. Reached only from protocol version 15, the first to parse a private type
+        if referenced.is_private() {
+            return Some(format!(
+                "\"{}\" is a private document type, which findBy cannot reference",
+                referenced.name()
+            ));
+        }
         let index_name = match self.resolve_index(referenced) {
             Ok(index_name) => index_name,
             Err(reason) => return Some(reason),
@@ -840,9 +850,8 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        // The storage layer refuses to delete a document whose type keeps history. A full
-        // parse, the only one this check runs under, already refuses such a type that allows
-        // deletion; the rule is kept here too, as `ttl` and moderator deletion keep theirs
+        // Consume deletes through the read-delete path, which refuses a keep-history type;
+        // consuming would bypass the explicit delete and erase lifecycle.
         if self.consume && referenced.documents_keep_history() {
             return Some(format!(
                 "consume deletes the found document, which the storage layer refuses for \
@@ -1681,8 +1690,8 @@ mod tests {
 
     #[test]
     fn should_refuse_consuming_a_type_that_keeps_history() {
-        // Parsed without full validation, as a type stored before protocol version 14
-        // may be: a full parse refuses a deletable type that keeps history first
+        // A history type may be deletable, but consuming it would bypass the
+        // explicit delete and erase lifecycle.
         let keeps_history = join_request_with(platform_value!({
             "canBeDeleted": true,
             "documentsKeepHistory": true

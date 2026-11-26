@@ -110,7 +110,7 @@ mod tests {
 
         #[test]
         fn test_build() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();

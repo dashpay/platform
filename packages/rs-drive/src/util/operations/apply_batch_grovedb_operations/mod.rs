@@ -5,10 +5,9 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Applies a batch of groveDB operations, or estimates the cost of operations depending on the arguments provided.
@@ -18,7 +17,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `estimated_costs_only_with_layer_info` - An optional hashmap containing estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional `EstimatedLayers` containing estimated layer information.
     /// * `transaction` - The transaction argument to pass to the groveDB.
     /// * `batch_operations` - A batch of operations to apply to the groveDB.
     /// * `drive_operations` - A mutable reference to a vector of drive operations.
@@ -30,9 +29,7 @@ impl Drive {
     ///
     pub(crate) fn apply_batch_grovedb_operations(
         &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: GroveDbOpBatch,
         drive_operations: &mut Vec<LowLevelDriveOperation>,

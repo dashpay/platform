@@ -135,16 +135,7 @@ fn load_lifecycle(blob: &[u8], out_point: dashcore::OutPoint) -> AssetLockEntry 
         .remove(&0)
         .and_then(|mut by_outpoint| by_outpoint.remove(&out_point))
         .expect("the stored lock");
-    AssetLockEntry {
-        out_point: lock.out_point,
-        transaction: lock.transaction,
-        account_index: lock.account_index,
-        funding_type: lock.funding_type,
-        identity_index: lock.identity_index,
-        amount_duffs: lock.amount,
-        status: lock.status,
-        proof: lock.proof,
-    }
+    AssetLockEntry::from(&lock)
 }
 
 #[test]

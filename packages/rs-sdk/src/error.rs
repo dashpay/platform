@@ -6,7 +6,8 @@ pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::state_transition::{
-    OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
+    OutputBelowMinimumError, StateTransitionMaxSizeExceededError, TransitionNoInputsError,
+    TransitionNoOutputsError,
 };
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
@@ -19,6 +20,16 @@ use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 
+/// The advice that ends the [`Error::Config`] message of a request that ran out of attempts
+/// on answers below the SDK's protocol version, before any verified answer showed the network
+/// running it. The message reports the answers the request received before its retries
+/// ended, not every node: the retries can end with nodes left unasked. It names the Rust
+/// builder method; a binding whose callers set the version under another name replaces this
+/// suffix with advice that names theirs.
+pub const SDK_AHEAD_OF_NETWORK_ADVICE: &str = "if the SDK was set ahead of its network, let it \
+     follow the network's protocol version instead, or seed it with the network's version \
+     (with_initial_version)";
+
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
 #[allow(clippy::large_enum_variant)]
@@ -27,6 +38,16 @@ pub enum Error {
     /// SDK is not configured properly
     #[error("SDK misconfigured: {0}")]
     Config(String),
+    /// The request cannot succeed as written on any node: the SDK refused it before sending
+    /// it, because its query syntax or bounds are invalid, no node serves it, or no answer verifies as the requested result
+    /// type, or a fresh verified answer showed that the result cannot be returned as that
+    /// type (for example several documents for a single-document fetch).
+    ///
+    /// Every honest node answers it alike, so the SDK neither retries it on another node nor
+    /// bans the node that answered. The request has to change. A node's own refusal of a
+    /// request (an `INVALID_ARGUMENT` status) stays an [`Error::DapiClientError`].
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
@@ -48,6 +69,15 @@ pub enum Error {
     /// accept snapshot outcomes explicitly.
     #[error("proof authenticates the transition's affected state only, not its execution: {0}")]
     ExecutionNotProved(String),
+    /// A state transition may have been submitted but its outcome is unresolved.
+    /// The cause is diagnostic, not permission to create a replacement operation.
+    ///
+    /// The cause is the last error the submission or its result check ended on. It does
+    /// not have to be why the outcome is unknown: after an attempt that may have reached a
+    /// node, later attempts can all fail before connecting, and the last of them is the
+    /// cause.
+    #[error("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {0}")]
+    StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
@@ -143,9 +173,10 @@ pub enum Error {
     ///
     /// Retrying another node cannot help. The same request succeeds once a verified answer
     /// shows the network runs `required`, and this SDK's own version is at least
-    /// `required`. See [`TransportRequest::needs_protocol_version`](rs_dapi_client::transport::TransportRequest::needs_protocol_version).
+    /// `required`. See [`Query::protocol_requirement`](crate::platform::Query::protocol_requirement).
     #[error(
-        "{method} needs Platform protocol version {required}; {}",
+        "{method} needs Platform protocol version {required}{}; {}",
+        describe_feature(*.feature),
         describe_proven_protocol_version(*.network, *.pinned, .cause.is_some())
     )]
     ProtocolVersionNotActive {
@@ -153,6 +184,9 @@ pub enum Error {
         method: &'static str,
         /// Protocol version from which every node serves the request.
         required: u32,
+        /// The feature of the request that needs `required`, when the method alone does not,
+        /// for example "time-range selections" of a `get_documents` request.
+        feature: Option<&'static str>,
         /// Protocol version the SDK could rely on: the lower of its own version and the
         /// newest version a verified answer was signed with; 0 before any verified answer.
         network: u32,
@@ -165,6 +199,13 @@ pub enum Error {
         #[source]
         cause: Option<Box<Error>>,
     },
+}
+
+/// The feature [`Error::ProtocolVersionNotActive`]'s message names, if any.
+fn describe_feature(feature: Option<&'static str>) -> String {
+    feature
+        .map(|feature| format!(" for {feature}"))
+        .unwrap_or_default()
 }
 
 /// The end of [`Error::ProtocolVersionNotActive`]'s message.
@@ -185,6 +226,48 @@ fn describe_proven_protocol_version(
 }
 
 impl Error {
+    /// Whether an unresolved submission must be reconciled before replacement.
+    pub fn is_state_transition_result_unconfirmed(&self) -> bool {
+        match self {
+            Self::StateTransitionResultUnconfirmed(_) => true,
+            Self::NoAvailableAddressesToRetry(inner) => {
+                inner.is_state_transition_result_unconfirmed()
+            }
+            _ => false,
+        }
+    }
+
+    /// Preserve the diagnostic cause without nesting uncertainty wrappers.
+    pub(crate) fn into_unconfirmed(self) -> Self {
+        if self.is_state_transition_result_unconfirmed() {
+            self
+        } else {
+            Self::StateTransitionResultUnconfirmed(Box::new(self))
+        }
+    }
+
+    /// Inspect the typed duplicate cause, including unresolved/retry envelopes.
+    pub(crate) fn is_already_exists(&self) -> bool {
+        match self {
+            Self::AlreadyExists(_) => true,
+            Self::StateTransitionResultUnconfirmed(inner)
+            | Self::NoAvailableAddressesToRetry(inner) => inner.is_already_exists(),
+            _ => false,
+        }
+    }
+
+    /// Whether the node answered gRPC `NOT_FOUND`: it does not hold what was asked for, as
+    /// opposed to a transport or proof failure. Looks through retry-exhaustion wrappers.
+    pub(crate) fn is_not_found(&self) -> bool {
+        match self {
+            Self::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) => {
+                status.code() == Code::NotFound
+            }
+            Self::NoAvailableAddressesToRetry(inner) => inner.is_not_found(),
+            _ => false,
+        }
+    }
+
     /// Whether this is an [`Error::ProtocolVersionNotActive`] refusal that may lift soon: the
     /// SDK could not learn the network's version for a reason that can pass, such as nodes
     /// or a quorum source not answering, so the network may serve the request already.
@@ -208,7 +291,6 @@ impl Error {
     fn cannot_verify_answers(&self) -> bool {
         match self {
             Self::NoAvailableAddressesToRetry(last_error) => last_error.cannot_verify_answers(),
-            Self::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => true,
             Self::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. })
             | Self::ContextProviderError(error) => {
                 matches!(error, ContextProviderError::Config(_))
@@ -230,12 +312,32 @@ impl Error {
         }
     }
 
+    /// The consensus verdict this error carries, from the shapes that can
+    /// carry one: `StateTransitionBroadcastError` (wait-stream),
+    /// `Protocol(ConsensusError)` (CheckTx), and the dapi-client's
+    /// exhausted-retry envelope, which it recurses into. Re-audit when this
+    /// enum gains another consensus-carrying variant.
+    pub fn consensus_error(&self) -> Option<&ConsensusError> {
+        match self {
+            Self::StateTransitionBroadcastError(broadcast_err) => broadcast_err.cause.as_ref(),
+            Self::Protocol(ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+            Self::NoAvailableAddressesToRetry(inner) => inner.consensus_error(),
+            // An unconfirmed submission's later diagnostic verdict does not
+            // establish that an earlier node never accepted the operation.
+            Self::StateTransitionResultUnconfirmed(_) => None,
+            _ => None,
+        }
+    }
+
     /// Whether the node that sent the answer leaves the request's rotation without a ban:
     /// the answer cannot be used, but does not show that the node is at fault.
     pub(crate) fn spares_responder(&self) -> bool {
         matches!(
             self,
-            Self::StaleNode(StaleNodeError::ProtocolVersion { .. })
+            Self::StaleNode(
+                StaleNodeError::ProtocolVersion { .. }
+                    | StaleNodeError::NewerProtocolVersion { .. }
+            )
         )
     }
 
@@ -245,17 +347,31 @@ impl Error {
     /// When every node asked answered a document query at an older protocol version than the
     /// SDK's, while no verified answer has shown the network running the SDK's version, the
     /// request fails as a configuration error: the SDK may be set ahead of its network.
+    ///
+    /// When no answer could be verified on a network proven to run a protocol version newer
+    /// than this build knows, the request fails as a configuration error too: the SDK has to
+    /// be updated.
     pub(crate) fn into_exhausted_error(self) -> Self {
         match self {
+            // The message holds none of the verifier's own text, which the bindings that
+            // classify an error by its words would read.
+            Self::StaleNode(StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version: supported,
+                network_protocol_version: network,
+                ..
+            }) => Self::Config(format!(
+                "the network runs protocol version {network}, and this SDK knows protocol \
+                 versions up to {supported}: it cannot read every answer of the newer version, \
+                 and could read no answer to this request; update the SDK to a release that \
+                 knows protocol version {network}"
+            )),
             Self::StaleNode(StaleNodeError::ProtocolVersion {
                 received_protocol_version: signed,
                 expected_protocol_version: sdk,
             }) => Self::Config(format!(
                 "the last answer names protocol version {signed}, below the SDK's protocol \
                  version {sdk}, and no verified answer has yet shown the network running \
-                 {sdk}; if the SDK was set ahead of its network, let it follow the network's \
-                 protocol version instead, or seed it with the network's version \
-                 (with_initial_version)"
+                 {sdk}; {SDK_AHEAD_OF_NETWORK_ADVICE}"
             )),
             error => error,
         }
@@ -263,7 +379,14 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context; every other verifier failure stays `Proof`.
+/// attribution and quorum context. A missing context provider, or one configured so that
+/// it cannot serve a lookup the verifier makes (a quorum key, or a data contract or token
+/// configuration a proof is read with), is this SDK's own setup, which no node can change:
+/// it is a configuration error that is not retried and bans no node. A data contract the
+/// client's context cannot give as the request needs it fails every node's answer alike,
+/// and is not retried either. A verified result no node can return as the requested type
+/// is the request's to change ([`Error::InvalidRequest`]); every other verifier failure
+/// stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -276,6 +399,27 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                error: error @ ContextProviderError::Config(_),
+                ..
+            }
+            | drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::Config(_),
+            ) => Self::ContextProviderError(error),
+            drive_proof_verifier::Error::ContextProviderNotSet => {
+                Self::ContextProviderError(ContextProviderError::Config(
+                    "context provider is not set, so no proof can be verified; set one with \
+                     SdkBuilder::with_context_provider() or Sdk::set_context_provider()"
+                        .to_string(),
+                ))
+            }
+            drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::DataContractFailure(_),
+            ) => Self::ContextProviderError(error),
+            // Every honest node proves the same result, so it is the request's to change.
+            drive_proof_verifier::Error::UnusableVerifiedResult { reason } => {
+                Self::InvalidRequest(reason)
+            }
             error => Self::Proof(error),
         }
     }
@@ -447,6 +591,12 @@ impl From<ConsensusError> for Error {
     }
 }
 
+impl From<StateTransitionMaxSizeExceededError> for Error {
+    fn from(value: StateTransitionMaxSizeExceededError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
 impl From<TransitionNoInputsError> for Error {
     fn from(value: TransitionNoInputsError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
@@ -573,6 +723,27 @@ pub enum StaleNodeError {
         /// Protocol version named in the server's response metadata
         received_protocol_version: u32,
     },
+    /// Server's answer could not be read, it names a protocol version newer than any this SDK
+    /// build knows, and a verified answer has shown the network running such a version
+    ///
+    /// A protocol upgrade can store and prove state in forms an older build cannot read, as
+    /// protocol version 15 does for data contracts, and then every node's answer fails alike.
+    /// So the node is not banned: the request moves to another node. A request whose every
+    /// attempt ends with this error fails with [`Error::Config`] instead, also when no node is
+    /// left to ask: the SDK has to be updated.
+    ///
+    /// Only a failure to read what the proof holds ends this way. An answer without a proof,
+    /// or one whose signature is refused, is its node's fault on any network.
+    #[error("could not read an answer of a network at protocol version {network_protocol_version}, newer than this SDK knows ({supported_protocol_version}): {error}; try another server")]
+    NewerProtocolVersion {
+        /// Newest protocol version this SDK build knows
+        supported_protocol_version: u32,
+        /// Newest protocol version a verified answer has shown the network running
+        network_protocol_version: u32,
+        /// Why the answer could not be read
+        #[source]
+        error: Box<drive_proof_verifier::Error>,
+    },
     /// Server answered a request that needs a newer protocol version with a response
     /// signed at an older one: it is behind the network's protocol upgrade.
     ///
@@ -585,6 +756,16 @@ pub enum StaleNodeError {
         required: u32,
         /// Protocol version in the response metadata
         signed: u32,
+    },
+    /// Server proved a private document type's store of `total_count` entries for a page from
+    /// `position`, which an earlier page showed the store already holds: its snapshot is older
+    /// than the one the read started from. A later read, or another server, can serve it.
+    #[error("received a private document store of {total_count} entries for a page from position {position}, which it already holds; try another server")]
+    PrivateDocumentStoreBehind {
+        /// The page's first position
+        position: u64,
+        /// How many entries the server's snapshot of the store holds
+        total_count: u64,
     },
 }
 
@@ -624,6 +805,7 @@ mod tests {
         let refused = |network, pinned, cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network,
             pinned,
             cause: cause.map(Box::new),
@@ -664,6 +846,51 @@ mod tests {
         );
     }
 
+    /// A context provider configured so that it cannot serve a lookup the verifier makes,
+    /// such as the data contract a document history proof is read with, fails alike for
+    /// every node's answer: the request is not retried and no node is banned for it.
+    #[test]
+    fn should_not_retry_a_lookup_the_context_provider_is_configured_not_to_serve() {
+        let error = Error::from(drive_proof_verifier::Error::ContextProviderError(
+            ContextProviderError::Config("dump dir not set".to_string()),
+        ));
+        assert!(
+            matches!(
+                &error,
+                Error::ContextProviderError(ContextProviderError::Config(reason))
+                    if reason == "dump dir not set"
+            ),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
+    }
+
+    /// A result that verified but cannot be returned as the requested type is the same from
+    /// every honest node: the request fails without being retried, and the node is not banned.
+    #[test]
+    fn should_not_retry_a_verified_result_no_node_can_return_as_the_requested_type() {
+        let error = Error::from(drive_proof_verifier::Error::UnusableVerifiedResult {
+            reason: "a single-document fetch matched 2 documents".to_string(),
+        });
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("matched 2")),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
+    }
+
+    /// A request error the verifier raises while it reads an answer can come from parts of
+    /// the answer it has not verified yet, such as the block time a time window resolves
+    /// against. A node that forges them must keep being retried away from and banned.
+    #[test]
+    fn should_retry_a_request_error_raised_while_an_answer_is_verified() {
+        let error = Error::from(drive_proof_verifier::Error::RequestError {
+            error: "the time window does not resolve at the answer's block time".to_string(),
+        });
+        assert!(matches!(error, Error::Proof(_)), "{error:?}");
+        assert!(error.can_retry());
+    }
+
     /// A refusal may lift soon only when the SDK could not learn the network's version for a
     /// reason that can pass; not when its own setup can never verify an answer, nor when the
     /// network's verified version explains it.
@@ -672,6 +899,7 @@ mod tests {
         let refused = |cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network: 0,
             pinned: false,
             cause: cause.map(Box::new),
@@ -710,7 +938,7 @@ mod tests {
             );
         }
         let permanent = [
-            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            Error::from(drive_proof_verifier::Error::ContextProviderNotSet),
             quorum_key(ContextProviderError::Config(
                 "Non-trusted mode is not supported".to_string(),
             )),
@@ -736,7 +964,6 @@ mod tests {
         use dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
         use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
         use dpp::consensus::basic::BasicError;
-        use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::Txid;
         use dpp::serialization::PlatformSerializableWithPlatformVersion;
         use dpp::version::PlatformVersion;
@@ -907,6 +1134,31 @@ mod tests {
         fn test_deeply_nested_cbor_rejected_without_stack_exhaustion() {
             let payload = vec![0xA1u8; 60_000];
             assert!(super::extract_drive_error_message(&payload).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod unconfirmed_top_up_tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+    use std::error::Error as StdError;
+
+    #[test]
+    fn should_preserve_unconfirmed_source_without_authorizing_a_retry() {
+        for source in [
+            Error::TimeoutReached(Duration::from_secs(1), "wait timed out".into()),
+            Error::InvalidProvedResponse("unexpected identity in proof".into()),
+            Error::Protocol(ProtocolError::ConsensusError(Box::new(
+                AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+            ))),
+        ] {
+            let expected = source.to_string();
+            let error = Error::StateTransitionResultUnconfirmed(Box::new(source));
+            assert_eq!(StdError::source(&error).unwrap().to_string(), expected);
+            assert!(!error.can_retry());
+            assert!(error.consensus_error().is_none());
         }
     }
 }

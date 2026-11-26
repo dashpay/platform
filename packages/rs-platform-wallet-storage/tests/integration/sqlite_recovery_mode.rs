@@ -11,7 +11,6 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, fresh_recovery_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::Txid;
 use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet::changeset::{
@@ -290,6 +289,8 @@ fn seed_asset_lock_status_drift(
         account_index: 0,
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
+        operation_id: None,
+        shielded_recipient: None,
         amount_duffs: 1_000,
         status: AssetLockStatus::Consumed,
         proof: None,

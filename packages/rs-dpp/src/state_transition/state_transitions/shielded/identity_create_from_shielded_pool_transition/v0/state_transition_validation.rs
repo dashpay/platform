@@ -4,6 +4,7 @@ use crate::consensus::basic::state_transition::ShieldedInvalidDenominationError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::consensus::state::state_error::StateError;
+use crate::shielded::is_allowed_identity_create_denomination;
 use crate::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
 use crate::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
 use crate::state_transition::state_transitions::shielded::common_validation::{
@@ -59,12 +60,9 @@ impl StateTransitionStructureValidation for IdentityCreateFromShieldedPoolTransi
         // exit to a small fixed set is what makes every identity-creation exit of a given size
         // indistinguishable on-chain (maximizing the anonymity set). An empty set (pre-v12) rejects
         // every denomination, but the transition is already gated off pre-v12 by `is_allowed`.
-        let denominations = platform_version
-            .drive_abci
-            .validation_and_processing
-            .event_constants
-            .shielded_identity_create_denominations;
-        if !denominations.contains(&self.denomination) {
+        // The predicate is exactly that set-membership test over this version's table, so every
+        // protocol version selecting this generation keeps its accept set.
+        if !is_allowed_identity_create_denomination(self.denomination, platform_version) {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidDenominationError(
                     ShieldedInvalidDenominationError::new(self.denomination),

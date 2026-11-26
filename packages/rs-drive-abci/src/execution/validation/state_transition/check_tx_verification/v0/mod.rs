@@ -1,6 +1,8 @@
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::check_tx_reservation::CheckTxReservation;
+use crate::execution::validation::state_transition::check_tx_verification::CheckTxExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionSignerAwareActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_identity::StateTransitionShieldFromIdentityTransitionActionTransformer;
@@ -8,7 +10,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
+use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
@@ -21,6 +23,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::choose_first_reservation;
+use crate::execution::validation::state_transition::batch::erase_refund_recipient_reservation;
+use crate::execution::validation::state_transition::batch::reference_lookup_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -38,14 +42,17 @@ use crate::execution::validation::state_transition::processor::state::StateTrans
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
+use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_patterns::validate_contract_schema_patterns_for_check_tx;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use dpp::consensus::basic::BasicError;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::prelude::AddressNonce;
 
 #[allow(clippy::too_many_arguments)]
@@ -113,7 +120,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     check_tx_level: CheckTxLevel,
     proof_verifier: &CheckTxProofVerifier,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
+) -> Result<ConsensusValidationResult<Option<CheckTxExecutionEvent<'a>>>, Error> {
     // we need to validate the structure, the fees, and the signature
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
@@ -126,11 +133,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let result = state_transition.validate_is_allowed(platform_version)?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -143,11 +146,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     // If the witnesses are not valid
                     // Proposers should remove such transactions from the block
                     // Other validators should reject blocks with such transactions
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -165,11 +164,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     if !result.is_valid() {
                         // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
                         // isn't enough balance, either way the transaction should be rejected.
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
+                        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                     }
                     Some(result.into_data()?)
                 } else {
@@ -187,11 +182,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -202,33 +193,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     .validate_basic_structure(platform.config.network, platform_version)?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-            }
-
-            // An identity create's identity id must be the one its asset lock's outpoint
-            // derives, and a block refuses one whose id is not. The id is outside the bytes the
-            // asset lock key signs, so it is compared here, before the asset lock proof is
-            // verified, and such a transition is refused without that verification. Basic
-            // structure has checked that the outpoint exists. Admission is not consensus, so
-            // every protocol version gets this.
-            if let StateTransition::IdentityCreate(identity_create) = state_transition {
-                if identity_create.asset_lock_proof().create_identifier()?
-                    != identity_create.identity_id()
-                {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_error(
-                            BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
-                                "identity_id".to_string(),
-                                "does not match created identifier from asset lock".to_string(),
-                            ))
-                            .into(),
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -239,11 +204,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             if state_transition.has_shielded_minimum_fee_validation() {
                 let result = state_transition.validate_minimum_shielded_fee(platform_version)?;
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -273,16 +234,25 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     // Since it is most likely not from them
                     // Proposers should remove such transactions from the block
                     // Other validators should reject blocks with such transactions
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
                 Some(result.into_data()?)
             } else {
                 None
             };
+
+            // A contract create or update is held to the mempool's pattern bound before the
+            // balance pre-check estimates its registration fee: before protocol version 15 the
+            // estimate parses every index, compiling each `regexPattern` of a contested index,
+            // and nothing has bounded how many there are or how large they compile. After the
+            // signature, so only the holder of an identity's key has a contract's patterns
+            // read. Mempool policy, as the bound describes; block execution never runs this
+            // function.
+            let result =
+                validate_contract_schema_patterns_for_check_tx(state_transition, platform_version)?;
+            if !result.is_valid() {
+                return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+            }
 
             // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
             // processing amount and the transfer amount.
@@ -302,11 +272,55 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                }
+            }
+
+            // An identity update's signature does not cover the proofs of possession of the keys
+            // it adds, and from protocol version 15 a block refuses without a fee an update whose
+            // proof does not verify. The proofs are verified here, after the identity signature, so
+            // such an update does not enter the mempool, and their verification counts in the fee
+            // estimate as it does in a block. Only the proofs: an update queued behind another of
+            // the same identity carries a revision the state does not hold yet, so the revision is
+            // left to the block. Admission is not consensus, so every protocol version gets this.
+            // They are verified by generation 0, the generation identity update advanced structure
+            // validation 1 uses, so admission refuses the same proofs such a block refuses.
+            // The proofs are signatures, verified as identity create verifies the same proofs,
+            // without the check_tx proof capacity: that capacity bounds shielded proof verification,
+            // and an update that had to take it would be answered busy whenever shielded proofs
+            // hold it, while updates with a failing proof, which no fee pays for, would keep it
+            // from shielded transitions.
+            if let StateTransition::IdentityUpdate(identity_update) = state_transition {
+                let result = identity_update.validate_added_key_proofs_of_possession_v0(
+                    &state_transition.signable_bytes()?,
+                    &mut state_transition_execution_context,
+                );
+
+                if !result.is_valid() {
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                }
+
+                // The fee estimate below reads the stored keys an update disables, and Drive
+                // fails with an internal error on a key id the identity does not have. A block
+                // refuses such an update in state validation, which check tx does not run, so
+                // the same check runs here first and the client gets
+                // `MissingIdentityPublicKeyIdsError` instead. Identity keys are never removed,
+                // so a recheck cannot find a key missing that this check found. Admission is
+                // not consensus, so every protocol version gets this.
+                let key_ids_to_disable = identity_update.public_key_ids_to_disable();
+                if !key_ids_to_disable.is_empty() {
+                    let result = validate_identity_public_key_ids_exist_in_state(
+                        identity_update.identity_id(),
+                        key_ids_to_disable,
+                        platform.drive,
+                        &mut state_transition_execution_context,
+                        None,
+                        platform_version,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                    }
                 }
             }
 
@@ -340,11 +354,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -362,11 +372,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     proof_verifier,
                 )?;
                 if !state_transition_action_result.is_valid_with_data() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            state_transition_action_result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(
+                        state_transition_action_result.errors,
+                    ));
                 }
                 let action = state_transition_action_result.into_data()?;
 
@@ -381,11 +389,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
                 Some(action)
             } else {
@@ -408,11 +412,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         platform_version,
                     )?;
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
@@ -443,11 +443,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
 
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
                 result.data
             } else if matches!(state_transition, StateTransition::IdentityCreate(_)) {
@@ -477,11 +473,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     proof_verifier,
                 )?;
                 if !state_transition_action_result.is_valid_with_data() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            state_transition_action_result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(
+                        state_transition_action_result.errors,
+                    ));
                 }
                 state_transition_action_result.into_data()?
             };
@@ -501,26 +495,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     ))?;
                 let result = state_transition.validate_shielded_proof(platform_version)?;
                 if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                 }
             }
 
-            // A create choosing the first of the commitments to its values reads up to its scan's
-            // budget of competitors in a block; its state was not validated here, so the signer
-            // is held to that budget too
-            if !validates_state {
-                reserve_choose_first_scans(
-                    &action,
-                    &mut state_transition_execution_context,
-                    platform_version,
-                );
-            }
+            // Work a block bills for state check tx did not validate is reserved on top of the
+            // estimate: an erase's refund work is inert before protocol version 15, where basic
+            // structure validation above refuses the erase kind
+            let reservation = if validates_state {
+                CheckTxReservation::default()
+            } else {
+                reserve_unvalidated_state_work(&action, platform, platform_version)?
+            };
+            let reserved_bounds = reservation.bounds.clone();
+            state_transition_execution_context.add_operations(reservation.into_operations());
 
-            let execution_event = ExecutionEvent::create_from_state_transition_action(
+            let event = ExecutionEvent::create_from_state_transition_action(
                 action,
                 maybe_identity,
                 platform.state.last_committed_block_epoch_ref(),
@@ -528,11 +518,12 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 platform_version,
             )?;
 
-            Ok(
-                ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(Some(
-                    execution_event,
-                )),
-            )
+            Ok(ConsensusValidationResult::new_with_data(Some(
+                CheckTxExecutionEvent {
+                    event,
+                    reserved_bounds,
+                },
+            )))
         }
         CheckTxLevel::Recheck => {
             if let Some(asset_lock_proof) = state_transition.optional_asset_lock_proof() {
@@ -550,13 +541,11 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )?;
 
                 if validation_result.is_valid() {
-                    Ok(ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(None))
+                    Ok(ConsensusValidationResult::new_with_data(None))
                 } else {
-                    Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            validation_result.errors,
-                        ),
-                    )
+                    Ok(ConsensusValidationResult::new_with_errors(
+                        validation_result.errors,
+                    ))
                 }
             } else {
                 // Start by validating addresses if the transition has input addresses
@@ -573,11 +562,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         if !result.is_valid() {
                             // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
                             // isn't enough balance, either way the transaction should be rejected.
-                            return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
+                            return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                         }
                         Some(result.into_data()?)
                     } else {
@@ -594,11 +579,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )?;
 
                     if !result.is_valid() {
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
+                        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                     }
                 }
 
@@ -626,6 +607,16 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                     None => false,
                 };
+
+                // As on the first check, before the non-validating parse compiles the patterns
+                let result = validate_contract_schema_patterns_for_check_tx(
+                    state_transition,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                }
+
                 let state_transition_action_result = transform_into_action_for_check_tx(
                     state_transition,
                     platform,
@@ -640,11 +631,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
 
                 if !state_transition_action_result.is_valid_with_data() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            state_transition_action_result.errors,
-                        ),
-                    );
+                    return Ok(ConsensusValidationResult::new_with_errors(
+                        state_transition_action_result.errors,
+                    ));
                 }
                 let action = state_transition_action_result.into_data()?;
 
@@ -659,11 +648,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                             platform_version,
                         )?;
                     if !result.is_valid() {
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
+                        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                     }
                 }
 
@@ -678,11 +663,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )?;
 
                     if !result.is_valid() {
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
+                        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
                     }
                     result.into_data()?
                 } else {
@@ -696,24 +677,20 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 // action, and a batch that no longer covers them leaves the mempool.
                 if let StateTransitionAction::BatchAction(batch_action) = &action {
                     if let Err(error) = batch_action.validate_action_fee_agreements()? {
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                vec![error],
-                            ),
-                        );
+                        return Ok(ConsensusValidationResult::new_with_errors(vec![error]));
                     }
                 }
 
-                // As on the first check: the budget of a scan whose state was not validated
-                if !relies_on_gas_sponsor_to_pay {
-                    reserve_choose_first_scans(
-                        &action,
-                        &mut state_transition_execution_context,
-                        platform_version,
-                    );
-                }
+                // As on the first check, for a batch whose state was not validated
+                let reservation = if relies_on_gas_sponsor_to_pay {
+                    CheckTxReservation::default()
+                } else {
+                    reserve_unvalidated_state_work(&action, platform, platform_version)?
+                };
+                let reserved_bounds = reservation.bounds.clone();
+                state_transition_execution_context.add_operations(reservation.into_operations());
 
-                let execution_event = ExecutionEvent::create_from_state_transition_action(
+                let event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,
                     platform.state.last_committed_block_epoch_ref(),
@@ -721,11 +698,12 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform_version,
                 )?;
 
-                Ok(
-                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(Some(
-                        execution_event,
-                    )),
-                )
+                Ok(ConsensusValidationResult::new_with_data(Some(
+                    CheckTxExecutionEvent {
+                        event,
+                        reserved_bounds,
+                    },
+                )))
             }
         }
         _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -734,18 +712,46 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     }
 }
 
-/// Reserves, on top of the estimated fee of `action`, what the `chooseFirst` checks of its
-/// creates may bill in a block (see `choose_first_reservation`: their two hashes and the
-/// competitor scan's budget), for an action whose state check tx did not validate. Fee
-/// validation then admits only a signer who could pay for them.
-fn reserve_choose_first_scans(
+/// The operations check tx reserves, on top of the estimated fee of `action`, for the work a
+/// block bills where check tx did not validate the state: what the `chooseFirst` checks of its
+/// creates may bill (`choose_first_reservation`: their hashes and the competitor scan's budget),
+/// the work the refunds of each of its erases cause for other identities
+/// (`erase_refund_recipient_reservation`, priced at the epoch check tx estimates in), and the
+/// `refersTo` lookups of its creates (`reference_lookup_reservation`: the computed keys' hashes,
+/// an allowance for each lookup query and the delete of each document a lookup consumes, priced
+/// in the block check tx estimates in). Fee validation holds the payer to all of them; the gas
+/// check tx reports leaves out the bounds (see `CheckTxReservation`).
+///
+/// Mempool admission only, at every protocol version: a block validates the state and bills
+/// what it reads. No erase exists before protocol version 15 and no lookup before 14, so their
+/// reservations add nothing there.
+fn reserve_unvalidated_state_work<C>(
     action: &StateTransitionAction,
-    execution_context: &mut StateTransitionExecutionContext,
+    platform: &PlatformRef<C>,
     platform_version: &PlatformVersion,
-) {
-    for operation in choose_first_reservation(action, platform_version) {
-        execution_context.add_operation(operation);
+) -> Result<CheckTxReservation, Error> {
+    let mut reserved = choose_first_reservation(action, platform_version)?;
+    if let StateTransitionAction::BatchAction(batch) = action {
+        for transition in batch.transitions() {
+            if let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(
+                _,
+            )) = transition
+            {
+                reserved.billed.push(erase_refund_recipient_reservation(
+                    platform.drive,
+                    platform.state.last_committed_block_epoch_ref(),
+                    platform_version,
+                )?);
+            }
+        }
     }
+    reserved.extend(reference_lookup_reservation(
+        action,
+        platform.drive,
+        platform.state.last_block_info(),
+        platform_version,
+    )?);
+    Ok(reserved)
 }
 
 #[cfg(test)]

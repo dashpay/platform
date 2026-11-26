@@ -43,9 +43,13 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CountDocuments
 import org.dashfoundation.example.navigation.Documents
 import org.dashfoundation.example.navigation.NewDocument
+import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.example.navigation.PrivateDocumentEntries
+import org.dashfoundation.example.navigation.PrivateDocumentEntryCreate
 import org.dashfoundation.example.navigation.SumAverageDocuments
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -80,7 +84,7 @@ fun DocumentTypeDetailsScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractId)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     var expandedIndices by rememberSaveable { mutableStateOf(setOf<String>()) }
     var constraintsSection by remember(contractIdHex, typeName) {
@@ -136,28 +140,43 @@ fun DocumentTypeDetailsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            FormSection(title = "Actions") {
-                TextButton(
-                    onClick = { navController.navigate(NewDocument(contractIdHex, typeName)) },
-                    modifier = Modifier.testTag("documentType.newDocument"),
-                ) { Text("New Document") }
-            }
-
-            FormSection(title = "Queries") {
-                TextButton(
-                    onClick = { navController.navigate(Documents(contractIdHex, typeName)) },
-                    modifier = Modifier.testTag("documentType.browseDocuments"),
-                ) { Text("Browse Documents") }
-                TextButton(
-                    onClick = { navController.navigate(CountDocuments(contractIdHex, typeName)) },
-                    modifier = Modifier.testTag("documentType.countDocuments"),
-                ) { Text("Count Documents") }
-                TextButton(
-                    onClick = {
-                        navController.navigate(SumAverageDocuments(contractIdHex, typeName))
+            // A private type takes no ordinary document and refuses document queries: its
+            // entries are appended by an anonymous shielded transition and read with wallet keys
+            if (isPrivateDocumentType(schema)) {
+                PrivateTypeSection(
+                    schema,
+                    canCreateEntries = remember { runCatching { Sdk.hasShielded() }.getOrDefault(false) },
+                    onReadEntries = {
+                        navController.navigate(PrivateDocumentEntries(contractIdHex, typeName))
                     },
-                    modifier = Modifier.testTag("documentType.sumAverageDocuments"),
-                ) { Text("Sum / Average Documents") }
+                    onCreateEntry = {
+                        navController.navigate(PrivateDocumentEntryCreate(contractIdHex, typeName))
+                    },
+                )
+            } else {
+                FormSection(title = "Actions") {
+                    TextButton(
+                        onClick = { navController.navigate(NewDocument(contractIdHex, typeName)) },
+                        modifier = Modifier.testTag("documentType.newDocument"),
+                    ) { Text("New Document") }
+                }
+
+                FormSection(title = "Queries") {
+                    TextButton(
+                        onClick = { navController.navigate(Documents(contractIdHex, typeName)) },
+                        modifier = Modifier.testTag("documentType.browseDocuments"),
+                    ) { Text("Browse Documents") }
+                    TextButton(
+                        onClick = { navController.navigate(CountDocuments(contractIdHex, typeName)) },
+                        modifier = Modifier.testTag("documentType.countDocuments"),
+                    ) { Text("Count Documents") }
+                    TextButton(
+                        onClick = {
+                            navController.navigate(SumAverageDocuments(contractIdHex, typeName))
+                        },
+                        modifier = Modifier.testTag("documentType.sumAverageDocuments"),
+                    ) { Text("Sum / Average Documents") }
+                }
             }
 
             FormSection(title = "Document Type Information") {
@@ -200,6 +219,10 @@ fun DocumentTypeDetailsScreen(
                 LabeledContent(
                     "Can Be Deleted",
                     if (capabilities.canBeDeleted) "Yes" else "No",
+                )
+                LabeledContent(
+                    "Can Be Erased",
+                    if (capabilities.canBeErased) "Yes" else "No",
                 )
                 LabeledContent(
                     "Transferable",

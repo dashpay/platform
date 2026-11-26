@@ -9,9 +9,47 @@ use wasm_dpp2::serialization::conversions::{
 };
 
 use crate::WasmSdkError;
+use dash_sdk::platform::documents::DocumentsPage;
 use dash_sdk::platform::Identifier;
+use drive_proof_verifier::types::Documents;
+use js_sys::Map;
+use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
-use wasm_dpp2::utils::IntoWasm;
+use wasm_dpp2::utils::{try_from_options_optional_with, try_to_u32, IntoWasm};
+
+/// The page a listing query asks for: `startAfter` and `limit`, each optional. Each field is
+/// read on its own as an `IdentifierLike` or a number: an `Identifier` instance does not
+/// survive the serde conversion a whole-object deserialization goes through. `limit` is read
+/// last, so the fields before it are parsed first.
+pub(crate) fn documents_page_of(query: &JsValue) -> Result<DocumentsPage, WasmSdkError> {
+    let start_after =
+        IdentifierWasm::try_from_optional_options(query, "startAfter")?.map(Identifier::from);
+    let limit = try_from_options_optional_with(query, "limit", |value| try_to_u32(value, "limit"))?;
+    Ok(DocumentsPage { limit, start_after })
+}
+
+/// `documents` of the type `document_type_name` of the contract `contract_id`, keyed by their
+/// base58 ids in the order the query returned them, a missing document as `null`.
+pub(crate) fn documents_map(
+    documents: Documents,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Map {
+    let map = Map::new();
+    for (id, document) in documents {
+        let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+        let value = document.map_or(JsValue::NULL, |document| {
+            JsValue::from(DocumentWasm::new(
+                document,
+                contract_id,
+                document_type_name.to_string(),
+                None,
+            ))
+        });
+        map.set(&key, &value);
+    }
+    map
+}
 
 /// The contract a query names, from any `IdentifierLike`.
 pub(crate) fn parse_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {

@@ -21,6 +21,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
+use crate::document::{Document, DocumentV0Getters};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::{IdentityPublicKey, Purpose};
@@ -40,6 +41,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 pub mod array;
+pub mod dynamic_document_reference;
 pub mod encrypted_for;
 pub mod generated_from;
 pub mod list_element_reference;
@@ -47,10 +49,17 @@ pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
 pub mod reference_where;
+pub mod slot_condition;
 
+pub use dynamic_document_reference::{
+    DocumentTypeRequirements, DynamicDocumentReference, DynamicDocumentReferenceKind,
+    RequiredPropertySlot, SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue,
+    ANY_PROPERTY_NAME, REFERRING_DOCUMENT_PREFIX,
+};
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{
     GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
+    TokenFunction,
 };
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{
@@ -68,6 +77,14 @@ pub use reference_where::{
     where_list_elements, where_lists_elements_read, where_lists_equal, WhereBoundRead,
     WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
     WhereOrdering, WhereOrderingBound,
+};
+pub use slot_condition::{
+    SlotCondition, SlotConditionList, SlotConditionSetting, SlotConditionSubject,
+    SlotConditionValue, SlotConditions, MAX_SLOT_CONDITION_DECODE_DEPTH,
+    SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS,
+    SLOT_CONDITION_DELETE_SETTLED, SLOT_CONDITION_DELETE_WITHIN, SLOT_CONDITION_ELECTED_ABILITIES,
+    SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
+    SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT,
 };
 
 #[cfg(test)]
@@ -238,6 +255,161 @@ impl DocumentProperty {
     pub fn always_required(&self) -> bool {
         self.required && self.required_since.is_none()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BudgetMode {
+    /// Explicit shared cap charged for every decoded property node and array element.
+    Fixed { remaining: usize },
+    /// Encoded-size-proportional cap on decoded array elements (non-array property nodes
+    /// are already bounded 1:1 by the schema tree, so absent optional subtrees cannot
+    /// lend extra allowance to zero-width typed arrays).
+    Proportional { array_elements_remaining: usize },
+}
+
+/// Remaining budget of decoded [`Value`]s across one or more serialized
+/// property reads (a document, a private document payload, a removal record's
+/// kept fields, or a whole page of them).
+///
+/// With [`Self::new`], each decoded property value — scalar, object map, array,
+/// or array element — consumes one unit from a single shared cap before it is
+/// decoded. With [`Self::for_encoded_bytes`] (and [`Self::for_encoded_payload`]
+/// / [`Self::for_encoded_kept_fields`]), array elements draw from a dedicated
+/// encoded-length allowance while non-array property nodes stay bounded 1:1 by
+/// the schema tree, so absent optional subtrees cannot expand zero-width array
+/// allowances and legitimate pages carrying large non-zero-width typed arrays
+/// always fit. Exhausting the budget stops decoding with
+/// [`DataContractError::DecodedValueBudgetExceeded`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodedValueBudget {
+    mode: BudgetMode,
+}
+
+impl DecodedValueBudget {
+    /// Creates a fixed shared budget admitting at most `limit` decoded values.
+    pub const fn new(limit: usize) -> Self {
+        Self {
+            mode: BudgetMode::Fixed { remaining: limit },
+        }
+    }
+
+    /// Creates a proportional budget admitting at most `encoded_len` decoded
+    /// array elements, with non-array property nodes bounded by the schema tree.
+    ///
+    /// Every non-zero-width typed-array element consumes at least one encoded
+    /// byte, so any valid payload without zero-width typed-array elements stays
+    /// within this budget while zero-width array expansion is strictly capped by
+    /// `encoded_len` in O(1) without walking the schema.
+    pub const fn for_encoded_bytes(encoded_len: usize) -> Self {
+        Self {
+            mode: BudgetMode::Proportional {
+                array_elements_remaining: encoded_len,
+            },
+        }
+    }
+
+    /// Creates a proportional budget sized to an encoded payload of `encoded_len`
+    /// bytes under `document_type` (see [`Self::for_encoded_bytes`]).
+    pub fn for_encoded_payload(encoded_len: usize, _document_type: DocumentTypeRef) -> Self {
+        Self::for_encoded_bytes(encoded_len)
+    }
+
+    /// Creates a proportional budget sized to an encoded `kept_fields` slice of
+    /// `encoded_len` bytes on a removal record of `document_type`
+    /// (see [`Self::for_encoded_bytes`]).
+    pub fn for_encoded_kept_fields(encoded_len: usize, _document_type: DocumentTypeRef) -> Self {
+        Self::for_encoded_bytes(encoded_len)
+    }
+
+    /// How many decoded values (for fixed budgets) or array elements (for
+    /// proportional budgets) remain.
+    pub const fn remaining(&self) -> usize {
+        match self.mode {
+            BudgetMode::Fixed { remaining } => remaining,
+            BudgetMode::Proportional {
+                array_elements_remaining,
+            } => array_elements_remaining,
+        }
+    }
+
+    /// How many array elements remain in the budget.
+    pub(crate) const fn remaining_array_elements(&self) -> usize {
+        self.remaining()
+    }
+
+    /// Consumes `count` units from the budget, failing with
+    /// [`DataContractError::DecodedValueBudgetExceeded`] when fewer remain.
+    pub fn consume(&mut self, count: usize) -> Result<(), DataContractError> {
+        let remaining = match &mut self.mode {
+            BudgetMode::Fixed { remaining } => remaining,
+            BudgetMode::Proportional {
+                array_elements_remaining,
+            } => array_elements_remaining,
+        };
+        if count > *remaining {
+            return Err(DataContractError::DecodedValueBudgetExceeded(format!(
+                "needed {count} more value(s), {remaining} remaining",
+            )));
+        }
+        *remaining -= count;
+        Ok(())
+    }
+
+    /// Charges a non-array property node (scalar, object map, or array header).
+    /// Consumes `count` under [`Self::new`]; no-op under [`Self::for_encoded_bytes`]
+    /// because non-array property nodes are already bounded 1:1 by the schema tree.
+    pub(crate) fn consume_property(&mut self, count: usize) -> Result<(), DataContractError> {
+        match &mut self.mode {
+            BudgetMode::Fixed { .. } => self.consume(count),
+            BudgetMode::Proportional { .. } => Ok(()),
+        }
+    }
+
+    /// Charges `count` decoded array elements against either fixed or proportional
+    /// budgets.
+    pub(crate) fn consume_array_element(&mut self, count: usize) -> Result<(), DataContractError> {
+        self.consume(count)
+    }
+
+    /// Charges every value node inside an already-decoded [`Value`] (arrays,
+    /// objects, and scalars) against this budget.
+    pub fn charge_value(&mut self, value: &Value) -> Result<(), DataContractError> {
+        self.consume(count_value_nodes(value))
+    }
+
+    /// Charges every decoded property value already retained by `document`
+    /// against this budget.
+    pub fn charge_document(&mut self, document: &Document) -> Result<(), DataContractError> {
+        for value in document.properties().values() {
+            self.charge_value(value)?;
+        }
+        Ok(())
+    }
+
+    /// Charges every decoded property value already retained by `documents`
+    /// against this budget.
+    pub fn charge_documents(&mut self, documents: &[Document]) -> Result<(), DataContractError> {
+        for document in documents {
+            self.charge_document(document)?;
+        }
+        Ok(())
+    }
+}
+
+/// Counts every value node in an already-decoded [`Value`] iteratively,
+/// matching the units consumed during property decoding.
+fn count_value_nodes(root: &Value) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![root];
+    while let Some(value) = stack.pop() {
+        count = count.saturating_add(1);
+        match value {
+            Value::Array(items) => stack.extend(items.iter()),
+            Value::Map(entries) => stack.extend(entries.iter().map(|(_, value)| value)),
+            _ => {}
+        }
+    }
+    count
 }
 
 /// The typed array property `name` names among a document type's
@@ -1051,6 +1223,21 @@ pub enum DocumentPropertyReferenceTarget {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         where_conditions: BTreeMap<String, WhereCondition>,
     },
+    /// A document of a document type the referring document names
+    /// (`contractId` and `documentType` read from it with `$self.`), permanent or moderated, found by the
+    /// value as its id (protocol version 15). The contract and the document type are read
+    /// from the referring document when it is written, so nothing about the target is
+    /// checked at contract registration: that the type exists, is of the declared kind and
+    /// meets the declaration's `documentTypeRequirements` is checked on every write that
+    /// checks the reference.
+    ///
+    /// The id form only, on an identifier property: no `findBy`, no `inList`, no `where`,
+    /// no operand of a reference expression, no typed array element, and no rule or index
+    /// reads through it, since each of those needs to know the referenced type when the
+    /// contract is registered. Appended, so every earlier variant keeps its consensus
+    /// encoding.
+    #[serde(rename = "dynamicDocument")]
+    DynamicDocument(DynamicDocumentReference),
 }
 
 /// Which of the three document reference kinds a declaration is, and so what
@@ -1260,13 +1447,53 @@ impl DocumentPropertyReferenceTarget {
                     in_list: Some(&reference.in_list),
                 })
             }
+            // A dynamic reference names no contract and no document type: the referring
+            // document does, when it is written. It has no declaration to give the code
+            // that resolves a reference's target from the schema
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
             | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
             | DocumentPropertyReferenceTarget::AnyOf(_)
-            | DocumentPropertyReferenceTarget::AllOf(_) => None,
+            | DocumentPropertyReferenceTarget::AllOf(_)
+            | DocumentPropertyReferenceTarget::DynamicDocument(_) => None,
         }
+    }
+
+    /// The target as a consensus error carries it. An error names what was referenced and
+    /// was not there, which a reference naming its target through the referring document
+    /// says with its kind and the two properties it reads: its `documentTypeRequirements`
+    /// describe a document type, say nothing of a missing document, and are as large as a
+    /// contract declared them, where a client decodes an error within a fixed budget. They
+    /// are left out. Every other target is carried whole.
+    pub fn named_in_an_error(self) -> Self {
+        match self {
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+                DocumentPropertyReferenceTarget::DynamicDocument(DynamicDocumentReference {
+                    requirements: None,
+                    ..reference
+                })
+            }
+            other => other,
+        }
+    }
+
+    /// The declaration of a reference whose target the referring document names
+    /// ([`Self::DynamicDocument`]); `None` for every other target.
+    pub fn as_dynamic_document_reference(&self) -> Option<&DynamicDocumentReference> {
+        match self {
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
+    /// The computed key of the `findBy` function this target declares, the one
+    /// key a commit and reveal hashes; `None` for a target without one.
+    pub fn lookup_hash_key(&self) -> Option<&LookupHashKey> {
+        self.as_any_document_reference()
+            .and_then(|declaration| declaration.lookup)
+            .and_then(|lookup| lookup.hash_key())
+            .map(|(_, key)| key)
     }
 
     /// The declaration of a reference with `inList`; `None` for every other
@@ -1673,6 +1900,17 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 ..
             } => write_document_reference(f, "moderated", *contract_id, document_type_name, None),
             DocumentPropertyReferenceTarget::ListElement(reference) => reference.fmt(f),
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => write!(
+                f,
+                "{} document (contract named by {}, document type named by {})",
+                match reference.kind {
+                    DynamicDocumentReferenceKind::Permanent => "permanent",
+                    DynamicDocumentReferenceKind::Moderated => "moderated",
+                    DynamicDocumentReferenceKind::PermanentOrModerated => "permanent or moderated",
+                },
+                reference.contract_id_property,
+                reference.document_type_property
+            ),
             DocumentPropertyReferenceTarget::AnyOf(operands)
             | DocumentPropertyReferenceTarget::AllOf(operands) => {
                 let (name, joiner) = match self {
@@ -2586,12 +2824,41 @@ impl DocumentPropertyType {
         buf: &mut BufReader<&[u8]>,
         required: bool,
     ) -> Result<(Option<Value>, bool), DataContractError> {
+        self.read_optionally_from_with_budget(buf, required, None)
+    }
+
+    /// Reads an optional value from the buffer while enforcing an optional
+    /// [`DecodedValueBudget`]. When `budget` is `None`, behavior is identical
+    /// to [`Self::read_optionally_from`].
+    pub fn read_optionally_from_with_budget(
+        &self,
+        buf: &mut BufReader<&[u8]>,
+        required: bool,
+        budget: Option<&mut DecodedValueBudget>,
+    ) -> Result<(Option<Value>, bool), DataContractError> {
+        self.read_optionally_from_inner(buf, required, budget, false)
+    }
+
+    pub(super) fn read_optionally_from_inner(
+        &self,
+        buf: &mut BufReader<&[u8]>,
+        required: bool,
+        mut budget: Option<&mut DecodedValueBudget>,
+        is_array_element: bool,
+    ) -> Result<(Option<Value>, bool), DataContractError> {
         if !required {
             let marker = buf.read_u8().ok();
             match marker {
                 None => return Ok((None, true)), // we have no more data
                 Some(0) => return Ok((None, false)),
                 _ => {}
+            }
+        }
+        if let Some(budget) = budget.as_deref_mut() {
+            if is_array_element {
+                budget.consume_array_element(1)?;
+            } else {
+                budget.consume_property(1)?;
             }
         }
         match self {
@@ -2760,8 +3027,12 @@ impl DocumentPropertyType {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
+                        // A member required from a contract version (`requiredSince`) is stored
+                        // like an optional one at every version. Only protocol version 15 parses
+                        // such a member, so before it `always_required` is `required`.
+                        let required = field.always_required();
                         if finished_buffer {
-                            return if field.required {
+                            return if required {
                                 Some(Err(DataContractError::CorruptedSerialization(
                                     "required field after finished buffer in object".to_string(),
                                 )))
@@ -2770,9 +3041,11 @@ impl DocumentPropertyType {
                             };
                         }
 
-                        let read_value = field
-                            .property_type
-                            .read_optionally_from(&mut object_buf_reader, field.required);
+                        let read_value = field.property_type.read_optionally_from_with_budget(
+                            &mut object_buf_reader,
+                            required,
+                            budget.as_deref_mut(),
+                        );
 
                         match read_value {
                             Ok(read_value) => {
@@ -2792,7 +3065,7 @@ impl DocumentPropertyType {
                 }
             }
             DocumentPropertyType::TypedArray(typed_array) => {
-                Ok((Some(typed_array.read_from(buf)?), false))
+                Ok((Some(typed_array.read_from_with_budget(buf, budget)?), false))
             }
             DocumentPropertyType::Array(item_type) => {
                 // Mirrors the encoding: a varint element count, then the
@@ -2807,6 +3080,9 @@ impl DocumentPropertyType {
                 })?;
                 let mut items = Vec::new();
                 for _ in 0..count {
+                    if let Some(budget) = budget.as_deref_mut() {
+                        budget.consume_array_element(1)?;
+                    }
                     items.push(item_type.read_from(buf)?);
                 }
                 Ok((Some(Value::Array(items)), false))
@@ -2990,14 +3266,17 @@ impl DocumentPropertyType {
                     let mut value_map =
                         Value::map_into_btree_string_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
+                    // As the borrowed encoder does: a member required from a contract version
+                    // is written like an optional one. Only protocol version 15 parses such a
+                    // member, so before it `always_required` is `required`.
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
                             let mut serialized_value = field
                                 .property_type
-                                .encode_value_with_size(value, field.required)?;
+                                .encode_value_with_size(value, field.always_required())?;
                             r_vec.append(&mut serialized_value);
                             Ok(())
-                        } else if field.required {
+                        } else if field.always_required() {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -3037,6 +3316,80 @@ impl DocumentPropertyType {
                     "serialization of variable type arrays not yet supported".to_string(),
                 ),
             )),
+        }
+    }
+
+    /// The most bytes [`Self::encode_value_ref_with_size`] writes for a value of this type, `None`
+    /// when the type sets no largest value: a string with neither `maxLength` nor `maxBytes`, a byte
+    /// array without `maxItems`, an untyped array, or a typed array that may hold an element of
+    /// such a type. `required` is the flag the encoding is called
+    /// with (an optional `Date` carries a marker byte); the presence byte a document writes before
+    /// an optional property is not counted.
+    ///
+    /// Each arm is the largest output of the matching arm of the encoder, which this must follow
+    /// when that changes.
+    pub fn max_encoded_value_size(&self, required: bool) -> Option<u32> {
+        // A varint length, then that many bytes.
+        let length_prefixed = |bytes: u32| bytes.saturating_add(bytes.required_space() as u32);
+        match self {
+            DocumentPropertyType::String(sizes) => {
+                // A character takes at most 4 bytes in UTF-8.
+                let max_bytes = match (sizes.max_length, sizes.max_bytes) {
+                    (max_length, Some(max_bytes)) => max_length
+                        .map_or(u32::from(max_bytes), |length| {
+                            (u32::from(length) * 4).min(u32::from(max_bytes))
+                        }),
+                    (Some(max_length), None) => u32::from(max_length) * 4,
+                    (None, None) => return None,
+                };
+                Some(length_prefixed(max_bytes))
+            }
+            DocumentPropertyType::Date => Some(if required { 8 } else { 9 }),
+            DocumentPropertyType::U128 | DocumentPropertyType::I128 => Some(16),
+            DocumentPropertyType::U64 | DocumentPropertyType::I64 | DocumentPropertyType::F64 => {
+                Some(8)
+            }
+            DocumentPropertyType::U32
+            | DocumentPropertyType::I32
+            | DocumentPropertyType::KeyIdWithReference(_) => Some(4),
+            DocumentPropertyType::U16 | DocumentPropertyType::I16 => Some(2),
+            DocumentPropertyType::U8 | DocumentPropertyType::I8 | DocumentPropertyType::Boolean => {
+                Some(1)
+            }
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
+                (Some(min), Some(max)) if min == max => Some(u32::from(max)),
+                (_, Some(max)) => Some(length_prefixed(u32::from(max))),
+                (_, None) => None,
+            },
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
+            DocumentPropertyType::Object(inner_fields) => {
+                let mut inner = 0u32;
+                for field in inner_fields.values() {
+                    // As the encoder writes it: a member required from a contract version takes
+                    // a presence byte (only protocol version 15 parses one)
+                    let required = field.always_required();
+                    let field_size = field.property_type.max_encoded_value_size(required)?;
+                    inner = inner
+                        .saturating_add(field_size)
+                        .saturating_add(u32::from(!required));
+                }
+                Some(length_prefixed(inner))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => {
+                // A varint count, then each element encoded as a required property of its type.
+                // Counted here rather than by `max_encoded_size`, which saturates at `u16::MAX`.
+                let max_items = u32::from(typed_array.max_items);
+                let elements = if max_items == 0 {
+                    0
+                } else {
+                    let element = typed_array.item_type.max_encoded_value_size(true)?;
+                    max_items.saturating_mul(element)
+                };
+                Some(elements.saturating_add(max_items.required_space() as u32))
+            }
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => None,
         }
     }
 
@@ -3147,16 +3500,21 @@ impl DocumentPropertyType {
                 let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
+                    // A member required from a contract version (`requiredSince`) is stored like
+                    // an optional one at every version, so documents written before it was
+                    // required still decode. Only protocol version 15 parses such a member, so
+                    // before it `always_required` is `required`.
+                    let required = field.always_required();
                     if let Some(value) = value_map.get(key) {
-                        if !field.required {
+                        if !required {
                             r_vec.push(1);
                         }
                         let value = field
                             .property_type
-                            .encode_value_ref_with_size(value, field.required)?;
+                            .encode_value_ref_with_size(value, required)?;
                         r_vec.extend(value.as_slice());
                         Ok(())
-                    } else if field.required {
+                    } else if required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
                                 "a required field is not present".to_string(),
@@ -7125,6 +7483,49 @@ mod tests {
             .read_optionally_from(&mut reader, true)
             .expect("maxItems elements decode");
         assert_eq!(value, Some(Value::Array(vec![Value::Bytes(vec![]); 8])));
+    }
+
+    #[test]
+    fn should_stop_decoding_a_typed_array_when_the_decoded_value_budget_is_exhausted() {
+        use std::io::BufReader;
+        let empties = typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(0),
+            max_size: Some(0),
+        }));
+        let data: &[u8] = &[8];
+
+        // 1 value for the array + 8 values for its elements = 9 units total
+        let mut exact_budget = DecodedValueBudget::new(9);
+        let mut reader = BufReader::new(data);
+        let (value, _) = empties
+            .read_optionally_from_with_budget(&mut reader, true, Some(&mut exact_budget))
+            .expect("exact budget succeeds");
+        assert_eq!(value, Some(Value::Array(vec![Value::Bytes(vec![]); 8])));
+        assert_eq!(exact_budget.remaining(), 0);
+
+        // One unit short refuses before allocating the 8 zero-width elements
+        let mut short_budget = DecodedValueBudget::new(8);
+        let mut reader = BufReader::new(data);
+        let error = empties
+            .read_optionally_from_with_budget(&mut reader, true, Some(&mut short_budget))
+            .expect_err("budget short by one unit must refuse");
+        assert!(
+            matches!(error, DataContractError::DecodedValueBudgetExceeded(_)),
+            "{error}"
+        );
+
+        // Non-zero-width elements also charge the budget across elements
+        let bools = typed_array(DocumentPropertyType::Boolean);
+        let bool_data: &[u8] = &[4, 1, 0, 1, 0];
+        let mut bool_budget = DecodedValueBudget::new(4);
+        let mut reader = BufReader::new(bool_data);
+        let error = bools
+            .read_optionally_from_with_budget(&mut reader, true, Some(&mut bool_budget))
+            .expect_err("non-zero-width typed array exceeding budget must refuse");
+        assert!(
+            matches!(error, DataContractError::DecodedValueBudgetExceeded(_)),
+            "{error}"
+        );
     }
 
     #[test]
@@ -11202,6 +11603,12 @@ mod tests {
                 where_conditions: Default::default(),
                 property_agreement: Default::default(),
             },
+            DocumentPropertyReferenceTarget::DynamicDocument(DynamicDocumentReference {
+                kind: DynamicDocumentReferenceKind::Moderated,
+                contract_id_property: "postContractId".to_string(),
+                document_type_property: "postDocumentType".to_string(),
+                requirements: None,
+            }),
         ];
 
         for target in &targets {
@@ -11220,6 +11627,11 @@ mod tests {
                     "deletableDocument"
                 }
                 DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
+                // The `type` it is declared with, permanent or moderated (the first of
+                // the two when it lists both)
+                DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+                    reference.wire_names()[0]
+                }
                 // Not a `type`: the schema declares them under their own keys
                 DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
                 DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",

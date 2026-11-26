@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "latest_protocol_version": 14,
+  "latest_protocol_version": 15,
   "element_kinds": [
     {
       "name": "Item",
@@ -155,6 +155,36 @@
     {
       "name": "ItemWithSumItemWithBackwardsReferences",
       "is_tree": false,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "CountBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumIndexedTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumIndexedTree",
+      "is_tree": true,
       "is_opaque": false,
       "is_reference": false
     }
@@ -778,6 +808,69 @@
                 "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                 "description": "The price schedule of one token.",
                 "children": []
+              }
+            ]
+          },
+          {
+            "id": "tokens.order_escrow",
+            "key": {
+              "type": "fixed",
+              "hex": "60",
+              "label": "TokenOrderEscrow",
+              "constant": "TOKEN_ORDER_ESCROW_KEY"
+            },
+            "kinds": [
+              "BigSumTree"
+            ],
+            "since": 16,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+            "book": "data-model/token-marketplace.md",
+            "description": "The tokens open listings hold in escrow. The sum joins the identity balances and the shielded pools in the token conservation check.",
+            "children": [
+              {
+                "id": "tokens.order_escrow.token",
+                "key": {
+                  "type": "dynamic",
+                  "name": "token_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The token id"
+                },
+                "kinds": [
+                  "SumTree"
+                ],
+                "since": 16,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+                "description": "The escrowed listings of one token; created with its first listing.",
+                "children": [
+                  {
+                    "id": "tokens.order_escrow.token.order",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "order_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The listing's order id"
+                    },
+                    "kinds": [
+                      "SumItem"
+                    ],
+                    "value": "token amount",
+                    "since": 16,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+                    "description": "What one open listing still holds.",
+                    "children": []
+                  }
+                ]
               }
             ]
           },
@@ -1971,6 +2064,47 @@
         "description": "Credits put aside in advance to fund specific state transitions, such as masternode votes on a contested resource.",
         "children": [
           {
+            "id": "prefunded_balances.for_token_orders",
+            "key": {
+              "type": "fixed",
+              "hex": "20",
+              "label": "ForTokenOrders",
+              "constant": "PREFUNDED_BALANCES_FOR_TOKEN_ORDERS"
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 16,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
+            "book": "data-model/token-marketplace.md",
+            "description": "The credits the token marketplace holds in escrow for open offers.",
+            "children": [
+              {
+                "id": "prefunded_balances.for_token_orders.offer",
+                "key": {
+                  "type": "dynamic",
+                  "name": "order_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The offer's order id"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 16,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
+                "description": "What one open offer still holds.",
+                "children": []
+              }
+            ]
+          },
+          {
             "id": "prefunded_balances.owner_fee_pots",
             "key": {
               "type": "fixed",
@@ -2910,9 +3044,14 @@
                           "ProvableSumTree",
                           "CountSumTree",
                           "ProvableCountSumTree",
-                          "ProvableCountProvableSumTree"
+                          "ProvableCountProvableSumTree",
+                          "PrivateDocumentStore",
+                          "BigSumTree",
+                          "ProvableBigSumTree",
+                          "CountBigSumTree",
+                          "ProvableCountProvableBigSumTree"
                         ],
-                        "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs.",
+                        "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs. A private document store for a private type; see private_document_store.rs.",
                         "flags": [
                           "EpochOwned",
                           "None"
@@ -2922,7 +3061,7 @@
                         "presence": "lazy",
                         "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                         "book": "drive/document-count-trees.md",
-                        "description": "The documents, by id. Absent for index only document types, which store no documents.",
+                        "description": "The documents, by id. Absent for index only document types, which store no documents. For a private document type (protocol version 15), its fixed-size encrypted entries in append order, each behind a 16-byte header of the block height and time; such a type has no index levels.",
                         "children": [
                           {
                             "id": "contracts.contract.documents.document_type.primary_key.document",
@@ -2940,15 +3079,18 @@
                               "Item",
                               "ItemWithSumItem",
                               "Tree",
-                              "SumTree"
+                              "SumTree",
+                              "Reference",
+                              "ReferenceWithSumItem"
                             ],
-                            "kinds_note": "An item; with a sum when the document type is summable; a tree of revisions when it keeps history.",
+                            "kinds_note": "An item; with a sum when the document type is summable; a tree of revisions when it keeps history before protocol version 15, and a reference to its retained current revision from version 15.",
                             "flags": [
                               "EpochOwned",
                               "None"
                             ],
                             "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                             "value": "serialized document",
+                            "reference": "contracts.contract.documents.document_type.history.document.revision",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
@@ -2967,8 +3109,14 @@
                                   "ReferenceWithSumItem"
                                 ],
                                 "kinds_note": "With a sum when the document type is summable.",
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The document owner when the contract can be deleted; otherwise no flags.",
                                 "reference": "contracts.contract.documents.document_type.primary_key.document.revision",
                                 "since": 1,
+                                "until": 14,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                                 "description": "A sibling reference to the newest revision.",
@@ -2989,11 +3137,139 @@
                                 "kinds": [
                                   "Item"
                                 ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                                 "value": "serialized document",
                                 "since": 1,
+                                "until": 14,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                                 "description": "The document as it was at that time.",
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "id": "contracts.contract.documents.document_type.lifecycle",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "01",
+                          "label": "Lifecycle",
+                          "constant": "DOCUMENT_LIFECYCLE_TREE_KEY"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "since": 15,
+                        "presence": "lazy",
+                        "source": "packages/rs-drive/src/drive/document/paths.rs",
+                        "description": "An unflagged normal tree of lifecycle records for a type that keeps history. Created on the first delete and retained after all records are erased.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.documents.document_type.lifecycle.record",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "document_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The deleted document id"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The deletion's storage payer, including its gas sponsor when sponsored; no flags when the caller supplies no payer. Erase refunds the record's stored flag owner.",
+                            "value": "versioned DPP DocumentLifecycleRecord",
+                            "since": 15,
+                            "presence": "lazy",
+                            "source": "packages/rs-dpp/src/document/lifecycle/mod.rs",
+                            "description": "One document's lifecycle record, present while Deleted or Erasing. The terminal erase removes it together with the remaining history.",
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "contracts.contract.documents.document_type.history",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "02",
+                          "label": "History",
+                          "constant": "DOCUMENT_HISTORY_TREE_KEY"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                        "since": 15,
+                        "presence": "lazy",
+                        "source": "packages/rs-drive/src/drive/document/paths.rs",
+                        "description": "Retained revisions of a type that keeps history, separate from its current primary entries.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.documents.document_type.history.document",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "document_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The document id"
+                            },
+                            "kinds": [
+                              "ProvableCountTree"
+                            ],
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
+                            "since": 15,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/document/paths.rs",
+                            "description": "One document's retained history, with an authenticated revision count.",
+                            "children": [
+                              {
+                                "id": "contracts.contract.documents.document_type.history.document.revision",
+                                "key": {
+                                  "type": "dynamic",
+                                  "name": "block_time_and_revision",
+                                  "matcher": {
+                                    "type": "len",
+                                    "len": 16
+                                  },
+                                  "encoding": "composite",
+                                  "description": "The block time followed by the revision, both unsigned u64 big endian"
+                                },
+                                "kinds": [
+                                  "Item"
+                                ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
+                                "value": "serialized document",
+                                "since": 15,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/document/paths.rs",
+                                "description": "An immutable retained revision.",
                                 "children": []
                               }
                             ]
@@ -3021,7 +3297,11 @@
                           "ProvableCountProvableSumTree",
                           "ProvableCountIndexedTree",
                           "ProvableSumIndexedTree",
-                          "ProvableCountProvableSumIndexedTree"
+                          "ProvableCountProvableSumIndexedTree",
+                          "ProvableBigSumTree",
+                          "ProvableCountProvableBigSumTree",
+                          "ProvableBigSumIndexedTree",
+                          "ProvableCountProvableBigSumIndexedTree"
                         ],
                         "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                         "flags": [
@@ -3053,7 +3333,10 @@
                               "CountSumTree",
                               "ProvableCountSumTree",
                               "ProvableCountProvableSumTree",
-                              "SumItem"
+                              "SumItem",
+                              "BigSumTree",
+                              "CountBigSumTree",
+                              "ProvableCountProvableBigSumTree"
                             ],
                             "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum. At the last property of a summableOffCountIndex index, a sum item counting the source index's entries for the value, in place of the tree.",
                             "flags": [
@@ -3084,7 +3367,11 @@
                                   "ProvableCountSumTree",
                                   "ProvableCountProvableSumTree",
                                   "Reference",
-                                  "ReferenceWithSumItem"
+                                  "ReferenceWithSumItem",
+                                  "BigSumTree",
+                                  "ProvableBigSumTree",
+                                  "CountBigSumTree",
+                                  "ProvableCountProvableBigSumTree"
                                 ],
                                 "kinds_note": "The end of an index: a tree of members, or for a unique index the one reference itself.",
                                 "flags": [
@@ -3153,7 +3440,11 @@
                                   "ProvableCountProvableSumTree",
                                   "ProvableCountIndexedTree",
                                   "ProvableSumIndexedTree",
-                                  "ProvableCountProvableSumIndexedTree"
+                                  "ProvableCountProvableSumIndexedTree",
+                                  "ProvableBigSumTree",
+                                  "ProvableCountProvableBigSumTree",
+                                  "ProvableBigSumIndexedTree",
+                                  "ProvableCountProvableBigSumIndexedTree"
                                 ],
                                 "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                                 "flags": [
@@ -4425,7 +4716,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Chain wide values: total credits, total token supplies, the genesis core height, and the documents waiting to expire.",
+        "description": "Chain wide values: total credits, total token supplies, the genesis core height, the Core forks Platform has seen active, and the documents waiting to expire.",
         "children": [
           {
             "id": "misc.genesis_core_height",
@@ -4530,6 +4821,24 @@
             ]
           },
           {
+            "id": "misc.core_fork_v24",
+            "key": {
+              "type": "fixed",
+              "hex": "4600",
+              "label": "CoreForkV24Activation",
+              "constant": "CORE_FORK_V24_ACTIVATION_KEY"
+            },
+            "kinds": [
+              "Item"
+            ],
+            "value": "u32 big endian",
+            "since": 15,
+            "presence": "lazy",
+            "source": "packages/rs-drive/src/drive/system/core_fork_activations/mod.rs",
+            "description": "The chain locked Core height of the first block that saw Dash Core's V24 active: the coinbase of that Core block has payload version 4 or higher. Written once, by a block that moves the chain locked height, or at init chain; never changed. The key is `F` and the fork's id.",
+            "children": []
+          },
+          {
             "id": "misc.total_token_supplies",
             "key": {
               "type": "fixed",
@@ -4587,7 +4896,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Masternode votes, today on contested resources such as premium DPNS names.",
+        "description": "Masternode votes: on contested resources such as premium DPNS names, and on yes/no decisions.",
         "children": [
           {
             "id": "votes.contested_resource",
@@ -4970,13 +5279,13 @@
                                     "id": "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender",
                                     "key": {
                                       "type": "dynamic",
-                                      "name": "identity_id",
+                                      "name": "contender_id",
                                       "matcher": {
                                         "type": "len",
                                         "len": 32
                                       },
                                       "encoding": "identifier32",
-                                      "description": "The contending identity's id"
+                                      "description": "The contending identity's id, or the contending document's id in a vote among documents (contested index resolution 2, protocol version 15)"
                                     },
                                     "kinds": [
                                       "Tree"
@@ -4989,7 +5298,7 @@
                                     "since": 1,
                                     "presence": "always",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                                    "description": "One contender, below the last value of the index. A 32 byte key is an index value at the levels before that, so what is below the key tells the two apart.",
+                                    "description": "One contender, below the last value of the index. A 32 byte key is an index value at the levels before that, so what is below the key tells the two apart. A contest keeps one contender for each identity, except a vote among documents, which keeps one for each document entered.",
                                     "children": [
                                       {
                                         "id": "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.document",
@@ -5116,8 +5425,251 @@
             "since": 1,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/votes/paths.rs",
-            "description": "Reserved for polls that decide something for the network. Nothing writes to it yet.",
-            "children": []
+            "description": "Yes/no polls: decisions taken by a supermajority of the masternodes once enough voting power was cast.",
+            "children": [
+              {
+                "id": "votes.decisions.identity_votes",
+                "key": {
+                  "type": "fixed",
+                  "hex": "69",
+                  "label": "DecisionIdentityVotes",
+                  "constant": "IDENTITY_VOTES_TREE_KEY",
+                  "ascii": true
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 15,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The yes/no votes each masternode cast, so they can be changed and removed with the masternode.",
+                "children": [
+                  {
+                    "id": "votes.decisions.identity_votes.voter",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "pro_tx_hash",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The voting masternode's pro tx hash"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 15,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One masternode's yes/no votes. Stays when its polls close, and is dropped when the masternode leaves the list.",
+                    "children": [
+                      {
+                        "id": "votes.decisions.identity_votes.voter.vote",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "vote_poll_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized poll purpose"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "bincode YesNoVoteReferenceStorageForm: the choice and how many times the masternode voted on the poll",
+                        "since": 15,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The masternode's current answer to one poll.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "votes.decisions.active_polls",
+                "key": {
+                  "type": "fixed",
+                  "hex": "70",
+                  "label": "DecisionActivePolls",
+                  "constant": "ACTIVE_POLLS_TREE_KEY",
+                  "ascii": true
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 15,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The yes/no polls, by their unique id.",
+                "children": [
+                  {
+                    "id": "votes.decisions.active_polls.poll",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "vote_poll_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "hash32",
+                      "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized poll purpose"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 15,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One yes/no poll: its stored info and its three vote sum trees. The vote trees go when the poll ends; the stored info stays as the record of the decision.",
+                    "children": [
+                      {
+                        "id": "votes.decisions.active_polls.poll.stored_info",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "00",
+                          "label": "YesNoStoredInfo",
+                          "constant": "YES_NO_VOTE_POLL_STORED_INFO_KEY"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "serialized YesNoVotePollStoredInfo",
+                        "since": 15,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The poll as it was opened (its purpose and rule), its status and, once it ends, its result.",
+                        "children": []
+                      },
+                      {
+                        "id": "votes.decisions.active_polls.poll.yes",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "01",
+                          "label": "YesVotes",
+                          "constant": "YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY"
+                        },
+                        "kinds": [
+                          "SumTree"
+                        ],
+                        "since": 15,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes for yes.",
+                        "children": [
+                          {
+                            "id": "votes.decisions.active_polls.poll.yes.voter",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "pro_tx_hash",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The voting masternode's pro tx hash"
+                            },
+                            "kinds": [
+                              "SumItem"
+                            ],
+                            "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                            "since": 15,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "One masternode's vote; the tree's sum is the tally.",
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "votes.decisions.active_polls.poll.no",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "02",
+                          "label": "NoVotes",
+                          "constant": "YES_NO_VOTE_POLL_NO_VOTES_TREE_KEY"
+                        },
+                        "kinds": [
+                          "SumTree"
+                        ],
+                        "since": 15,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes for no.",
+                        "children": [
+                          {
+                            "id": "votes.decisions.active_polls.poll.no.voter",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "pro_tx_hash",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The voting masternode's pro tx hash"
+                            },
+                            "kinds": [
+                              "SumItem"
+                            ],
+                            "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                            "since": 15,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "One masternode's vote; the tree's sum is the tally.",
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "votes.decisions.active_polls.poll.abstain",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "03",
+                          "label": "AbstainVotes",
+                          "constant": "YES_NO_VOTE_POLL_ABSTAIN_VOTES_TREE_KEY"
+                        },
+                        "kinds": [
+                          "SumTree"
+                        ],
+                        "since": 15,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes to abstain, which count towards nothing.",
+                        "children": [
+                          {
+                            "id": "votes.decisions.active_polls.poll.abstain.voter",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "pro_tx_hash",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The voting masternode's pro tx hash"
+                            },
+                            "kinds": [
+                              "SumItem"
+                            ],
+                            "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                            "since": 15,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "One masternode's vote; the tree's sum is the tally.",
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           },
           {
             "id": "votes.end_date_queries",
@@ -5152,13 +5704,14 @@
                   "Tree"
                 ],
                 "flags": [
-                  "EpochOwned"
+                  "EpochOwned",
+                  "None"
                 ],
-                "flags_note": "The owner is the identity whose contested document started the poll.",
+                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                "description": "The polls ending at this time.",
+                "description": "The polls ending at this time. The last key, VOTE_POLLS_LEFT_OPEN_END_DATE (i64::MAX), is a time no block reaches: it lists the contests whose end left them open because the winner could not be awarded its document (protocol version 15). Such a contest keeps its contenders, documents, votes, record and prefunded balance.",
                 "children": [
                   {
                     "id": "votes.end_date_queries.end_date.poll",
@@ -5170,15 +5723,16 @@
                         "len": 32
                       },
                       "encoding": "hash32",
-                      "description": "The double sha256 of the serialized vote poll"
+                      "description": "The poll's unique id: for a contest the double sha256 of the serialized poll, for a yes/no poll that of the yes/no domain tag followed by the serialized poll purpose"
                     },
                     "kinds": [
                       "Item"
                     ],
                     "flags": [
-                      "EpochOwned"
+                      "EpochOwned",
+                      "None"
                     ],
-                    "flags_note": "The owner is the identity whose contested document started the poll.",
+                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",
@@ -5693,7 +6247,7 @@
   },
   "layer_shapes": {
     "contract_groups": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "00",
         "right": {
@@ -5702,7 +6256,7 @@
       }
     },
     "contract_groups.groups.group": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@15",
       "tree": {
         "hex": "02",
         "left": {
@@ -5717,7 +6271,7 @@
       }
     },
     "contract_groups.members.contract": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@15",
       "tree": {
         "hex": "01",
         "left": {
@@ -5729,7 +6283,7 @@
       }
     },
     "contracts.contract": {
-      "origin": "fixture contracts_with_documents@14",
+      "origin": "fixture contracts_with_documents@15",
       "tree": {
         "hex": "01",
         "left": {
@@ -5741,7 +6295,7 @@
       }
     },
     "contracts.contract.other": {
-      "origin": "fixture moderated_contract@14",
+      "origin": "fixture moderated_contract@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -5759,7 +6313,7 @@
       }
     },
     "contracts.contract.other.team_actions": {
-      "origin": "fixture contract_with_team_actions@14",
+      "origin": "fixture contract_with_team_actions@15",
       "tree": {
         "hex": "58",
         "left": {
@@ -5768,7 +6322,7 @@
       }
     },
     "contracts.contract.other.team_actions.active.team_action": {
-      "origin": "fixture contract_with_team_actions@14",
+      "origin": "fixture contract_with_team_actions@15",
       "tree": {
         "hex": "53",
         "left": {
@@ -5777,7 +6331,7 @@
       }
     },
     "contracts.contract.other.team_actions.closed.team_action": {
-      "origin": "fixture contract_with_team_actions@14",
+      "origin": "fixture contract_with_team_actions@15",
       "tree": {
         "hex": "53",
         "left": {
@@ -5786,7 +6340,7 @@
       }
     },
     "group_actions.contract.group": {
-      "origin": "fixture tokens_and_group_actions@14",
+      "origin": "fixture tokens_and_group_actions@15",
       "tree": {
         "hex": "4d",
         "left": {
@@ -5798,7 +6352,7 @@
       }
     },
     "group_actions.contract.group.active.action": {
-      "origin": "fixture tokens_and_group_actions@14",
+      "origin": "fixture tokens_and_group_actions@15",
       "tree": {
         "hex": "53",
         "left": {
@@ -5807,7 +6361,7 @@
       }
     },
     "group_actions.contract.group.closed.action": {
-      "origin": "fixture tokens_and_group_actions@14",
+      "origin": "fixture tokens_and_group_actions@15",
       "tree": {
         "hex": "53",
         "left": {
@@ -5816,7 +6370,7 @@
       }
     },
     "identities.identity": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -5841,7 +6395,7 @@
       "states": [
         {
           "state": "created",
-          "origin": "fixture identities@14",
+          "origin": "fixture identities@15",
           "tree": {
             "hex": "80",
             "left": {
@@ -5860,7 +6414,7 @@
         },
         {
           "state": "used_with_a_contract",
-          "origin": "fixture identities@14",
+          "origin": "fixture identities@15",
           "tree": {
             "hex": "80",
             "left": {
@@ -5882,7 +6436,7 @@
         },
         {
           "state": "budgeted_key_and_contract",
-          "origin": "fixture contract_groups_and_bound_keys@14",
+          "origin": "fixture contract_groups_and_bound_keys@15",
           "tree": {
             "hex": "80",
             "left": {
@@ -5908,7 +6462,7 @@
       ]
     },
     "identities.identity.contract_info.bound": {
-      "origin": "fixture contract_groups_and_bound_keys@14",
+      "origin": "fixture contract_groups_and_bound_keys@15",
       "tree": {
         "hex": "01",
         "left": {
@@ -5917,7 +6471,7 @@
       }
     },
     "identities.identity.key_references": {
-      "origin": "fixture identities@14",
+      "origin": "fixture identities@15",
       "tree": {
         "hex": "03",
         "left": {
@@ -5929,7 +6483,7 @@
       }
     },
     "identities.identity.key_references.authentication": {
-      "origin": "fixture identities@14",
+      "origin": "fixture identities@15",
       "tree": {
         "hex": "02",
         "left": {
@@ -5944,7 +6498,7 @@
       }
     },
     "misc": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "45",
         "left": {
@@ -5956,7 +6510,7 @@
       }
     },
     "pools.epoch": {
-      "origin": "fixture current_epoch@14",
+      "origin": "fixture current_epoch@15",
       "tree": {
         "hex": "6d",
         "left": {
@@ -5984,14 +6538,14 @@
       "states": [
         {
           "state": "future",
-          "origin": "fixture current_epoch@14",
+          "origin": "fixture current_epoch@15",
           "tree": {
             "hex": "73"
           }
         },
         {
           "state": "running",
-          "origin": "fixture current_epoch@14",
+          "origin": "fixture current_epoch@15",
           "tree": {
             "hex": "6d",
             "left": {
@@ -6019,7 +6573,7 @@
         },
         {
           "state": "paid",
-          "origin": "fixture paid_epoch@14",
+          "origin": "fixture paid_epoch@15",
           "tree": {
             "hex": "74",
             "left": {
@@ -6042,7 +6596,7 @@
       ]
     },
     "prefunded_balances": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -6054,7 +6608,7 @@
       }
     },
     "root": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "40",
         "left": {
@@ -6111,7 +6665,7 @@
       }
     },
     "saved_block_transactions": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "65",
         "left": {
@@ -6123,7 +6677,7 @@
       }
     },
     "shielded_balances.main_pool": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -6141,7 +6695,7 @@
       }
     },
     "tokens": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -6165,7 +6719,7 @@
       }
     },
     "tokens.distributions": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -6180,7 +6734,7 @@
       }
     },
     "tokens.distributions.perpetual.token": {
-      "origin": "fixture token_distributions_unclaimed@14",
+      "origin": "fixture token_distributions_unclaimed@15",
       "tree": {
         "hex": "c0",
         "left": {
@@ -6189,7 +6743,7 @@
       }
     },
     "tokens.distributions.timed": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "80",
         "left": {
@@ -6201,7 +6755,7 @@
       }
     },
     "tokens.shielded_pools.token": {
-      "origin": "fixture token_shielded_pool@14",
+      "origin": "fixture token_shielded_pool@15",
       "tree": {
         "hex": "60",
         "left": {
@@ -6219,7 +6773,7 @@
       }
     },
     "versions": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "01",
         "left": {
@@ -6228,7 +6782,7 @@
       }
     },
     "votes": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "64",
         "left": {
@@ -6240,7 +6794,7 @@
       }
     },
     "votes.contested_resource": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "70",
         "left": {
@@ -6249,7 +6803,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type": {
-      "origin": "fixture contested_documents@14",
+      "origin": "fixture contested_documents@15",
       "tree": {
         "hex": "01",
         "left": {
@@ -6258,7 +6812,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
-      "origin": "fixture contested_documents@14",
+      "origin": "fixture contested_documents@15",
       "tree": {
         "hex": "01",
         "left": {
@@ -6266,8 +6820,32 @@
         }
       }
     },
+    "votes.decisions": {
+      "origin": "genesis@15",
+      "tree": {
+        "hex": "70",
+        "left": {
+          "hex": "69"
+        }
+      }
+    },
+    "votes.decisions.active_polls.poll": {
+      "origin": "fixture yes_no_vote_polls@15",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
     "withdrawals": {
-      "origin": "genesis@14",
+      "origin": "genesis@15",
       "tree": {
         "hex": "02",
         "left": {

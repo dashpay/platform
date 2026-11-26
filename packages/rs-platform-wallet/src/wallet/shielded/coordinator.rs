@@ -51,9 +51,15 @@
 //!
 //! [`sync_notes_across`]: super::sync::sync_notes_across
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
+
+use sha2::{Digest, Sha256};
+use tokio_util::sync::CancellationToken;
+
+use crate::changeset::merge::Merge;
 
 /// Callback fired once per chunk during a coordinator sync pass —
 /// the **"downloaded"** progress signal.
@@ -76,27 +82,40 @@ pub type ShieldedProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 pub type ShieldedTreeProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 use std::time::{Duration, Instant};
 
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 
 use super::activity::ShieldedActivityStatus;
-use super::activity_recorder::{identity_redrive_output_cmxs, IdentityRecoveryError};
+use super::activity_recorder::{
+    changeset_for_entry, identity_redrive_output_cmxs, with_status, IdentityRecoveryError,
+};
 use super::balance::{
     ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
 };
-use super::file_store::FileBackedShieldedStore;
+use super::file_store::{raise_balance_change, BalanceChangeSignal, FileBackedShieldedStore};
 use super::keys::AccountViewingKeys;
 use super::store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
-    SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedStore,
+    StalePendingSpend, SubwalletId,
 };
+use super::sync::NoteScan;
+use super::token_pool::{ShieldedTokenPoolBalance, ShieldedTokenPoolWatch, TokenPoolConnection};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+use crate::wallet::identity::network::dashpay_contract;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME;
+use dash_sdk::platform::private_document_scan::MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::TokenContractPosition;
+use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::calculate_token_id;
+use dpp::version::PlatformVersion;
+use futures::StreamExt;
 
 /// Network-scoped shielded coordinator.
 ///
@@ -170,6 +189,16 @@ pub struct NetworkShieldedCoordinator {
     /// activity; bypassed by `force` syncs.
     last_caught_up_at: std::sync::Mutex<Option<Instant>>,
 
+    /// The journal records, by wallet and entry commitment, whose entry an
+    /// expiry read found in DashPay's private store
+    /// ([`Self::discharge_expired_private_payments`]): their payments
+    /// executed, so they are no candidates for expiry and no later pass reads
+    /// the store again for them. Each record stays, holding its pair, until a
+    /// private sync reads its entry back and records the request, which
+    /// discharges it; then it leaves this set too. In memory only: a restart
+    /// reads the store for it once more.
+    landed_private_payments: std::sync::Mutex<BTreeSet<(WalletId, [u8; 32])>>,
+
     /// Optional progress callback fired once per chunk inside
     /// `sync_shielded_notes`. Lets the manager translate chunk-level
     /// progress into `PlatformEventHandler::on_shielded_sync_progress`
@@ -231,6 +260,23 @@ pub struct NetworkShieldedCoordinator {
     /// other way round.
     lifecycle: tokio::sync::Mutex<()>,
 
+    /// Keeps Clear apart from operations that bind/flush viewing keys or spend
+    /// from extracted notes. An operation holds the shared side from its first
+    /// step to its result ([`operation_guard`](Self::operation_guard)); Clear
+    /// takes the exclusive side without waiting and is refused while any
+    /// operation holds it ([`try_admit_clear`](Self::try_admit_clear)). An
+    /// operation that arrives while a Clear runs waits for that Clear.
+    /// Separate from `lifecycle`, which bind takes internally.
+    /// Lock order: `operation_admission` → `lifecycle` → `store`.
+    operation_admission: RwLock<()>,
+
+    /// Whether a Clear holds the exclusive side of `operation_admission`
+    /// ([`ShieldedClearAdmission`] sets and resets it). Read by
+    /// [`clear_in_progress`](Self::clear_in_progress), which must not take
+    /// the admission to ask: a shared permit held for an instant would
+    /// refuse a Clear requested in that instant.
+    clear_admission_held: AtomicBool,
+
     /// Wallets whose per-subwallet store state has been successfully
     /// hydrated from the host's persisted snapshot this session
     /// (`restore_for_wallet` completed without error after the
@@ -263,6 +309,169 @@ pub struct NetworkShieldedCoordinator {
     /// counter before the load and re-reading it inside the transaction
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
+
+    /// The balance change signal, shared with the store
+    /// ([`FileBackedShieldedStore::balance_change_signal`]). The store raises
+    /// it on every change to its per-subwallet state; the coordinator raises
+    /// it when the account registry or a wallet's hydration changes, the
+    /// other two inputs of [`local_balance_snapshot`](Self::local_balance_snapshot).
+    /// Watched by the balance emitter
+    /// ([`super::balance_emitter::run_balance_emitter`]).
+    balance_change: BalanceChangeSignal,
+}
+
+/// Whether `kind` is a token pool spend paid from the credit pool whose token
+/// bundle carries tokens out of the wallet (a shielded token transfer or a
+/// token unshield).
+fn is_token_pool_spend(kind: &super::activity::ShieldedActivityKind) -> bool {
+    matches!(
+        kind,
+        super::activity::ShieldedActivityKind::TokenShieldedTransfer
+            | super::activity::ShieldedActivityKind::TokenUnshield { .. }
+    )
+}
+
+/// Fail the activity row `entry_id` of a spend whose reservation the anchor
+/// expiry release just cleared, under the store guard that cleared it, and
+/// return the failed row for the host. `None`, with nothing written, for:
+///
+/// - a token pool spend: its fee bundle no longer landing does not settle
+///   it, as below the protocol version that binds the two bundles its token
+///   bundle can land with another fee bundle. Its row is settled from its
+///   token notes once a token pool scan has read them
+///   (`release_orphaned_token_reservations`);
+/// - a row the scan confirmed with a height, which is chain truth;
+/// - a row that is gone or does not read.
+fn fail_released_spend_row<S: ShieldedStore>(
+    store: &mut S,
+    id: SubwalletId,
+    entry_id: &[u8; 32],
+) -> Option<super::activity::ShieldedActivityEntry> {
+    let entry = match store.get_activity_by_entry_id(id, entry_id) {
+        Ok(entry) => entry?,
+        Err(e) => {
+            tracing::warn!(
+                entry_id = %hex::encode(entry_id),
+                error = %e,
+                "shielded reservation release: the spend's row was not read; it is not failed"
+            );
+            return None;
+        }
+    };
+    if is_token_pool_spend(&entry.kind)
+        || (entry.status == ShieldedActivityStatus::Confirmed && entry.block_height.is_some())
+    {
+        return None;
+    }
+    let failed = with_status(&entry, ShieldedActivityStatus::Failed, None);
+    if let Err(e) = store.save_activity(id, &failed) {
+        tracing::warn!(
+            entry_id = %hex::encode(entry_id),
+            error = %e,
+            "shielded reservation release: the failed row was not saved; the host is still told"
+        );
+    }
+    Some(failed)
+}
+
+/// What the token note sweep does with an orphaned hold: whether to mark its
+/// spend's pending row failed, and whether to release its notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OrphanedHoldSettlement {
+    fail_row: bool,
+    release: bool,
+}
+
+/// Settle an orphaned token hold, `orphan`: its spend is not in flight here
+/// and its saved record, if it had one, is gone.
+///
+/// - Never saved: the spend was never sent, so it failed; release.
+/// - Some of its notes spent and some not: its bundle spends them all at
+///   once, so another spend used some. It did not land and can no longer, at
+///   any version: it failed; release.
+/// - Signed bound (its token bundle cannot land without its fee bundle, from
+///   protocol 15): its record went because its fee anchor was pruned (it can
+///   never execute) or its fee notes were seen spent (it landed, or another
+///   spend used them). The token scan reached the credit scan's height, so a
+///   landing shows its token notes spent: with none spent, or its fee anchor
+///   pruned, it failed. Release either way; a landed spend's row is left to
+///   the scan that confirms it from its fee change.
+/// - Signed unbound (protocol 14): its token bundle can land with any fee
+///   bundle, before or after its own fee side went. With a note it holds
+///   spent, it may have been delivered that way, so nothing is concluded and
+///   the notes, spent, are released. With none spent, it failed only once the
+///   pool's own scan is at a binding version, after which it can no longer
+///   land and, unspent at that scan, never did; until then the notes stay
+///   held.
+fn settle_orphaned_token_hold(
+    orphan: &super::token_pool::OrphanedReservation,
+) -> OrphanedHoldSettlement {
+    let partly_spent = orphan.any_spent && !orphan.all_spent;
+    let (fail_row, release) = if !orphan.record_saved || partly_spent {
+        (true, true)
+    } else if orphan.signed_bound {
+        (orphan.fee_anchor_pruned || !orphan.any_spent, true)
+    } else if orphan.any_spent {
+        (false, true)
+    } else {
+        let binds = scan_binds_token_fee_bundles(orphan);
+        (binds, binds)
+    };
+    OrphanedHoldSettlement { fail_row, release }
+}
+
+/// Whether the token pool scan that found `orphan` orphaned was proven at a
+/// protocol version that binds a token bundle to its fee bundle (from
+/// version 15). That pool's own scan decides, not the highest version the SDK
+/// has seen: a scan proven at a binding version saw every block in which the
+/// spend's token bundle could still have landed with another fee bundle. A
+/// scan with no version recorded binds nothing.
+fn scan_binds_token_fee_bundles(orphan: &super::token_pool::OrphanedReservation) -> bool {
+    orphan
+        .scanned_protocol_version
+        .and_then(|version| PlatformVersion::get(version).ok())
+        .is_some_and(|version| version.dpp.methods.token_pool_paid_fee_binding.is_some())
+}
+
+/// A Clear's exclusive hold on one coordinator's operation admission,
+/// returned by [`try_admit_clear`](NetworkShieldedCoordinator::try_admit_clear)
+/// and spent by [`clear`](Self::clear). No shielded operation is admitted on
+/// that coordinator while it lives; one that arrives waits for it to drop.
+///
+/// It keeps the coordinator it was given by, so the Clear it allows can only
+/// run there: an admission of one coordinator cannot be spent on another.
+pub(crate) struct ShieldedClearAdmission<'a> {
+    coordinator: &'a NetworkShieldedCoordinator,
+    // Declared before the guard, so the mark is reset before the admission
+    // is released: nothing reads a Clear as admitted once it is not.
+    _held: ClearAdmissionMark<'a>,
+    _operations: tokio::sync::RwLockWriteGuard<'a, ()>,
+}
+
+/// Marks a Clear as admitted for as long as it lives
+/// ([`NetworkShieldedCoordinator::clear_in_progress`]).
+struct ClearAdmissionMark<'a>(&'a AtomicBool);
+
+impl<'a> ClearAdmissionMark<'a> {
+    fn set(held: &'a AtomicBool) -> Self {
+        held.store(true, AtomicOrdering::Release);
+        Self(held)
+    }
+}
+
+impl Drop for ClearAdmissionMark<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, AtomicOrdering::Release);
+    }
+}
+
+impl ShieldedClearAdmission<'_> {
+    /// Run the Clear, on the coordinator that gave this admission, and
+    /// release the admission when it returns. See
+    /// [`NetworkShieldedCoordinator::clear`] for what it resets and returns.
+    pub(crate) async fn clear(self) -> Result<(), PlatformWalletError> {
+        self.coordinator.clear_admitted().await
+    }
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -388,6 +597,7 @@ impl NetworkShieldedCoordinator {
         db_path: PathBuf,
         store: FileBackedShieldedStore,
     ) -> Self {
+        let balance_change = store.balance_change_signal();
         Self {
             sdk,
             network,
@@ -396,12 +606,39 @@ impl NetworkShieldedCoordinator {
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
+            landed_private_payments: std::sync::Mutex::new(BTreeSet::new()),
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
+            operation_admission: RwLock::new(()),
+            clear_admission_held: AtomicBool::new(false),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
+            balance_change,
         }
+    }
+
+    /// A receiver of the balance change signal (see the `balance_change`
+    /// field). Subscribing takes no lock.
+    pub(crate) fn subscribe_balance_changes(&self) -> watch::Receiver<u64> {
+        self.balance_change.subscribe()
+    }
+
+    /// Raise the balance change signal after a change to the account
+    /// registry or to a wallet's hydration.
+    fn signal_balance_change(&self) {
+        raise_balance_change(&self.balance_change);
+    }
+
+    /// The wallets with at least one registered account (snapshot). Takes
+    /// only the registry read lock.
+    pub(crate) async fn registered_wallets(&self) -> BTreeSet<WalletId> {
+        self.accounts
+            .read()
+            .await
+            .keys()
+            .map(|id| id.wallet_id)
+            .collect()
     }
 
     /// Snapshot of the clear counter, to be taken **before** reading the
@@ -418,6 +655,27 @@ impl NetworkShieldedCoordinator {
     /// coordinator agree on the network.
     pub fn network(&self) -> dashcore::Network {
         self.network
+    }
+
+    /// Refuse a wallet of another network. A bind derives the wallet's
+    /// viewing keys for the wallet's network: registered on this coordinator
+    /// they would be scanned for on another network's chain, so the bind
+    /// would succeed and the wallet would never see a note.
+    ///
+    /// Both the network this coordinator is labelled with and the network of
+    /// the SDK it scans through must be the wallet's. `new` takes the two
+    /// separately, so a label alone does not say which chain is scanned.
+    pub(crate) fn ensure_network(
+        &self,
+        wallet_network: dashcore::Network,
+    ) -> Result<(), PlatformWalletError> {
+        if self.network != wallet_network || self.sdk.network != wallet_network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?} (its SDK for {:?}), this wallet for {:?}",
+                self.network, self.sdk.network, wallet_network
+            )));
+        }
+        Ok(())
     }
 
     /// Install (or replace) the per-chunk progress handler. The
@@ -464,6 +722,19 @@ impl NetworkShieldedCoordinator {
     /// subsequent calls pass the same path.
     pub fn db_path(&self) -> &std::path::Path {
         &self.db_path
+    }
+
+    /// Whether the store's private payment journal may keep a record of
+    /// `wallet_id`'s: it does, it does not read, or the store is busy, as this
+    /// waits on nothing. A wallet created or loaded under an id another process
+    /// journaled payments under has them unresolved, which only the journal
+    /// shows (`PlatformWalletManager::restore_private_contact_payment_holds`).
+    pub(crate) fn may_journal_private_payments_of(&self, wallet_id: WalletId) -> bool {
+        self.store.try_read().map_or(true, |store| {
+            store
+                .private_payment_journal(wallet_id)
+                .map_or(true, |records| !records.is_empty())
+        })
     }
 
     /// Reference to the shared store. The full sync / spend
@@ -645,6 +916,53 @@ impl NetworkShieldedCoordinator {
         }
     }
 
+    /// Acquire before wallet placement/configuration locks; retain through persistence
+    /// and the operation result so Clear cannot delete state while it is still in use.
+    /// A Clear requested meanwhile is refused; an operation that arrives while a
+    /// Clear runs waits here until that Clear has returned.
+    pub(crate) async fn operation_guard(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
+        self.operation_admission.read().await
+    }
+
+    /// Whether any operation holds [`Self::operation_guard`] right now.
+    #[cfg(test)]
+    pub(crate) fn has_admitted_operation(&self) -> bool {
+        self.operation_admission.try_write().is_err()
+    }
+
+    /// Admit a Clear, or refuse it at once with
+    /// [`PlatformWalletError::ShieldedOperationInProgress`] while a shielded
+    /// operation holds [`operation_guard`](Self::operation_guard) (or another
+    /// Clear is admitted). Never waits and changes nothing, so a caller with
+    /// work to do before the wipe (the manager stops the sync loop first) asks
+    /// here before starting it. The admission is spent by
+    /// [`ShieldedClearAdmission::clear`]; while it is held, every new
+    /// operation waits.
+    pub(crate) fn try_admit_clear(
+        &self,
+    ) -> Result<ShieldedClearAdmission<'_>, PlatformWalletError> {
+        self.operation_admission
+            .try_write()
+            .map(|operations| ShieldedClearAdmission {
+                coordinator: self,
+                _held: ClearAdmissionMark::set(&self.clear_admission_held),
+                _operations: operations,
+            })
+            .map_err(|_| PlatformWalletError::ShieldedOperationInProgress)
+    }
+
+    /// Whether a Clear is admitted right now ([`Self::try_admit_clear`]):
+    /// from before it stops the sync loop until it has wiped the state and
+    /// advanced the generation, or gave up without wiping anything.
+    ///
+    /// Asks without touching the admission, so asking never refuses a
+    /// Clear: a local read that must not use rows a Clear is purging checks
+    /// this after it read them, instead of taking
+    /// [`operation_guard`](Self::operation_guard) for the read.
+    pub(crate) fn clear_in_progress(&self) -> bool {
+        self.clear_admission_held.load(AtomicOrdering::Acquire)
+    }
+
     /// [`register_wallet`](Self::register_wallet)'s body, with the
     /// lifecycle mutex already held by the caller's transaction.
     async fn register_locked(
@@ -695,11 +1013,57 @@ impl NetworkShieldedCoordinator {
         // displace an owner, so they keep their store-lock-free fast path.
         if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
+            // A damaged note-spend record of the wallet was retained without
+            // being loaded: which account paid it is not known here, and the
+            // purge of a dropped or re-keyed account would delete it with
+            // the account. Its transition may still execute, and the record
+            // is what makes a second payment to its recipient fail closed.
+            if !stale.is_empty() && store.has_unloaded_note_spends(wallet_id) {
+                return Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+                    account_index: None,
+                    reason: "a damaged record of an unresolved shielded spend is kept, and \
+                             dropping or re-keying an account could drop it"
+                        .to_owned(),
+                });
+            }
             let guards = store
                 .pending_redrives_for_wallet(wallet_id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             for (id, redrive) in guards {
-                if !redrive.nullifiers.is_empty() || redrive.identity_user_abandoned {
+                if redrive.identity_user_abandoned {
+                    continue;
+                }
+                if !redrive.nullifiers.is_empty() {
+                    // A note spend's record goes with its account when the
+                    // registration drops or re-keys it (the purge below).
+                    // Its transition may still execute, and the record is
+                    // all that says so: what refuses a second payment to
+                    // the same recipient (a shielded tip) reads it. So the
+                    // account stays as it is until the spend resolves.
+                    if stale.iter().any(|(stale_id, _)| *stale_id == id) {
+                        return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                            account_index: id.account_index,
+                            reason: "an unresolved shielded spend was paid from it, and dropping \
+                                     or re-keying the account would drop the spend's record; a \
+                                     shielded sync resolves the spend"
+                                .to_owned(),
+                        });
+                    }
+                    // The first registration after a restart: the record was
+                    // restored from the store, and only a scan of the account
+                    // that paid resolves it (seen executed, or its anchor
+                    // proven pruned). Without that account the spend stays
+                    // unresolved, and what reads the record (a tip review)
+                    // fails for want of its keys, with the bind having
+                    // reported nothing.
+                    if registered_count == 0 && !account_views.contains_key(&id.account_index) {
+                        return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                            account_index: id.account_index,
+                            reason: "an unresolved shielded spend was paid from it; bind the \
+                                     account so a shielded sync can resolve the spend"
+                                .to_owned(),
+                        });
+                    }
                     continue;
                 }
                 let Some(views) = account_views.get(&id.account_index) else {
@@ -739,6 +1103,13 @@ impl NetworkShieldedCoordinator {
         // reached the host). Registering the persister before the
         // accounts makes "accounts visible ⇒ persister visible"
         // hold at every interleaving.
+        // The stale accounts the registration keeps under another key, as
+        // opposed to the ones it drops.
+        let rekeyed: BTreeSet<u32> = stale
+            .iter()
+            .map(|(id, _)| id.account_index)
+            .filter(|account_index| account_views.contains_key(account_index))
+            .collect();
         self.persisters.write().await.insert(wallet_id, persister);
         {
             let mut accounts = self.accounts.write().await;
@@ -757,6 +1128,7 @@ impl NetworkShieldedCoordinator {
         if shape_changed {
             self.hydrated.write().await.remove(&wallet_id);
         }
+        self.signal_balance_change();
 
         // Purge ONLY the dropped / re-keyed subwallets' store state.
         // Skipped entirely on the identical-registration path (empty
@@ -769,6 +1141,33 @@ impl NetworkShieldedCoordinator {
         if !stale.is_empty() {
             let mut store = self.store.write().await;
             for (id, _) in stale {
+                // The check above ran under a store guard it released. A
+                // spend that holds neither the lifecycle mutex nor the
+                // account-set lock (a credit pool transfer, unshield or
+                // withdrawal) can have saved its record since. Purging the
+                // account now would delete that record while the spend may
+                // still execute, so a dropped account's state stays: it is
+                // no longer registered, and what reads the record fails
+                // closed asking for the account until it is bound again.
+                //
+                // Not for a re-keyed account, which stays registered under
+                // the replacement key: the old key's notes and scan
+                // watermark would then be read as the new key's. It is
+                // purged as it always was.
+                let holds_a_spend = !rekeyed.contains(&id.account_index)
+                    && store
+                        .pending_redrives(id)
+                        .map(|records| records.iter().any(|record| !record.nullifiers.is_empty()))
+                        .unwrap_or(true);
+                if holds_a_spend {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        "a shielded spend from a dropped account saved its record while the \
+                         account was dropped; its store state is kept"
+                    );
+                    continue;
+                }
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
@@ -814,6 +1213,8 @@ impl NetworkShieldedCoordinator {
         } else {
             set.remove(&wallet_id);
         }
+        drop(set);
+        self.signal_balance_change();
     }
 
     /// Whether `wallet_id` is currently registered with exactly
@@ -889,12 +1290,249 @@ impl NetworkShieldedCoordinator {
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
+        self.signal_balance_change();
         if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
                 "Failed to purge per-subwallet store state on unregister"
             );
+        }
+    }
+
+    /// Watch the shielded pool of the token at `token_contract_position` of
+    /// `data_contract_id` for `wallet_id`: every later sync pass scans it for
+    /// the wallet's accounts ([`super::token_pool`]). Refuses a wallet with no
+    /// registered account ([`PlatformWalletError::ShieldedNotBound`]) and a
+    /// token whose verified configuration has no shielded pool or cannot be
+    /// read. Watching a watched pool again changes nothing.
+    pub async fn watch_token_pool(
+        &self,
+        wallet_id: WalletId,
+        data_contract_id: Identifier,
+        token_contract_position: TokenContractPosition,
+    ) -> Result<ShieldedTokenPoolWatch, PlatformWalletError> {
+        self.ensure_registered(wallet_id).await?;
+        super::operations::ensure_token_has_shielded_pool(
+            &self.sdk,
+            data_contract_id,
+            token_contract_position,
+        )
+        .await?;
+        let watch = ShieldedTokenPoolWatch {
+            token_id: Identifier::from(calculate_token_id(
+                &data_contract_id.to_buffer(),
+                token_contract_position,
+            )),
+            data_contract_id,
+            token_contract_position,
+        };
+        self.record_token_pool_watch(wallet_id, watch).await?;
+        Ok(watch)
+    }
+
+    /// Record that `wallet_id` watches `watch`'s pool, with no network read:
+    /// for a pool the wallet just bought into, whose configuration the
+    /// purchase verified.
+    pub(crate) async fn record_token_pool_watch(
+        &self,
+        wallet_id: WalletId,
+        watch: ShieldedTokenPoolWatch,
+    ) -> Result<(), PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.ensure_registered(wallet_id).await?;
+        self.store.read().await.with_token_pool_conn(|conn| {
+            super::token_pool::insert_watch(conn, wallet_id, &watch)
+        })?;
+        // A newly watched pool is unscanned: let the next pass run at once.
+        if let Ok(mut guard) = self.last_caught_up_at.lock() {
+            *guard = None;
+        }
+        Ok(())
+    }
+
+    /// Stop watching `token_id`'s pool for `wallet_id`, dropping the wallet's
+    /// notes and scan state there. Unwatching a pool not watched changes
+    /// nothing.
+    pub async fn unwatch_token_pool(
+        &self,
+        wallet_id: WalletId,
+        token_id: Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::remove_watch(conn, wallet_id, token_id))
+    }
+
+    /// `wallet_id`'s tokens in every pool it watches, one row per watched
+    /// pool and registered account, from the local scan alone. Refuses a
+    /// wallet with no registered account.
+    pub async fn token_pool_balances(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<ShieldedTokenPoolBalance>, PlatformWalletError> {
+        let accounts: Vec<u32> = self
+            .accounts
+            .read()
+            .await
+            .keys()
+            .filter(|id| id.wallet_id == wallet_id)
+            .map(|id| id.account_index)
+            .collect();
+        if accounts.is_empty() {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
+        self.store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::balances(conn, wallet_id, &accounts))
+    }
+
+    /// Settle the token pool spends whose token notes no saved record or
+    /// spend in flight holds any more, in the pools `scanned` (the ones this
+    /// pass scanned to their end, after the credit pool), once each pool's
+    /// scan reached the highest height a credit pool scan has read
+    /// (`scanned_from` is this pass's, kept by
+    /// [`super::token_pool::raise_sweep_height`] whether or not a pool
+    /// completed) ([`super::token_pool::orphaned_reservations`]). When a
+    /// record does not read, or the store retained a damaged record of a
+    /// wallet it could not load, nothing of that wallet is judged.
+    ///
+    /// What it is decided by ([`settle_orphaned_token_hold`]): whether its
+    /// record was ever saved, whether it was signed at a protocol version
+    /// that binds its token bundle to its fee bundle, whether the token scan
+    /// has seen any note it holds spent, and the version the pool's own scan
+    /// was proven at. A row is marked failed only where nothing can have
+    /// delivered the spend, and its notes stay held while its token bundle
+    /// can still land.
+    ///
+    /// Rows go first: an interruption before the release leaves a failed row
+    /// with its notes still held, which the next pass releases.
+    async fn release_orphaned_token_reservations(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        scanned: &BTreeSet<Identifier>,
+        scanned_from: Option<u64>,
+    ) {
+        let Some(scanned_from) = scanned_from else {
+            return;
+        };
+        // The credit scan's height is kept even when no token pool completed:
+        // a record it dropped stays dropped, and a later pass answered from
+        // below must not lower the height a token scan has to reach.
+        let floor = match self
+            .store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::raise_sweep_height(conn, scanned_from))
+        {
+            Ok(floor) => floor,
+            Err(e) => {
+                tracing::warn!(error = %e, "token note reservations kept: the sweep height was not kept");
+                return;
+            }
+        };
+        if scanned.is_empty() {
+            return;
+        }
+        let (orphaned, pending_rows) = {
+            let store = self.store.read().await;
+            let mut owners = BTreeSet::new();
+            let mut live = BTreeSet::new();
+            for (id, _) in subwallets {
+                if store.has_unloaded_note_spends(id.wallet_id) {
+                    continue;
+                }
+                match store.pending_redrives(*id) {
+                    Ok(records) => {
+                        live.extend(records.into_iter().map(|record| record.activity_id));
+                        owners.insert(*id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "token note reservations kept: a saved record does not read");
+                        return;
+                    }
+                }
+            }
+            let orphaned = match store.with_token_pool_conn(|conn| {
+                super::token_pool::orphaned_reservations(conn, &owners, scanned, floor, &live)
+            }) {
+                Ok(orphaned) => orphaned,
+                Err(e) => {
+                    tracing::warn!(error = %e, "reading orphaned token note reservations failed");
+                    return;
+                }
+            };
+            let pending_rows: Vec<(SubwalletId, [u8; 32])> = orphaned
+                .iter()
+                .filter(|orphan| settle_orphaned_token_hold(orphan).fail_row)
+                .filter(|orphan| {
+                    store
+                        .get_activity_by_entry_id(orphan.id, &orphan.marker)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|entry| {
+                            is_token_pool_spend(&entry.kind)
+                                && entry.status == ShieldedActivityStatus::Pending
+                        })
+                })
+                .map(|orphan| (orphan.id, orphan.marker))
+                .collect();
+            (orphaned, pending_rows)
+        };
+        if orphaned.is_empty() {
+            return;
+        }
+        // Rows first: a pending row is failed before its notes come back.
+        if !pending_rows.is_empty() {
+            let persisters = self.persisters.read().await;
+            for (id, entry_id) in &pending_rows {
+                super::operations::record_activity_status_by_id(
+                    &self.store,
+                    persisters.get(&id.wallet_id),
+                    id.wallet_id,
+                    *id,
+                    entry_id,
+                    ShieldedActivityStatus::Failed,
+                )
+                .await;
+            }
+        }
+        let releases: Vec<&super::token_pool::OrphanedReservation> = orphaned
+            .iter()
+            .filter(|orphan| settle_orphaned_token_hold(orphan).release)
+            .collect();
+        if releases.is_empty() {
+            return;
+        }
+        let released = releases.len();
+        match self.store.read().await.with_token_pool_conn(|conn| {
+            super::token_pool::release_reservations(conn, releases.iter().copied())
+        }) {
+            Ok(()) => tracing::info!(
+                spends = released,
+                "released the token notes of token pool spends that cannot execute"
+            ),
+            Err(e) => {
+                tracing::warn!(error = %e, "releasing orphaned token note reservations failed")
+            }
+        }
+    }
+
+    /// Refuse a wallet with no registered account.
+    async fn ensure_registered(&self, wallet_id: WalletId) -> Result<(), PlatformWalletError> {
+        if self
+            .accounts
+            .read()
+            .await
+            .keys()
+            .any(|id| id.wallet_id == wallet_id)
+        {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::ShieldedNotBound)
         }
     }
 
@@ -949,8 +1587,10 @@ impl NetworkShieldedCoordinator {
                 // registration. A complete scan can establish each live account's
                 // ledger independently. Do not mark host hydration complete here:
                 // a later bind must still be able to restore host-only metadata.
-                // Successful Clear purges the source with the subwallet, and a
-                // newly added/unscanned account cannot inherit another's coverage.
+                // Successful Clear purges the source with the subwallet, a failed
+                // one forgets it (it predates the tree that Clear may have reset),
+                // and a newly added/unscanned account cannot inherit another's
+                // coverage.
                 if !hydrated && balance.source != ShieldedBalanceSource::ScannedThisSession {
                     return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
                 }
@@ -1187,7 +1827,21 @@ impl NetworkShieldedCoordinator {
     /// silently the host could drop its rows while the shared tree
     /// stays populated, and the next cold resync would gate-skip every
     /// re-downloaded position against the stale `tree_size`.
+    ///
+    /// Does not wait for a shielded operation in flight: while one is
+    /// admitted this returns
+    /// [`PlatformWalletError::ShieldedOperationInProgress`] at once, having
+    /// changed nothing, and the caller retries once it has finished. A Clear
+    /// that waited would hold up every operation behind it for as long as
+    /// the payment it waited for, proof and broadcast included.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
+        self.try_admit_clear()?.clear().await
+    }
+
+    /// [`clear`](Self::clear)'s body. Private: it runs only through
+    /// [`ShieldedClearAdmission::clear`], whose admission is this
+    /// coordinator's and is held until this returns.
+    async fn clear_admitted(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that
         // already registered would otherwise restore its pre-Clear
@@ -1262,6 +1916,16 @@ impl NetworkShieldedCoordinator {
                     });
                 }
             }
+            // A failed Clear keeps the notes, and may have reset the tree
+            // already (always, when it is the purge that failed). An account
+            // whose scan completed in this session would otherwise keep its
+            // pre-Clear amount reported as known: hydration is dropped below,
+            // but a completed scan stands in for it. So the scan evidence
+            // goes with the hydration, under the same store guard as the
+            // reset it predates.
+            if first_err.is_some() {
+                store.forget_scan_evidence();
+            }
         }
         // Hydration and snapshot validity go regardless of the outcome.
         // Either reset may fail after changing part of its persistent state,
@@ -1271,6 +1935,7 @@ impl NetworkShieldedCoordinator {
         self.hydrated.write().await.clear();
         self.clear_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.signal_balance_change();
 
         if let Some(e) = first_err {
             return Err(e);
@@ -1285,10 +1950,36 @@ impl NetworkShieldedCoordinator {
         // told the clear failed, keeps its own state.
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
+        self.signal_balance_change();
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
         Ok(())
+    }
+
+    /// Discharge the private payment journal records of the private contact
+    /// requests each registered wallet's private sync read back and recorded
+    /// durably (`WalletPersister::note_read_back_private_entries`).
+    pub(crate) async fn discharge_read_back_private_payments(&self) {
+        let noted: Vec<(WalletId, WalletPersister)> = self
+            .persisters
+            .read()
+            .await
+            .iter()
+            .filter(|(_, persister)| persister.has_read_back_private_entries())
+            .map(|(wallet_id, persister)| (*wallet_id, persister.clone()))
+            .collect();
+        if noted.is_empty() {
+            return;
+        }
+        let mut store = self.store.write().await;
+        for (wallet_id, persister) in &noted {
+            super::operations::discharge_read_back_private_payments(
+                &mut *store,
+                persister,
+                *wallet_id,
+            );
+        }
     }
 
     /// Run one shielded sync pass for every registered wallet on
@@ -1311,10 +2002,45 @@ impl NetworkShieldedCoordinator {
     /// per-[`WalletId`] and queued through each registered
     /// [`WalletPersister`].
     ///
+    /// Cancellation: `cancel` is checked before every network step and
+    /// between note batches. A scan cut short keeps the commitments it
+    /// appended to the local tree and publishes nothing else (see
+    /// [`sync_notes_across`]): the pass then returns the empty summary,
+    /// so the manager reports no completion and the host sees no
+    /// partial ledger. A stop that lands after the scan completed skips
+    /// the remaining network work (spend re-drives, stranded releases,
+    /// identity-shield re-drives) but still runs the store-only steps
+    /// and flushes the completed scan to the host persisters. The
+    /// caught-up cooldown is never stamped by a cancelled pass.
+    ///
+    /// A scan that stops at a gap between two fetched ranges ends the pass
+    /// the same way: its tree progress is kept, nothing else is published,
+    /// the empty summary is returned and the caught-up cooldown is cleared,
+    /// so the next pass reads the pool again at once.
+    ///
+    /// A pass cut short either way returns the default summary: no wallet
+    /// results and a `sync_unix_seconds` of 0, which means no pass ran.
+    /// Every pass that completed, a skipped or failed one included, sets the
+    /// timestamp.
+    ///
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
-    pub async fn sync(&self, force: bool) -> ShieldedSyncPassSummary {
+    pub async fn sync(&self, force: bool, cancel: &CancellationToken) -> ShieldedSyncPassSummary {
+        // A stop that landed before any work: nothing to finalize, so
+        // return the empty summary without touching Platform or the
+        // store (the manager then skips the completion event). Checked
+        // ahead of the cooldown gate, whose skip summary would otherwise
+        // report one caught-up wallet each for a pass that never ran.
+        if cancel.is_cancelled() {
+            tracing::debug!("Coordinator sync cancelled before it started");
+            return ShieldedSyncPassSummary::default();
+        }
+
+        // Every pass, cooldown or not: the private requests a private sync read
+        // back discharge their journal records.
+        self.discharge_read_back_private_payments().await;
+
         // Network-wide cooldown gate. Snapshot the remaining
         // window into a local before any await — `std::sync::Mutex`
         // is `!Send` across await points (clippy's
@@ -1366,7 +2092,13 @@ impl NetworkShieldedCoordinator {
         // scan are deliberately absent from the snapshot — their anchors
         // may be newer than this set — and get checked next pass. Skips the
         // network call entirely when nothing is armed (the common case).
-        let stranded_release = self.prefetch_stranded_release(&subwallets).await;
+        // The prefetch is a read-only RPC, so a stop that lands while it is
+        // in flight simply drops it: the release pass is skipped on a
+        // cancelled pass anyway, and the scan below bails before locking.
+        let stranded_release = cancel
+            .run_until_cancelled(self.prefetch_stranded_release(&subwallets))
+            .await
+            .flatten();
 
         // ONE SDK call covers every registered IVK on the network.
         // Snapshot the optional progress handler installed by the
@@ -1384,12 +2116,52 @@ impl NetworkShieldedCoordinator {
             &subwallets,
             on_progress.as_ref(),
             on_tree_progress.as_ref(),
+            cancel,
         )
         .await
         {
-            Ok(r) => r,
+            Ok(NoteScan::Finished(notes)) => notes,
+            // A scan that stopped at a gap between two fetched ranges
+            // published nothing, and knows the pool holds notes it did not
+            // read: hand back the empty summary, with no timestamp, so no
+            // wallet reads as synced from it and the manager reports no
+            // completion. The scan appended leaves before it stopped, so the
+            // caught-up stamp goes too and the next pass walks Platform at
+            // once instead of taking the cooldown skip.
+            Ok(NoteScan::StoppedAtGap) => {
+                if let Ok(mut guard) = self.last_caught_up_at.lock() {
+                    *guard = None;
+                }
+                tracing::debug!("Coordinator sync stopped at a gap; the scan published nothing");
+                return summary;
+            }
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
+        // Everything below that talks to the network is skipped once the
+        // pass is cancelled; the store-only steps and the host flush of a
+        // COMPLETED scan still run (see the method docs).
+        //
+        // Snapshotted here on purpose: the cooldown decision below is
+        // about whether the scan reached the tip. A stop that lands during
+        // the store-only steps after a complete scan does not change that.
+        let cancelled = cancel.is_cancelled();
+        // A scan cut short publishes nothing (`sync_notes_across` returns
+        // the empty result whether the stop landed in the prefetch, before
+        // the store lock or between batches): hand back the empty summary
+        // so the manager treats it as "no pass ran" — `build_per_wallet_summary`
+        // would otherwise mint an all-zero `Ok` for every registered
+        // wallet, and the host would see a completion event for no work.
+        if cancelled && notes.total_scanned == 0 && Merge::is_empty(&notes.changeset) {
+            // The scan may have appended new leaves before the stop, so the
+            // chain has moved past whatever the last completed pass saw:
+            // drop the caught-up stamp so the next pass walks Platform at
+            // once instead of taking the cooldown skip.
+            if let Ok(mut guard) = self.last_caught_up_at.lock() {
+                *guard = None;
+            }
+            tracing::debug!("Coordinator sync cancelled; the scan published nothing");
+            return summary;
+        }
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
         // replayed against each subwallet's store as part of the note
@@ -1400,8 +2172,10 @@ impl NetworkShieldedCoordinator {
 
         // Residual-spend resolution: `sync_notes_across` above marked every
         // landed spend (clearing its reservation and dropping its redrive
-        // record via the store hook). Two passes over what's left, both
-        // judged against the PRE-scan recorded-anchor set:
+        // record via the store hook), and failed every saved spend it read
+        // another transition's action spending an input of, freeing its
+        // other notes. Two passes over what's left, both judged against the
+        // PRE-scan recorded-anchor set:
         //
         // 1. Re-drive — for each armed unconfirmed spend whose anchor is
         //    still recorded, re-broadcast the stored byte-identical
@@ -1413,33 +2187,66 @@ impl NetworkShieldedCoordinator {
         //    never execute).
         //
         // Runs before the balance read so freed notes are reflected in
-        // this pass's balances.
-        if let Some((snapshot, recorded)) = stranded_release {
-            // Snapshot the per-wallet persisters BEFORE the loop and drop
-            // the read guard: `redrive_pending_spends` performs network
-            // broadcasts, and holding the persisters lock across those
-            // awaits would block wallet register/unregister for the
-            // duration of the round trips.
-            let subwallet_persisters: Vec<(SubwalletId, Option<WalletPersister>)> = {
-                let persisters = self.persisters.read().await;
-                subwallets
-                    .iter()
-                    .map(|(id, _)| (*id, persisters.get(&id.wallet_id).cloned()))
-                    .collect()
-            };
-            for (id, persister) in &subwallet_persisters {
+        // this pass's balances. Skipped on a cancelled pass: the re-drive
+        // broadcasts, and a skipped release simply waits for the next pass.
+        if let Some(PreScanEvidence {
+            stale,
+            journal,
+            recorded,
+            recorded_height,
+            heightless,
+        }) = stranded_release.filter(|_| !cancelled)
+        {
+            for (id, _) in &subwallets {
+                // Network broadcasts: a stop that lands after the scan's
+                // snapshot above stops the loop here, and the helper
+                // checks the token before each request it starts.
+                if cancel.is_cancelled() {
+                    break;
+                }
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
-                    persister.as_ref(),
-                    id.wallet_id,
                     *id,
                     &recorded,
+                    cancel,
                 )
                 .await;
             }
-            self.release_stranded_spends(snapshot, &recorded).await;
+            if !cancel.is_cancelled() {
+                let evidence = PrunedAnchorEvidence {
+                    recorded: &recorded,
+                    height: recorded_height,
+                    scan_covered_height: notes.covered_height,
+                    heightless: heightless.as_ref(),
+                };
+                self.release_stranded_spends(stale, evidence).await;
+                self.discharge_expired_private_payments(&journal, evidence)
+                    .await;
+            }
         }
+
+        // The watched token pools, after the credit pool: a pass that stopped
+        // reads none, and a token pool failure fails nothing else.
+        // A pass that found or spent token notes, or failed on a token pool,
+        // counts as activity for the cooldown below, as the credit pool's does:
+        // the next pass runs at once instead of waiting it out.
+        let token_pool_activity = if cancel.is_cancelled() {
+            false
+        } else {
+            let token_pools =
+                super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel)
+                    .await;
+            self.release_orphaned_token_reservations(
+                &subwallets,
+                &token_pools.completed,
+                notes.covered_height,
+            )
+            .await;
+            token_pools.new_notes > 0
+                || token_pools.newly_spent > 0
+                || !token_pools.failed.is_empty()
+        };
 
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
             Ok(r) => r,
@@ -1454,6 +2261,13 @@ impl NetworkShieldedCoordinator {
         // id a live entry already owns, and `save_activity` upserts by
         // id, so re-running is idempotent. Failures are logged and
         // swallowed: a derivation miss must never fail a sync pass.
+        //
+        // Only a completed scan reaches this point (a cut-short one
+        // returned above), which matters here: derived entries are
+        // immutable clusters keyed by the discovering chunk's proof
+        // height, so deriving over a consumed prefix would freeze a
+        // cluster that a later note at the same height could only
+        // confirm, never extend.
         let mut notes = notes;
         if let Err(e) = self
             .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
@@ -1470,8 +2284,19 @@ impl NetworkShieldedCoordinator {
         // enumeration includes guards rehydrated from the durable store.
         let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
         for wallet_id in wallet_ids {
-            super::operations::redrive_pending_identity_shields(&self.sdk, &self.store, wallet_id)
-                .await;
+            // Network requests: stop between wallets once cancelled; the
+            // helper also checks the token between records and before
+            // each request it starts.
+            if cancel.is_cancelled() {
+                break;
+            }
+            super::operations::redrive_pending_identity_shields(
+                &self.sdk,
+                &self.store,
+                wallet_id,
+                cancel,
+            )
+            .await;
         }
 
         // The note-side changeset already carries saves, synced
@@ -1479,7 +2304,7 @@ impl NetworkShieldedCoordinator {
         // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
         let consolidated = notes.changeset.clone();
-        if !crate::changeset::merge::Merge::is_empty(&consolidated) {
+        if !Merge::is_empty(&consolidated) {
             let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
             for (wallet_id, cs) in per_wallet {
@@ -1507,15 +2332,25 @@ impl NetworkShieldedCoordinator {
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
         // newly-spent nullifier anywhere on the network clears
-        // the stamp so the next pass runs immediately.
-        let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
+        // the stamp so the next pass runs immediately. Only a NEW stamp
+        // needs an uncancelled pass: a stop after a complete scan that
+        // found nothing proves nothing about staying caught up, so the
+        // next pass walks Platform again right away.
+        let any_activity = notes.total_scanned > 0
+            || newly_spent_per_sub.values().any(|&n| n > 0)
+            || token_pool_activity;
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             if any_activity {
                 *guard = None;
-            } else {
+            } else if !cancelled {
                 *guard = Some(Instant::now());
             }
         }
+        tracing::debug!(
+            cancelled,
+            total_scanned = notes.total_scanned,
+            "Coordinator sync pass finished"
+        );
 
         // Demux multi-subwallet results into the per-wallet
         // `ShieldedSyncSummary` shape that
@@ -1561,30 +2396,40 @@ impl NetworkShieldedCoordinator {
             .unwrap_or(0)
     }
 
-    /// Pre-scan half of the stranded-reservation release: snapshot the
-    /// anchored reservations armed right now and fetch Platform's recorded
-    /// anchor set, or `None` when there is nothing to do.
+    /// Pre-scan half of the stranded-reservation release and of the private
+    /// payment expiry: snapshot the anchored reservations armed right now and
+    /// the wallets' private payment journal records, then fetch Platform's
+    /// recorded anchor set with the height of its proof, or `None` when there
+    /// is nothing to do.
     ///
     /// MUST run before the pass's note scan — the release's fund-safety
     /// argument ([`Self::release_stranded_spends`]) rests on both the
-    /// snapshot and the set predating the scan's spent-note reconcile.
+    /// snapshot and the set predating the scan's spent-note reconcile. The
+    /// journal is read before the set: a payment journaled after the fetch
+    /// may name a newer anchor than the set holds, so it is no candidate this
+    /// pass ([`Self::discharge_expired_private_payments`]). When one of them
+    /// names its anchor without the anchor's height and the store bounds the
+    /// trees such anchors came from, the pool's proved leaf count is fetched
+    /// first, before the set ([`HeightlessAnchorEvidence`]).
     ///
-    /// Skips the network round-trip when no anchored reservation exists (the
-    /// common case), and treats a recorded-anchor fetch failure as
-    /// non-fatal — a sync must not fail because that query hiccupped; the
-    /// release simply waits for the next pass.
+    /// Skips the network round-trip when neither an anchored reservation nor
+    /// a journal record exists (the common case), and treats a
+    /// recorded-anchor fetch failure as non-fatal: a sync must not fail
+    /// because that query hiccupped, and the release simply waits for the
+    /// next pass.
     async fn prefetch_stranded_release(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
-    ) -> Option<(Vec<(SubwalletId, StalePendingSpend)>, HashSet<[u8; 32]>)> {
-        // Gather anchored reservations across every synced subwallet. The
-        // common case is none — then the network round-trip is skipped.
-        let stale: Vec<(SubwalletId, StalePendingSpend)> = {
+    ) -> Option<PreScanEvidence> {
+        // Gather anchored reservations across every synced subwallet, and the
+        // journal records of their wallets. The common case is none, and then
+        // the network round-trip is skipped.
+        let (stale, journal, tree_bounds) = {
             let store = self.store.read().await;
-            let mut acc = Vec::new();
+            let mut stale: Vec<(SubwalletId, StalePendingSpend)> = Vec::new();
             for (id, _) in subwallets {
                 match store.stale_pending_spends(*id) {
-                    Ok(entries) => acc.extend(entries.into_iter().map(|entry| (*id, entry))),
+                    Ok(entries) => stale.extend(entries.into_iter().map(|entry| (*id, entry))),
                     Err(e) => tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
@@ -1593,16 +2438,58 @@ impl NetworkShieldedCoordinator {
                     ),
                 }
             }
-            acc
+            let journal = private_payment_journal_snapshot(
+                &*store,
+                subwallets.iter().map(|(id, _)| id.wallet_id),
+            );
+            let tree_bounds = heightless_tree_bounds(&*store, &stale, &journal);
+            (stale, journal, tree_bounds)
         };
-        if stale.is_empty() {
+        if stale.is_empty() && journal.is_empty() {
             return None;
         }
 
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-        match dash_sdk::query_types::ShieldedAnchors::fetch_current(&self.sdk).await {
-            Ok(dash_sdk::query_types::ShieldedAnchors(anchors)) => {
-                Some((stale, anchors.into_iter().collect()))
+        // The pool's leaf count, read before the anchor set so that it is
+        // proved at or below the set's height whenever both reads reach
+        // nodes at the same tip. A count proved above that height shows
+        // nothing this pass ([`HeightlessAnchorEvidence::recorded_by`]).
+        let heightless = match tree_bounds {
+            Some((tree_bound, anchor_floors)) => {
+                match dash_sdk::query_types::ShieldedNotesCount::fetch_current_with_metadata(
+                    &self.sdk,
+                )
+                .await
+                {
+                    Ok((dash_sdk::query_types::ShieldedNotesCount(pool_leaves), metadata)) => {
+                        Some(HeightlessAnchorEvidence {
+                            tree_bound,
+                            pool_leaves,
+                            pool_height: metadata.height,
+                            anchor_floors,
+                        })
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "shielded reservation release: failed to fetch the pool's leaf \
+                             count; records without an anchor height stay this pass"
+                        );
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+        match dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(&self.sdk).await {
+            Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
+                Some(PreScanEvidence {
+                    stale,
+                    journal,
+                    recorded: anchors.into_iter().collect(),
+                    recorded_height: metadata.height,
+                    heightless,
+                })
             }
             Err(e) => {
                 tracing::warn!(
@@ -1623,39 +2510,51 @@ impl NetworkShieldedCoordinator {
     /// fact have landed), released only when the tx lands or the app
     /// restarts. A spend accepted but that never lands would otherwise
     /// strand its notes for the whole session. Here, after the pass's
-    /// spent-note reconcile, any reservation from the PRE-scan `snapshot`
-    /// whose anchor is absent from the PRE-scan `recorded` set is provably
-    /// dead: `validate_anchor_exists` accepts a spend only while its anchor
-    /// is retained (`shielded_anchor_retention_blocks = 1000`), so once the
-    /// anchor is pruned the transition can never execute. The notes are
-    /// freed and the linked activity row flipped to Failed so the UI shows
-    /// a clear, retryable failure instead of "Pending" forever. The
-    /// on-chain nullifier set stays the authoritative double-spend guard.
+    /// spent-note reconcile, a reservation from the PRE-scan `snapshot` is
+    /// released once `evidence` proves its anchor pruned
+    /// ([`PrunedAnchorEvidence::proves_pruned`]): `validate_anchor_exists`
+    /// accepts a spend only while its anchor is retained
+    /// (`shielded_anchor_retention_blocks = 1000`), so once the anchor is
+    /// pruned the transition can never execute. The notes are freed and the
+    /// linked activity row flipped to Failed so the UI shows a clear,
+    /// retryable failure instead of "Pending" forever. The on-chain
+    /// nullifier set stays the authoritative double-spend guard.
     ///
-    /// Fund-safe by construction, resting on two ordering facts:
+    /// Fund-safe by construction, resting on two facts:
     ///
-    /// 1. Both inputs predate the scan ([`Self::prefetch_stranded_release`]),
-    ///    and the scan's spent-note reconcile ran to completion in between.
-    ///    An anchor absent from the pre-scan set was pruned before the scan
-    ///    began (a pruned root can never re-enter the set — the tree only
-    ///    grows), so if that spend nevertheless executed, it executed at a
-    ///    height the scan covered — the reconcile already cleared its
-    ///    reservation, which fact 2 catches.
+    /// 1. The evidence is pinned to the anchor set's proved height H: the
+    ///    reservation's anchor was in a set proved at or below H, so the set
+    ///    at H lacks it only once it was pruned (an anchor absent but read
+    ///    above H may be newer than the set), and the pass's note scan,
+    ///    covering H, replayed every nullifier spent at or below H. So if
+    ///    that spend executed, it did so at or below H, and the reconcile
+    ///    already cleared its reservation, which fact 2 catches. Short of
+    ///    that, as with a scan whose proofs are a block behind the set's,
+    ///    nothing is released this pass.
     /// 2. Each release is a check-and-clear under a single store write
     ///    guard: the reservation is cleared only while the nullifier is
-    ///    still armed with the snapshot's exact anchor + activity. A
+    ///    still armed with the snapshot's exact anchor, height + activity. A
     ///    reservation resolved concurrently (the reconcile above, or the
     ///    spend's own result-wait confirming mid-pass) — or cleared and
     ///    re-armed by a retry with a fresh anchor — is skipped, and its
     ///    activity row is left alone.
+    ///    The linked activity row is failed under that same guard
+    ///    ([`fail_released_spend_row`]), so a result that settles the spend
+    ///    right after the release finds the row failed, not pending.
     ///
     /// A still-recorded (slow-but-landing) spend is never released, and an
     /// anchor-less reservation (reserved but not yet built) is never in the
-    /// snapshot (`stale_pending_spends` returns only anchored entries).
+    /// snapshot (`stale_pending_spends` returns only anchored entries). A
+    /// reservation whose anchor height is not known (one restored from a
+    /// record saved before heights were kept) gets H once the set at H
+    /// holds its anchor ([`ShieldedStore::note_anchor_recorded`]), and is
+    /// released only on a later set that lacks it, or on a set that lacks it
+    /// with the pool proved, at or below that set's height, to have reached
+    /// the tree the anchor is a root of ([`HeightlessAnchorEvidence`]).
     async fn release_stranded_spends(
         &self,
         snapshot: Vec<(SubwalletId, StalePendingSpend)>,
-        recorded: &HashSet<[u8; 32]>,
+        evidence: PrunedAnchorEvidence<'_>,
     ) {
         // Persister map is only written on wallet register/unregister —
         // one read acquisition covers the whole loop.
@@ -1663,10 +2562,18 @@ impl NetworkShieldedCoordinator {
         // Every note of a multi-note spend carries the same activity id:
         // flip each linked row once, not once per nullifier.
         let mut flipped: HashSet<[u8; 32]> = HashSet::new();
-        for (id, (nullifier, anchor, activity_id)) in snapshot {
-            // Fund-safety invariant: release ONLY when the anchor is absent
-            // from the recorded set. A still-recorded anchor may yet land.
-            if recorded.contains(&anchor) {
+        // Reservations whose anchor height is not known, and whose anchor the
+        // set at H holds: given H, a later set lacking it shows it pruned.
+        let mut seen_recorded: std::collections::BTreeSet<(SubwalletId, [u8; 32])> =
+            std::collections::BTreeSet::new();
+        for (id, (nullifier, anchor, activity_id, anchor_height)) in snapshot {
+            if anchor_height.is_none() && evidence.recorded.contains(&anchor) {
+                seen_recorded.insert((id, anchor));
+            }
+            // Fund-safety invariant: release ONLY on proof the anchor was
+            // pruned with the scan covering it. A still-recorded anchor may
+            // yet land; an absent one read above H may be newer than the set.
+            if !evidence.proves_pruned(&anchor, anchor_height) {
                 continue;
             }
             // Check-and-clear under ONE write acquisition: the snapshot
@@ -1675,12 +2582,15 @@ impl NetworkShieldedCoordinator {
             // mid-scan and re-armed by a retry (same note, fresh anchor
             // and activity) must not be judged against the pre-scan set —
             // its anchor may postdate the fetch; it gets checked next pass.
-            {
+            let failed_row = {
                 let mut store = self.store.write().await;
                 let still_same = match store.stale_pending_spends(id) {
-                    Ok(current) => current
-                        .iter()
-                        .any(|(n, a, act)| *n == nullifier && *a == anchor && *act == activity_id),
+                    Ok(current) => current.iter().any(|(n, a, act, height)| {
+                        *n == nullifier
+                            && *a == anchor
+                            && *act == activity_id
+                            && *height == anchor_height
+                    }),
                     Err(e) => {
                         tracing::warn!(
                             wallet_id = %hex::encode(id.wallet_id),
@@ -1704,6 +2614,25 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
+                // A token pool spend's token note hold is marked before its
+                // saved record goes, so the token note sweep tells it from a
+                // spend never sent (`release_orphaned_token_reservations`).
+                // Marked first: an interruption between the two leaves the
+                // record, which the next pass judges again.
+                if let Some(entry_id) = activity_id {
+                    if let Err(e) = store.with_token_pool_conn(|conn| {
+                        super::token_pool::mark_fee_anchor_pruned(conn, id, &entry_id)
+                    }) {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: the token note hold was not marked; \
+                             the spend's record stays until it is"
+                        );
+                        continue;
+                    }
+                }
                 match store.clear_pending(id, &nullifier) {
                     // `still_same` held under this same guard, so the clear
                     // removes exactly the snapshot's reservation.
@@ -1719,7 +2648,16 @@ impl NetworkShieldedCoordinator {
                         continue;
                     }
                 }
-            }
+                // The linked row is failed under the guard that released the
+                // reservation: a result that settles the spend right after
+                // (an affected-state snapshot, `settle_affected_state_spend`)
+                // then finds it failed, never pending with its notes already
+                // released. Every note of a multi-note spend carries the same
+                // activity id: the row is failed once, with the first release.
+                activity_id
+                    .filter(|entry_id| flipped.insert(*entry_id))
+                    .and_then(|entry_id| fail_released_spend_row(&mut *store, id, &entry_id))
+            };
             tracing::info!(
                 wallet_id = %hex::encode(id.wallet_id),
                 account = id.account_index,
@@ -1728,24 +2666,232 @@ impl NetworkShieldedCoordinator {
                 "shielded reservation released: its recorded anchor was pruned, so the stranded \
                  spend can never execute; freeing the notes"
             );
-            // Flip the linked activity row to Failed. Only queue to the
-            // wallet's own persister (cloned out — `WalletPersister: Clone`).
-            if let Some(entry_id) = activity_id {
-                if !flipped.insert(entry_id) {
-                    continue;
-                }
-                let persister = persisters.get(&id.wallet_id).cloned();
-                super::operations::record_activity_status_by_id(
-                    &self.store,
-                    persister.as_ref(),
+            // The host is told once the store guard is released, through
+            // the wallet's own persister.
+            if let Some(failed) = failed_row {
+                super::operations::queue_shielded_changeset(
+                    persisters.get(&id.wallet_id),
                     id.wallet_id,
-                    id,
-                    &entry_id,
-                    super::activity::ShieldedActivityStatus::Failed,
-                )
-                .await;
+                    changeset_for_entry(id, failed),
+                );
             }
         }
+        if !seen_recorded.is_empty() {
+            let mut store = self.store.write().await;
+            for (id, anchor) in seen_recorded {
+                if let Err(e) = store.note_anchor_recorded(id, &anchor, evidence.height) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "shielded reservation release: the anchor's recorded height was not \
+                         kept; its reservations stay until it is"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Discharge the private payment journal records of payments proven
+    /// expired, durably, and note them on their wallet's persister so the
+    /// wallet releases the pairs they hold
+    /// (`WalletPersister::note_discharged_private_entries`).
+    ///
+    /// The candidates are `journal`, the records the pass read before it
+    /// fetched the anchor set `evidence` holds, proved at H. A payment is
+    /// proven never to execute when:
+    ///
+    /// 1. its record still reads in the journal exactly as `journal` has it:
+    ///    a payment journaled since, or armed again, may name an anchor newer
+    ///    than the set;
+    /// 2. `evidence` proves its anchor pruned
+    ///    ([`PrunedAnchorEvidence::proves_pruned`], the rule the note release
+    ///    judges by): read from a set proved at or below H
+    ///    (`anchor_height`), or, for a record without it, recorded at or
+    ///    below H as the pool's proved leaf count shows
+    ///    ([`HeightlessAnchorEvidence`]), absent from the set at H, and the
+    ///    pass's note scan covering H. A pruned root never re-enters the set, so the
+    ///    transition cannot execute above H
+    ///    (`shielded_anchor_retention_blocks` 1000, pruned every
+    ///    `shielded_anchor_pruning_interval` 100 blocks);
+    /// 3. its entry is absent from DashPay's private contact request store,
+    ///    read raw through its end with every page proved at or above H
+    ///    ([`Self::private_contact_requests_held`]): an entry starts with its
+    ///    commitment, so none needs opening. The transition appends its entry
+    ///    in the block that spends its inputs, so an entry absent at or above
+    ///    H, the transition unable to execute above H, shows it never
+    ///    executed. Whether its inputs are spent does not matter: a competing
+    ///    spend that consumed them does not keep its pair held.
+    ///
+    /// Anything short of that discharges nothing this pass, and the next pass
+    /// retries: a scan or a store read below H, a read that fails, a record
+    /// changed since. A relay refusal or a missing redrive record is never
+    /// taken as proof. Point 1 is checked again under the store write guard
+    /// that discharges the record.
+    pub(crate) async fn discharge_expired_private_payments(
+        &self,
+        journal: &[(WalletId, PrivatePaymentRecord)],
+        evidence: PrunedAnchorEvidence<'_>,
+    ) {
+        let recorded_height = evidence.height;
+        // Entries found landed before are no candidates: their payments
+        // executed. One whose record is gone was read back and leaves.
+        let landed: BTreeSet<(WalletId, [u8; 32])> = {
+            let mut landed = self
+                .landed_private_payments
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            landed.retain(|(wallet_id, commitment)| {
+                journal
+                    .iter()
+                    .any(|(owner, record)| owner == wallet_id && record.commitment == *commitment)
+            });
+            landed.clone()
+        };
+        let pruned: Vec<&(WalletId, PrivatePaymentRecord)> = journal
+            .iter()
+            .filter(|(wallet_id, record)| !landed.contains(&(*wallet_id, record.commitment)))
+            .filter(|(_, record)| evidence.proves_pruned(&record.anchor, record.anchor_height))
+            .collect();
+        if pruned.is_empty() {
+            return;
+        }
+        let candidates: Vec<(WalletId, PrivatePaymentRecord)> = {
+            let store = self.store.read().await;
+            pruned
+                .into_iter()
+                .filter(|(wallet_id, record)| unchanged(&*store, *wallet_id, record))
+                .cloned()
+                .collect()
+        };
+        if candidates.is_empty() {
+            return;
+        }
+        let commitments: BTreeMap<[u8; 32], Option<[u8; 32]>> = candidates
+            .iter()
+            .map(|(_, record)| (record.commitment, record.entry_hash))
+            .collect();
+        // Each entry is appended at or after its sender's read position when
+        // it paid; a record that kept none is read for from the store's start.
+        let start = candidates
+            .iter()
+            .map(|(_, record)| record.store_position)
+            .try_fold(u64::MAX, |lowest, position| position.map(|p| lowest.min(p)))
+            .unwrap_or(0);
+        let held = match self
+            .private_contact_requests_held(&commitments, start, recorded_height)
+            .await
+        {
+            Ok(held) => held,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "private payment expiry: the private contact request store was not read at \
+                     the anchor set's height; retried next pass"
+                );
+                return;
+            }
+        };
+        // An entry the store holds at or above H executed: its record waits
+        // for a private sync to read it back, and no later pass reads the
+        // store again for it.
+        self.landed_private_payments
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(
+                candidates
+                    .iter()
+                    .filter(|(_, record)| held.contains(&record.commitment))
+                    .map(|(wallet_id, record)| (*wallet_id, record.commitment)),
+            );
+        let persisters = self.persisters.read().await;
+        let mut store = self.store.write().await;
+        for (wallet_id, record) in candidates {
+            if held.contains(&record.commitment) || !unchanged(&*store, wallet_id, &record) {
+                continue;
+            }
+            match store.discharge_private_payment(wallet_id, &record.commitment) {
+                Ok(_) => {
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        commitment = %hex::encode(record.commitment),
+                        "a private payment's anchor was pruned and its entry is absent from the \
+                         store: it never executed and never can, its pair is freed"
+                    );
+                    if let Some(persister) = persisters.get(&wallet_id) {
+                        persister.note_discharged_private_entries([record.commitment]);
+                    }
+                }
+                Err(error) => tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    %error,
+                    "an expired private payment's journal record was not discharged; retried \
+                     next pass"
+                ),
+            }
+        }
+    }
+
+    /// Which of `candidates` DashPay's private contact request store holds,
+    /// read now from `start` through the end its first page shows, raw: an
+    /// entry starts with its commitment, and is taken as the candidate's only
+    /// when the whole entry hashes to the hash the candidate's journal record
+    /// kept (`PrivatePaymentRecord::entry_hash`), as anyone who saw the
+    /// commitment can append an entry starting with it; a record saved before
+    /// the hash was kept matches on the commitment. Only the matches are kept,
+    /// though every entry is read to show the others absent. Every page must
+    /// be proved at or above `floor`, the first page's end with it: a page
+    /// below fails the read, as the store it shows may predate the floor.
+    pub(crate) async fn private_contact_requests_held(
+        &self,
+        candidates: &BTreeMap<[u8; 32], Option<[u8; 32]>>,
+        start: u64,
+        floor: u64,
+    ) -> Result<HashSet<[u8; 32]>, PlatformWalletError> {
+        let contract_id = dashpay_contract()?.id();
+        let mut pages = std::pin::pin!(self.sdk.private_document_pages_with_heights(
+            contract_id,
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            start,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        ));
+        let mut held = HashSet::new();
+        let mut read = false;
+        while let Some(page) = pages.next().await {
+            let (page, heights) = page?;
+            // Every read the page holds, at or above the floor.
+            let height = heights.min;
+            if height < floor {
+                return Err(PlatformWalletError::ShieldedSyncFailed(format!(
+                    "the private contact request store's page from position {} is proved at \
+                     height {height}, below {floor}",
+                    page.start_position
+                )));
+            }
+            read = true;
+            for entry in page.entries.entries {
+                let Some(commitment) = entry
+                    .data
+                    .get(..32)
+                    .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
+                else {
+                    continue;
+                };
+                let matches = candidates.get(&commitment).is_some_and(|hash| match hash {
+                    Some(hash) => <[u8; 32]>::from(Sha256::digest(&entry.data)) == *hash,
+                    None => true,
+                });
+                if matches {
+                    held.insert(commitment);
+                }
+            }
+        }
+        if !read {
+            return Err(PlatformWalletError::ShieldedSyncFailed(
+                "the private contact request store returned no page".to_string(),
+            ));
+        }
+        Ok(held)
     }
 
     /// Derive best-effort activity entries from each subwallet's
@@ -1820,7 +2966,7 @@ impl NetworkShieldedCoordinator {
                 // out.
                 let own_addresses: Vec<Vec<u8>> = outgoing
                     .iter()
-                    .filter(|o| is_own_orchard_recipient(views, &o.recipient))
+                    .filter(|o| views.is_own_recipient(&o.recipient))
                     .map(|o| o.recipient.clone())
                     .collect();
 
@@ -2122,28 +3268,236 @@ fn build_per_wallet_summary(
     summary
 }
 
-/// Whether a 43-byte raw Orchard `recipient` belongs to the subwallet's
-/// own viewing keys — i.e. it's a self-change output, not a payment to
-/// someone else. Orchard addresses are diversified, so this can't be a
-/// fixed-address comparison; it tests the recipient against the IVK via
-/// `diversifier_index` (mirrors the `sender_ovk` account-selection check
-/// in `fund_from_asset_lock.rs`). A malformed recipient (wrong length /
-/// off-curve) returns `false` (treated as external) so a corrupt row
-/// can't silently mask a real send.
-fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> bool {
-    let raw: [u8; 43] = match recipient.try_into() {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let Some(addr) = Option::<grovedb_commitment_tree::PaymentAddress>::from(
-        grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(&raw),
-    ) else {
-        return false;
-    };
-    views
-        .incoming_viewing_key
-        .diversifier_index(&addr)
-        .is_some()
+/// The evidence a sync pass has that an anchor was pruned: Platform's recorded
+/// anchor set `recorded`, proved at `height` (H) and read before the pass's
+/// note scan, the height that scan covers (`scan_covered_height`,
+/// `MultiSyncNotesResult::covered_height`), and, for records that carry no
+/// anchor height, what bounds the trees their anchors came from
+/// (`heightless`). The one rule the note release
+/// ([`NetworkShieldedCoordinator::release_stranded_spends`]) and the private
+/// payment expiry
+/// ([`NetworkShieldedCoordinator::discharge_expired_private_payments`]) judge
+/// an anchor by.
+#[derive(Clone, Copy)]
+pub(crate) struct PrunedAnchorEvidence<'a> {
+    pub(crate) recorded: &'a HashSet<[u8; 32]>,
+    pub(crate) height: u64,
+    pub(crate) scan_covered_height: Option<u64>,
+    /// `None` when the pass gathered none: a record without an anchor height
+    /// is then never proven pruned, unless a set is seen holding its anchor
+    /// ([`ShieldedStore::note_anchor_recorded`]).
+    pub(crate) heightless: Option<&'a HeightlessAnchorEvidence>,
+}
+
+impl PrunedAnchorEvidence<'_> {
+    /// Whether a spend built on `anchor`, which was in Platform's recorded
+    /// set at `anchor_height`, is proven unable to execute above H, with all
+    /// it could have done at or below H seen by the note scan:
+    ///
+    /// 1. the anchor was recorded at or below H: `anchor_height` is known and
+    ///    at or below H, or, for one not known, the pool is proved to have
+    ///    reached the tree the anchor is a root of at or below H
+    ///    ([`HeightlessAnchorEvidence::recorded_by`]). Then the set at H holds
+    ///    the anchor unless it was pruned, and the set lacks it: a pruned root
+    ///    never re-enters the set, so the spend cannot execute above H. An
+    ///    anchor read above H, or at an unknown height without that proof,
+    ///    may simply be newer than the set.
+    /// 2. the scan covers H: a spend that executed at or below H spent its
+    ///    nullifiers where the scan replayed them.
+    pub(crate) fn proves_pruned(&self, anchor: &[u8; 32], anchor_height: Option<u64>) -> bool {
+        let recorded_by_the_set = match anchor_height {
+            Some(read) => read <= self.height,
+            None => self
+                .heightless
+                .is_some_and(|heightless| heightless.recorded_by(anchor, self.height)),
+        };
+        recorded_by_the_set
+            && !self.recorded.contains(anchor)
+            && self
+                .scan_covered_height
+                .is_some_and(|covered| covered >= self.height)
+    }
+}
+
+/// What shows that an anchor a record names without its height was recorded
+/// by a given height.
+///
+/// Every anchor is the root of the local commitment tree at some size S, and
+/// Platform records a root at the end of the first block its pool's tree ends
+/// at that size (`record_shielded_pool_anchor_if_changed`), the size never
+/// shrinking. So a pool proved to hold S leaves or more at a height has
+/// recorded the anchor by then. S is not kept, but two bounds are:
+///
+/// - S is at most [`Self::tree_bound`], the largest tree the store has held
+///   ([`ShieldedStore::legacy_anchor_tree_bound`]): every record this build
+///   saves keeps its anchor height, so one without was saved by an earlier
+///   build, from a tree no larger than this store held when this build first
+///   opened it, and every reset since kept the size it reset first. A reset
+///   by an earlier build before that is not seen; the floors below still
+///   bound such an anchor's tree. The tree grows only by proved note
+///   batches, so the pool reaches that size.
+/// - S is more than the position of every note spent on the anchor: a
+///   witness to a note proves it in the tree the anchor is a root of
+///   ([`Self::anchor_floors`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HeightlessAnchorEvidence {
+    /// The largest commitment tree the store has held.
+    pub(crate) tree_bound: u64,
+    /// The pool's leaf count, proved in this process at [`Self::pool_height`].
+    pub(crate) pool_leaves: u64,
+    /// The height [`Self::pool_leaves`] was proved at.
+    pub(crate) pool_height: u64,
+    /// Per anchor of a record without an anchor height, one past the highest
+    /// tree position among the notes spent on it that the store holds.
+    pub(crate) anchor_floors: BTreeMap<[u8; 32], u64>,
+}
+
+impl HeightlessAnchorEvidence {
+    /// Whether Platform recorded `anchor`, named without its height, at or
+    /// below `height`: the pool was proved at or below `height` to hold at
+    /// least [`Self::tree_bound`] leaves, and at least one more than every
+    /// note spent on it.
+    pub(crate) fn recorded_by(&self, anchor: &[u8; 32], height: u64) -> bool {
+        let floor = self.anchor_floors.get(anchor).copied().unwrap_or(0);
+        self.pool_height <= height && self.pool_leaves >= self.tree_bound.max(floor)
+    }
+}
+
+/// The bounds `store` keeps on the trees of the anchors that `stale` and
+/// `journal` name without their heights: the largest tree it has held
+/// ([`HeightlessAnchorEvidence::tree_bound`]) and the floors of those anchors
+/// ([`HeightlessAnchorEvidence::anchor_floors`]). `None` when no anchor is
+/// named without its height, or the store keeps no such bound.
+pub(crate) fn heightless_tree_bounds<S: ShieldedStore>(
+    store: &S,
+    stale: &[(SubwalletId, StalePendingSpend)],
+    journal: &[(WalletId, PrivatePaymentRecord)],
+) -> Option<(u64, BTreeMap<[u8; 32], u64>)> {
+    let heightless = stale
+        .iter()
+        .any(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
+        || journal
+            .iter()
+            .any(|(_, record)| record.anchor_height.is_none());
+    if !heightless {
+        return None;
+    }
+    let tree_bound = store.legacy_anchor_tree_bound()?;
+    Some((tree_bound, heightless_anchor_floors(store, stale, journal)))
+}
+
+/// Per anchor that a reservation in `stale` or a record in `journal` names
+/// without its height, one past the highest commitment tree position among
+/// the notes spent on it that `store` holds
+/// ([`HeightlessAnchorEvidence::anchor_floors`]). A note the store does not
+/// hold, or a subwallet whose notes do not read, raises no floor.
+fn heightless_anchor_floors<S: ShieldedStore>(
+    store: &S,
+    stale: &[(SubwalletId, StalePendingSpend)],
+    journal: &[(WalletId, PrivatePaymentRecord)],
+) -> BTreeMap<[u8; 32], u64> {
+    let spends = stale
+        .iter()
+        .filter(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
+        .map(|(id, (nullifier, anchor, _, _))| (*id, *anchor, std::slice::from_ref(nullifier)))
+        .chain(
+            journal
+                .iter()
+                .filter(|(_, record)| record.anchor_height.is_none())
+                .map(|(wallet_id, record)| {
+                    (
+                        SubwalletId::new(*wallet_id, record.account_index),
+                        record.anchor,
+                        record.nullifiers.as_slice(),
+                    )
+                }),
+        );
+    let mut positions: BTreeMap<SubwalletId, BTreeMap<[u8; 32], u64>> = BTreeMap::new();
+    let mut floors: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+    for (id, anchor, nullifiers) in spends {
+        let notes = positions
+            .entry(id)
+            .or_insert_with(|| match store.get_all_notes(id) {
+                Ok(notes) => notes
+                    .into_iter()
+                    .map(|note| (note.nullifier, note.position))
+                    .collect(),
+                Err(error) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        %error,
+                        "shielded reservation release: the notes do not read; they raise no tree \
+                         floor for anchors without a height"
+                    );
+                    BTreeMap::new()
+                }
+            });
+        for position in nullifiers
+            .iter()
+            .filter_map(|nullifier| notes.get(nullifier))
+        {
+            let floor = floors.entry(anchor).or_insert(0);
+            *floor = (*floor).max(position.saturating_add(1));
+        }
+    }
+    floors
+}
+
+/// What a sync pass reads before its note scan, for the steps after it that
+/// may act only on evidence from before the scan
+/// ([`NetworkShieldedCoordinator::prefetch_stranded_release`]).
+struct PreScanEvidence {
+    /// The anchored reservations, for
+    /// [`NetworkShieldedCoordinator::release_stranded_spends`].
+    stale: Vec<(SubwalletId, StalePendingSpend)>,
+    /// The private payment journal records of the synced wallets, read before
+    /// the anchor set was fetched, for
+    /// [`NetworkShieldedCoordinator::discharge_expired_private_payments`].
+    journal: Vec<(WalletId, PrivatePaymentRecord)>,
+    /// Platform's recorded anchor set.
+    recorded: HashSet<[u8; 32]>,
+    /// The height of the proof the anchor set was read from.
+    recorded_height: u64,
+    /// What bounds the trees of the anchors `stale` and `journal` name
+    /// without their heights, read before the anchor set; `None` when none
+    /// does, or none was needed.
+    heightless: Option<HeightlessAnchorEvidence>,
+}
+
+/// The private payment journal records of `wallet_ids`, each wallet once, in
+/// order. A wallet whose journal does not read has none here: nothing of it is
+/// a candidate for expiry.
+pub(crate) fn private_payment_journal_snapshot<S: ShieldedStore>(
+    store: &S,
+    wallet_ids: impl IntoIterator<Item = WalletId>,
+) -> Vec<(WalletId, PrivatePaymentRecord)> {
+    let wallets: std::collections::BTreeSet<WalletId> = wallet_ids.into_iter().collect();
+    let mut journal = Vec::new();
+    for wallet_id in wallets {
+        match store.private_payment_journal(wallet_id) {
+            Ok(records) => journal.extend(records.into_iter().map(|record| (wallet_id, record))),
+            Err(error) => tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                %error,
+                "private payment expiry: the journal does not read; no payment of the wallet \
+                 is a candidate this pass"
+            ),
+        }
+    }
+    journal
+}
+
+/// Whether `wallet_id`'s journal still holds `record` exactly as a pass's
+/// snapshot read it. A store read that fails says no.
+fn unchanged<S: ShieldedStore>(
+    store: &S,
+    wallet_id: WalletId,
+    record: &PrivatePaymentRecord,
+) -> bool {
+    store
+        .private_payment_journal(wallet_id)
+        .is_ok_and(|records| records.contains(record))
 }
 
 #[cfg(test)]
@@ -2153,13 +3507,37 @@ mod tests {
     use crate::wallet::shielded::keys::OrchardKeySet;
 
     use crate::changeset::ShieldedChangeSet;
-    use crate::wallet::shielded::activity::compute_activity_id;
-    use crate::wallet::shielded::store::PendingRedrive;
+    use crate::wallet::shielded::activity::{
+        compute_activity_id, ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
+    };
+    use crate::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
+    use crate::wallet::shielded::operations::{
+        record_pending_private_document_create, record_pending_token_purchase,
+        settle_affected_state_spend, shielded_actions, PrivateDocumentPurpose,
+    };
+    use crate::wallet::shielded::prover::CachedOrchardProver;
+    use crate::wallet::shielded::store::{
+        InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
+    };
+    use crate::wallet::shielded::sync::sync_notes_from_stream;
+    use dash_sdk::platform::shielded::notes_sync::types::{DecryptedNote, ShieldedChunkBatch};
+    use dash_sdk::platform::shielded::try_decrypt_note;
+    use dpp::address_funds::OrchardAddress;
     use dpp::platform_value::BinaryData;
+    use dpp::platform_value::Identifier;
     use dpp::serialization::PlatformSerializable;
-    use dpp::shielded::SerializedAction;
+    use dpp::shielded::builder::{
+        build_private_document_create_from_shielded_pool_transition,
+        build_token_purchase_from_shielded_pool_transition, ShieldedFeePayer, SpendableNote,
+    };
+    use dpp::shielded::{compute_private_document_create_from_shielded_pool_fee, SerializedAction};
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
+    use dpp::tokens::calculate_token_id;
+    use dpp::version::PlatformVersion;
+    use drive_proof_verifier::types::ShieldedEncryptedNote;
     use grovedb_commitment_tree::{
         DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
         RandomSeed, Rho, ValueCommitTrapdoor, ValueCommitment,
@@ -2257,6 +3635,7 @@ mod tests {
                 attempts: 0,
                 identity_nonce_finalized: true,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
             cmxs,
         )
@@ -2679,7 +4058,683 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A live token purchase row, pending, that spent the note with
+    /// nullifier `spent` and expects its change note `change`.
+    fn pending_purchase_row(spent: [u8; 32], change: [u8; 32]) -> ShieldedActivityEntry {
+        ShieldedActivityEntry {
+            id: compute_activity_id(&[change]),
+            kind: ShieldedActivityKind::TokenPurchase,
+            direction: ShieldedDirection::Out,
+            amount: 1_000,
+            fee: Some(100),
+            counterparty: Some(vec![0x44; 32]),
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: vec![change],
+            spent_nullifiers: vec![spent],
+        }
+    }
+
+    const PURCHASE_INPUT_NF: [u8; 32] = [0xA1; 32];
+    const PURCHASE_CHANGE_CMX: [u8; 32] = [0xC1; 32];
+
+    /// A coordinator whose wallet holds the purchase's input note, unspent,
+    /// and the pending purchase row; returns it with the subwallet and keys.
+    async fn coordinator_with_pending_purchase(
+        dir: &std::path::Path,
+    ) -> (
+        NetworkShieldedCoordinator,
+        SubwalletId,
+        AccountViewingKeys,
+        ShieldedActivityEntry,
+    ) {
+        let coordinator = coordinator_with_one_wallet(dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let row = pending_purchase_row(PURCHASE_INPUT_NF, PURCHASE_CHANGE_CMX);
+        {
+            let mut store = coordinator.store().write().await;
+            let mut input = test_note(PURCHASE_INPUT_NF, 0, false);
+            input.cmx = [0xA2; 32];
+            store.save_note(id, &input).unwrap();
+            store.save_activity(id, &row).unwrap();
+        }
+        (coordinator, id, keys, row)
+    }
+
+    async fn row_status(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> ShieldedActivityStatus {
+        coordinator
+            .store()
+            .read()
+            .await
+            .get_activity_by_entry_id(id, entry_id)
+            .unwrap()
+            .expect("the row")
+            .status
+    }
+
+    /// The purchase's own landing: the scan marks its input spent and finds
+    /// its change, so the row is Confirmed.
+    #[tokio::test]
+    async fn should_confirm_a_pending_spend_whose_own_change_the_scan_found() {
+        let dir = temp_dir("own_landing");
+        let (coordinator, id, keys, row) = coordinator_with_pending_purchase(&dir).await;
+        {
+            let mut store = coordinator.store().write().await;
+            store.mark_spent(id, &PURCHASE_INPUT_NF).unwrap();
+            let mut change = test_note([0xC2; 32], 1, false);
+            change.cmx = PURCHASE_CHANGE_CMX;
+            change.value = 0;
+            store.save_note(id, &change).unwrap();
+        }
+        coordinator
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A landed spend whose change the scan reads a pass after the action
+    /// that spends its input (the two sit in different actions of the bundle,
+    /// and so can sit in separately proved ranges). The first pass marks the
+    /// input spent by the saved transition's own action: the row is not
+    /// failed, and stays pending. The second pass reads the change and the
+    /// row is Confirmed.
+    #[tokio::test]
+    async fn should_keep_a_landed_spend_pending_until_a_later_pass_reads_its_change() {
+        let dir = temp_dir("change_a_pass_later");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let views = coordinator.accounts.read().await[&id].clone();
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("the coordinator wallet's keys");
+
+        // The change note the spend pays back to the wallet.
+        let mut rng = OsRng;
+        let (rho, rseed) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            let Some(rho) = Rho::from_bytes(&b).into_option() else {
+                continue;
+            };
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break (rho, rseed);
+            }
+        };
+        let change = Note::from_parts(keys.default_address, NoteValue::from_raw(400), rho, rseed)
+            .into_option()
+            .expect("a note");
+        let change_cmx = ExtractedNoteCommitment::from(change.commitment()).to_bytes();
+
+        // The saved transition: one action spends the wallet's note and
+        // creates a note of the recipient's, the other holds the change.
+        let mut recipient_cmx = [0u8; 32];
+        recipient_cmx[0] = 7;
+        let action = |nullifier: [u8; 32], cmx: [u8; 32]| SerializedAction {
+            nullifier,
+            rk: [2; 32],
+            cmx,
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let padding_nullifier = [0xD0; 32];
+        let transition: StateTransition = ShieldedTransferTransitionV0 {
+            actions: vec![
+                action(PURCHASE_INPUT_NF, recipient_cmx),
+                action(padding_nullifier, change_cmx),
+            ],
+            value_balance: 0,
+            anchor: [0x52; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+        }
+        .into();
+        let row = pending_purchase_row(PURCHASE_INPUT_NF, change_cmx);
+        {
+            let mut store = coordinator.store().write().await;
+            let mut input = test_note(PURCHASE_INPUT_NF, 0, false);
+            input.cmx = [0xA2; 32];
+            store.save_note(id, &input).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store.mark_pending(id, &PURCHASE_INPUT_NF).unwrap();
+            store
+                .set_pending_spend(id, &PURCHASE_INPUT_NF, [0x52; 32], row.id, Some(5))
+                .unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: [0x52; 32],
+                        nullifiers: vec![PURCHASE_INPUT_NF],
+                        st_bytes: transition.serialize_to_bytes().unwrap(),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(5),
+                    },
+                )
+                .unwrap();
+        }
+
+        let wire = |nullifier: [u8; 32], cmx: [u8; 32]| ShieldedEncryptedNote {
+            cmx: cmx.to_vec(),
+            nullifier: nullifier.to_vec(),
+            cv_net: vec![],
+            encrypted_note: vec![],
+        };
+        let subwallets = [(id, views)];
+        let cancel = CancellationToken::new();
+        let pass = |batch: ShieldedChunkBatch| {
+            sync_notes_from_stream(
+                coordinator.store(),
+                &subwallets,
+                None,
+                &cancel,
+                move |_, _| futures::stream::iter([Ok(batch)]),
+            )
+        };
+
+        // Pass 1: a range proved before the change's action was appended.
+        pass(ShieldedChunkBatch {
+            start_index: 0,
+            notes: vec![wire(PURCHASE_INPUT_NF, recipient_cmx)],
+            decrypted: vec![],
+            block_height: 200,
+            is_partial: true,
+            total_count: 1,
+        })
+        .await
+        .expect("the first pass");
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending,
+            "its own action spent the input: not failed, and not confirmed before its change"
+        );
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .get_all_notes(id)
+                .unwrap()
+                .iter()
+                .any(|note| note.nullifier == PURCHASE_INPUT_NF && note.is_spent),
+            "the input is spent"
+        );
+
+        // Pass 2: the range again, now with the change.
+        pass(ShieldedChunkBatch {
+            start_index: 0,
+            notes: vec![
+                wire(PURCHASE_INPUT_NF, recipient_cmx),
+                wire(padding_nullifier, change_cmx),
+            ],
+            decrypted: vec![DecryptedNote {
+                position: 1,
+                note: change,
+                address: keys.default_address,
+                nullifier: change.nullifier(&keys.full_viewing_key).to_bytes(),
+                cmx: change_cmx,
+            }],
+            block_height: 201,
+            is_partial: true,
+            total_count: 2,
+        })
+        .await
+        .expect("the second pass");
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Offline round trip of a token purchase built by the real builder from
+    /// one note holding exactly price plus fee, so its change is zero-valued.
+    /// Both bundles carry an output the wallet decrypts (the bought tokens and
+    /// the credit change), and the row the live recorder writes is keyed by
+    /// the credit change alone. Scanning only the fee bundle, as the wallet's
+    /// credit pool scan does, confirms that same row.
+    #[tokio::test]
+    async fn should_confirm_a_built_token_purchase_from_its_fee_bundle_change() {
+        let dir = temp_dir("built_purchase");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let views = coordinator.accounts.read().await[&id].clone();
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("the coordinator wallet's keys");
+        let own = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
+            .expect("the default address");
+        let platform_version = PlatformVersion::latest();
+        let price = 1_000_000;
+        let fee = compute_token_purchase_from_pool_fee(2, platform_version).expect("the fee");
+
+        // The input: one note to the wallet holding exactly price plus fee,
+        // in the commitment tree the anchor comes from.
+        let mut rng = OsRng;
+        let (rho, rseed) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            let Some(rho) = Rho::from_bytes(&b).into_option() else {
+                continue;
+            };
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break (rho, rseed);
+            }
+        };
+        let input = Note::from_parts(
+            keys.default_address,
+            NoteValue::from_raw(price + fee),
+            rho,
+            rseed,
+        )
+        .into_option()
+        .expect("a note");
+        let input_cmx = ExtractedNoteCommitment::from(input.commitment());
+        let input_nf = input.nullifier(&keys.full_viewing_key).to_bytes();
+        let input_row = ShieldedNote {
+            position: 0,
+            cmx: input_cmx.to_bytes(),
+            nullifier: input_nf,
+            block_height: 100,
+            is_spent: false,
+            value: price + fee,
+            note_data: vec![0u8; 115],
+        };
+        let merkle_path = {
+            let mut store = coordinator.store().write().await;
+            store
+                .append_commitment(&input_cmx.to_bytes(), true)
+                .unwrap();
+            store.checkpoint_tree(1).unwrap();
+            store.save_note(id, &input_row).unwrap();
+            store.witness(0).unwrap().expect("a witness")
+        };
+        let anchor = merkle_path.root(input_cmx);
+
+        let data_contract_id = Identifier::from([0x44; 32]);
+        let token_id = Identifier::from(calculate_token_id(&data_contract_id.to_buffer(), 0));
+        let prover = CachedOrchardProver::new();
+        let (transition, fee_used) = build_token_purchase_from_shielded_pool_transition(
+            token_id,
+            data_contract_id,
+            0,
+            &own,
+            &keys.full_viewing_key,
+            10,
+            price,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![SpendableNote {
+                    note: input,
+                    merkle_path,
+                }],
+                change_address: &own,
+                fvk: &keys.full_viewing_key,
+                ask: &keys.spend_auth_key,
+                anchor,
+            },
+            &&prover,
+            platform_version,
+        )
+        .expect("the purchase builds");
+        assert_eq!(fee_used, fee);
+        let StateTransition::TokenPurchaseFromShieldedPool(purchase) = &transition else {
+            panic!("a token purchase");
+        };
+
+        let wire = |action: &SerializedAction| ShieldedEncryptedNote {
+            cmx: action.cmx.to_vec(),
+            nullifier: action.nullifier.to_vec(),
+            cv_net: action.cv_net.to_vec(),
+            encrypted_note: action.encrypted_note.clone(),
+        };
+        let decrypted = |actions: &[SerializedAction]| -> Vec<(SerializedAction, Note)> {
+            actions
+                .iter()
+                .filter_map(|action| {
+                    try_decrypt_note(&views.prepared_ivk, &wire(action))
+                        .map(|(note, _)| (action.clone(), note))
+                })
+                .collect()
+        };
+        let token_outputs = decrypted(purchase.token_actions());
+        let fee_outputs = decrypted(purchase.fee_actions());
+        assert_eq!(token_outputs.len(), 1, "the bought tokens' note");
+        assert_eq!(token_outputs[0].1.value().inner(), 10);
+        assert_eq!(fee_outputs.len(), 1, "the credit change");
+        assert_eq!(
+            fee_outputs[0].1.value().inner(),
+            0,
+            "price plus fee leaves no change"
+        );
+        let change_cmx = fee_outputs[0].0.cmx;
+        assert_ne!(token_outputs[0].0.cmx, change_cmx);
+
+        let row = record_pending_token_purchase(
+            coordinator.store(),
+            None,
+            wallet_id,
+            id,
+            &views,
+            token_id,
+            price,
+            fee_used,
+            &transition,
+            std::slice::from_ref(&input_row),
+        )
+        .await
+        .expect("the live row");
+        assert_eq!(
+            row.note_cmxs,
+            vec![change_cmx],
+            "keyed by the credit change alone"
+        );
+        assert_eq!(row.status, ShieldedActivityStatus::Pending);
+
+        // The credit pool scan: it saves the fee bundle's change it decrypts
+        // and marks the input spent from the nullifier its action reveals.
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, (action, note)) in (1u64..).zip(fee_outputs.iter()) {
+                store
+                    .save_note(
+                        id,
+                        &ShieldedNote {
+                            position,
+                            cmx: action.cmx,
+                            nullifier: note.nullifier(&keys.full_viewing_key).to_bytes(),
+                            block_height: 200,
+                            is_spent: false,
+                            value: note.value().inner(),
+                            note_data: vec![0u8; 115],
+                        },
+                    )
+                    .unwrap();
+            }
+            for action in purchase.fee_actions() {
+                store.mark_spent(id, &action.nullifier).unwrap();
+            }
+            assert!(
+                store
+                    .get_all_notes(id)
+                    .unwrap()
+                    .iter()
+                    .any(|note| note.nullifier == input_nf && note.is_spent),
+                "the scan marks the input spent"
+            );
+        }
+        coordinator
+            .derive_activity_into_changeset(&[(id, views)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
+    /// Offline round trip of a private document create (type 29) built by the
+    /// real builder. The row the live recorder writes names the operation
+    /// instead of the residual `ShieldedSpend`: a private document entry with
+    /// its data contract as the counterparty, or, when the entry is a DashPay
+    /// private contact request, a private contact request with the recipient
+    /// identity as the counterparty. Nothing but the fee leaves the pool, so
+    /// the row's amount is the fee. The credit pool scan then confirms that
+    /// same row from the spend's change and derives no second, reconstructed
+    /// row for it.
+    #[tokio::test]
+    async fn should_record_a_private_document_create_under_its_own_kind_with_its_fee() {
+        let dir = temp_dir("private_document_activity");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let views = coordinator.accounts.read().await[&id].clone();
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("the coordinator wallet's keys");
+        let own = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
+            .expect("the default address");
+        let platform_version = PlatformVersion::latest();
+        let entry = BinaryData::new(vec![1; 589]);
+        let fee = compute_private_document_create_from_shielded_pool_fee(
+            2,
+            1,
+            entry.len() as u32,
+            platform_version,
+        )
+        .expect("the fee");
+        let change = 5_000;
+
+        // The input: one note to the wallet holding the fee and some change,
+        // in the commitment tree the anchor comes from.
+        let mut rng = OsRng;
+        let (rho, rseed) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            let Some(rho) = Rho::from_bytes(&b).into_option() else {
+                continue;
+            };
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break (rho, rseed);
+            }
+        };
+        let input = Note::from_parts(
+            keys.default_address,
+            NoteValue::from_raw(fee + change),
+            rho,
+            rseed,
+        )
+        .into_option()
+        .expect("a note");
+        let input_cmx = ExtractedNoteCommitment::from(input.commitment());
+        let input_nf = input.nullifier(&keys.full_viewing_key).to_bytes();
+        let input_row = ShieldedNote {
+            position: 0,
+            cmx: input_cmx.to_bytes(),
+            nullifier: input_nf,
+            block_height: 100,
+            is_spent: false,
+            value: fee + change,
+            note_data: vec![0u8; 115],
+        };
+        let merkle_path = {
+            let mut store = coordinator.store().write().await;
+            store
+                .append_commitment(&input_cmx.to_bytes(), true)
+                .unwrap();
+            store.checkpoint_tree(1).unwrap();
+            store.save_note(id, &input_row).unwrap();
+            store.witness(0).unwrap().expect("a witness")
+        };
+        let anchor = merkle_path.root(input_cmx);
+
+        let data_contract_id = Identifier::from([0x44; 32]);
+        let prover = CachedOrchardProver::new();
+        let (transition, fee_used) = build_private_document_create_from_shielded_pool_transition(
+            vec![SpendableNote {
+                note: input,
+                merkle_path,
+            }],
+            data_contract_id,
+            "note".to_string(),
+            vec![entry],
+            &own,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            &&prover,
+            platform_version,
+        )
+        .expect("the private document create builds");
+        assert_eq!(fee_used, fee);
+
+        let wire = |action: &SerializedAction| ShieldedEncryptedNote {
+            cmx: action.cmx.to_vec(),
+            nullifier: action.nullifier.to_vec(),
+            cv_net: action.cv_net.to_vec(),
+            encrypted_note: action.encrypted_note.clone(),
+        };
+        let outputs: Vec<(SerializedAction, Note)> = shielded_actions(&transition)
+            .iter()
+            .filter_map(|action| {
+                try_decrypt_note(&views.prepared_ivk, &wire(action))
+                    .map(|(note, _)| (action.clone(), note))
+            })
+            .collect();
+        assert_eq!(outputs.len(), 1, "the change is its only output");
+        assert_eq!(outputs[0].1.value().inner(), change);
+        let change_cmx = outputs[0].0.cmx;
+
+        // An entry of any private document type: named as one, to its contract.
+        let document_row = record_pending_private_document_create(
+            coordinator.store(),
+            None,
+            wallet_id,
+            id,
+            &views,
+            data_contract_id,
+            PrivateDocumentPurpose::Entry,
+            fee_used,
+            &transition,
+            std::slice::from_ref(&input_row),
+        )
+        .await
+        .expect("the live row");
+        assert_eq!(
+            document_row.kind,
+            ShieldedActivityKind::PrivateDocumentCreate
+        );
+        assert_eq!(document_row.direction, ShieldedDirection::Out);
+        assert_eq!(
+            document_row.amount, fee,
+            "the fee is all that left the pool"
+        );
+        assert_eq!(document_row.fee, Some(fee));
+        assert_eq!(
+            document_row.counterparty,
+            Some(data_contract_id.to_vec()),
+            "its data contract"
+        );
+        assert_eq!(document_row.memo, None);
+        assert_eq!(document_row.status, ShieldedActivityStatus::Pending);
+        assert_eq!(
+            document_row.note_cmxs,
+            vec![change_cmx],
+            "keyed by its change"
+        );
+        assert_eq!(document_row.spent_nullifiers, vec![input_nf]);
+
+        // The same spend as a DashPay private contact request: named as one,
+        // to its recipient, under the same id (the row is replaced).
+        let recipient = Identifier::from([0x77; 32]);
+        let row = record_pending_private_document_create(
+            coordinator.store(),
+            None,
+            wallet_id,
+            id,
+            &views,
+            data_contract_id,
+            PrivateDocumentPurpose::ContactRequest {
+                sender: Identifier::from([0x66; 32]),
+                recipient,
+                account_reference: Some(3),
+            },
+            fee_used,
+            &transition,
+            std::slice::from_ref(&input_row),
+        )
+        .await
+        .expect("the live row");
+        assert_eq!(row.kind, ShieldedActivityKind::PrivateContactRequest);
+        assert_eq!(row.direction, ShieldedDirection::Out);
+        assert_eq!(row.amount, fee);
+        assert_eq!(row.fee, Some(fee));
+        assert_eq!(row.counterparty, Some(recipient.to_vec()), "its recipient");
+        assert_eq!(row.id, document_row.id);
+
+        // The credit pool scan: it saves the change it decrypts and marks the
+        // input spent from the nullifier its action reveals.
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, (action, note)) in (1u64..).zip(outputs.iter()) {
+                store
+                    .save_note(
+                        id,
+                        &ShieldedNote {
+                            position,
+                            cmx: action.cmx,
+                            nullifier: note.nullifier(&keys.full_viewing_key).to_bytes(),
+                            block_height: 200,
+                            is_spent: false,
+                            value: note.value().inner(),
+                            note_data: vec![0u8; 115],
+                        },
+                    )
+                    .unwrap();
+            }
+            store.mark_spent(id, &input_nf).unwrap();
+        }
+        coordinator
+            .derive_activity_into_changeset(&[(id, views)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        let rows = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(id, 0, usize::MAX)
+            .unwrap();
+        // The input note's own receipt is a row of its own; the spend has one
+        // row, the live one, and nothing reconstructed beside it.
+        assert!(
+            rows.iter()
+                .all(|row| row.kind != ShieldedActivityKind::ShieldedSpend),
+            "the scan adds no reconstructed row: {rows:?}"
+        );
+        let spend_rows: Vec<&ShieldedActivityEntry> = rows
+            .iter()
+            .filter(|row| row.note_cmxs.contains(&change_cmx))
+            .collect();
+        assert_eq!(spend_rows.len(), 1, "one row for the spend: {rows:?}");
+        assert_eq!(spend_rows[0].id, row.id);
+        assert_eq!(spend_rows[0].status, ShieldedActivityStatus::Confirmed);
+        assert_eq!(
+            spend_rows[0].kind,
+            ShieldedActivityKind::PrivateContactRequest
+        );
+        assert_eq!(spend_rows[0].amount, fee);
+        assert_eq!(spend_rows[0].fee, Some(fee));
+        assert_eq!(spend_rows[0].counterparty, Some(recipient.to_vec()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn temp_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2691,11 +4746,19 @@ mod tests {
     /// Build a coordinator backed by a fresh file store under `dir`, with one
     /// wallet registered so `accounts` / `persisters` are both non-empty.
     async fn coordinator_with_one_wallet(dir: &std::path::Path) -> NetworkShieldedCoordinator {
+        coordinator_with_one_wallet_on(dir, dash_sdk::Sdk::new_mock()).await
+    }
+
+    /// [`coordinator_with_one_wallet`] scanning through `sdk`.
+    async fn coordinator_with_one_wallet_on(
+        dir: &std::path::Path,
+        sdk: dash_sdk::Sdk,
+    ) -> NetworkShieldedCoordinator {
         std::fs::create_dir_all(dir).expect("create temp dir");
         let db_path = dir.join("tree.sqlite");
         let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
         let coordinator = NetworkShieldedCoordinator::new(
-            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(sdk),
             dashcore::Network::Testnet,
             db_path,
             store,
@@ -2713,6 +4776,770 @@ mod tests {
             .await
             .expect("register wallet");
         coordinator
+    }
+
+    /// A token pool spend (a shielded token transfer or a token unshield)
+    /// whose saved record is gone is settled from
+    /// how it was signed, how its record went, whether the token scan saw a
+    /// note it holds spent, and the token pool's own scan version, whatever
+    /// version the SDK has seen. A row is shown failed only where nothing can
+    /// have delivered it, and its notes stay held while it can still land.
+    #[tokio::test]
+    async fn should_settle_a_token_pool_spend_from_how_it_was_signed_and_its_record_went() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum Record {
+            NeverSaved,
+            FeeAnchorPruned,
+            FeeNoteSpent,
+        }
+        use ShieldedActivityStatus::{Failed, Pending};
+        let kinds = [
+            ShieldedActivityKind::TokenShieldedTransfer,
+            ShieldedActivityKind::TokenUnshield {
+                identity_id: Some([0x5E; 32]),
+            },
+        ];
+        // (signed bound, how the record went, how many of its two held token
+        // notes are spent, pool scan version, row after, notes still held)
+        for ((signed_bound, record, token_spent, network, settled, held), kind) in [
+            (false, Record::NeverSaved, 0, 14, Failed, false),
+            (false, Record::NeverSaved, 0, 15, Failed, false),
+            // Signed at 14: its token bundle can land with another fee bundle.
+            (false, Record::FeeAnchorPruned, 0, 14, Pending, true),
+            (false, Record::FeeAnchorPruned, 0, 15, Failed, false),
+            (false, Record::FeeAnchorPruned, 2, 15, Pending, false),
+            (false, Record::FeeNoteSpent, 2, 14, Pending, false),
+            (false, Record::FeeNoteSpent, 0, 14, Pending, true),
+            (false, Record::FeeNoteSpent, 0, 15, Failed, false),
+            // One of its notes spent by another spend: its bundle spends both
+            // at once, so it never landed and can no longer, at any version.
+            (false, Record::FeeAnchorPruned, 1, 14, Failed, false),
+            (false, Record::FeeNoteSpent, 1, 15, Failed, false),
+            // Signed at 15: it cannot land without its own fee bundle.
+            (true, Record::FeeAnchorPruned, 0, 15, Failed, false),
+            (true, Record::FeeAnchorPruned, 2, 15, Failed, false),
+            (true, Record::FeeNoteSpent, 2, 15, Pending, false),
+            (true, Record::FeeNoteSpent, 1, 15, Failed, false),
+            (true, Record::FeeNoteSpent, 0, 15, Failed, false),
+        ]
+        .into_iter()
+        .flat_map(|case| kinds.clone().map(move |kind| (case, kind)))
+        {
+            let case = format!(
+                "kind {}, signed bound {signed_bound}, {record:?}, token notes spent \
+                 {token_spent}, scan at {network}",
+                kind.tag()
+            );
+            let dir = temp_dir(&format!(
+                "token_spend_settle_{}_{signed_bound}_{record:?}_{token_spent}_{network}",
+                kind.tag()
+            ));
+            let sdk = dash_sdk::Sdk::new_mock();
+            sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+            let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+            let id = SubwalletId::new([0x11; 32], 0);
+            let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+                .accounts
+                .read()
+                .await
+                .iter()
+                .map(|(id, views)| (*id, views.clone()))
+                .collect();
+            let token = ShieldedTokenPoolWatch {
+                token_id: Identifier::from([0x77; 32]),
+                data_contract_id: Identifier::from([0x66; 32]),
+                token_contract_position: 0,
+            };
+            let fee_nf = [0xF1u8; 32];
+            let pruned_anchor = [0xF2u8; 32];
+            let row = ShieldedActivityEntry {
+                kind: kind.clone(),
+                ..pending_purchase_row(fee_nf, [0xF3; 32])
+            };
+            {
+                let mut store = coordinator.store().write().await;
+                store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+                store.save_activity(id, &row).unwrap();
+                store
+                    .with_token_pool_conn(|conn| {
+                        insert_watch(conn, id.wallet_id, &token)?;
+                        conn.execute(
+                            "INSERT INTO shielded_token_pool_scans \
+                             (token_id, pool_note_count, scanned_height, \
+                              scanned_protocol_version) VALUES (?1, 1, 10, ?2)",
+                            rusqlite::params![token.token_id.as_slice(), network],
+                        )
+                        .expect("scan row");
+                        for position in 0..2u8 {
+                            insert_note_for_test(
+                                conn,
+                                &TokenPoolNote {
+                                    id,
+                                    token_id: token.token_id,
+                                    position: u64::from(position),
+                                    cmx: [1 + position; 32],
+                                    nullifier: [2 + position; 32],
+                                    value: 5,
+                                    note_data: vec![0; 115],
+                                    block_height: 1,
+                                    is_spent: position < token_spent,
+                                    reserved_by: Some(row.id),
+                                },
+                            )?;
+                        }
+                        // As the re-key to the record sets it.
+                        conn.execute(
+                            "UPDATE shielded_token_pool_notes SET signed_bound = ?1",
+                            rusqlite::params![signed_bound],
+                        )
+                        .expect("signing era");
+                        Ok(())
+                    })
+                    .unwrap();
+                if record != Record::NeverSaved {
+                    // Saved as the spend saves it: the hold is marked saved in
+                    // the same transaction.
+                    store.mark_pending(id, &fee_nf).unwrap();
+                    store
+                        .set_pending_spend(id, &fee_nf, pruned_anchor, row.id, Some(10))
+                        .unwrap();
+                    store
+                        .arm_redrive(
+                            id,
+                            PendingRedrive {
+                                activity_id: row.id,
+                                anchor: pruned_anchor,
+                                nullifiers: vec![fee_nf],
+                                st_bytes: vec![0],
+                                attempts: 0,
+                                identity_nonce_finalized: false,
+                                identity_user_abandoned: false,
+                                anchor_height: Some(10),
+                            },
+                        )
+                        .unwrap();
+                }
+                if record == Record::FeeNoteSpent {
+                    store.mark_spent(id, &fee_nf).unwrap();
+                }
+            }
+
+            if record == Record::FeeAnchorPruned {
+                coordinator
+                    .release_stranded_spends(
+                        vec![(id, (fee_nf, pruned_anchor, Some(row.id), Some(10)))],
+                        PrunedAnchorEvidence {
+                            recorded: &HashSet::new(),
+                            height: 10,
+                            scan_covered_height: Some(10),
+                            heightless: None,
+                        },
+                    )
+                    .await;
+                assert_eq!(
+                    row_status(&coordinator, id, &row.id).await,
+                    Pending,
+                    "{case}: the fee anchor's pruning alone settles nothing"
+                );
+            }
+            assert!(
+                coordinator
+                    .store()
+                    .read()
+                    .await
+                    .pending_redrives(id)
+                    .unwrap()
+                    .is_empty(),
+                "{case}: no saved record is left"
+            );
+
+            coordinator
+                .release_orphaned_token_reservations(
+                    &subwallets,
+                    &BTreeSet::from([token.token_id]),
+                    Some(10),
+                )
+                .await;
+            assert_eq!(
+                row_status(&coordinator, id, &row.id).await,
+                settled,
+                "{case}"
+            );
+            let holds: i64 = coordinator
+                .store()
+                .read()
+                .await
+                .with_token_pool_conn(|conn| {
+                    Ok(conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM shielded_token_pool_notes \
+                             WHERE reserved_by IS NOT NULL",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .expect("count holds"))
+                })
+                .unwrap();
+            assert_eq!(holds > 0, held, "{case}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// The height a credit scan marked a fee note spent at is kept before the
+    /// mark drops the spend's saved record, and survives a reopen: a later
+    /// pass whose scans are answered one block below cannot settle the
+    /// spend from token evidence that does not reach that height.
+    #[tokio::test]
+    async fn should_keep_the_height_a_fee_note_was_seen_spent_at_before_dropping_its_record() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{
+            insert_note_for_test, insert_watch, raise_sweep_height, TokenPoolNote,
+        };
+
+        let dir = temp_dir("token_spend_floor_before_record_drop");
+        let sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let fee_nf = [0xF1u8; 32];
+        let row = ShieldedActivityEntry {
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            ..pending_purchase_row(fee_nf, [0xF3; 32])
+        };
+        let scan_token_pool = |height: i64, spent: bool| {
+            move |conn: &mut rusqlite::Connection| {
+                conn.execute(
+                    "INSERT INTO shielded_token_pool_scans \
+                     (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                     VALUES (?1, 1, ?2, 15) ON CONFLICT(token_id) DO UPDATE SET \
+                     scanned_height = excluded.scanned_height",
+                    rusqlite::params![token.token_id.as_slice(), height],
+                )
+                .expect("scan row");
+                conn.execute(
+                    "UPDATE shielded_token_pool_notes SET spent = ?1",
+                    rusqlite::params![spent],
+                )
+                .expect("spent");
+                Ok(())
+            }
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store
+                .with_token_pool_conn(|conn| {
+                    insert_watch(conn, id.wallet_id, &token)?;
+                    insert_note_for_test(
+                        conn,
+                        &TokenPoolNote {
+                            id,
+                            token_id: token.token_id,
+                            position: 0,
+                            cmx: [1; 32],
+                            nullifier: [2; 32],
+                            value: 5,
+                            note_data: vec![0; 115],
+                            block_height: 1,
+                            is_spent: false,
+                            reserved_by: Some(row.id),
+                        },
+                    )?;
+                    conn.execute("UPDATE shielded_token_pool_notes SET signed_bound = 1", [])
+                        .expect("signing era");
+                    scan_token_pool(10, false)(conn)
+                })
+                .unwrap();
+            store.mark_pending(id, &fee_nf).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: [0xF2; 32],
+                        nullifiers: vec![fee_nf],
+                        st_bytes: vec![0],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .unwrap();
+            // The credit scan at 11 sees the transfer's fee note spent: the
+            // height is kept first, then the mark drops the record.
+            store.note_spend_scan_height(11).unwrap();
+            store.mark_spent(id, &fee_nf).unwrap();
+            assert!(store.pending_redrives(id).unwrap().is_empty());
+        }
+        let holds = || async {
+            coordinator
+                .store()
+                .read()
+                .await
+                .with_token_pool_conn(|conn| {
+                    Ok(conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM shielded_token_pool_notes \
+                             WHERE reserved_by IS NOT NULL",
+                            [],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .expect("count holds"))
+                })
+                .unwrap()
+        };
+
+        // A pass answered one block below: the token scan has not reached the
+        // height the fee note was seen spent at, so nothing is concluded.
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+        assert_eq!(holds().await, 1);
+
+        // The kept height is on disk: a store reopened on the same file reads it.
+        let reopened =
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("reopen");
+        assert_eq!(
+            reopened
+                .with_token_pool_conn(|conn| raise_sweep_height(conn, 0))
+                .unwrap(),
+            11
+        );
+        drop(reopened);
+
+        // The token scan catches up and sees the transfer's note spent: it
+        // landed, so its hold goes and its row waits for its confirmation.
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(scan_token_pool(11, true))
+            .unwrap();
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+        assert_eq!(holds().await, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A transfer signed at a binding version whose held token note another
+    /// spend used keeps the pool watched while its record lives, and once its
+    /// fee anchor is pruned the sweep settles it failed and releases the
+    /// hold, after which the pool can be unwatched.
+    #[tokio::test]
+    async fn should_settle_a_transfer_whose_token_note_another_spend_used() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        let dir = temp_dir("token_transfer_competing_spend");
+        let sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let fee_nf = [0xF1u8; 32];
+        let pruned_anchor = [0xF2u8; 32];
+        let row = ShieldedActivityEntry {
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            ..pending_purchase_row(fee_nf, [0xF3; 32])
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store
+                .with_token_pool_conn(|conn| {
+                    insert_watch(conn, id.wallet_id, &token)?;
+                    conn.execute(
+                        "INSERT INTO shielded_token_pool_scans \
+                         (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                         VALUES (?1, 1, 10, 15)",
+                        rusqlite::params![token.token_id.as_slice()],
+                    )
+                    .expect("scan row");
+                    // Held by this transfer, and seen spent by another.
+                    insert_note_for_test(
+                        conn,
+                        &TokenPoolNote {
+                            id,
+                            token_id: token.token_id,
+                            position: 0,
+                            cmx: [1; 32],
+                            nullifier: [2; 32],
+                            value: 5,
+                            note_data: vec![0; 115],
+                            block_height: 1,
+                            is_spent: true,
+                            reserved_by: Some(row.id),
+                        },
+                    )?;
+                    // Signed at 15: it cannot land without its own fee bundle.
+                    conn.execute("UPDATE shielded_token_pool_notes SET signed_bound = 1", [])
+                        .expect("signing era");
+                    Ok(())
+                })
+                .unwrap();
+            store.mark_pending(id, &fee_nf).unwrap();
+            store
+                .set_pending_spend(id, &fee_nf, pruned_anchor, row.id, Some(10))
+                .unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: pruned_anchor,
+                        nullifiers: vec![fee_nf],
+                        st_bytes: vec![0],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .unwrap();
+        }
+        let unwatch = || coordinator.unwatch_token_pool(id.wallet_id, token.token_id);
+        assert!(
+            matches!(
+                unwatch().await,
+                Err(PlatformWalletError::TokenShieldedPoolSpendPending { .. })
+            ),
+            "a hold on a spent note still keeps the pool watched"
+        );
+
+        // While its record lives, the sweep leaves it alone.
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+
+        coordinator
+            .release_stranded_spends(
+                vec![(id, (fee_nf, pruned_anchor, Some(row.id), Some(10)))],
+                PrunedAnchorEvidence {
+                    recorded: &HashSet::new(),
+                    height: 10,
+                    scan_covered_height: Some(10),
+                    heightless: None,
+                },
+            )
+            .await;
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Failed
+        );
+        unwatch().await.expect("nothing is held any more");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A credit scan's height is kept even from a pass in which no token
+    /// pool completed: a later pass answered from below cannot lower the
+    /// height a token pool's scan must reach before its holds are judged.
+    #[tokio::test]
+    async fn should_keep_the_credit_height_from_a_pass_with_no_token_pool_scanned() {
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        let dir = temp_dir("token_sweep_floor");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let record_scan = |height: i64| {
+            move |conn: &mut rusqlite::Connection| {
+                conn.execute(
+                    "INSERT INTO shielded_token_pool_scans \
+                     (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                     VALUES (?1, 1, ?2, 15) ON CONFLICT(token_id) DO UPDATE SET \
+                     scanned_height = excluded.scanned_height",
+                    rusqlite::params![token.token_id.as_slice(), height],
+                )
+                .expect("scan row");
+                Ok(())
+            }
+        };
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(|conn| {
+                insert_watch(conn, id.wallet_id, &token)?;
+                record_scan(100)(conn)?;
+                insert_note_for_test(
+                    conn,
+                    &TokenPoolNote {
+                        id,
+                        token_id: token.token_id,
+                        position: 0,
+                        cmx: [1; 32],
+                        nullifier: [2; 32],
+                        value: 5,
+                        note_data: vec![0; 115],
+                        block_height: 1,
+                        is_spent: false,
+                        reserved_by: Some([0xD5; 32]),
+                    },
+                )
+            })
+            .unwrap();
+        let reserved = || async {
+            coordinator
+                .token_pool_balances(id.wallet_id)
+                .await
+                .expect("balances")[0]
+                .reserved_balance
+        };
+
+        coordinator
+            .release_orphaned_token_reservations(&subwallets, &BTreeSet::new(), Some(101))
+            .await;
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(100),
+            )
+            .await;
+        assert_eq!(reserved().await, 5, "the token scan has not reached 101");
+
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(record_scan(101))
+            .unwrap();
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(100),
+            )
+            .await;
+        assert_eq!(reserved().await, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The network-checked watch refuses a token whose verified configuration
+    /// has no shielded pool, and one whose contract does not fetch, and
+    /// records nothing for either.
+    #[tokio::test]
+    async fn should_refuse_to_watch_a_token_without_a_readable_shielded_pool() {
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
+        use dpp::data_contract::config::DataContractConfig;
+        use dpp::data_contract::v1::DataContractV1;
+        use dpp::data_contract::{DataContract, TokenConfiguration};
+
+        let contract_id = Identifier::from([0x66; 32]);
+        let platform_version = PlatformVersion::latest();
+        let without_pool = DataContract::V1(DataContractV1 {
+            id: contract_id,
+            version: 1,
+            owner_id: Identifier::from([0x67; 32]),
+            document_types: BTreeMap::new(),
+            config: DataContractConfig::default_for_version(platform_version)
+                .expect("a contract config"),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V1(TokenConfigurationV1::from_v0(
+                    TokenConfigurationV0::default_most_restrictive(),
+                    false,
+                )),
+            )]),
+            keywords: vec![],
+            description: None,
+        });
+        let dir = temp_dir("token_pool_watch_refusals");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch(contract_id, Some(without_pool))
+            .await
+            .expect("contract expectation");
+        sdk.mock()
+            .expect_fetch(Identifier::from([0x68; 32]), None::<DataContract>)
+            .await
+            .expect("missing contract expectation");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+
+        let err = coordinator
+            .watch_token_pool(wallet_id, contract_id, 0)
+            .await
+            .expect_err("no shielded pool");
+        assert!(
+            matches!(err, PlatformWalletError::TokenShieldedPoolDisabled { .. }),
+            "got {err:?}"
+        );
+        let err = coordinator
+            .watch_token_pool(wallet_id, Identifier::from([0x68; 32]), 0)
+            .await
+            .expect_err("the contract is not on Platform");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::TokenConfigurationUnavailable { .. }
+            ),
+            "got {err:?}"
+        );
+        assert!(coordinator
+            .token_pool_balances(wallet_id)
+            .await
+            .expect("balances")
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A watch needs a bound wallet; a bound wallet's watched pool lists one
+    /// row per account, unscanned; removing the wallet and Clear drop it.
+    #[tokio::test]
+    async fn should_list_a_watched_token_pool_until_the_wallet_goes() {
+        let dir = temp_dir("token_pool_watch");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let watch = ShieldedTokenPoolWatch {
+            token_id: Identifier::from(calculate_token_id(&[0x66; 32], 1)),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 1,
+        };
+
+        assert!(matches!(
+            coordinator.record_token_pool_watch([0x99; 32], watch).await,
+            Err(PlatformWalletError::ShieldedNotBound)
+        ));
+        coordinator
+            .record_token_pool_watch(wallet_id, watch)
+            .await
+            .expect("watch");
+        let rows = coordinator
+            .token_pool_balances(wallet_id)
+            .await
+            .expect("balances");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].watch, rows[0].account_index, rows[0].balance),
+            (watch, 0, 0)
+        );
+        assert_eq!(rows[0].scanned_note_count, None);
+
+        coordinator
+            .unwatch_token_pool(wallet_id, watch.token_id)
+            .await
+            .expect("unwatch");
+        assert!(coordinator
+            .token_pool_balances(wallet_id)
+            .await
+            .expect("balances")
+            .is_empty());
+
+        coordinator
+            .record_token_pool_watch(wallet_id, watch)
+            .await
+            .expect("watch again");
+        coordinator.unregister_wallet(wallet_id).await;
+        let left = coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::super::token_pool::watches(conn))
+            .expect("watches");
+        assert!(left.is_empty(), "a removed wallet watches nothing");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Success path: a healthy `clear()` empties the shared commitment tree
@@ -2740,6 +5567,94 @@ mod tests {
         );
         assert!(coordinator.accounts.read().await.is_empty());
         assert!(coordinator.persisters.read().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A Clear requested while a shielded operation is admitted does not
+    /// wait for it. It is refused at once and changes nothing: the tree, the
+    /// notes, the registrations and the clear generation stay as they were.
+    /// Once the operation has returned, the same Clear goes through.
+    #[tokio::test]
+    async fn should_refuse_a_clear_at_once_and_change_nothing_while_an_operation_is_admitted() {
+        let dir = temp_dir("clear_refused");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        {
+            let mut store = coordinator.store().write().await;
+            store.append_commitment(&[7u8; 32], true).unwrap();
+            store
+                .save_note(id, &test_note([0xF0; 32], 3, false))
+                .unwrap();
+        }
+        let generation = coordinator.clear_generation();
+
+        let operation = coordinator.operation_guard().await;
+        // Polled once with the operation still admitted: a refusal is
+        // decided without waiting, so a Clear that parks here has gone back
+        // to waiting for the operation.
+        let refused = futures::poll!(std::pin::pin!(coordinator.clear()));
+        assert!(
+            matches!(
+                refused,
+                std::task::Poll::Ready(Err(PlatformWalletError::ShieldedOperationInProgress))
+            ),
+            "{refused:?}"
+        );
+        {
+            let store = coordinator.store().read().await;
+            assert_eq!(store.tree_size().unwrap(), 1, "the tree is not reset");
+            assert_eq!(
+                store.get_all_notes(id).unwrap().len(),
+                1,
+                "the notes are not purged"
+            );
+        }
+        assert_eq!(coordinator.registered_subwallets().await, vec![id]);
+        assert!(!coordinator.persisters.read().await.is_empty());
+        assert_eq!(
+            coordinator.clear_generation(),
+            generation,
+            "a refused Clear invalidates no bind snapshot"
+        );
+
+        drop(operation);
+        coordinator
+            .clear()
+            .await
+            .expect("clear succeeds once the operation has returned");
+        assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+        assert!(coordinator.registered_subwallets().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The other direction is unchanged: an operation that arrives while a
+    /// Clear is admitted waits for it, and a second Clear requested
+    /// meanwhile is refused like any Clear behind an admitted operation.
+    #[tokio::test]
+    async fn should_make_an_operation_wait_for_an_admitted_clear() {
+        let dir = temp_dir("operation_behind_clear");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+
+        let admission = coordinator
+            .try_admit_clear()
+            .expect("no operation admitted");
+        let mut operation = std::pin::pin!(coordinator.operation_guard());
+        assert!(
+            futures::poll!(operation.as_mut()).is_pending(),
+            "an operation waits for the Clear that was admitted first"
+        );
+        assert!(
+            matches!(
+                coordinator.try_admit_clear(),
+                Err(PlatformWalletError::ShieldedOperationInProgress)
+            ),
+            "a second Clear is refused while the first is admitted"
+        );
+
+        admission.clear().await.expect("clear succeeds");
+        let _operation = operation.await;
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2830,6 +5745,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         coordinator
             .store()
@@ -2887,6 +5803,14 @@ mod tests {
         let wallet_id: WalletId = [0x11; 32];
 
         coordinator.mark_hydrated(wallet_id, true).await;
+        // A scan completed in this session, so the account's ledger would
+        // stand without hydration.
+        coordinator
+            .store()
+            .write()
+            .await
+            .set_last_synced_note_index(SubwalletId::new(wallet_id, 0), 0)
+            .unwrap();
         let generation_before = coordinator.clear_generation();
 
         // Break the tree reset's reopen. The subwallet purge must not run
@@ -2895,6 +5819,12 @@ mod tests {
 
         let result = coordinator.clear().await;
         assert!(result.is_err(), "the store-reset failure must surface");
+        assert_eq!(
+            coordinator.local_balance_snapshot(wallet_id).await.unwrap(),
+            ShieldedLocalBalanceState::RestoreIncomplete,
+            "a reset that failed may have changed the tree, so evidence of a scan of the \
+             tree as it was must not keep the balance reported as known"
+        );
         assert!(
             !coordinator.is_hydrated(wallet_id).await,
             "a failed clear still purged the subwallet state, so hydration must not survive — \
@@ -3206,6 +6136,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         coordinator
             .store()
@@ -3319,6 +6250,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: true,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .unwrap();
@@ -3665,24 +6597,32 @@ mod tests {
             let mut store = coordinator.store.write().await;
             store.mark_pending(id, &pruned_nf).expect("mark pruned");
             store
-                .set_pending_spend(id, &pruned_nf, pruned_anchor, pruned_act)
+                .set_pending_spend(id, &pruned_nf, pruned_anchor, pruned_act, Some(10))
                 .expect("arm pruned");
             store.mark_pending(id, &live_nf).expect("mark live");
             store
-                .set_pending_spend(id, &live_nf, live_anchor, live_act)
+                .set_pending_spend(id, &live_nf, live_anchor, live_act, Some(10))
                 .expect("arm live");
         }
 
         // Snapshot as the pre-scan prefetch would have produced it; the
         // recorded set holds only the live anchor (the other was "pruned").
         let snapshot = vec![
-            (id, (pruned_nf, pruned_anchor, Some(pruned_act))),
-            (id, (live_nf, live_anchor, Some(live_act))),
+            (id, (pruned_nf, pruned_anchor, Some(pruned_act), Some(10))),
+            (id, (live_nf, live_anchor, Some(live_act), Some(10))),
         ];
         let recorded: HashSet<[u8; 32]> = [live_anchor].into_iter().collect();
 
         coordinator
-            .release_stranded_spends(snapshot, &recorded)
+            .release_stranded_spends(
+                snapshot,
+                PrunedAnchorEvidence {
+                    recorded: &recorded,
+                    height: 10,
+                    scan_covered_height: Some(10),
+                    heightless: None,
+                },
+            )
             .await;
 
         let remaining = coordinator
@@ -3699,6 +6639,708 @@ mod tests {
         assert_eq!(
             remaining[0].0, live_nf,
             "the still-recorded reservation must survive"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pass whose scan stops at a gap between two fetched ranges
+    /// (dashpay/platform#6109) reports no completion, as a cut-short pass
+    /// does, and clears the caught-up stamp: the pool holds notes it did not
+    /// read, so the next pass must not be skipped as caught up.
+    #[tokio::test]
+    async fn should_report_no_completion_and_clear_the_cooldown_when_the_scan_stops_at_a_gap() {
+        use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
+
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        let opaque = |n: u8| {
+            let mut cmx = [0u8; 32];
+            cmx[0] = n;
+            ShieldedEncryptedNote {
+                cmx: cmx.to_vec(),
+                nullifier: vec![0xAA; 32],
+                cv_net: vec![],
+                encrypted_note: vec![],
+            }
+        };
+        // The first range comes back short of the second one's start, and
+        // the second holds a note: the positions between them are in neither.
+        for chunk in 0..16u64 {
+            let notes = match chunk {
+                0 => vec![opaque(1), opaque(2)],
+                1 => vec![opaque(3)],
+                _ => Vec::new(),
+            };
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes,
+                        total_count: u64::from(count) + 1,
+                    }),
+                )
+                .await
+                .expect("a pool range");
+        }
+        let dir = temp_dir("gap_pass");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        // A stamp an earlier pass that found nothing new left.
+        *coordinator.last_caught_up_at.lock().unwrap() = Some(Instant::now());
+
+        let summary = coordinator.sync(true, &CancellationToken::new()).await;
+
+        assert!(
+            summary.wallet_results.is_empty(),
+            "a pass that stopped at a gap reports no completion: {summary:?}"
+        );
+        assert!(
+            coordinator.last_caught_up_at.lock().unwrap().is_none(),
+            "the next pass is not skipped as caught up"
+        );
+        let store = coordinator.store.read().await;
+        assert_eq!(
+            store.tree_size().expect("tree"),
+            2,
+            "the commitments read before the gap stay appended"
+        );
+        assert_eq!(store.last_synced_note_index(id).expect("watermark"), 0);
+        drop(store);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An expired spend's row is failed under the store guard that releases
+    /// its reservation (dashpay/platform#6160). A top-up whose anchor is
+    /// proven pruned is released while its result, a snapshot showing its
+    /// nullifiers spent, waits for the store right behind the release: the
+    /// settlement must find the row already failed, report the top-up as not
+    /// executed, and leave the row failed.
+    #[tokio::test]
+    async fn should_fail_an_expired_spend_s_row_before_a_waiting_result_can_confirm_it() {
+        let dir = temp_dir("expiry_handoff");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let anchor = [0xABu8; 32];
+        let row = ShieldedActivityEntry {
+            id: [0xAC; 32],
+            kind: ShieldedActivityKind::IdentityTopUp {
+                identity_id: [0x33; 32],
+            },
+            direction: ShieldedDirection::Out,
+            amount: 1_500,
+            fee: Some(10),
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: vec![[0x7C; 32]],
+            spent_nullifiers: vec![[0xA1; 32], [0xA2; 32]],
+        };
+        let notes: Vec<ShieldedNote> = (100u64..)
+            .zip(&row.spent_nullifiers)
+            .map(|(position, nullifier)| ShieldedNote {
+                position,
+                cmx: [0x2A; 32],
+                nullifier: *nullifier,
+                block_height: 5,
+                is_spent: false,
+                value: 1_000,
+                note_data: vec![0u8; 115],
+            })
+            .collect();
+        {
+            let mut store = coordinator.store.write().await;
+            store.save_activity(id, &row).expect("save the row");
+            for note in &notes {
+                store.save_note(id, note).expect("save the note");
+                store
+                    .mark_pending(id, &note.nullifier)
+                    .expect("reserve the note");
+                store
+                    .set_pending_spend(id, &note.nullifier, anchor, row.id, Some(10))
+                    .expect("arm the reservation");
+            }
+        }
+        let snapshot = notes
+            .iter()
+            .map(|note| (id, (note.nullifier, anchor, Some(row.id), Some(10))))
+            .collect();
+        // The set proved at height 20 lacks the anchor, and the scan covers it.
+        let recorded: HashSet<[u8; 32]> = HashSet::new();
+        let entry = Some(row.clone());
+
+        // Both wait for the store in turn: the release, then the settlement
+        // of the top-up's result.
+        let held = coordinator.store.read().await;
+        let mut release = Box::pin(coordinator.release_stranded_spends(
+            snapshot,
+            PrunedAnchorEvidence {
+                recorded: &recorded,
+                height: 20,
+                scan_covered_height: Some(20),
+                heightless: None,
+            },
+        ));
+        assert!(futures::poll!(&mut release).is_pending());
+        let mut settlement = Box::pin(settle_affected_state_spend(
+            &coordinator.store,
+            None,
+            wallet_id,
+            id,
+            &entry,
+            &notes,
+            "identity top up from shielded pool",
+        ));
+        assert!(futures::poll!(&mut settlement).is_pending());
+        drop(held);
+        let ((), settled) = futures::join!(release, settlement);
+
+        assert!(
+            matches!(
+                settled,
+                Err(PlatformWalletError::ShieldedSpendNotExecuted { .. })
+            ),
+            "{settled:?}"
+        );
+        let store = coordinator.store.read().await;
+        assert_eq!(
+            store
+                .get_activity_by_entry_id(id, &row.id)
+                .expect("read the row")
+                .expect("the row")
+                .status,
+            ShieldedActivityStatus::Failed
+        );
+        let stored_notes = store.get_all_notes(id).expect("notes");
+        for selected in &notes {
+            assert!(
+                stored_notes
+                    .iter()
+                    .any(|note| note.nullifier == selected.nullifier && note.is_spent),
+                "the result proves note {} spent",
+                hex::encode(selected.nullifier)
+            );
+        }
+        drop(store);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The whole sync pass, its note scan proved a block below the anchor set
+    /// (within the SDK's one-block tolerance): a spend built on an anchor the
+    /// set lacks may have executed in that block, which the scan has not
+    /// shown, so its note stays reserved, its saved record stays and its
+    /// activity stays Pending. Once the scan covers the set's height, the
+    /// pass releases it. An anchor read above the set's height, absent from
+    /// it, may be newer than the set and is never released by it.
+    #[tokio::test]
+    async fn should_release_a_stranded_spend_only_once_the_scan_covers_the_anchor_set() {
+        use super::super::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
+        };
+        use crate::wallet::shielded::ShieldedNote;
+        use drive_proof_verifier::types::{
+            NoParamQuery, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+        };
+
+        const SET_HEIGHT: u64 = 50;
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        // The scan's window of 16 chunk fetches, all of an empty pool.
+        for chunk in 0..16 {
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes: Vec::new(),
+                        total_count: 0,
+                    }),
+                )
+                .await
+                .expect("an empty chunk");
+        }
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![[0xEE; 32]])))
+            .await
+            .expect("the anchor set");
+        sdk.mock()
+            .set_response_height_of::<ShieldedAnchors>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT - 1);
+
+        let dir = temp_dir("release_scan_below_set");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk.clone()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store"),
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+        let id = SubwalletId::new(wallet_id, 0);
+        // Two broadcast spends whose anchors the set lacks: one read below
+        // the set's height, one above it.
+        let spends = [
+            ([0x21; 32], [0x22; 32], [0x23; 32], SET_HEIGHT - 5),
+            ([0x31; 32], [0x32; 32], [0x33; 32], SET_HEIGHT + 1),
+        ];
+        {
+            let mut store = coordinator.store().write().await;
+            for (index, (nullifier, anchor, activity, anchor_height)) in spends.iter().enumerate() {
+                let note = ShieldedNote {
+                    position: index as u64,
+                    cmx: [0x40 + index as u8; 32],
+                    nullifier: *nullifier,
+                    block_height: 1,
+                    is_spent: false,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                };
+                store.save_note(id, &note).expect("note");
+                store.mark_pending(id, nullifier).expect("reserved");
+                store
+                    .set_pending_spend(id, nullifier, *anchor, *activity, Some(*anchor_height))
+                    .expect("anchored");
+                store
+                    .arm_redrive(
+                        id,
+                        PendingRedrive {
+                            activity_id: *activity,
+                            anchor: *anchor,
+                            nullifiers: vec![*nullifier],
+                            st_bytes: vec![0xDE, 0xAD],
+                            attempts: 0,
+                            identity_nonce_finalized: false,
+                            identity_user_abandoned: false,
+                            anchor_height: Some(*anchor_height),
+                        },
+                    )
+                    .expect("record");
+                store
+                    .save_activity(
+                        id,
+                        &ShieldedActivityEntry {
+                            id: *activity,
+                            kind: ShieldedActivityKind::Unshield,
+                            direction: ShieldedDirection::Out,
+                            amount: 900,
+                            fee: None,
+                            counterparty: None,
+                            memo: None,
+                            block_height: None,
+                            status: ShieldedActivityStatus::Pending,
+                            created_at_ms: 1,
+                            min_note_position: None,
+                            note_cmxs: vec![],
+                            spent_nullifiers: vec![*nullifier],
+                        },
+                    )
+                    .expect("activity");
+            }
+        }
+        let state = |store: &FileBackedShieldedStore, nullifier: [u8; 32], activity: [u8; 32]| {
+            let reserved = !store
+                .get_unspent_notes(id)
+                .expect("notes")
+                .iter()
+                .any(|note| note.nullifier == nullifier);
+            let saved = store
+                .pending_redrives(id)
+                .expect("records")
+                .iter()
+                .any(|record| record.activity_id == activity);
+            let status = store
+                .get_activity_by_entry_id(id, &activity)
+                .expect("activity")
+                .map(|entry| entry.status);
+            (reserved, saved, status)
+        };
+        let held = (true, true, Some(ShieldedActivityStatus::Pending));
+
+        coordinator.sync(true, &CancellationToken::new()).await;
+        {
+            let store = coordinator.store().read().await;
+            for (nullifier, _, activity, _) in &spends {
+                assert_eq!(
+                    state(&store, *nullifier, *activity),
+                    held,
+                    "a scan a block below the set releases nothing"
+                );
+            }
+        }
+
+        sdk.mock()
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
+        coordinator.sync(true, &CancellationToken::new()).await;
+        let store = coordinator.store().read().await;
+        assert_eq!(
+            state(&store, spends[0].0, spends[0].2),
+            (false, false, Some(ShieldedActivityStatus::Failed)),
+            "proven pruned once the scan covers the set"
+        );
+        assert_eq!(
+            state(&store, spends[1].0, spends[1].2),
+            held,
+            "an anchor read above the set may be newer than it"
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A reservation restored from a record saved before anchor heights were
+    /// kept has no known height: its anchor absent from a set may be newer
+    /// than it, so it is not released. A set holding the anchor gives it that
+    /// set's height, durably, and a later set lacking it, with the scan
+    /// covering that set, releases it.
+    #[tokio::test]
+    async fn should_release_a_heightless_reservation_only_after_a_set_held_its_anchor() {
+        let dir = temp_dir("release_heightless");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let nullifier = [0x51; 32];
+        let anchor = [0x52; 32];
+        let activity = [0x53; 32];
+        {
+            let mut store = coordinator.store.write().await;
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .set_pending_spend(id, &nullifier, anchor, activity, None)
+                .expect("anchored, no height");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: None,
+                    },
+                )
+                .expect("record");
+        }
+        let stale = |coordinator: &NetworkShieldedCoordinator| {
+            let store = coordinator.store.clone();
+            async move { store.read().await.stale_pending_spends(id).expect("stale") }
+        };
+        let release = |recorded: HashSet<[u8; 32]>, height: u64| {
+            let snapshot_store = coordinator.store.clone();
+            let coordinator = &coordinator;
+            async move {
+                let snapshot: Vec<(SubwalletId, StalePendingSpend)> = snapshot_store
+                    .read()
+                    .await
+                    .stale_pending_spends(id)
+                    .expect("stale")
+                    .into_iter()
+                    .map(|entry| (id, entry))
+                    .collect();
+                coordinator
+                    .release_stranded_spends(
+                        snapshot,
+                        PrunedAnchorEvidence {
+                            recorded: &recorded,
+                            height,
+                            scan_covered_height: Some(height),
+                            heightless: None,
+                        },
+                    )
+                    .await;
+            }
+        };
+
+        // Absent from the first set seen: perhaps newer than it.
+        release(HashSet::new(), 10).await;
+        assert_eq!(
+            stale(&coordinator).await,
+            vec![(nullifier, anchor, Some(activity), None)],
+            "not proven pruned"
+        );
+        // A set holding it gives it the set's height.
+        release(HashSet::from([anchor]), 20).await;
+        assert_eq!(
+            stale(&coordinator).await,
+            vec![(nullifier, anchor, Some(activity), Some(20))],
+        );
+        let reopened =
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("reopened");
+        assert_eq!(
+            reopened.pending_redrives(id).expect("records")[0].anchor_height,
+            Some(20),
+            "kept durably"
+        );
+        drop(reopened);
+        // A later set lacking it releases it.
+        release(HashSet::new(), 30).await;
+        assert!(stale(&coordinator).await.is_empty(), "proven pruned");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A note spend an earlier process saved before anchor heights were kept,
+    /// from a tree of `TREE` leaves. Reopened, its height stays unknown, and a
+    /// set lacking its anchor shows it pruned only with the pool proved, at or
+    /// below the set's height, to hold `TREE` leaves or more, and the scan
+    /// covering the set. Evidence a block behind the anchor, with every proof
+    /// at H - 1 and the pool short of its tree, releases nothing: the anchor
+    /// may postdate that set.
+    #[tokio::test]
+    async fn should_release_a_reopened_heightless_reservation_only_once_the_pool_reached_its_tree()
+    {
+        const TREE: u64 = 4;
+        const H: u64 = 10;
+        let dir = temp_dir("release_reopened_heightless");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let id = SubwalletId::new([0x11; 32], 0);
+        let (nullifier, anchor, activity) = ([0x61; 32], [0x62; 32], [0x63; 32]);
+        {
+            // An earlier process, before heights were kept.
+            let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open");
+            for leaf in 0..TREE {
+                store
+                    .append_commitment(&[leaf as u8 + 1; 32], true)
+                    .expect("appended");
+            }
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: None,
+                    },
+                )
+                .expect("record");
+        }
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened"),
+        );
+        let stale = || async {
+            coordinator
+                .store
+                .read()
+                .await
+                .stale_pending_spends(id)
+                .expect("stale")
+        };
+        assert_eq!(
+            stale().await,
+            vec![(nullifier, anchor, Some(activity), None)],
+            "its height stays unknown"
+        );
+        let recorded = HashSet::new();
+        // (set height, scan coverage, pool leaves and their height, released)
+        let cases = [
+            (
+                H - 1,
+                H - 1,
+                Some((TREE - 1, H - 1)),
+                false,
+                "a block behind",
+            ),
+            (H, H, None, false, "no pool count"),
+            (
+                H,
+                H,
+                Some((TREE - 1, H)),
+                false,
+                "the pool short of the tree",
+            ),
+            (
+                H,
+                H,
+                Some((TREE, H + 1)),
+                false,
+                "the pool proved above the set",
+            ),
+            (H, H - 1, Some((TREE, H)), false, "the scan below the set"),
+            (H, H, Some((TREE, H - 1)), true, "proven"),
+        ];
+        for (set_height, covered, pool, released, case) in cases {
+            let snapshot: Vec<(SubwalletId, StalePendingSpend)> =
+                stale().await.into_iter().map(|entry| (id, entry)).collect();
+            let heightless = {
+                let store = coordinator.store.read().await;
+                let (tree_bound, anchor_floors) =
+                    heightless_tree_bounds(&*store, &snapshot, &[]).expect("bounded");
+                assert_eq!(tree_bound, TREE, "the tree the earlier process held");
+                pool.map(|(pool_leaves, pool_height)| HeightlessAnchorEvidence {
+                    tree_bound,
+                    pool_leaves,
+                    pool_height,
+                    anchor_floors,
+                })
+            };
+            coordinator
+                .release_stranded_spends(
+                    snapshot,
+                    PrunedAnchorEvidence {
+                        recorded: &recorded,
+                        height: set_height,
+                        scan_covered_height: Some(covered),
+                        heightless: heightless.as_ref(),
+                    },
+                )
+                .await;
+            assert_eq!(stale().await.is_empty(), released, "{case}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The floor of an anchor named without its height is one past the
+    /// highest position of the notes spent on it that the store holds, over
+    /// every reservation and journal record naming it, and a pool count
+    /// shows the anchor recorded only once it reaches both that floor and the
+    /// tree bound. A note the store does not hold raises no floor.
+    #[test]
+    fn should_bound_a_heightless_anchor_s_tree_by_the_notes_spent_on_it() {
+        let (anchor, other, dated) = ([0x51; 32], [0x52; 32], [0x53; 32]);
+        let wallet_id = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let note = |position: u64, nullifier: u8| ShieldedNote {
+            position,
+            cmx: [nullifier; 32],
+            nullifier: [nullifier; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1,
+            note_data: vec![],
+        };
+        let mut store = InMemoryShieldedStore::new();
+        for (position, nullifier) in [(3, 0x61), (8, 0x62), (20, 0x63)] {
+            store
+                .save_note(id, &note(position, nullifier))
+                .expect("saved");
+        }
+        let stale = vec![
+            (id, ([0x61; 32], anchor, None, None)),
+            (id, ([0x64; 32], other, None, None)),
+            // A dated reservation raises no floor.
+            (id, ([0x63; 32], dated, None, Some(5))),
+        ];
+        let journal = vec![(
+            wallet_id,
+            PrivatePaymentRecord {
+                account_index: 0,
+                activity_id: [0x71; 32],
+                anchor,
+                anchor_height: None,
+                commitment: [0x72; 32],
+                payment: PrivateContactPayment {
+                    sender: [1; 32],
+                    recipient: [2; 32],
+                    account_reference: 0,
+                },
+                nullifiers: vec![[0x62; 32], [0x65; 32]],
+                entry_hash: None,
+                store_position: None,
+            },
+        )];
+        let floors = heightless_anchor_floors(&store, &stale, &journal);
+        assert_eq!(floors, BTreeMap::from([(anchor, 9)]));
+        let evidence = |pool_leaves| HeightlessAnchorEvidence {
+            tree_bound: 6,
+            pool_leaves,
+            pool_height: 10,
+            anchor_floors: floors.clone(),
+        };
+        assert!(!evidence(8).recorded_by(&anchor, 10), "below its floor");
+        assert!(evidence(9).recorded_by(&anchor, 10), "at its floor");
+        assert!(!evidence(5).recorded_by(&other, 10), "below the bound");
+        assert!(evidence(6).recorded_by(&other, 10), "at the bound");
+        assert!(!evidence(9).recorded_by(&anchor, 9), "proved above the set");
+    }
+
+    /// A token cancelled before the pass starts: no network call (the
+    /// mock SDK would otherwise fail every wallet), no store change and
+    /// no caught-up cooldown stamp (dashpay/platform#5200).
+    #[tokio::test]
+    async fn should_skip_network_and_cooldown_when_cancelled_before_scan() {
+        let dir = temp_dir("cancel_before_scan");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let summary = coordinator.sync(true, &cancel).await;
+
+        assert!(
+            summary.is_empty(),
+            "a pass cancelled before it started reports nothing"
+        );
+        assert!(
+            coordinator.last_caught_up_at.lock().unwrap().is_none(),
+            "a cancelled pass must not stamp the cooldown"
+        );
+        assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Cancelled while inside the caught-up cooldown: the cooldown's
+    /// skip summary would report one caught-up wallet, which the
+    /// manager would stamp and announce as a completed pass. The
+    /// cancellation check runs first, so the pass reports nothing.
+    #[tokio::test]
+    async fn should_report_nothing_when_cancelled_inside_cooldown() {
+        let dir = temp_dir("cancel_inside_cooldown");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        *coordinator.last_caught_up_at.lock().unwrap() = Some(std::time::Instant::now());
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let summary = coordinator.sync(false, &cancel).await;
+
+        assert!(
+            summary.is_empty(),
+            "a cancelled pass must not borrow the cooldown's caught-up summary"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

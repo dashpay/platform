@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftDashSDK
 import SwiftData
-import LocalAuthentication
 
 enum RootTab: Hashable {
     case sync, wallets, identities, dashpay, settings
@@ -201,6 +200,14 @@ struct ContentView: View {
             } message: { message in
                 Text(message)
             }
+            // Failures reported through `AppState.showError`, for example an
+            // SPV stop, SDK build or wallet-manager move that failed while
+            // Options rebuilt the SDK.
+            .alert("Error", isPresented: $platformState.showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(platformState.errorMessage)
+            }
         }
     }
 
@@ -287,7 +294,7 @@ struct ContentView: View {
 
     /// Run the auth + re-derivation pipeline for the user's choices.
     /// All wallets with `samePinCode == true` collapse into a single
-    /// `LAContext.evaluatePolicy` call; everything else gets its own
+    /// `runAuthPrompt` call; everything else gets its own
     /// prompt. A cancel / policy failure on the shared prompt aborts
     /// the shared group and bounces to the keep/delete decision; a
     /// failure on a per-wallet prompt skips just that wallet.
@@ -418,27 +425,19 @@ struct ContentView: View {
         case failed(String)
     }
 
-    /// Single LAContext-backed system prompt. Maps every cancel /
-    /// policy / error path to a typed outcome so callers can decide
-    /// whether to abort or skip.
+    /// Single system prompt through `DeviceOwnerAuthentication`, mapped
+    /// to a typed outcome so callers can decide whether to abort or skip.
+    /// A cancelled prompt is the user bailing, so it maps to `.denied`.
     private func runAuthPrompt(reason: String) async -> AuthOutcome {
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancel"
-        var policyError: NSError?
-        guard context.canEvaluatePolicy(
-            .deviceOwnerAuthentication,
-            error: &policyError
-        ) else {
-            return .unavailable(policyError?.localizedDescription ?? "unknown")
-        }
-        do {
-            let authorized = try await context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: reason
-            )
-            return authorized ? .authorized : .denied
-        } catch {
-            return .failed(error.localizedDescription)
+        switch await DeviceOwnerAuthentication.authorize(reason: reason) {
+        case .authorized:
+            return .authorized
+        case .cancelled:
+            return .denied
+        case .unavailable(let detail):
+            return .unavailable(detail)
+        case .failed(let detail):
+            return .failed(detail)
         }
     }
 
@@ -495,7 +494,7 @@ struct ContentView: View {
         // changing the user's currently visible network.
         let recoveryManager: PlatformWalletManager
         do {
-            recoveryManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
+            recoveryManager = try await walletManagerStore.backgroundManager(for: restoredNetwork)
         } catch {
             let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + "failed to prepare wallet manager — \(error.localizedDescription)"

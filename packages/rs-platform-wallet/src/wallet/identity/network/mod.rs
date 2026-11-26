@@ -34,33 +34,56 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 // Core handle + identity-lifecycle operations.
 mod balance;
 mod contract;
+pub use contract::{ContractSectionChanges, DataContractUpdatePreview};
+mod contract_fee_claim;
+pub use contract_fee_claim::{
+    contract_fee_claim_eligibility, ContractFeeClaimEligibility, ModeratorsPotTeam,
+};
+mod contract_update_source;
+mod contract_user_moderation;
+pub use contract_update_source::{split_contract_update_source, ContractUpdateSource};
+pub use contract_user_moderation::{
+    contract_moderation_offer, ContractDocumentDeletion, ContractDocumentRestore,
+    ContractModerationOffer, ContractModeratorRole, ContractUserModerationKind,
+    DocumentTypeModerationOffer, IdentityModerationOffer,
+};
+mod decision_proposal;
 mod discovery;
 mod document;
+mod document_erase;
+pub(crate) use document_erase::DocumentEraseGate;
+pub use document_erase::{
+    DocumentEraseNotSubmittedReason, DocumentEraseOutcome, DocumentLifecycleObservation,
+};
 mod dpns;
 mod dpns_marketplace;
 mod identity_handle;
 mod key_limits;
 mod key_selection;
 mod loading;
+mod multiple_choice_proposal;
 mod register_from_addresses;
 mod registration;
+mod state_transition_summary;
 mod top_up;
 mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
-pub(crate) use key_selection::usable_authentication_key;
+pub(crate) use key_selection::{usable_authentication_key, usable_authentication_key_for_types};
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
 // DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.
 mod contact_info;
 mod contact_requests;
+mod contact_shielded_address;
 mod contacts;
 mod dashpay_view;
 mod invitation;
 pub use invitation::{
-    Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+    Invitation, InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS,
+    MIN_INVITATION_DUFFS,
 };
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
@@ -70,9 +93,39 @@ pub(crate) use payment_handler::DashPayPaymentHandler;
 pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
 pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
+mod prepared_payment;
+pub use prepared_payment::PreparedDashPayPayment;
+pub use tokens::TokenConfigUpdateOutcome;
+mod private_contact_requests;
+#[cfg(feature = "shielded")]
+pub(crate) use private_contact_requests::{
+    restore_journaled_private_payments, JournaledPrivatePayment,
+};
+pub use private_contact_requests::{
+    PaymentStarted, PrivateContactReadiness, PrivateContactSyncReport,
+};
+// Any private document type's store, read for the wallet's identities; the
+// DashPay private contact request sync above scans with the same key paths.
+mod private_documents;
+pub use private_documents::{
+    OpenedPrivateDocument, PrivateDocumentCursor, PrivateDocumentDirection,
+    PrivateDocumentKeyPaths, PrivateDocumentRead,
+};
+// An entry of any private document type, sealed by one of the wallet's
+// identities with the keys the read above recovers it with.
+mod private_document_create;
+pub use private_document_create::{
+    private_document_create_fee, private_document_create_fee_for,
+    private_document_recipient_key_choices, NewPrivateDocumentEntry, PrivateDocumentEntryCreated,
+    PrivateDocumentRecipientKey, SealedPrivateDocumentEntry,
+    PRIVATE_DOCUMENT_CREATE_FEE_PREVIEW_ACTIONS,
+};
 mod profile;
+mod public_keys;
+pub use public_keys::{fetch_identity_public_keys, FetchedIdentityPublicKeys};
 pub(crate) mod sdk_writer;
 mod seed_binding;
+mod signing_key;
 pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
@@ -94,14 +147,22 @@ pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
-    DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameHistoryEvent,
-    DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
+    give_up_clears_main_dpns_name, DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary,
+    DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp,
+    DpnsNameHistoryEvent, DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
-    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
-    derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,
-    IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,
+    derive_identity_auth_key_hash_from_master, derive_identity_auth_keypair,
+    identity_auth_derivation_path_for_type, ConnectKey, DerivedIdentityAuthKey, IdentityWallet,
+    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
+pub use key_limits::IdentityKeyLimitsUpdatePreview;
+pub use state_transition_summary::{
+    check_document_type_name, decode_state_transition, summarize_state_transition,
+    BatchedTransitionSummary, BatchedTransitionTarget, DataContractSummary, StateTransitionSummary,
+    StateTransitionSummaryKind,
 };
 
 // Helpers declared on `identity_handle.rs` that siblings reach

@@ -58,13 +58,24 @@ jobs:
       || !github.event.pull_request.draft
       || (github.event.pull_request.head.repo.full_name == github.repository
           && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
-    runs-on: ubuntu-24.04
+    # Every Rust, JS and E2E job waits for this one. On the light pool it does
+    # not queue for a GitHub-hosted slot, which every repository in the
+    # organization shares. It runs the PR's own scripts, so fork PRs outside
+    # the trusted-fork policy stay on a GitHub-hosted runner. The light image
+    # provides PyYAML (Swift runner policy check) and yq (dispatch override).
+    runs-on: >-
+      ${{ (github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     outputs:
-      js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
-      js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
+      js-packages: ${{ steps.js-jobs.outputs.packages }}
+      js-lint: ${{ steps.js-jobs.outputs.lint }}
+      js-test-jobs: ${{ steps.js-jobs.outputs.test-jobs }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       arm64-image-changed: ${{ steps.filter-rs-workflows.outputs.arm64-image }}
+      runner-image-changed: ${{ steps.filter-rs-workflows.outputs.runner-image }}
       rs-scope: ${{ steps.rs-scope.outputs.scope }}
       shielded-changed: ${{ steps.override.outputs.shielded-changed || steps.filter-shielded.outputs.shielded-changed }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
@@ -75,7 +86,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # The merge-base diffs below need full history but not every past
+          # version of every file. A blobless clone downloads only the checked
+          # out tree up front and fetches the blobs a diff reads on demand,
+          # which keeps this frequent job light on the shared runner hosts.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Verify self-hosted Swift runner policy
         run: python3 .github/scripts/check-swift-self-hosted-runner.py
@@ -97,6 +113,18 @@ jobs:
         with:
           filters: .github/package-filters/js-packages-direct.yml
 
+      # A pull request that changes how the JS jobs are planned or run tests
+      # and lints every package, so the change runs before it merges.
+      - uses: dorny/paths-filter@v4
+        id: filter-js-workflows
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: |
+            js-workflows:
+              - .github/workflows/tests-js-package.yml
+              - .github/scripts/js-packages.py
+              - .github/actions/nodejs/**
+
       - uses: dorny/paths-filter@v4
         id: filter-rs
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -111,6 +139,7 @@ jobs:
             rs-workflows:
               - .github/workflows/tests-rs-workspace.yml
               - .github/workflows/tests-rs-wallet.yml
+              - .github/workflows/tests-rs-wasm.yml
               - .github/workflows/tests.yml
               - .github/scripts/check-wallet-closure.py
               - .github/runner-requirements.json
@@ -119,6 +148,8 @@ jobs:
               - .github/actions/rust/**
             arm64-image:
               - .github/runner-requirements.arm64.json
+            runner-image:
+              - .github/runner-requirements.json
 
       - uses: dorny/paths-filter@v4
         id: filter-e2e
@@ -158,7 +189,13 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          if git diff "$BASE_SHA"...HEAD -- Cargo.toml 2>/dev/null | grep -qE '^\+version\s*='; then
+          # Capture the diff first: inside a pipeline a git failure (such as a
+          # file version the blobless checkout cannot fetch) would read as
+          # "unchanged" and skip the version-gated jobs.
+          if ! DIFF=$(git diff "$BASE_SHA"...HEAD -- Cargo.toml); then
+            echo "version-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff Cargo.toml against $BASE_SHA; assuming the platform version changed"
+          elif grep -qE '^\+version\s*=' <<< "$DIFF"; then
             echo "version-changed=true" >> "$GITHUB_OUTPUT"
             echo "Platform version changed — Docker builds and test suite will run"
           else
@@ -171,7 +208,11 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs')
+          if ! DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs'); then
+            echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff the Rust sources; running doctests"
+            exit 0
+          fi
 
           # Look for added/removed lines in doc comments that contain code fences
           if echo "$DIFF" | grep -qE '^[+-].*///.*```|^[+-].*//!.*```'; then
@@ -179,6 +220,16 @@ jobs:
             echo "Doc comments with code examples changed — doctests will run"
             exit 0
           fi
+
+          # A crate that compiles its README as doctests (`include_str!("../README.md")`)
+          # runs them whenever that README changes.
+          for readme in $(git diff --name-only "$BASE_SHA"...HEAD -- 'packages/*/README.md' 2>/dev/null); do
+            if grep -qsF 'include_str!("../README.md")' "$(dirname "$readme")/src/lib.rs"; then
+              echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+              echo "$readme is compiled as doctests and changed — doctests will run"
+              exit 0
+            fi
+          done
 
           echo "doctests-changed=false" >> "$GITHUB_OUTPUT"
           echo "No doctest changes — skipping doctests"
@@ -342,6 +393,8 @@ jobs:
               - packages/swift-sdk/**
               - packages/app-connect-contract/**
               - packages/moderation-charters-contract/**
+              - packages/decision-proposals-contract/**
+              - packages/token-market-contract/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
@@ -350,6 +403,7 @@ jobs:
               - packages/keyword-search-contract/**
               - packages/masternode-reward-shares-contract/**
               - packages/rs-context-provider/**
+              - packages/rs-core-proof/**
               - packages/rs-dapi-client/**
               - packages/rs-dash-async/**
               - packages/rs-dash-platform-macros/**
@@ -377,34 +431,20 @@ jobs:
               - packages/wallet-utils-contract/**
               - packages/withdrawals-contract/**
 
-      # Drop @dashevo/wasm-dpp from the JS test matrix on
-      # `pull_request` events so the heaviest entry in the matrix
-      # only runs on the nightly schedule + manual
-      # `workflow_dispatch`. @dashevo/wasm-dpp2 stays on the PR
-      # path — it's a separate, lighter package that should be
-      # exercised on every PR. Cascading consumers
-      # (`dapi-client`, `wallet-lib`, `dash`, `dashmate`,
-      # `platform-test-suite`, `evo-sdk`) also keep running on PRs:
-      # their JS test code exercises behavior on top of wasm-dpp's
-      # already-built artifact, and `tests-build-js.yml` runs
-      # `yarn build` across the whole workspace so the wasm-dpp
-      # output is still compiled and linkable for them — just not
-      # test-driven on the PR critical path. To force wasm-dpp
-      # tests on a specific PR, use the `Run workflow`
-      # (workflow_dispatch) button on the Actions tab — that path
-      # goes through the `override` step below and runs every JS
+      # Lints the directly changed packages in one job, and tests the changed
+      # packages and their dependents in as few jobs as their needs allow.
+      # @dashevo/wasm-dpp is tested on the nightly schedule and on manual runs
+      # only; to test it on a specific PR, use the `Run workflow`
+      # (workflow_dispatch) button on the Actions tab, which runs every JS
       # package.
-      - name: Skip wasm-dpp tests on pull_request (nightly-only)
-        id: prune-pr-matrix
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          set -eo pipefail
-          raw='${{ steps.filter-js.outputs.changes }}'
-          pruned=$(echo "$raw" | jq -c 'map(select(. != "@dashevo/wasm-dpp"))')
-          echo "js-packages=$pruned" >> "$GITHUB_OUTPUT"
-          echo "Pruned wasm-dpp from PR matrix:"
-          echo "  before: $raw"
-          echo "  after:  $pruned"
+      - name: Plan the JS lint and test jobs
+        id: js-jobs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGED: ${{ steps.filter-js.outputs.changes }}
+          CHANGED_DIRECT: ${{ steps.filter-js-direct.outputs.changes }}
+          WORKFLOWS_CHANGED: ${{ steps.filter-js-workflows.outputs.js-workflows }}
+        run: python3 .github/scripts/js-packages.py plan
 
       - name: Override all outputs for workflow_dispatch
         id: override
@@ -413,8 +453,6 @@ jobs:
           set -eo pipefail
           # Extract top-level keys from filter YAML files to build JSON arrays
           to_json() { yq -o=json '[keys | .[] ]' "$1" | tr -d '\n'; }
-          echo "js-packages=$(to_json .github/package-filters/js-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
-          echo "js-packages-direct=$(to_json .github/package-filters/js-packages-direct.yml)" >> "$GITHUB_OUTPUT"
           echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
           echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
           echo 'shielded-changed=true' >> "$GITHUB_OUTPUT"
@@ -480,6 +518,9 @@ jobs:
       # Anything other than an explicit 'false' (including an empty output
       # from a skipped detector step) fails safe into running the suite.
       shielded-changed: ${{ needs.changes.outputs.shielded-changed != 'false' }}
+      # Same fail-safe: anything but an explicit 'false' keeps runner
+      # selection on a GitHub-hosted runner, where it may wait for a candidate.
+      runner-image-changed: ${{ needs.changes.outputs.runner-image-changed != 'false' }}
       # Code coverage runs nightly only. PR and push runs execute the same
       # test phases without instrumentation and upload nothing to Codecov.
       coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage == true) }}
@@ -497,9 +538,26 @@ jobs:
     with:
       runner-architecture: ARM64
       validate-arm64-image: true
+      # ARM64 selection never waits for a candidate image.
+      runner-image-changed: false
       doctests-changed: true
       shielded-changed: true
       coverage: false
+
+  # The wasm32-only code of the browser SDK's quorum context providers. Runs
+  # alongside either Rust job above whenever a crate they build on changes.
+  rs-wasm-tests:
+    name: Rust wasm32 tests
+    needs:
+      - changes
+    if: >-
+      ${{ contains(fromJson(needs.changes.outputs.rs-packages || '[]'), 'rs-sdk-trusted-context-provider')
+      || contains(fromJson(needs.changes.outputs.rs-packages || '[]'), 'wasm-sdk')
+      || needs.changes.outputs.rs-workflows-changed == 'true'
+      || github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-wasm.yml
 
   # Fast path: only wallet crates changed, so run the scoped wallet suite
   # instead of the full workspace job above (the two are mutually exclusive
@@ -513,6 +571,7 @@ jobs:
     uses: ./.github/workflows/tests-rs-wallet.yml
     with:
       doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
+      runner-image-changed: ${{ needs.changes.outputs.runner-image-changed != 'false' }}
 
   swift-sdk-build:
     name: Swift SDK build
@@ -560,26 +619,33 @@ jobs:
       - name: Test the freeze generator
         run: python3 -m unittest discover -s packages/swift-sdk/scripts -p 'test_*.py' -v
 
-  js-packages:
+  js-lint:
     name: JS packages
     needs:
       - changes
       - build-js
-    if: ${{ needs.changes.outputs.js-packages != '[]' }}
+    if: ${{ needs.changes.outputs.js-lint != '[]' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-js-package.yml
+    with:
+      job: Linting
+      packages: ${{ needs.changes.outputs.js-lint }}
+
+  js-packages:
+    name: JS packages (${{ matrix.job.name }})
+    needs:
+      - changes
+      - build-js
+    if: ${{ needs.changes.outputs.js-test-jobs != '[]' }}
     secrets: inherit
     strategy:
       fail-fast: false
       matrix:
-        js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
+        job: ${{ fromJson(needs.changes.outputs.js-test-jobs) }}
     uses: ./.github/workflows/tests-js-package.yml
     with:
-      package: ${{ matrix.js-package }}
-      # The platform test suite's default command drives a live network, so it
-      # runs from the E2E jobs. Its unit tests need nothing and run here.
-      # Dashmate also runs its integration tests here: they need Docker, which
-      # this runner has, but not a live network.
-      test-command: ${{ matrix.js-package == 'dashmate' && 'test:ci' || (contains(matrix.js-package, 'platform-test-suite') && 'test:unit' || 'test') }}
-      direct-packages: ${{ needs.changes.outputs.js-packages-direct }}
+      job: Tests
+      packages: ${{ toJSON(matrix.job.packages) }}
 
   js-deps-versions:
     name: JS dependency versions check

@@ -56,10 +56,16 @@ package org.dashfoundation.dashsdk.ffi
  *
  * ## Threading
  *
- * Callbacks arrive **synchronously** on Rust Tokio worker threads and
- * must complete before returning. Subclasses that touch Room do so with
- * `runBlocking` on a dedicated dispatcher (see
- * `PlatformWalletPersistenceHandler`).
+ * Callbacks arrive **synchronously** on the native thread that runs the
+ * wallet operation, and must complete before returning. That thread is
+ * attached to the JVM for the callback and is not always a Tokio worker:
+ * wallet create, the persisted-wallet load, shielded configure and bind,
+ * and wallet startup run their work on a short-lived native thread
+ * (`pw-ffi-bigstack`) while the thread that called into native code stays
+ * blocked until it finishes. A callback must therefore not dispatch
+ * synchronously to the thread that made the native call: that deadlocks.
+ * Subclasses that touch Room do so with `runBlocking` on a dedicated
+ * dispatcher (see `PlatformWalletPersistenceHandler`).
  *
  * Known coverage deviation: the deferred contact-crypto queue
  * (`PlatformWalletChangeSet.pending_contact_crypto_added/_cleared`) has
@@ -99,6 +105,62 @@ abstract class NativePersistenceBridge {
          * it, so the declaration and the mirror can never drift apart.
          */
         const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
+
+        /**
+         * `PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS` (bit 13,
+         * `0x2000`): a tracked asset lock's operation id survives store and
+         * load, on the terminal row too, and missing or malformed data fails
+         * the load instead of reading as empty. Rust requires it before a
+         * wallet drain may read "no lock carries this id" as "not sent". A
+         * store declaring it implements [onPersistAssetLockOperationId] and
+         * [onLoadAssetLockOperationId]. The one Kotlin home of this bit,
+         * aliased by the public diagnostic mirror.
+         */
+        const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long = 1L shl 13
+
+        /** Bytes of an asset lock's operation id (a UUID). */
+        const val ASSET_LOCK_OPERATION_ID_SIZE: Int = 16
+
+        /**
+         * `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS` (bit 14,
+         * `0x4000`): the Orchard recipient a shielded asset-lock funding was
+         * built to pay survives store and load with its row, so a resume
+         * after a restart pays that recipient and refuses another. A store
+         * declaring it implements [onPersistAssetLockShieldedRecipient] and
+         * [onLoadAssetLockShieldedRecipient]. The one Kotlin home of this
+         * bit, aliased by the public diagnostic mirror.
+         */
+        const val CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: Long = 1L shl 14
+
+        /** Bytes of a raw Orchard recipient address. */
+        const val ASSET_LOCK_SHIELDED_RECIPIENT_SIZE: Int = 43
+
+        /**
+         * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
+         * (bit 15, `0x8000`): the
+         * private contact request sync's scan state is stored on its round
+         * and restored at load. A store declaring it keeps a position record
+         * marked unresolved through its wallet's removal, until a record
+         * stored cleared for the same wallet and identity replaces it, and
+         * lists that wallet ([onLoadPrivateContactScanStateWallets]). The
+         * one Kotlin home of this bit, aliased by the public diagnostic
+         * mirror.
+         */
+        const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
+
+        /**
+         * Packed row widths of [onPersistPrivateContactScanState] and
+         * [onLoadPrivateContactScanState]: a read position is the identity
+         * id (32), the position (u64, little-endian), the key fingerprint
+         * (32) and the unresolved private payment marker (1: 0 or 1); a
+         * shielded address the owner id (32), the contact id (32) and the
+         * address (43); an address removal the owner and contact ids; a
+         * cleared identity its id.
+         */
+        const val PRIVATE_POSITION_ENTRY_SIZE: Int = 32 + 8 + 32 + 1
+        const val PRIVATE_ADDRESS_ENTRY_SIZE: Int = 32 + 32 + 43
+        const val PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE: Int = 32 + 32
+        const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32
     }
 
     /**
@@ -471,12 +533,39 @@ abstract class NativePersistenceBridge {
         coveredCount: Int,
     ): Int = 0
 
+    /**
+     * The private contact request sync's scan state a round writes, inside
+     * the round after its contacts. Descriptor `([B[B[B[B[B)I`. Each array
+     * packs whole rows (see [PRIVATE_POSITION_ENTRY_SIZE] and its siblings):
+     *
+     * - [positions]: replace the identity's stored read position.
+     * - [addresses]: replace the stored address for `(owner, contact)`.
+     * - [removedAddresses]: delete the stored address for `(owner, contact)`.
+     * - [clearedIdentities]: identities the round removed from the wallet;
+     *   delete each one's position and every address it owns.
+     *
+     * Delivered only to a bridge that overrides both this and
+     * [onLoadPrivateContactScanState]: an inherited no-op would acknowledge
+     * a read position it never kept. Without them each launch reads the
+     * private store from its start.
+     */
+    open fun onPersistPrivateContactScanState(
+        walletId: ByteArray,
+        positions: ByteArray,
+        addresses: ByteArray,
+        removedAddresses: ByteArray,
+        clearedIdentities: ByteArray,
+    ): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**
      * One `IdentityEntryFFI` upsert. DPNS labels + acquired-at timestamps
-     * ride as parallel arrays. Descriptor
-     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;)I`.
+     * ride as parallel arrays. The own DashPay profile's payment addresses
+     * ([dashpayCorePaymentAddress] and [dashpayPlatformPaymentAddress], 21
+     * bytes each; [dashpayShieldedAddress], 43 bytes) are null when the
+     * profile publishes none. Descriptor
+     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I`.
      */
     @Suppress("LongParameterList")
     open fun onPersistIdentityUpsert(
@@ -500,6 +589,9 @@ abstract class NativePersistenceBridge {
         dashpayAvatarFingerprint: ByteArray,
         dashpayAvatarFingerprintPresent: Boolean,
         dashpayPublicMessage: String?,
+        dashpayCorePaymentAddress: ByteArray? = null,
+        dashpayPlatformPaymentAddress: ByteArray? = null,
+        dashpayShieldedAddress: ByteArray? = null,
     ): Int = 0
 
     /** One identity-id removal. Descriptor `([B[B)I`. */
@@ -710,14 +802,15 @@ abstract class NativePersistenceBridge {
     /**
      * One `ContactProfileRowFFI` delta riding an identity upsert
      * (`IdentityEntryFFI.contact_profiles`). Descriptor
-     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J)I`.
+     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J[B[B[B)I`.
      *
      * [isPresent] `true` ⇒ upsert the cached contact-profile row for
      * `(ownerId, contactId)`; `false` ⇒ tombstone — the contact removed
      * their on-chain profile and any persisted row must be DELETED (an
      * upsert-only pipeline would show the stale name/avatar forever).
      * Gate [avatarHash] / [avatarFingerprint] on their paired `_present`
-     * flags — all-zero is a valid hash value.
+     * flags — all-zero is a valid hash value. The contact's payment
+     * addresses are null when its profile publishes none.
      */
     @Suppress("LongParameterList")
     open fun onPersistContactProfileDelta(
@@ -734,6 +827,9 @@ abstract class NativePersistenceBridge {
         avatarFingerprintPresent: Boolean,
         publicMessage: String?,
         checkedAtMs: Long,
+        corePaymentAddress: ByteArray? = null,
+        platformPaymentAddress: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
     ): Int = 0
 
     // ── Asset locks ───────────────────────────────────────────────────
@@ -754,6 +850,75 @@ abstract class NativePersistenceBridge {
 
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
+    /**
+     * `on_persist_asset_lock_operation_id_fn`: associate the 16-byte
+     * [operationId] of a wallet drain with the tracked lock at [outPoint]
+     * (36 raw bytes: the txid in wire order, then the vout). Descriptor
+     * `([B[B[B)I`. Fires after the lock's [onPersistAssetLockUpsert], inside
+     * the same round, so the row and its id commit or roll back together.
+     * An id never changes and names one lock: a different id for the same
+     * lock, or the same id on another lock, must fail the round.
+     *
+     * Delivered only to a bridge that overrides this,
+     * [onLoadAssetLockOperationId] and [onPersistAssetLockUpsert]: an
+     * inherited no-op would acknowledge an id it never kept, and a drain
+     * would then read its own dispatched lock as "not sent". Without them
+     * Rust refuses a drain before any Core funds move. Port of
+     * `persistAssetLockOperationId` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     */
+    open fun onPersistAssetLockOperationId(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        operationId: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_operation_id_fn`: the 16-byte operation id stored
+     * for the restored lock at [outPoint], or null when that lock has none.
+     * Descriptor `([B[B)[B`. Asked once per restored lock, terminal rows
+     * included. Throw on a store that cannot be read and on a lock that is
+     * not there: an id read as absent would hide a dispatched drain, so the
+     * whole load fails instead. Port of `loadAssetLockOperationId` in the
+     * same Swift file.
+     */
+    open fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
+
+    /**
+     * `on_persist_asset_lock_shielded_recipient_fn`: associate the raw
+     * 43-byte Orchard [recipientRaw43] a shielded funding was built to pay
+     * with the tracked lock at [outPoint] (36 raw bytes). Descriptor
+     * `([B[B[B)I`. Fires after the lock's [onPersistAssetLockUpsert], inside
+     * the same round, so the row and its recipient commit or roll back
+     * together. A recorded recipient never changes: a different one for the
+     * same lock must fail the round.
+     *
+     * Delivered only to a bridge that overrides this,
+     * [onLoadAssetLockShieldedRecipient] and [onPersistAssetLockUpsert]:
+     * an inherited no-op load would answer "no recipient" for a lock built
+     * to pay one, and a resume would then pay whatever recipient its caller
+     * names. Port of `persistAssetLockShieldedRecipient` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     */
+    open fun onPersistAssetLockShieldedRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipientRaw43: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_shielded_recipient_fn`: the 43-byte recipient
+     * stored for the restored lock at [outPoint], or null when that lock has
+     * none (not a shielded funding, or tracked before recipients were
+     * recorded). Descriptor `([B[B)[B`. Asked once per restored lock,
+     * terminal rows included. Throw on a store that cannot be read, on a
+     * lock that is not there and on a stored value of the wrong size: the
+     * whole load fails instead. Port of `loadAssetLockShieldedRecipient` in
+     * the same Swift file.
+     */
+    open fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        null
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 
@@ -882,8 +1047,11 @@ abstract class NativePersistenceBridge {
      * bytes), the platform / core sync watermarks, the wallet's
      * identities, its cached platform-address balances, and its unspent
      * Core UTXOs; the remaining nested arrays (tracked asset locks,
-     * address pools) are optional for this milestone and default to
-     * empty.
+     * address pools) default to empty. A bridge that declares
+     * [CAPABILITY_ASSET_LOCK_OPERATION_IDS] or
+     * [CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS] must return every
+     * tracked asset lock it stores, terminal rows included: Rust reads an
+     * operation id or a recipient only for a lock this restore hands back.
      */
     open fun onLoadWalletList(): Array<WalletRestoreData> = emptyArray()
 
@@ -906,6 +1074,27 @@ abstract class NativePersistenceBridge {
      * JVM-side free method is required.
      */
     open fun onLoadShieldedViewingKeys(): Array<ShieldedViewingKeyData> = emptyArray()
+
+    /**
+     * `on_load_private_contact_scan_state_fn`: the stored scan state of
+     * [walletId] as two packed arrays, `[positions, addresses]`, in the
+     * layout [onPersistPrivateContactScanState] stores. Descriptor
+     * `([B)[[B`. Throw on a store that cannot be read: an empty answer
+     * would read the store from its start without saying why.
+     */
+    open fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+        arrayOf(ByteArray(0), ByteArray(0))
+
+    /**
+     * `on_load_private_contact_scan_state_wallets_fn`: the ids of every
+     * wallet the store keeps scan state for, 32 bytes each, packed back to
+     * back, a removed wallet whose position records were kept marked
+     * included. Rust reads each one its wallet-list load does not return
+     * through [onLoadPrivateContactScanState] and hands its marked records to
+     * the wallet as retained. Descriptor `()[B`. Throw on a store that cannot
+     * be read.
+     */
+    open fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
 
     /**
      * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`
@@ -1117,7 +1306,9 @@ class ProviderSpecialTxRestoreData(
  * `onWalletChangesetUtxoAdded`); [scriptPubKey] is the output script —
  * the Rust side reconstructs the address from `(script, network)`, so
  * no address string crosses the FFI. `isTrusted` is runtime-only and
- * recomputed on the next SPV pass (not carried).
+ * recomputed on the next SPV pass (not carried). [parentContext] /
+ * [parentBlockHeight] carry the creating transaction's row so the loader
+ * can raise a coin that lags its own transaction's confirmation.
  */
 class UtxoRestoreData(
     @JvmField val typeTag: Byte,
@@ -1136,6 +1327,14 @@ class UtxoRestoreData(
     @JvmField val isConfirmed: Boolean,
     @JvmField val isInstantLocked: Boolean,
     @JvmField val isLocked: Boolean,
+    /**
+     * The stored context of the coin's creating transaction, copied as-is
+     * (0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock; 0 when
+     * there is no row). The Rust loader decides what it means for the coin.
+     */
+    @JvmField val parentContext: Int,
+    /** The stored block height of the coin's creating transaction; 0 when none. */
+    @JvmField val parentBlockHeight: Int,
 )
 
 /**
@@ -1335,7 +1534,10 @@ class PaymentRestoreData(
  * One flat cached contact-profile restore row — mirror of
  * `ContactProfileRestoreEntryFFI`. [avatarHash] / [avatarFingerprint]
  * are null when absent (the trampoline derives the FFI `_present` flags
- * from nullability + length: 32 / 8 bytes respectively).
+ * from nullability + length: 32 / 8 bytes respectively). The payment
+ * addresses follow the same rule: 21 bytes for [corePaymentAddress] and
+ * [platformPaymentAddress], 43 for [shieldedAddress]; the wallet decides
+ * at restore whether the bytes are an address.
  */
 class ContactProfileRestoreData(
     @JvmField val contactId: ByteArray,
@@ -1346,6 +1548,9 @@ class ContactProfileRestoreData(
     @JvmField val avatarFingerprint: ByteArray?,
     @JvmField val publicMessage: String?,
     @JvmField val checkedAtMs: Long,
+    @JvmField val corePaymentAddress: ByteArray? = null,
+    @JvmField val platformPaymentAddress: ByteArray? = null,
+    @JvmField val shieldedAddress: ByteArray? = null,
 )
 
 /**

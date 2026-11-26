@@ -22,7 +22,7 @@ impl DriveDocumentSumQuery<'_> {
     /// primary-key element directly via
     /// [`Self::primary_key_sum_path_query`] — same single-key shape
     /// as the SumTree fast path, just decoded as a combined
-    /// `(count, sum)` instead of `i64` alone.
+    /// `(count, sum)` instead of the sum alone.
     ///
     /// Returns `(0, 0)` when the element is absent.
     pub fn verify_primary_key_count_sum_tree_proof(
@@ -30,7 +30,7 @@ impl DriveDocumentSumQuery<'_> {
         contract_id: [u8; 32],
         document_type_name: &str,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, u64, i64), Error> {
+    ) -> Result<(RootHash, u64, i128), Error> {
         match platform_version
             .drive
             .methods

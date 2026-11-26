@@ -3933,7 +3933,7 @@ mod having_trust_boundary {
     use crate::rpc::core::MockCoreRPCLike;
     use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+    use dpp::bls::SecretKey;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -3973,18 +3973,19 @@ mod having_trust_boundary {
 
     const CHAIN_ID: &str = "test-having-chain";
     const HEIGHT: u64 = 4242;
-    const ROUND: u32 = 0;
-    const QUORUM_TYPE: u32 = 1; // LLMQ_50_60
     const CORE_LOCKED_HEIGHT: u32 = 1200;
     const TIME_MS: u64 = 1_755_000_000_000;
 
+    /// The signing helpers every query's trust boundary test shares, so a
+    /// second copy of the tenderdash harness cannot drift from this one and
+    /// quietly stop testing the binding.
+    pub(super) use crate::query::tests::{quorum_secret_key, signed_proof};
+
     /// Provider that knows exactly one quorum key — the test one.
     ///
-    /// This and the two signing helpers below are `pub(super)` so the
+    /// This and the two signing helpers above are `pub(super)` so the
     /// sibling [`super::time_range_proof_verification`] suite signs its
-    /// commits through the same canonical construction; a second copy of
-    /// the tenderdash harness could drift from this one and quietly stop
-    /// testing the binding.
+    /// commits through the same canonical construction.
     pub(super) struct TestQuorumProvider {
         pub(super) pubkey: [u8; 48],
     }
@@ -4021,15 +4022,6 @@ mod having_trust_boundary {
 
     fn platform_version() -> &'static PlatformVersion {
         PlatformVersion::latest()
-    }
-
-    /// A deterministic, valid BLS scalar — no RNG dependency.
-    pub(super) fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
-        let mut bytes = [0u8; 32];
-        bytes[31] = 42;
-        SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes)
-            .into_option()
-            .expect("a small nonzero scalar is a valid secret key")
     }
 
     fn register_grades(
@@ -4081,7 +4073,6 @@ mod having_trust_boundary {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a grade document");
         }
@@ -4185,60 +4176,6 @@ mod having_trust_boundary {
         }
     }
 
-    /// Sign a tenderdash precommit whose state id carries `app_hash` —
-    /// the same canonical construction `verify_tenderdash_proof`
-    /// rebuilds on the verify side.
-    pub(super) fn signed_proof(
-        grovedb_proof: Vec<u8>,
-        app_hash: &[u8; 32],
-        mtd: &ResponseMetadata,
-        secret_key: &SecretKey<Bls12381G2Impl>,
-        quorum_hash: [u8; 32],
-    ) -> Proof {
-        let block_id_hash = [7u8; 32].to_vec();
-        let state_id = StateId {
-            app_version: mtd.protocol_version as u64,
-            core_chain_locked_height: mtd.core_chain_locked_height,
-            time: mtd.time_ms,
-            app_hash: app_hash.to_vec(),
-            height: mtd.height,
-        };
-        let state_id_hash = state_id
-            .calculate_msg_hash(&mtd.chain_id, mtd.height as i64, ROUND as i32)
-            .expect("state id hash");
-        let commit = CanonicalVote {
-            r#type: SignedMsgType::Precommit.into(),
-            block_id: block_id_hash.clone(),
-            chain_id: mtd.chain_id.clone(),
-            height: mtd.height as i64,
-            round: ROUND as i64,
-            state_id: state_id_hash,
-        };
-        let sign_digest = commit
-            .calculate_sign_hash(
-                &mtd.chain_id,
-                QUORUM_TYPE.try_into().expect("valid quorum type"),
-                &quorum_hash,
-                mtd.height as i64,
-                ROUND as i32,
-            )
-            .expect("sign digest");
-        let signature = secret_key
-            .sign(SignatureSchemes::Basic, &sign_digest)
-            .expect("signing with a valid key succeeds")
-            .as_raw_value()
-            .to_compressed()
-            .to_vec();
-        Proof {
-            grovedb_proof,
-            quorum_hash: quorum_hash.to_vec(),
-            signature,
-            round: ROUND,
-            block_id_hash,
-            quorum_type: QUORUM_TYPE,
-        }
-    }
-
     /// The full composition succeeds end to end: merk verification
     /// reconstructs the root, the tenderdash commit over that root
     /// verifies against the quorum key, and the verified entries are
@@ -4254,7 +4191,7 @@ mod having_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4291,7 +4228,7 @@ mod having_trust_boundary {
             quorum_hash,
         );
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4316,7 +4253,7 @@ mod having_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let mut tampered = mtd;
@@ -4347,11 +4284,9 @@ mod having_trust_boundary {
 
         let mut other_bytes = [0u8; 32];
         other_bytes[31] = 43;
-        let other_key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&other_bytes)
-            .into_option()
-            .expect("valid scalar");
+        let other_key = SecretKey::from_be_bytes(&other_bytes).expect("valid scalar");
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4665,7 +4600,7 @@ mod time_range_proof_verification {
             QUORUM_HASH,
         );
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         (signed, mtd, provider)
     }
@@ -5003,7 +4938,7 @@ mod time_range_proof_verification {
                 "type": "object",
                 "properties": {
                     "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
-                    "likes": { "type": "integer", "position": 1 },
+                    "likes": { "type": "integer", "minimum": 0, "maximum": 1000000, "position": 1 },
                 },
                 "indices": [
                     {
@@ -6734,7 +6669,7 @@ mod chained_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let (verified, _mtd, _proof) =
@@ -6777,14 +6712,10 @@ mod chained_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 43;
-            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
-                &bytes,
-            )
-            .into_option()
-            .expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -6811,7 +6742,7 @@ mod chained_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [5u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         let mut tampered = mtd;
         tampered.height += 1;
@@ -7072,7 +7003,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let response = response_with(proof, mtd);
@@ -7230,14 +7161,10 @@ mod composite_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 44;
-            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
-                &bytes,
-            )
-            .into_option()
-            .expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -7265,7 +7192,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         let mut tampered = mtd;
         tampered.height += 1;
@@ -7310,7 +7237,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let refused =

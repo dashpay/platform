@@ -26,7 +26,6 @@
 //! - [DIP-14](https://github.com/dashpay/dips/blob/master/dip-0014.md)
 //! - [DIP-15](https://github.com/dashpay/dips/blob/master/dip-0015.md)
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, PublicKey};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
@@ -126,7 +125,7 @@ pub fn derive_contact_xpub(
     let compact = platform_encryption::CompactXpub {
         parent_fingerprint: xpub.parent_fingerprint.to_bytes(),
         chain_code: xpub.chain_code.to_bytes(),
-        public_key: xpub.public_key.serialize(),
+        public_key: xpub.public_key.to_compressed(),
     };
 
     Ok(ContactXpubData { xpub, compact })
@@ -160,8 +159,8 @@ pub fn reconstruct_contact_xpub(
     compact: platform_encryption::CompactXpub,
     network: Network,
 ) -> Result<ExtendedPubKey, PlatformWalletError> {
-    let public_key =
-        dashcore::secp256k1::PublicKey::from_slice(&compact.public_key).map_err(|e| {
+    let public_key = dashcore::crypto::ecdsa::EcdsaPublicKey::from_bytes(&compact.public_key)
+        .map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Compact contact xpub has an invalid compressed public key: {e}"
             ))
@@ -210,13 +209,11 @@ pub fn derive_contact_payment_address(
     index: u32,
     network: Network,
 ) -> Result<Address, PlatformWalletError> {
-    let secp = Secp256k1::new();
-
     let child_number = ChildNumber::from_normal_idx(index).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Invalid payment address index: {}", e))
     })?;
 
-    let address_key = contact_xpub.ckd_pub(&secp, child_number).map_err(|e| {
+    let address_key = contact_xpub.ckd_pub(child_number).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive contact payment key at index {}: {}",
             index, e

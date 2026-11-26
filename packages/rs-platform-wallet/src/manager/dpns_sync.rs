@@ -49,7 +49,7 @@ use dash_async::{ThreadRegistry, WorkerConfig};
 use crate::events::PlatformEventManager;
 use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET,
+    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
 use crate::wallet::identity::network::DpnsMarketplaceSyncSummary;
 use crate::wallet::platform_wallet::WalletId;
@@ -202,6 +202,13 @@ impl DpnsSyncManager {
             stack_size: NonZeroUsize::new(DPNS_SYNC_STACK_BYTES),
             ..coordinator_worker_config()
         };
+        // A timed-out `quiesce` latched the gate; reopen it once the wedged
+        // pass has drained (now, or before each pass below).
+        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
+            tracing::debug!(
+                "dpns sync loop started behind a wedged pass; passes resume once it drains"
+            );
+        }
         registry.start_thread(WalletWorker::DpnsSync, cfg, move |cancel| {
             handle.block_on(async move {
                 loop {
@@ -211,7 +218,18 @@ impl DpnsSyncManager {
 
                     this.sync_now().await;
 
-                    let interval = this.interval();
+                    // `sync_now` clears a drained latch itself before its slot CAS.
+                    // Sample the latch AFTER the pass, so a latch raised or cleared
+                    // while it ran is what picks the cadence: behind a still-wedged
+                    // pass the call above bailed, so poll the slot briskly instead of
+                    // sleeping a full interval and passes resume promptly once that
+                    // pass drains.
+                    let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
+                    let interval = if gate_open {
+                        this.interval()
+                    } else {
+                        this.interval().min(LATCHED_RETRY_INTERVAL)
+                    };
                     tokio::select! {
                         _ = tokio::time::sleep(interval) => {}
                         _ = cancel.cancelled() => break,
@@ -237,7 +255,9 @@ impl DpnsSyncManager {
 
     /// [`quiesce`](Self::quiesce) with an explicit drain budget. On
     /// timeout the admission gate is left closed and the caller must
-    /// fail closed.
+    /// fail closed. A later successful `quiesce` reopens the gate, as
+    /// does [`start`](Self::start), the running loop, or a one-shot
+    /// `sync_now`, once the wedged pass has released `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         self.quiesce_held_within(budget).await.is_some()
     }
@@ -270,6 +290,13 @@ impl DpnsSyncManager {
     /// summary but never abort the sweep. Dispatches the completion
     /// event before returning.
     pub async fn sync_now(&self) -> DpnsSyncPassSummary {
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)

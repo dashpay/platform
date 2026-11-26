@@ -2,6 +2,7 @@ pub mod address_witness;
 pub mod identity_create_from_shielded_pool_transition;
 pub mod identity_top_up_from_shielded_pool_transition;
 pub mod orchard_action;
+pub mod private_document_create_from_shielded_pool_transition;
 pub mod shield_from_asset_lock_transition;
 pub mod shield_from_identity_transition;
 pub mod shield_transition;
@@ -16,6 +17,7 @@ pub use address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
 pub use identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransitionWasm;
 pub use identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransitionWasm;
 pub use orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
+pub use private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransitionWasm;
 pub use shield_from_asset_lock_transition::ShieldFromAssetLockTransitionWasm;
 pub use shield_from_identity_transition::ShieldFromIdentityTransitionWasm;
 pub use shield_transition::ShieldTransitionWasm;
@@ -59,7 +61,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 ///   token pool shares the empty-tree anchor it proves against, and nothing else in the bundle
 ///   says which pool, which kind or which owner it was built for.
 /// - Other token pool transitions bind their own fields; see the `extra_sighash_data`
-///   builders in `dpp::shielded`.
+///   builders in `dpp::shielded`. The token bundle of a token pool transition paid from the
+///   credit pool (types 26, 27 and 28) binds its kind's fields and, from protocol version 15, the
+///   fee bundle's Orchard commitment (32 bytes) after them, so build for the network's protocol
+///   version.
 #[wasm_bindgen(js_name = computePlatformSighash)]
 pub fn compute_platform_sighash_wasm(
     bundle_commitment: Vec<u8>,

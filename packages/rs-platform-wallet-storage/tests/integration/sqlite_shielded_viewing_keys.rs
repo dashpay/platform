@@ -84,6 +84,22 @@ fn sqlite_advertises_shielded_viewing_key_capability() {
 }
 
 #[test]
+fn sqlite_does_not_attest_wallet_drain_without_wallet_restore() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let capabilities = persister.persistence_capabilities();
+    assert!(!capabilities.contains(PersistenceCapabilities::WALLET_DRAIN));
+    assert!(capabilities
+        .missing(PersistenceCapabilities::WALLET_DRAIN)
+        .names()
+        .contains(&"wallet_restore"));
+    // Native asset-lock persistence remains available independently of the
+    // unsupported all-wallet shielded recovery contract.
+    assert!(capabilities.contains(PersistenceCapabilities::TRACKED_ASSET_LOCKS));
+    assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS));
+    assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS));
+}
+
+#[test]
 fn delete_wallet_cascades_shielded_viewing_keys() {
     let (persister, _tmp, path) = fresh_persister();
     let wallet_id = wid(0x61);

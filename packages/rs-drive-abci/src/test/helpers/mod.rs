@@ -1,6 +1,11 @@
+/// Chain lock quorum fixtures
+#[cfg(test)]
+pub mod chain_lock_quorums;
 /// Contract group fixtures
 #[cfg(test)]
 pub mod contract_groups;
+/// DPNS fixtures
+pub mod dpns;
 /// Test helpers
 #[cfg(test)]
 pub mod fast_forward_to_block;

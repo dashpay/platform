@@ -769,7 +769,7 @@ mod signed {
     use dapi_grpc::platform::v0::{
         GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     };
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+    use dpp::bls::SecretKey;
     use dpp::data_contract::TokenConfiguration;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::prelude::{CoreBlockHeight, DataContract};
@@ -809,12 +809,17 @@ mod signed {
         }
     }
 
-    fn key() -> SecretKey<Bls12381G2Impl> {
-        SecretKey::from_hash(b"nonunique-merged-proof-quorum-fixture")
+    /// The secret key behind the committed quorum public key vector.
+    fn key() -> SecretKey {
+        let scalar =
+            hex::decode("6f295ecbed82985a0d2f218850ddf600475504b4ae2b2280b2a475aab9d2eea0")
+                .expect("hex scalar")
+                .try_into()
+                .expect("32-byte scalar");
+        SecretKey::from_be_bytes(&scalar).expect("valid scalar")
     }
     fn provider() -> Provider {
-        let bytes: Vec<u8> = (&key().public_key()).into();
-        Provider(bytes.try_into().expect("compressed quorum public key"))
+        Provider(key().public_key().to_bytes())
     }
     fn request(
         envelope: Envelope,
@@ -874,10 +879,9 @@ mod signed {
             )
             .expect("vote digest");
         proof.signature = key()
-            .sign(SignatureSchemes::Basic, &digest)
+            .sign(&digest)
             .expect("sign state root")
-            .as_raw_value()
-            .to_compressed()
+            .to_bytes()
             .to_vec();
     }
 

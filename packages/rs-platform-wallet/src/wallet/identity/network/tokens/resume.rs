@@ -65,7 +65,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, PlatformWalletError>
     {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id).await?;
+        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
 
         self.token_resume_with_signer(
             data_contract,

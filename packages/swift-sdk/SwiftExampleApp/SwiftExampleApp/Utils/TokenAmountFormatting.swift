@@ -82,7 +82,10 @@ private func isWellFormedDecimal(_ s: String) -> Bool {
 /// Transfer amount field could silently lose three orders of
 /// magnitude. Disabling grouping in this formatter makes every value
 /// it produces a valid input for the parser.
-func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
+///
+/// `locale` defaults to the formatter's own (the user's current locale);
+/// tests pass a fixed one to assert exact text.
+func formatTokenAmount(_ raw: UInt64, decimals: Int, locale: Locale? = nil) -> String {
     let dec = max(0, decimals)
     let rawDecimal = Decimal(raw)
     // `dec` is clamped to `>= 0` above, so `pow(Decimal(10), dec)` is
@@ -91,10 +94,39 @@ func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
     let divisor = pow(Decimal(10), dec)
     let scaled = rawDecimal / divisor
     let formatter = NumberFormatter()
+    if let locale { formatter.locale = locale }
     formatter.numberStyle = .decimal
     formatter.maximumFractionDigits = dec
     formatter.minimumFractionDigits = 0
     // Intentionally off — see the function-level doc comment.
     formatter.usesGroupingSeparator = false
     return formatter.string(from: scaled as NSNumber) ?? "\(raw)"
+}
+
+/// Exact DASH text for a Platform credit amount (1 DASH = 1e11 credits),
+/// down to one credit. Payment surfaces use this so a one-credit amount or
+/// a one-credit shortfall never reads as zero or as two equal amounts.
+func formatCreditsAsDash(_ credits: UInt64, locale: Locale? = nil) -> String {
+    formatTokenAmount(credits, decimals: 11, locale: locale) + " DASH"
+}
+
+/// Exact DASH text for a `PersistentIdentity.balance` (`Int64` credits),
+/// with an unexpected negative balance shown as zero.
+func formatIdentityBalanceAsDash(_ balance: Int64) -> String {
+    formatCreditsAsDash(balance < 0 ? 0 : UInt64(balance))
+}
+
+/// Whether `text` has a nonzero digit beyond `decimals` fraction digits,
+/// which `parseTokenAmount` would round down. Trailing zeros do not count
+/// ("0.000000000010" fits 11 decimals); "," is read as "." as the parser does.
+/// Text the parser rejects (a stray letter, two separators) is not a
+/// precision problem, so it returns false for it.
+func hasDigitsBeyondPrecision(_ text: String, decimals: Int) -> Bool {
+    guard parseTokenAmount(text, decimals: decimals) != nil else { return false }
+    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: ",", with: ".")
+    guard let dot = normalized.firstIndex(of: ".") else { return false }
+    let fraction = normalized[normalized.index(after: dot)...]
+    let significantDigits = fraction.reversed().drop(while: { $0 == "0" }).count
+    return significantDigits > max(0, decimals)
 }

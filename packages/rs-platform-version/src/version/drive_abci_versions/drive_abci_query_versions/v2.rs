@@ -7,7 +7,7 @@ use versioned_feature_core::FeatureVersionBounds;
 
 /// Version 2 of the Drive ABCI query versions, selected by protocol version 14.
 ///
-/// Differs from v1 in three slots.
+/// Differs from v1 in five slots.
 ///
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
 /// rather than 0. That opens two routes on the v1 document-query handler:
@@ -20,6 +20,10 @@ use versioned_feature_core::FeatureVersionBounds;
 /// Everything else, including multi-clause `having` and `having` on a
 /// select with no ranked axis, is rejected as before ("HAVING clause is not
 /// yet implemented").
+///
+/// `document_sub_queries` and `chained_document_query` are `Some(0)` rather than
+/// `None`: protocol version 14 is the first that no node of a release without composite
+/// and chained document queries can sign, so every node at it serves both.
 ///
 /// `data_contract_query_helpers.latest_versions_read` is 1 rather than 0:
 /// from protocol version 14 every contract carries a four-byte version item
@@ -58,6 +62,8 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V2: DriveAbciQueryVersions = DriveAbciQueryV
         },
         ..DRIVE_ABCI_QUERY_VERSIONS_V1.identity_based_queries
     },
+    document_sub_queries: Some(0),
+    chained_document_query: Some(0),
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
     },

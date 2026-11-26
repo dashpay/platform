@@ -45,6 +45,10 @@
 //! as incompatible instead of failing the update as an unsupported keyword.
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
 //!
+//! The top-level `canBeErased` flag is frozen when present. Schemas without
+//! that flag keep the original rule set, including released schemas and
+//! comparisons of contract definitions.
+//!
 //! Both schemas are compared with their property type shorthands
 //! (`"type": "identifier"`, `"type": "bytes"` with a `size`) rewritten into
 //! the long form they stand for, as the parse reads them
@@ -54,11 +58,11 @@
 //! shorthands exist from protocol version 14, the only version selecting it.
 
 use crate::data_contract::document_type::property_names::{
-    ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
-    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
-    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
-    TOKEN_COST, TRANSIENT, TTL,
+    ACTION_FEES, CAN_BE_ERASED, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY,
+    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES,
+    MODERATOR_ABILITIES, PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE,
+    RETRACTED_WHEN, TOKEN_COST, TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::document_type::DocumentType;
@@ -79,7 +83,7 @@ use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::ops::Deref;
 
-static OPTIONS: Lazy<Options> = Lazy::new(|| {
+static LEGACY_OPTIONS: Lazy<Options> = Lazy::new(|| {
     let mut required_rule = KEYWORD_COMPATIBILITY_RULES
         .get("required")
         .expect("required rule must be present")
@@ -134,6 +138,14 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
                 .chain(frozen_doctype_rules),
         ),
     }
+});
+
+static OPTIONS: Lazy<Options> = Lazy::new(|| {
+    let mut options = LEGACY_OPTIONS.clone();
+    if let Some(rule) = KEYWORD_COMPATIBILITY_RULES.get("refersTo") {
+        options.override_rules.insert(CAN_BE_ERASED, rule.clone());
+    }
+    options
 });
 
 /// The keywords the document meta-schema admits that have no rule in the
@@ -267,7 +279,18 @@ pub(super) fn validate_schema_compatibility_v1(
     let original_schema = prepared_for_diff(&original_schema);
     let new_schema = prepared_for_diff(&new_schema);
 
-    match validate_schemas_compatibility(&original_schema, &new_schema, OPTIONS.deref()) {
+    // Released grammars refuse the top-level erasure flag. Keep their rules,
+    // including comparisons of contract definitions, unchanged; only schemas
+    // declaring the lifecycle flag need its frozen rule.
+    let options = if [&original_schema, &new_schema]
+        .iter()
+        .any(|schema| schema.get(CAN_BE_ERASED).is_some_and(JsonValue::is_boolean))
+    {
+        OPTIONS.deref()
+    } else {
+        LEGACY_OPTIONS.deref()
+    };
+    match validate_schemas_compatibility(&original_schema, &new_schema, options) {
         Ok(result) => {
             let errors = result
                 .into_changes()
@@ -313,6 +336,8 @@ pub(super) fn validate_schema_compatibility_v1(
 mod tests {
     use super::super::validate_schema_compatibility;
     use super::{OPTIONS, TOP_LEVEL_VALIDATED_KEYS};
+    use crate::data_contract::document_type::class_methods::DOCUMENT_SCHEMA_ROOT_KEYS;
+    use crate::data_contract::document_type::property_names::PRIVATE;
     use crate::data_contract::errors::{DataContractError, JsonSchemaError};
     use crate::ProtocolError;
     use assert_matches::assert_matches;
@@ -322,7 +347,7 @@ mod tests {
 
     #[test]
     fn should_ignore_indices_reordering() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -365,7 +390,7 @@ mod tests {
     // hard error.
     #[test]
     fn should_ignore_immutable_list_change() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -401,7 +426,7 @@ mod tests {
     // the schema.
     #[test]
     fn should_still_report_incompatible_property_change_alongside_indices_diff() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -439,7 +464,7 @@ mod tests {
     // `/properties/indices` and must still be validated.
     #[test]
     fn should_still_validate_property_named_indices() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let original_schema = json!({
             "type": "object",
@@ -524,7 +549,7 @@ mod tests {
     /// property takes a presence byte), so no change to it is compatible.
     #[test]
     fn should_report_every_transient_list_change_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (original, new, change_name, change_path) in [
             (None, Some(json!(["a"])), "add", "/transient"),
             (Some(json!(["a"])), None, "remove", "/transient"),
@@ -567,7 +592,7 @@ mod tests {
     /// changes nothing a stored document depends on.
     #[test]
     fn should_accept_a_reordered_or_repeated_transient_list() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for new in [json!(["b", "a"]), json!(["a", "b", "a"])] {
             let result = validate_schema_compatibility(
                 &with_transient(Some(json!(["a", "b"]))),
@@ -620,7 +645,7 @@ mod tests {
     /// keywords.
     #[test]
     fn should_report_every_property_constraints_change_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let rule = json!({ "sum": { "lessThanOrEqual": [{ "add": ["a", "b"] }, 100] } });
         for (original, new, change_name, change_path) in [
             (None, Some(rule.clone()), "add", "/propertyConstraints"),
@@ -674,7 +699,7 @@ mod tests {
     /// incompatible.
     #[test]
     fn should_report_every_delete_constraints_change_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let with_delete_constraints = |rules: Option<serde_json::Value>| {
             let mut schema = with_property_constraints(None);
             if let Some(rules) = rules {
@@ -782,6 +807,7 @@ mod tests {
         ];
         // Scalars, whose change is reported at the keyword itself
         let scalars = [
+            ("/canBeErased", json!(true), json!(false)),
             ("/ttl", json!(86400), json!(3600)),
             ("/indexOnly", json!(true), json!(false)),
             ("/keepsTransferHistory", json!(true), json!(false)),
@@ -819,14 +845,14 @@ mod tests {
         schema
     }
 
-    /// Meta-schema v3 admits these keywords, which the shared rule set has no
+    /// The document schema grammar admits these keywords, which the shared rule set has no
     /// rule for: each is frozen, so adding, removing or changing one, even to
     /// a value the parse reads the same, is an incompatible change and not an
     /// unsupported keyword. Where the parse reads a value, `validate_update`
     /// refuses a real change before this check runs.
     #[test]
     fn should_report_every_change_to_a_keyword_without_a_shared_rule_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (pointer, value, other_value, changed_path) in frozen_keyword_cases() {
             // Adding, removing, then changing the value: the first incompatible
             // change reported is at the keyword, then inside its value
@@ -860,10 +886,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn should_preserve_released_updates_to_definitions_named_can_be_erased() {
+        let version = PlatformVersion::get(14).expect("protocol 14");
+        let original = json!({
+            "$defs": {
+                "canBeErased": { "type": "object", "properties": {} },
+            },
+        });
+        let updated = json!({
+            "$defs": {
+                "canBeErased": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string" } },
+                },
+            },
+        });
+        assert!(validate_schema_compatibility(&original, &updated, version)
+            .expect("a definition can gain an optional property")
+            .is_valid());
+    }
+
     /// Every keyword the document meta-schema admits, at the top of a document
     /// type, in a property's schema or in a typed array's element schema, is
     /// judged by a rule of its own or stripped before the diff, for every
-    /// protocol version that selects this generation. A keyword added to the
+    /// protocol version that selects this generation or generation 2, which
+    /// diffs with this generation's rules. A keyword added to the
     /// meta-schema without a rule fails here, and so does a new meta-schema
     /// diffed by this generation until it is listed below.
     #[test]
@@ -887,7 +935,9 @@ mod tests {
                 .contract_versions
                 .document_type_versions
                 .schema;
-            if schema_versions.validate_schema_compatibility != 1 {
+            // Generation 2 diffs with this generation's rules once it has left out the objects'
+            // `required` lists, so it is held to them too
+            if !matches!(schema_versions.validate_schema_compatibility, 1 | 2) {
                 continue;
             }
             let meta_schema: serde_json::Value = match schema_versions.document_type_schema {
@@ -920,6 +970,26 @@ mod tests {
                     );
                 }
             }
+            // The native schema check replacing the meta-schema at registration admits keys
+            // no meta-schema lists. `private` needs no rule: `validate_update` v1 compares the
+            // parsed declaration first and refuses any change to it, and the parse reads the
+            // key one to one, so no diff reaching this generation changes it; a rule added
+            // here would change what shipped protocol version 14 reports for a contract's
+            // `$defs`, which may carry the name
+            if schema_versions.check_document_type_schema == 1 {
+                for keyword in DOCUMENT_SCHEMA_ROOT_KEYS {
+                    if keyword == "$schema"
+                        || keyword == PRIVATE
+                        || TOP_LEVEL_VALIDATED_KEYS.contains(&keyword)
+                    {
+                        continue;
+                    }
+                    assert!(
+                        has_rule(keyword),
+                        "top-level keyword {keyword} of the native schema check has no rule"
+                    );
+                }
+            }
         }
     }
 
@@ -929,7 +999,7 @@ mod tests {
     /// what keeps a later one from failing the update with an internal error.
     #[test]
     fn should_report_a_change_under_a_keyword_with_no_rule_as_incompatible() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (pointer, original, new, change_name, change_path) in [
             ("/unruled", None, Some(json!(1)), "add", "/unruled"),
             ("/unruled", Some(json!(1)), None, "remove", "/unruled"),
@@ -975,7 +1045,7 @@ mod tests {
     /// reordering or repeating names changes nothing a stored entry depends on.
     #[test]
     fn should_accept_a_reordered_or_repeated_entry_payload() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for new in [json!(["b", "a"]), json!(["a", "b", "a"])] {
             let result = validate_schema_compatibility(
                 &with_pointer("/entryPayload", Some(json!(["a", "b"]))),
@@ -1051,7 +1121,7 @@ mod tests {
     /// definition from one to the other, in either direction, is no change.
     #[test]
     fn should_compare_a_shorthand_as_the_long_form_it_stands_for() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         for (old, new) in [(true, false), (false, true)] {
             let (old_schema, old_defs) = spelled(old);
             let (new_schema, new_defs) = spelled(new);
@@ -1067,7 +1137,7 @@ mod tests {
     /// A real change is still one: an identifier is no plain 32-byte array.
     #[test]
     fn should_still_report_a_change_behind_a_shorthand() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let (_, old_defs) = spelled(true);
         let new_defs = json!({ "$defs": { "owner": { "type": "bytes", "size": 32 } } });
         let result = validate_schema_compatibility(&old_defs, &new_defs, platform_version)

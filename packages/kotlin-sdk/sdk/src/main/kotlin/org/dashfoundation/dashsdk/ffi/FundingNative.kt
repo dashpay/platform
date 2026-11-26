@@ -41,7 +41,9 @@ internal object FundingNative {
      * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal,
      * 3 = ShieldFromIdentity: the compute-only floor, no storage term,
      * 4 = IdentityTopUpFromShieldedPool: base plus the flat
-     * identity-balance write cost)
+     * identity-balance write cost,
+     * 5 = TokenPurchaseFromShieldedPool: the fee a purchase paid from the
+     * notes adds on top of the price)
      * and Orchard action count [numActions], computed at [managerHandle]'s
      * network-tracked platform version. No network round-trip; throws on
      * an unknown kind, an invalid manager handle, or overflow.
@@ -203,6 +205,120 @@ internal object FundingNative {
         denomination: Long,
         fallbackAddress: ByteArray,
         signerAddressHandle: Long,
+    ): ByteArray
+
+    // ── Identity shielded accounts ────────────────────────────────────
+
+    /**
+     * Prepare the dedicated shielded account of a wallet-owned identity
+     * (bridges `platform_wallet_manager_prepare_shielded_identity_address`)
+     * and return its default 43-byte raw Orchard address. Publishes nothing
+     * and moves no funds. Requires a prior shielded bind of [walletId].
+     */
+    external fun prepareShieldedIdentityAddress(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        identityId: ByteArray,
+    ): ByteArray
+
+    // ── Shielded tips to a DashPay username ───────────────────────────
+    //
+    // Each is one call into `platform-wallet-ffi`'s `shielded_tip.rs`. Rust
+    // decides everything: what a typed amount is, whom a name pays, whether
+    // that changed, whether an earlier payment is unresolved, which account
+    // pays and whether an identity's balance is known.
+
+    /**
+     * Parse a tip amount the user typed in DASH into exact credits (bridges
+     * `platform_wallet_parse_shielded_tip_amount`). A pure parse: no handle
+     * and no wallet. Throws the wallet's refusal of the text (code 1002,
+     * `ErrorInvalidParameter`, with the reason in the message), and code 1
+     * for credits a `Long` cannot carry.
+     */
+    external fun parseShieldedTipAmount(amountText: String): Long
+
+    /**
+     * Resolve [username] for the user to confirm a shielded tip (bridges
+     * `platform_wallet_manager_review_shielded_tip`). Changes nothing and
+     * moves no funds; fetches from the network.
+     *
+     * Returns the C `ShieldedTipReviewFFI` as one BLOB in its field order:
+     * `u8[32] recipientIdentityId, u8[43] recipientAddress, u8 change
+     * (0 new, 1 unchanged, 2 changed), u8[32] previousIdentityId,
+     * u8[43] previousAddress` (both zero unless changed), `u8 unresolved`
+     * (0 or 1). Decoded by
+     * [org.dashfoundation.dashsdk.wallet.decodeShieldedTipReview].
+     *
+     * A non-null [contactIdentityId] (32 bytes) is the identity the caller
+     * expects the name to belong to; Rust refuses another one with code 1086
+     * (`ErrorShieldedTipRecipientMismatch`). Null when the user typed the
+     * name.
+     */
+    external fun reviewShieldedTip(
+        managerHandle: Long,
+        walletId: ByteArray,
+        username: String,
+        contactIdentityId: ByteArray?,
+    ): ByteArray
+
+    /**
+     * Send a shielded tip of [amount] credits to [username] (bridges
+     * `platform_wallet_manager_send_shielded_tip`). [expectedIdentityId]
+     * (32 bytes) and [expectedAddress] (43 bytes) are the recipient a review
+     * returned, passed back unchanged; Rust resolves the name again and
+     * refuses a recipient that differs.
+     *
+     * A non-null [sourceIdentityId] pays from that wallet identity's own
+     * shielded account and [sourceAccount] is ignored; a null one pays from
+     * account [sourceAccount]. [resolverHandle] supplies the Orchard spend
+     * authority for this call only, as for [shieldedTransfer]. [memoText] is
+     * an optional UTF-8 memo (null / empty = none; Rust enforces the 32-byte
+     * UTF-8 limit).
+     *
+     * Throws as [shieldedTransfer] does: code 1018
+     * (`ErrorShieldedSpendUnconfirmed`) means the tip may have left the
+     * wallet and must never be sent again. Code 1085
+     * (`ErrorShieldedTipPending`) means it was refused and nothing was sent.
+     * A non-null [contactIdentityId] is the identity the caller expects the
+     * name to belong to, as for [reviewShieldedTip]; code 1086 refuses
+     * another one, with nothing sent.
+     */
+    @Suppress("LongParameterList")
+    external fun sendShieldedTip(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        sourceIdentityId: ByteArray?,
+        sourceAccount: Int,
+        username: String,
+        expectedIdentityId: ByteArray,
+        expectedAddress: ByteArray,
+        contactIdentityId: ByteArray?,
+        amount: Long,
+        memoText: String?,
+    )
+
+    /**
+     * The shielded balance of the wallet identity [identityId]'s own account
+     * (bridges `platform_wallet_manager_shielded_identity_balance`). Reads
+     * local state only.
+     *
+     * Returns the C `ShieldedIdentityBalanceFFI` as one BLOB in its field
+     * order: `u8 state` (0 unverified, 1 unavailable, 2 available),
+     * `u32 account` (0 when unverified), `u64 credits` (0 unless available),
+     * big-endian. Decoded by
+     * [org.dashfoundation.dashsdk.wallet.decodeShieldedIdentityBalance].
+     *
+     * Code 1087 (`ErrorShieldedBalanceBusy`) means the read did not finish
+     * within its wait budget (the wallet's state or its shielded store was
+     * held), or a shielded Clear was running: the only code of this read
+     * that means read again later.
+     */
+    external fun shieldedIdentityBalance(
+        managerHandle: Long,
+        walletId: ByteArray,
+        identityId: ByteArray,
     ): ByteArray
 
     // ── Shielded outgoing spends (types 16/17/19) ─────────────────────

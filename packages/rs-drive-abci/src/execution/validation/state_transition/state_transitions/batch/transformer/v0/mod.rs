@@ -38,9 +38,12 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::consensus::basic::document::{
+    DataContractNotPresentError, DocumentTypePrivateError, InvalidDocumentTypeError,
+};
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
+use dpp::ProtocolError;
 
 use dpp::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -49,6 +52,7 @@ use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentO
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
@@ -72,6 +76,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_purcha
 use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionOwned};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use drive::state_transition_action::batch::BatchTransitionAction;
@@ -465,6 +470,26 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 .into(),
             ));
         };
+
+        // A private document type (protocol version 15) is written only by the shielded
+        // transition appending its entries: a Batch naming one is refused here, before the
+        // contract moderation gate reads state and before any document is read or written,
+        // whoever signs it. In place: no type is private before protocol version 15, the first
+        // to parse one (`parse_private_document`), so this never fires there
+        if let Some(document_type_name) = document_transitions.keys().find(|document_type_name| {
+            data_contract_fetch_info
+                .contract
+                .document_type_optional_for_name(document_type_name)
+                .is_some_and(|document_type| document_type.is_private())
+        }) {
+            return Ok(ConsensusValidationResult::new_with_error(
+                DocumentTypePrivateError::new(
+                    data_contract_fetch_info.contract.id(),
+                    document_type_name.to_string(),
+                )
+                .into(),
+            ));
+        }
 
         // Contract moderation (protocol version 14): a moderated contract refuses the document
         // transitions of a banned or suspended signer, its deletions and retractions excepted.
@@ -938,6 +963,30 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
         match transition {
             DocumentTransition::Create(document_create_transition) => {
+                // A type summing a property it lists as transient, which registration refuses
+                // from protocol version 15 and a contract registered earlier may hold: its
+                // documents are stored without the value, so a create, contested or not, would
+                // reach Drive with nothing for the type's sums to read. Refused with the error
+                // registration refuses the type with, before anything is written. Edited in
+                // place: the method's gate, `validate_no_transient_summed_property`, is `None`
+                // before protocol version 15, so it refuses nothing there
+                if let Ok(document_type) = data_contract_fetch_info
+                    .contract
+                    .document_type_for_name(document_create_transition.base().document_type_name())
+                {
+                    match document_type.validate_no_transient_summed_property(platform_version) {
+                        Ok(()) => {}
+                        Err(ProtocolError::ConsensusError(error)) => {
+                            return Self::failed_per_transition_action(
+                                document_create_transition.base(),
+                                owner_id,
+                                vec![*error],
+                                platform_version,
+                            );
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                }
                 let (mut document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
                     drive, owner_id, transaction,
                     document_create_transition, block_info, user_fee_increase, |_identifier| {
@@ -1041,6 +1090,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let (mut document_replace_action, fee_result) =
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
+                        drive,
+                        transaction,
                         document_replace_transition,
                         owner_id,
                         original_document,
@@ -1110,6 +1161,18 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             }
             DocumentTransition::Delete(document_delete_transition) => {
                 let (batched_action, fee_result) = DocumentDeleteTransitionAction::try_from_document_borrowed_delete_transition_with_contract_lookup(document_delete_transition, owner_id, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                })?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
+            DocumentTransition::Erase(document_erase_transition) => {
+                let (batched_action, fee_result) = DocumentEraseTransitionAction::try_from_document_borrowed_erase_transition_with_contract_lookup(document_erase_transition, owner_id, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 })?;
 

@@ -7,8 +7,11 @@ use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::drive::query::SelectProjection;
-use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
+use dash_sdk::platform::documents::document_history_query::{
+    DocumentHistoryFilter, DocumentHistoryQuery,
+};
 use dash_sdk::platform::documents::document_query::DocumentQuery;
+use dash_sdk::platform::proto::{Proof, ResponseMetadata};
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{
@@ -18,12 +21,14 @@ use drive::query::{
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::serialization;
+use wasm_dpp2::utils::IntoWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -107,8 +112,9 @@ export interface DocumentsQuery {
 
   /**
    * Aggregate-query option: SQL-shaped `GROUP BY` field list. Mirrors
-   * the v1 wire's `group_by: repeated string` directly. Ignored by
-   * the regular document-fetch path.
+   * the v1 wire's `group_by: repeated string` directly. The regular
+   * document fetch (`getDocuments`) refuses it: it returns the documents
+   * themselves, which cannot be grouped.
    *
    * - `[]` or omitted → one ungrouped result entry, keyed by the
    *   empty string. Its value is the total count for
@@ -138,7 +144,9 @@ export interface DocumentsQuery {
    * signed response metadata; `"byStart"` names the bucket absolutely, so
    * both sides read it straight from the query. Provable either way.
    * Requires protocol version 14+ (the first version whose contract
-   * grammar hosts `timeRange` indexes).
+   * grammar hosts `timeRange` indexes): on a network not yet proven to run
+   * it, the SDK refuses the query without sending it
+   * (`ProtocolVersionNotActive`).
    *
    * - `selector: "oldest"` → the oldest still-active range (a near-full
    *   trailing window of ~`range`; best for "trending over the last window").
@@ -171,7 +179,7 @@ export interface DocumentsQuery {
    * window). An off-grid start is rejected rather than snapped, and an
    * empty window is a provable empty answer. The server and the proof
    * verifier resolve the same window from the query alone. Requires
-   * protocol version 14+.
+   * protocol version 14+, as `timeRange` does.
    *
    * `start` is a number, or a decimal string for values beyond
    * `Number.MAX_SAFE_INTEGER`. `grid` names one of the field's grids
@@ -206,22 +214,25 @@ export interface DocumentHistoryQuery {
   documentId: IdentifierLike
 
   /**
-   * Millisecond timestamp (exclusive) to start after.
-   * @default 0
+   * Inclusive lower time bound. Supply at most one selector. A query without one reads a
+   * page from the first retained revision, as `startAtMs: 0` does, up to `limit` entries.
+   *
+   * Every selector is an exact u64: a `number` is accepted only up to
+   * `Number.MAX_SAFE_INTEGER`, and anything larger must be a `bigint`, since
+   * JavaScript would have rounded it before the query is built.
    */
-  startAtMs?: number;
-
+  startAtMs?: bigint | number;
   /**
-   * Maximum number of entries to return.
-   * @default undefined
+   * Complete exclusive cursor returned by a previous page.
+   *
+   * `startAfter`, `startAtRevision` and `revision` need Platform protocol version 15.
+   * Below it only `startAtMs` is served, and the others are refused before sending.
    */
+  startAfter?: { timeMs: bigint | number; revision: bigint | number } | DocumentHistoryEntry;
+  startAtRevision?: bigint | number;
+  revision?: bigint | number;
+  /** Maximum ten entries. A single revision requires limit one. */
   limit?: number;
-
-  /**
-   * Offset for pagination through the document history.
-   * @default undefined
-   */
-  offset?: number;
 }
 "#;
 
@@ -232,6 +243,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DocumentHistoryQuery")]
     pub type DocumentHistoryQueryJs;
+
+    #[wasm_bindgen(method, getter = startAfter)]
+    fn start_after(this: &DocumentHistoryQueryJs) -> JsValue;
 }
 
 #[derive(Deserialize)]
@@ -251,7 +265,7 @@ pub(super) struct DocumentsQueryInput {
     pub(super) start_at: Option<IdentifierWasm>,
     /// Aggregate-query option: SQL-shaped `GROUP BY` field list,
     /// mirroring the v1 wire `group_by: repeated string` field
-    /// one-to-one. Ignored by the regular document-fetch path.
+    /// one-to-one. The regular document fetch refuses it.
     /// See the TypeScript declaration for the supported shapes.
     /// Default empty (one ungrouped aggregate result entry).
     #[serde(rename = "groupBy", default)]
@@ -271,42 +285,320 @@ pub(super) struct DocumentsQueryInput {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentHistoryQueryInput {
     data_contract_id: IdentifierWasm,
     document_type_name: String,
     document_id: IdentifierWasm,
-    #[serde(default)]
     start_at_ms: Option<u64>,
-    #[serde(default)]
+    start_after: Option<serde::de::IgnoredAny>,
+    start_at_revision: Option<u64>,
+    revision: Option<u64>,
     limit: Option<u32>,
-    #[serde(default)]
-    offset: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DocumentHistoryCursorInput {
+    time_ms: u64,
+    revision: u64,
 }
 
 fn parse_document_history_query(
     query: DocumentHistoryQueryJs,
 ) -> Result<DocumentHistoryQuery, WasmSdkError> {
-    let input: DocumentHistoryQueryInput =
-        deserialize_required_query(query, "Query object is required", "document history query")?;
-
+    let input: DocumentHistoryQueryInput = deserialize_required_query(
+        query.clone(),
+        "Query object is required",
+        "document history query",
+    )?;
+    let start_after = input
+        .start_after
+        .map(|_| parse_document_history_cursor(query.start_after()))
+        .transpose()?;
+    let filters = [
+        input.start_at_ms.is_some(),
+        start_after.is_some(),
+        input.start_at_revision.is_some(),
+        input.revision.is_some(),
+    ];
+    if filters.into_iter().filter(|present| *present).count() > 1 {
+        return Err(WasmSdkError::invalid_argument(
+            "at most one history filter may be given",
+        ));
+    }
+    let filter = if let Some(time) = input.start_at_ms {
+        DocumentHistoryFilter::StartAtTime(time)
+    } else if let Some(cursor) = start_after {
+        DocumentHistoryFilter::StartAfter {
+            time_ms: cursor.time_ms,
+            revision: cursor.revision,
+        }
+    } else if let Some(revision) = input.start_at_revision {
+        DocumentHistoryFilter::StartAtRevision(revision)
+    } else if let Some(revision) = input.revision {
+        DocumentHistoryFilter::Revision(revision)
+    } else {
+        // No selector: the first page, as the Rust query API defines it.
+        DocumentHistoryQuery::FIRST_PAGE_FILTER
+    };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
         document_type_name: input.document_type_name,
         document_id: input.document_id.into(),
-        start_at_ms: input.start_at_ms.unwrap_or(0),
+        filter,
         limit: input.limit,
-        offset: input.offset,
     })
+}
+
+fn parse_document_history_cursor(
+    value: JsValue,
+) -> Result<DocumentHistoryCursorInput, WasmSdkError> {
+    if let Ok(entry) = value.to_wasm::<DocumentHistoryEntryWasm>("DocumentHistoryEntry") {
+        return Ok(DocumentHistoryCursorInput {
+            time_ms: entry.time_ms,
+            revision: entry.revision,
+        });
+    }
+    serialization::from_object(value)
+        .map_err(|error| WasmSdkError::invalid_argument(format!("Invalid history cursor: {error}")))
+}
+
+#[wasm_bindgen(js_name = "DocumentHistoryEntry")]
+#[derive(Clone)]
+pub struct DocumentHistoryEntryWasm {
+    time_ms: u64,
+    revision: u64,
+    document: DocumentWasm,
+}
+
+wasm_dpp2::impl_wasm_type_info!(DocumentHistoryEntryWasm, DocumentHistoryEntry);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryEntrySerde {
+    time_ms: String,
+    revision: String,
+    document: JsonValue,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryEntry)]
+impl DocumentHistoryEntryWasm {
+    #[wasm_bindgen(getter = "timeMs")]
+    pub fn time_ms(&self) -> BigInt {
+        BigInt::from(self.time_ms)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn revision(&self) -> BigInt {
+        BigInt::from(self.revision)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> DocumentWasm {
+        self.document.clone()
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        serialization::to_json(&self.to_serde()?).map_err(WasmSdkError::from)
+    }
+}
+
+impl DocumentHistoryEntryWasm {
+    fn to_serde(&self) -> Result<DocumentHistoryEntrySerde, WasmSdkError> {
+        Ok(DocumentHistoryEntrySerde {
+            time_ms: self.time_ms.to_string(),
+            revision: self.revision.to_string(),
+            document: serialization::js_value_to_json(&JsValue::from(self.document.clone()))
+                .map_err(WasmSdkError::from)?,
+        })
+    }
+}
+
+#[wasm_bindgen(js_name = "DocumentHistoryLifecycle")]
+#[derive(Clone)]
+pub struct DocumentHistoryLifecycleWasm {
+    state: String,
+    remaining_revisions: u64,
+    deleted_at_ms: u64,
+    erasing_started_at_ms: u64,
+    erasing_from_time_ms: u64,
+    erasing_from_revision: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryLifecycleSerde {
+    state: String,
+    remaining_revisions: String,
+    deleted_at_ms: String,
+    erasing_started_at_ms: String,
+    erasing_from_time_ms: String,
+    erasing_from_revision: String,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryLifecycle)]
+impl DocumentHistoryLifecycleWasm {
+    /// `ACTIVE` while the document is visible to ordinary reads, `DELETED`
+    /// once it has been deleted and its revisions are retained, `ERASING` once
+    /// an authorized erasure has begun, `ABSENT` when nothing is left.
+    #[wasm_bindgen(
+        getter,
+        unchecked_return_type = "\"ACTIVE\" | \"DELETED\" | \"ERASING\" | \"ABSENT\""
+    )]
+    pub fn state(&self) -> String {
+        self.state.clone()
+    }
+
+    #[wasm_bindgen(getter = "remainingRevisions")]
+    pub fn remaining_revisions(&self) -> BigInt {
+        BigInt::from(self.remaining_revisions)
+    }
+
+    /// Zero unless the document has been deleted.
+    #[wasm_bindgen(getter = "deletedAtMs")]
+    pub fn deleted_at_ms(&self) -> BigInt {
+        BigInt::from(self.deleted_at_ms)
+    }
+
+    /// Zero unless an authorized erasure has begun.
+    #[wasm_bindgen(getter = "erasingStartedAtMs")]
+    pub fn erasing_started_at_ms(&self) -> BigInt {
+        BigInt::from(self.erasing_started_at_ms)
+    }
+
+    /// Timestamp of the newest revision retained when the erasure began.
+    #[wasm_bindgen(getter = "erasingFromTimeMs")]
+    pub fn erasing_from_time_ms(&self) -> BigInt {
+        BigInt::from(self.erasing_from_time_ms)
+    }
+
+    /// History sequence of the newest revision retained when the erasure began.
+    #[wasm_bindgen(getter = "erasingFromRevision")]
+    pub fn erasing_from_revision(&self) -> BigInt {
+        BigInt::from(self.erasing_from_revision)
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        serialization::to_json(&self.to_serde()).map_err(WasmSdkError::from)
+    }
+}
+
+impl DocumentHistoryLifecycleWasm {
+    fn to_serde(&self) -> DocumentHistoryLifecycleSerde {
+        DocumentHistoryLifecycleSerde {
+            state: self.state.clone(),
+            remaining_revisions: self.remaining_revisions.to_string(),
+            deleted_at_ms: self.deleted_at_ms.to_string(),
+            erasing_started_at_ms: self.erasing_started_at_ms.to_string(),
+            erasing_from_time_ms: self.erasing_from_time_ms.to_string(),
+            erasing_from_revision: self.erasing_from_revision.to_string(),
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "DocumentHistoryResult")]
+#[derive(Clone)]
+pub struct DocumentHistoryResultWasm {
+    entries: Vec<DocumentHistoryEntryWasm>,
+    lifecycle: Option<DocumentHistoryLifecycleWasm>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryResultSerde {
+    entries: Vec<DocumentHistoryEntrySerde>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lifecycle: Option<DocumentHistoryLifecycleSerde>,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryResult)]
+impl DocumentHistoryResultWasm {
+    #[wasm_bindgen(getter)]
+    pub fn entries(&self) -> Vec<DocumentHistoryEntryWasm> {
+        self.entries.clone()
+    }
+
+    /// Missing when the legacy storage generation cannot authenticate lifecycle
+    /// metadata: always below Platform protocol version 15, whose history proofs
+    /// carry revisions only.
+    #[wasm_bindgen(getter)]
+    pub fn lifecycle(&self) -> Option<DocumentHistoryLifecycleWasm> {
+        self.lifecycle.clone()
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        serialization::to_json(&self.to_serde()?).map_err(WasmSdkError::from)
+    }
+}
+
+impl DocumentHistoryResultWasm {
+    fn to_serde(&self) -> Result<DocumentHistoryResultSerde, WasmSdkError> {
+        Ok(DocumentHistoryResultSerde {
+            entries: self
+                .entries
+                .iter()
+                .map(DocumentHistoryEntryWasm::to_serde)
+                .collect::<Result<Vec<_>, _>>()?,
+            lifecycle: self
+                .lifecycle
+                .as_ref()
+                .map(DocumentHistoryLifecycleWasm::to_serde),
+        })
+    }
+
+    fn from_history(
+        history: DocumentHistory,
+        contract_id: Identifier,
+        document_type_name: &str,
+    ) -> Result<Self, WasmSdkError> {
+        use drive_proof_verifier::types::DocumentHistoryState;
+
+        let entries = history
+            .entries
+            .into_iter()
+            .map(|entry| DocumentHistoryEntryWasm {
+                time_ms: entry.time_ms,
+                revision: entry.revision,
+                document: DocumentWasm::new(
+                    entry.document,
+                    contract_id,
+                    document_type_name.to_owned(),
+                    None,
+                ),
+            })
+            .collect();
+        Ok(Self {
+            entries,
+            lifecycle: history
+                .lifecycle
+                .map(|lifecycle| DocumentHistoryLifecycleWasm {
+                    state: match lifecycle.state {
+                        DocumentHistoryState::Active => "ACTIVE",
+                        DocumentHistoryState::Deleted => "DELETED",
+                        DocumentHistoryState::Erasing => "ERASING",
+                        DocumentHistoryState::Absent => "ABSENT",
+                    }
+                    .to_owned(),
+                    remaining_revisions: lifecycle.remaining_revisions,
+                    deleted_at_ms: lifecycle.times.deleted_at_ms,
+                    erasing_started_at_ms: lifecycle.times.erasing_started_at_ms,
+                    erasing_from_time_ms: lifecycle.times.erasing_from_time_ms,
+                    erasing_from_revision: lifecycle.times.erasing_from_revision,
+                }),
+        })
+    }
 }
 
 pub(super) async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `group_by` on the shared input struct is an aggregate-query-only
-    // option; the regular document-fetch path destructured here just
-    // drops it.
+    // `group_by` on the shared input struct is applied by the callers
+    // that read it, after the shared clauses.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -381,7 +673,12 @@ async fn parse_documents_query(
     let input: DocumentsQueryInput =
         deserialize_required_query(query, "Query object is required", "documents query")?;
 
-    build_documents_query(sdk, input).await
+    // A documents select cannot be grouped. The grouping is kept so that the SDK refuses
+    // it before sending, instead of the fetch quietly answering an ungrouped page.
+    let group_by = input.group_by.clone().unwrap_or_default();
+    Ok(build_documents_query(sdk, input)
+        .await?
+        .with_group_by_fields(group_by))
 }
 
 /// Parse a JS query object into a [`DocumentQuery`] configured
@@ -814,48 +1111,43 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
     }
 }
 
+fn document_history_proof_response(
+    (history, metadata, proof): (DocumentHistory, ResponseMetadata, Proof),
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+    Ok(ProofMetadataResponseWasm::from_sdk_parts(
+        DocumentHistoryResultWasm::from_history(history, contract_id, document_type_name)?,
+        metadata,
+        proof,
+    ))
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(
-        js_name = "getDocumentHistory",
-        unchecked_return_type = "Map<bigint, Document>"
-    )]
+    #[wasm_bindgen(js_name = "getDocumentHistory")]
     pub async fn get_document_history(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<Map, WasmSdkError> {
+    ) -> Result<DocumentHistoryResultWasm, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
-
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-        data_contract
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        contract
             .document_type_for_name(&document_type_name)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
-
-        let history_result = DocumentHistory::fetch(self.as_ref(), query).await?;
-        let history_map = Map::new();
-
-        if let Some(history) = history_result {
-            for (block_time_ms, document) in history {
-                let document_js = JsValue::from(DocumentWasm::new(
-                    document,
-                    contract_id,
-                    document_type_name.clone(),
-                    None,
-                ));
-                let key = JsValue::from(BigInt::from(block_time_ms));
-
-                history_map.set(&key, &document_js);
-            }
-        }
-
-        Ok(history_map)
+            .map_err(|error| {
+                WasmSdkError::not_found(format!("Document type not found: {error}"))
+            })?;
+        let history = DocumentHistory::fetch(self.as_ref(), query)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
+        DocumentHistoryResultWasm::from_history(history, contract_id, &document_type_name)
     }
 
     #[wasm_bindgen(
         js_name = "getDocumentHistoryWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<bigint, Document>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<DocumentHistoryResult>"
     )]
     pub async fn get_document_history_with_proof_info(
         &self,
@@ -864,35 +1156,21 @@ impl WasmSdk {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
-
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-        data_contract
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        contract
             .document_type_for_name(&document_type_name)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
-
-        let (history_result, metadata, proof) =
+            .map_err(|error| {
+                WasmSdkError::not_found(format!("Document type not found: {error}"))
+            })?;
+        let (history, metadata, proof) =
             DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
-        let history_map = Map::new();
-
-        if let Some(history) = history_result {
-            for (block_time_ms, document) in history {
-                let document_js = JsValue::from(DocumentWasm::new(
-                    document,
-                    contract_id,
-                    document_type_name.clone(),
-                    None,
-                ));
-                let key = JsValue::from(BigInt::from(block_time_ms));
-
-                history_map.set(&key, &document_js);
-            }
-        }
-
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            history_map,
-            metadata,
-            proof,
-        ))
+        let history = history
+            .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
+        document_history_proof_response(
+            (history, metadata, proof),
+            contract_id,
+            &document_type_name,
+        )
     }
 
     #[wasm_bindgen(
@@ -1140,7 +1418,8 @@ impl WasmSdk {
     /// `GroupByCompound`); `DocumentSplitSums::fetch` dispatches
     /// internally on the request shape.
     ///
-    /// The map values are `bigint` (signed `i64` on the wire); the
+    /// The map values are `bigint` (signed, up to 128 bits from
+    /// protocol version 15, when a type keeps its sums in 128 bits); the
     /// `Aggregate` mode emits a single entry with empty-string key
     /// carrying the total. `GroupByIn` / `GroupByRange` emit one
     /// entry per matched group keyed by the hex-encoded canonical
@@ -1268,26 +1547,27 @@ fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
 /// — callers needing the unmerged view should consume
 /// `DocumentSplitSums.0` directly).
 ///
-/// Values are `i64` per grovedb's signed SumTree value type.
-/// `bigint` on the JS side preserves the full i64 range that
+/// Values are `i128`: from protocol version 15 a document type may
+/// keep its sums in 128 bits. `bigint` on the JS side preserves the
+/// full range that
 /// `Number` can't — avoids the silent precision loss past
 /// `Number.MAX_SAFE_INTEGER` (2^53 - 1) that an `f64` conversion
 /// would introduce.
 ///
 /// Returns a `WasmSdkError` if the fold across In-fork branches
-/// crosses the i64 range at any terminator key
+/// crosses the i128 range at any terminator key
 /// (`try_into_flat_map` does `checked_add` on each step). JS sees
 /// a structured error rather than a debug-build panic or a
 /// release-build wrap.
 fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSdkError> {
     let map = Map::new();
     if let Some(split_sums) = splits {
-        // `try_into_flat_map` uses `i64::checked_add` and surfaces
+        // `try_into_flat_map` uses `i128::checked_add` and surfaces
         // overflow as `drive_proof_verifier::Error::RequestError`.
         // Convert to `WasmSdkError::generic` so JS callers see a
         // structured error (rather than the debug-build panic /
         // release-build wrap that the previous unchecked `+=`
-        // would produce on a compound-In merge crossing i64::MAX).
+        // would produce on a compound-In merge crossing i128::MAX).
         let flat = split_sums
             .try_into_flat_map()
             .map_err(|e| WasmSdkError::generic(format!("{e}")))?;
@@ -1303,7 +1583,7 @@ fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSd
 /// {count: bigint, sum: bigint}>`.
 ///
 /// Average analog of [`split_counts_to_js_map`]. Per-entry values
-/// are JS objects with `count` (`u64` → `bigint`) and `sum` (`i64`
+/// are JS objects with `count` (`u64` → `bigint`) and `sum` (`i128`
 /// → `bigint`) fields; the JS caller divides with whichever
 /// representation it prefers (`Number(sum) / Number(count)` for
 /// f64-precision arithmetic, BigInt division for integer-truncated,
@@ -1313,7 +1593,7 @@ fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSd
 ///
 /// Hex-encoded keys + `try_into_flat_map` fork-merging match the
 /// count and sum helpers' conventions exactly. Returns a
-/// `WasmSdkError` if either the u64 count or the i64 sum fold
+/// `WasmSdkError` if either the u64 count or the i128 sum fold
 /// crosses its range at any terminator key, matching the
 /// hardening on [`split_sums_to_js_map`].
 fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map, WasmSdkError> {
@@ -1321,7 +1601,7 @@ fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map
     if let Some(split_averages) = splits {
         // Same overflow hardening rationale as `split_sums_to_js_map`
         // above — `try_into_flat_map` uses `u64::checked_add` (count
-        // axis) and `i64::checked_add` (sum axis); either overflow
+        // axis) and `i128::checked_add` (sum axis); either overflow
         // surfaces as a typed JS error instead of a panic / wrap.
         let flat = split_averages
             .try_into_flat_map()
@@ -1347,6 +1627,19 @@ fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn accepts_legacy_history_without_lifecycle_metadata() {
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: None,
+        };
+
+        let result = DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note")
+            .expect("the legacy history layout has no lifecycle metadata");
+
+        assert!(result.lifecycle.is_none());
+    }
 
     /// This parser is the only boundary turning the public JavaScript
     /// `{ field, selector, startMs?, grid? }` shape into a typed time-range
@@ -1542,5 +1835,392 @@ mod tests {
         ] {
             parse_integer_range_clause(&clause).expect_err(&format!("{clause} should be refused"));
         }
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod history_wasm_tests {
+    use super::*;
+    use drive_proof_verifier::types::{
+        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+        DocumentHistoryState,
+    };
+    use js_sys::{Array, Reflect};
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    fn returned_history_entry(time_ms: u64, revision: u64) -> JsValue {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms,
+                revision,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: None,
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+        Array::from(&Reflect::get(&result, &"entries".into()).unwrap()).get(0)
+    }
+
+    fn history_query_with_cursor(cursor: &JsValue) -> DocumentHistoryQueryJs {
+        let query = js_sys::JSON::parse(
+            r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah"}"#,
+        )
+        .unwrap();
+        Reflect::set(&query, &"startAfter".into(), cursor).unwrap();
+        query.unchecked_into()
+    }
+
+    /// A query that names no selector reads a page from the document's first retained
+    /// revision, as `startAtMs: 0` does.
+    #[wasm_bindgen_test]
+    fn should_start_at_the_first_retained_revision_when_no_selector_is_given() {
+        let input = js_sys::JSON::parse(
+            r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah"}"#,
+        )
+        .unwrap();
+
+        let query = parse_document_history_query(input.unchecked_into())
+            .expect("a history query needs no selector");
+
+        assert_eq!(query.filter, DocumentHistoryFilter::StartAtTime(0));
+    }
+
+    #[wasm_bindgen_test]
+    fn should_accept_a_returned_history_entry_as_the_next_page_cursor() {
+        let time_ms = (1u64 << 53) + 1;
+        let revision = 22;
+        let entry = returned_history_entry(time_ms, revision);
+        for _ in 0..2 {
+            let query = parse_document_history_query(history_query_with_cursor(&entry))
+                .expect("the last returned entry is a valid cursor for the next page");
+            assert_eq!(
+                query.filter,
+                DocumentHistoryFilter::StartAfter { time_ms, revision }
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_accept_plain_history_cursors_with_numbers_and_exact_bigints() {
+        for (cursor, time_ms) in [
+            (
+                js_sys::JSON::parse(r#"{"timeMs":2000,"revision":22}"#).unwrap(),
+                2000,
+            ),
+            (
+                serialization::to_object(&DocumentHistoryCursorInputForTest {
+                    time_ms: (1u64 << 53) + 1,
+                    revision: 22,
+                })
+                .unwrap(),
+                (1u64 << 53) + 1,
+            ),
+        ] {
+            let query = parse_document_history_query(history_query_with_cursor(&cursor)).unwrap();
+            assert_eq!(
+                query.filter,
+                DocumentHistoryFilter::StartAfter {
+                    time_ms,
+                    revision: 22
+                }
+            );
+        }
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DocumentHistoryCursorInputForTest {
+        time_ms: u64,
+        revision: u64,
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_history_cursor_pointer_and_constructor_impostors() {
+        let entry = returned_history_entry(2000, 22);
+        let pointer = Reflect::get(&entry, &"__wbg_ptr".into()).unwrap();
+        let constructor = Reflect::get(&entry, &"constructor".into()).unwrap();
+        for copy_constructor in [false, true] {
+            let impostor = js_sys::Object::new();
+            Reflect::set(&impostor, &"__wbg_ptr".into(), &pointer).unwrap();
+            if copy_constructor {
+                Reflect::set(&impostor, &"constructor".into(), &constructor).unwrap();
+            }
+            assert!(parse_document_history_query(history_query_with_cursor(&impostor)).is_err());
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_a_freed_history_cursor_and_accept_a_later_live_entry() {
+        let entry = returned_history_entry(2000, 22);
+        let free = Reflect::get(&entry, &"free".into())
+            .unwrap()
+            .dyn_into::<js_sys::Function>()
+            .unwrap();
+        free.call0(&entry).unwrap();
+        assert!(parse_document_history_query(history_query_with_cursor(&entry)).is_err());
+
+        let live_entry = returned_history_entry(2000, 23);
+        let query = parse_document_history_query(history_query_with_cursor(&live_entry)).unwrap();
+        assert_eq!(
+            query.filter,
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 23
+            }
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_export_the_history_proof_as_one_proof_object() {
+        let result = ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::NULL,
+            dash_sdk::platform::proto::ResponseMetadata::default(),
+            dash_sdk::platform::proto::Proof {
+                grovedb_proof: vec![1, 2, 3],
+                ..Default::default()
+            },
+        );
+        let result = JsValue::from(result);
+        let proof = Reflect::get(&result, &"proof".into()).unwrap();
+        assert_eq!(
+            js_sys::Uint8Array::new(&Reflect::get(&proof, &"grovedbProof".into()).unwrap())
+                .to_vec(),
+            vec![1, 2, 3]
+        );
+    }
+
+    /// A `u64` selector crosses from JavaScript exactly or not at all: the
+    /// deserializer takes a `number` only while it is a safe integer, since a
+    /// larger one was rounded before it reached Rust, and takes a `bigint` at
+    /// any `u64`. Nothing in this crate adds to that; this pins that it holds.
+    #[wasm_bindgen_test]
+    fn should_take_history_selectors_as_exact_integers_only() {
+        let query = |start_at_ms: JsValue| {
+            let object = js_sys::Object::new();
+            let id = IdentifierWasm::from([1u8; 32]).to_base58();
+            Reflect::set(&object, &"dataContractId".into(), &id.clone().into()).unwrap();
+            Reflect::set(&object, &"documentTypeName".into(), &"note".into()).unwrap();
+            Reflect::set(&object, &"documentId".into(), &id.into()).unwrap();
+            Reflect::set(&object, &"startAtMs".into(), &start_at_ms).unwrap();
+            parse_document_history_query(JsValue::from(object).unchecked_into())
+        };
+        let past_safe = (1u64 << 53) + 1;
+
+        let parsed = query(JsValue::from(js_sys::BigInt::from(past_safe)))
+            .expect("a bigint carries the exact value");
+        assert_eq!(
+            parsed.filter,
+            DocumentHistoryFilter::StartAtTime(past_safe),
+            "the selector must be the value the caller passed"
+        );
+
+        query(JsValue::from(past_safe as f64))
+            .expect_err("a number past Number.MAX_SAFE_INTEGER was already rounded and is refused");
+        query(JsValue::from(-1.0)).expect_err("a negative number is refused");
+        query(JsValue::from(1.5)).expect_err("a fractional number is refused");
+    }
+
+    #[wasm_bindgen_test]
+    fn should_preserve_same_time_revisions_and_exact_lifecycle_counts_in_javascript() {
+        let count = (1u64 << 53) + 1;
+        let history = DocumentHistory {
+            entries: [1, 2]
+                .into_iter()
+                .map(|revision| DocumentHistoryEntry {
+                    time_ms: 2000,
+                    revision,
+                    document: Document::V0(Default::default()),
+                })
+                .collect(),
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: count,
+                times: Default::default(),
+            }),
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+        let entries = Array::from(&Reflect::get(&result, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 2);
+        for (index, revision) in [1u64, 2].into_iter().enumerate() {
+            assert_eq!(
+                Reflect::get(&entries.get(index as u32), &"revision".into()).unwrap(),
+                JsValue::from(revision)
+            );
+        }
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"remainingRevisions".into()).unwrap(),
+            JsValue::from(count)
+        );
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ACTIVE")
+        );
+    }
+
+    /// Every lifecycle time crosses into JavaScript as an exact BigInt, like
+    /// the counts and revisions beside them: a millisecond timestamp does not
+    /// survive a JavaScript number.
+    #[wasm_bindgen_test]
+    fn should_report_the_erasing_state_and_its_times_exactly_in_javascript() {
+        let started_at = (1u64 << 53) + 3;
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Erasing,
+                remaining_revisions: 7,
+                times: DocumentHistoryLifecycleTimes {
+                    deleted_at_ms: 1_700_000_000_001,
+                    erasing_started_at_ms: started_at,
+                    erasing_from_time_ms: 1_700_000_000_002,
+                    erasing_from_revision: 42,
+                },
+            }),
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ERASING")
+        );
+        for (key, expected) in [
+            ("deletedAtMs", 1_700_000_000_001u64),
+            ("erasingStartedAtMs", started_at),
+            ("erasingFromTimeMs", 1_700_000_000_002),
+            ("erasingFromRevision", 42),
+        ] {
+            assert_eq!(
+                Reflect::get(&lifecycle, &key.into()).unwrap(),
+                JsValue::from(expected),
+                "{key} must survive as an exact BigInt"
+            );
+        }
+    }
+
+    /// Below protocol 15 the SDK sends request V0, whose proof carries revisions only: the
+    /// page reaches JavaScript with its entries, metadata and proof, and no `lifecycle`.
+    #[wasm_bindgen_test]
+    fn should_return_a_protocol_14_history_page_without_lifecycle() {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 2,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: None,
+        };
+        let metadata = ResponseMetadata {
+            protocol_version: 14,
+            ..Default::default()
+        };
+        let proof = Proof {
+            grovedb_proof: vec![7, 8, 9],
+            ..Default::default()
+        };
+        let response =
+            document_history_proof_response((history, metadata, proof), [1; 32].into(), "note")
+                .unwrap();
+
+        assert_eq!(response.metadata().protocol_version(), 14);
+        assert_eq!(response.proof().grovedb_proof().to_vec(), vec![7, 8, 9]);
+        let json = response.to_json().unwrap();
+        let data = Reflect::get(&json, &"data".into()).unwrap();
+        let entries = Array::from(&Reflect::get(&data, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 1);
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"revision".into()).unwrap(),
+            JsValue::from_str("2")
+        );
+        assert!(Reflect::get(&data, &"lifecycle".into())
+            .unwrap()
+            .is_undefined());
+    }
+
+    #[wasm_bindgen_test]
+    fn should_serialize_history_data_in_a_proof_metadata_response() {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 1,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: (1u64 << 53) + 1,
+                times: Default::default(),
+            }),
+        };
+        let response = document_history_proof_response(
+            (history, Default::default(), Default::default()),
+            [1; 32].into(),
+            "note",
+        )
+        .unwrap();
+
+        let json = response.to_json().unwrap();
+        let data = Reflect::get(&json, &"data".into()).unwrap();
+        let entries = Array::from(&Reflect::get(&data, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 1);
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"timeMs".into()).unwrap(),
+            JsValue::from_str("2000")
+        );
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"revision".into()).unwrap(),
+            JsValue::from_str("1")
+        );
+        let document = Reflect::get(&entries.get(0), &"document".into()).unwrap();
+        assert!(Reflect::has(&document, &"$dataContractId".into()).unwrap());
+        let lifecycle = Reflect::get(&data, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"remainingRevisions".into()).unwrap(),
+            JsValue::from_str("9007199254740993")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_expose_legacy_history_without_lifecycle_metadata() {
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: None,
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+
+        assert!(Reflect::get(&result, &"lifecycle".into())
+            .unwrap()
+            .is_undefined());
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_conflicting_selectors_and_public_offsets() {
+        let base = r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah""#;
+        for fields in [
+            ",\"startAtMs\":0,\"revision\":1",
+            ",\"startAtMs\":0,\"offset\":1",
+        ] {
+            let input = js_sys::JSON::parse(&format!("{base}{fields}}}")).unwrap();
+            assert!(parse_document_history_query(input.unchecked_into()).is_err());
+        }
+        let input = js_sys::JSON::parse(&format!(
+            "{base},\"startAfter\":{{\"timeMs\":2000,\"revision\":22}}}}"
+        ))
+        .unwrap();
+        let query = parse_document_history_query(input.unchecked_into()).unwrap();
+        assert_eq!(
+            query.filter,
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 22
+            }
+        );
     }
 }

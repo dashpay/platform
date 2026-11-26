@@ -1,6 +1,9 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
-use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::validation::state_transition::check_tx_verification::{
+    state_transition_to_execution_event_for_check_tx, CheckTxExecutionEvent,
+};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
     validate_batch_token_pool_nullifiers_unspent, StateTransitionHasShieldedProofValidationV0,
@@ -25,6 +28,9 @@ use crate::execution::types::state_transition_container::v0::{
 };
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::prelude::UserFeeIncrease;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
@@ -76,7 +82,6 @@ where
                 None,   // address_balances_in_update not needed for check_tx
                 &mut 0, // check_tx's transaction is discarded, its mints are never recorded
                 platform_ref.state.current_platform_version()?,
-                platform_ref.state.previous_fee_versions(),
             )
         } else {
             Ok(UnpaidConsensusExecutionError(
@@ -115,6 +120,7 @@ where
         let mut check_tx_result = CheckTxResult {
             level: check_tx_level,
             fee_result: None,
+            gas_wanted: 0,
             unique_identifiers: vec![],
             priority: 0,
             state_transition_name: None,
@@ -181,17 +187,26 @@ where
 
         // We should run the execution event in dry run (estimated fees)
         // to see if we would have enough fees for the transition
-        if let Some(execution_event) = validation_result.into_data()? {
+        if let Some(CheckTxExecutionEvent {
+            event: execution_event,
+            reserved_bounds,
+        }) = validation_result.into_data()?
+        {
             let validation_result = self.validate_fees_of_event(
                 &execution_event,
                 platform_ref.state.last_block_info(),
                 None,
                 platform_version,
-                platform_ref.state.previous_fee_versions(),
             )?;
 
             let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
 
+            check_tx_result.gas_wanted = gas_wanted_without_reservations(
+                &estimated_fee_result,
+                &reserved_bounds,
+                state_transition.user_fee_increase(),
+                platform_version,
+            )?;
             check_tx_result.fee_result = Some(estimated_fee_result);
 
             // A batch that spends a token shielded pool note the pool already records can only
@@ -279,6 +294,30 @@ where
     }
 }
 
+/// The `gas_wanted` check tx reports for a transition whose estimate, raised by its
+/// `user_fee_increase`, is `estimated_fee_result`: that estimate without the bounds check tx
+/// reserved on top of it (`reserved_bounds`) for state it did not validate, raised as fee
+/// validation raises the estimate. Tenderdash fills a block's gas with what transitions want,
+/// and a bound is what a block may bill, not what it is expected to; the reserved work a block
+/// bills whenever it processes the transition stays in. The increase is rounded down over the
+/// whole processing fee, so this is the estimate without the bounds, or one credit above it.
+/// Tenderdash reads it to reap transactions into a proposal and to refuse one wanting more than
+/// a block's gas (its post-check), so leaving the bounds out also admits a transition only they
+/// made want more than that.
+fn gas_wanted_without_reservations(
+    estimated_fee_result: &FeeResult,
+    reserved_bounds: &[ValidationOperation],
+    user_fee_increase: UserFeeIncrease,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, Error> {
+    let mut reserved = FeeResult::default();
+    ValidationOperation::add_many_to_fee_result(reserved_bounds, &mut reserved, platform_version)?;
+    reserved.apply_user_fee_increase(user_fee_increase);
+    Ok(estimated_fee_result
+        .total_base_fee()
+        .saturating_sub(reserved.total_base_fee()))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
@@ -296,10 +335,11 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
+    use dpp::dashcore::{signer, Network, PrivateKey};
+    use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
@@ -356,6 +396,8 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
+    use dpp::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::secp256k1::rand::SeedableRng as _;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
@@ -654,7 +696,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -730,7 +772,15 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         let check_result = platform
@@ -959,7 +1009,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 27_000_000_000,
+            balance: 29_000_000_000,
             revision: 0,
         }
         .into();
@@ -1084,7 +1134,11 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        // and DashPay v3's declarations and its contact request's shielded address add to the
+        // schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346990);
 
         let check_result = platform
             .check_tx(
@@ -1318,7 +1372,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -1397,7 +1451,15 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24006074280
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26011978620
         );
 
         let check_result = platform
@@ -1479,7 +1541,11 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 24_200_000_000, // we have enough balance only for 1 insertion (this is where this test is different)
+            // we have enough balance only for 1 insertion (this is where this test is different);
+            // from protocol version 15 one insertion stores the contract compiled, about 1.8
+            // times its bytes, and DashPay v3 adds its declarations and a document type, so it
+            // needs more
+            balance: 26_400_000_000,
             revision: 0,
         }
         .into();
@@ -1875,7 +1941,15 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         platform
@@ -1965,8 +2039,19 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
-            // contract bytes
-            27003119120
+            // contract bytes; the DPNS v3 preorder type the update copies in has its own
+            // (its per-owner index, its non-unique `nameHashAndHeight` index and its countable
+            // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
+            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
+            // protocol version 15 the contract is read and stored compiled (format version 2),
+            // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
+            // is charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress, and each compiled document type of the
+            // contract read and of the one stored records the width of its sums (one byte each)
+            31006813300
         );
 
         let check_result = platform
@@ -2557,7 +2642,15 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         platform
@@ -2680,7 +2773,11 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448640);
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        // and DashPay v3's declarations and its contact request's shielded address add to the
+        // schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448970);
 
         let check_result = platform
             .check_tx(
@@ -2833,6 +2930,12 @@ mod tests {
             .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        // The generator fills the payment addresses with random bytes, and from DashPay v3
+        // (protocol version 15) a rule holds each to its type byte, 0x00 or 0x01
+        if profile.properties().contains_key("corePaymentAddress") {
+            document.set("corePaymentAddress", vec![0u8; 21].into());
+            document.set("platformPaymentAddress", vec![1u8; 21].into());
+        }
 
         let mut altered_document = document.clone();
 
@@ -3902,15 +4005,13 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let mut rng = StdRng::seed_from_u64(433);
+        let mut rng = SecpStdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let secp = Secp256k1::new();
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3928,7 +4029,7 @@ mod tests {
             .expect("expected to get signable bytes");
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -4006,15 +4107,13 @@ mod tests {
         let (identity, signer, _, key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1);
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
-        let new_key = IdentityPublicKeyInCreationV0 {
+        let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -4028,10 +4127,6 @@ mod tests {
             }),
         };
 
-        let _signable_bytes = new_key
-            .signable_bytes()
-            .expect("expected to get signable bytes");
-
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
             revision: 1,
@@ -4044,11 +4139,33 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
+        // The added key proves possession by signing the transition's signable bytes, which
+        // leave the key signatures out
         let data = update_transition
             .signable_bytes()
             .expect("expected signable bytes");
+        let secret = new_key_pair.secret_key();
+        new_key.signature = signer::sign(&data, &secret.to_secret_bytes())
+            .expect("expected to sign")
+            .to_vec()
+            .into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
@@ -4079,6 +4196,108 @@ mod tests {
         // we shouldn't have any errors
 
         assert_eq!(validation_result.errors.len(), 0);
+    }
+
+    /// The fee estimate reads the stored keys an update disables; a key id the identity does
+    /// not have must be refused with the consensus error before it, not fail as a Drive
+    /// internal error, while a key it has passes the check and gets its fee estimated.
+    /// Checked at protocol version 14 and the latest version.
+    #[tokio::test]
+    async fn should_refuse_identity_update_disabling_a_missing_key_with_a_consensus_error() {
+        for (protocol_version, disable_key_id) in [14, PlatformVersion::latest().protocol_version]
+            .into_iter()
+            .flat_map(|version| [(version, 42), (version, 1)])
+        {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a platform version");
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, _, key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![disable_key_id],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut update_transition: StateTransition = update_transition.into();
+
+            let data = update_transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            update_transition.set_signature(
+                signer
+                    .sign(&key, data.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let update_transition_bytes = update_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let validation_result = platform
+                .check_tx(
+                    update_transition_bytes.as_slice(),
+                    FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected a consensus error, not an internal error");
+
+            if disable_key_id == 42 {
+                assert_matches!(
+                    validation_result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::MissingIdentityPublicKeyIdsError(error)
+                    )] if error.ids() == &vec![42],
+                    "protocol version {protocol_version}"
+                );
+            } else {
+                assert!(
+                    validation_result.errors.is_empty(),
+                    "protocol version {protocol_version}: {:?}",
+                    validation_result.errors
+                );
+                assert!(
+                    validation_result
+                        .data
+                        .as_ref()
+                        .and_then(|result| result.fee_result.as_ref())
+                        .is_some(),
+                    "protocol version {protocol_version}: expected a fee estimate"
+                );
+            }
+        }
     }
 
     #[tokio::test]
@@ -4335,7 +4554,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -4603,7 +4822,7 @@ mod tests {
         let identity: Identity = IdentityV0 {
             id: Identifier::new([7; 32]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 25_000_000_000, // 0.25 Dash
+            balance: 27_000_000_000, // 0.27 Dash
             revision: 0,
         }
         .into();
@@ -4731,7 +4950,7 @@ mod tests {
                     BasicError::SerializedObjectParsingError(_)
                 ))
             );
-            assert_eq!(balance, 25_000_000_000, "nothing is charged");
+            assert_eq!(balance, 27_000_000_000, "nothing is charged");
         }
     }
 
@@ -4753,7 +4972,7 @@ mod tests {
                 execution_result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
-            assert!(balance < 25_000_000_000, "the create is paid");
+            assert!(balance < 27_000_000_000, "the create is paid");
         }
     }
 }

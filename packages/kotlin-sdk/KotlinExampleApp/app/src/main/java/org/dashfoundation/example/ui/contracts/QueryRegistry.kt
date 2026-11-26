@@ -1,6 +1,12 @@
 package org.dashfoundation.example.ui.contracts
 
+import kotlinx.serialization.json.Json
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.queries.NodeTransitionStatus
+import org.dashfoundation.dashsdk.queries.OwnerTransactionsInBlock
+import org.dashfoundation.dashsdk.queries.PlatformBlockList
+import org.dashfoundation.dashsdk.queries.TransitionStatusByHash
+import org.dashfoundation.example.ui.identity.decode32ByteHex
 
 /**
  * The runnable platform-query registry — the Kotlin counterpart of the
@@ -33,6 +39,25 @@ internal class QueryDefinition(
     val description: String,
     val inputs: List<QueryInput>,
     val diagnosticInputs: Map<String, String> = emptyMap(),
+    /**
+     * False keeps the query out of the Diagnostics "Run All" even when it
+     * needs no input: `DiagnosticsView.swift`'s `queriesToTest` does not run
+     * it, as for the decision proposal reads, which fail on any network
+     * below protocol version 15.
+     */
+    val runsInDiagnostics: Boolean = true,
+    /**
+     * A note the form shows before anything is sent, as for the transition status reads,
+     * which send a hash to the app's nodes (`QueryDetailView.swift`'s `queryDetail.privacyNote`).
+     */
+    val privacyNote: String? = null,
+    /**
+     * True clears the result when an input is edited or the SDK replaced, and drops a read
+     * that completes after either: the block and transition status reads, whose answers would
+     * otherwise sit beside an edited height, identity or hash (`QueryDetailView.swift`'s
+     * `inputBoundQueries`).
+     */
+    val resultFollowsInputs: Boolean = false,
     val execute: suspend (Sdk, Map<String, String>) -> String?,
 )
 
@@ -402,7 +427,10 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             QueryInput("contractId", "Contract ID", required = true),
             QueryInput("documentType", "Document Type", required = true, placeholder = "domain"),
             QueryInput("indexName", "Index Name", required = true, placeholder = "parentNameAndLabel"),
-            QueryInput("indexValues", "Index Values (JSON)", required = true),
+            QueryInput(
+                "indexValues", "Index Values (JSON)", required = true,
+                placeholder = "[\"dash\", \"a11ce\"]; 0x label: [\"dash\", \"\\\\0xf0rd\"]",
+            ),
             QueryInput("resultType", "Result Type (0/1/2)", required = false, placeholder = "2"),
             QueryInput("count", "Count", required = false, placeholder = "5"),
         ),
@@ -432,7 +460,10 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             QueryInput("contractId", "Contract ID", required = true),
             QueryInput("documentType", "Document Type", required = true, placeholder = "domain"),
             QueryInput("indexName", "Index Name", required = true, placeholder = "parentNameAndLabel"),
-            QueryInput("indexValues", "Index Values (JSON)", required = true),
+            QueryInput(
+                "indexValues", "Index Values (JSON)", required = true,
+                placeholder = "[\"dash\", \"a11ce\"]; 0x label: [\"dash\", \"\\\\0xf0rd\"]",
+            ),
             QueryInput("contestantId", "Contestant ID", required = true),
             QueryInput("count", "Count", required = false, placeholder = "5"),
         ),
@@ -488,6 +519,204 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             endTimeMs = inputs["endTimeMs"]?.trim()?.toLongOrNull() ?: 0,
             limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
         )
+    },
+
+    // ── Decision Proposals (protocol version 15) ──────────────────────────
+    // The typed reads of `Sdk.decisionProposals`, shown as their Kotlin
+    // values. `DecisionProposalsScreen` is the full flow (list, file, edit,
+    // vote); these rows run each read on its own.
+    QueryDefinition(
+        name = "getDecisionProposal",
+        label = "Get Decision Proposal",
+        description = "Fetch a decision proposal by its base58 id.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.decisionProposals.fetch(inputs.getValue("proposalId").trim())?.toString()
+    },
+    QueryDefinition(
+        name = "getDecisionProposalsByEndDate",
+        label = "Get Decision Proposals by End Date",
+        description = "Proposals closing soonest first; the current time as the start lists the open ones.",
+        inputs = listOf(
+            QueryInput("endDateFromMs", "End date from (ms, included)", required = false),
+            QueryInput("endDateToMs", "End date before (ms)", required = false),
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.decisionProposals.listByEndDate(
+            endDateFromMs = inputs["endDateFromMs"]?.trim()?.toLongOrNull() ?: 0,
+            endDateToMs = inputs["endDateToMs"]?.trim()?.toLongOrNull() ?: 0,
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getDecisionProposalsByOwner",
+        label = "Get Decision Proposals by Owner",
+        description = "The proposals an identity filed, in the order it filed them.",
+        inputs = listOf(
+            QueryInput("ownerId", "Owner Identity ID", required = true),
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.decisionProposals.listByOwner(
+            ownerId = inputs.getValue("ownerId").trim(),
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getDecisionProposalsByCreatedAt",
+        label = "Get Decision Proposals by Creation",
+        description = "Every decision proposal, newest first.",
+        inputs = listOf(
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.decisionProposals.listByCreatedAt(
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getDecisionProposalVotePollId",
+        label = "Get Decision Proposal Vote Poll ID",
+        description = "The id a proposal's yes/no poll is listed under.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.decisionProposals.votePollId(inputs.getValue("proposalId").trim())
+    },
+    QueryDefinition(
+        name = "getDecisionProposalVotePollState",
+        label = "Get Decision Proposal Vote Poll State",
+        description = "The status, tallies and result of a proposal's yes/no poll.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.decisionProposals.votePollState(inputs.getValue("proposalId").trim())?.toString()
+    },
+    QueryDefinition(
+        name = "getMasternodeDecisionProposalVote",
+        label = "Get Masternode Decision Proposal Vote",
+        description = "A masternode's answer on a proposal while its poll is open.",
+        inputs = listOf(
+            QueryInput("proTxHash", "pro_tx_hash (64 hex chars, wire order)", required = true),
+            QueryInput("proposalId", "Proposal ID", required = true),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        val proTxHash = requireNotNull(decode32ByteHex(inputs.getValue("proTxHash"))) {
+            "pro_tx_hash must be 32 bytes (64 hex characters)"
+        }
+        sdk.decisionProposals.masternodeVote(proTxHash, inputs.getValue("proposalId").trim())
+            ?.toString()
+    },
+
+    // ── Multiple Choice Proposals (protocol version 15) ───────────────────
+    // The typed reads of `Sdk.multipleChoiceProposals`, shown as their
+    // Kotlin values. `MultipleChoiceProposalsScreen` is the full flow (list,
+    // file, edit, enter a choice, vote); these rows run each read on its own.
+    QueryDefinition(
+        name = "getMultipleChoiceProposal",
+        label = "Get Multiple Choice Proposal",
+        description = "Fetch a multiple choice proposal by its base58 id.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.fetch(inputs.getValue("proposalId").trim())?.toString()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalsByOwner",
+        label = "Get Multiple Choice Proposals by Owner",
+        description = "The multiple choice proposals an identity filed, in the order it filed them.",
+        inputs = listOf(
+            QueryInput("ownerId", "Owner Identity ID", required = true),
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.listByOwner(
+            ownerId = inputs.getValue("ownerId").trim(),
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalsByCreatedAt",
+        label = "Get Multiple Choice Proposals by Creation",
+        description = "Every multiple choice proposal, newest first.",
+        inputs = listOf(
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.listByCreatedAt(
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalVote",
+        label = "Get Multiple Choice Proposal Vote",
+        description = "The choices of a proposal with their tallies, and how the vote ended once it did.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.vote(inputs.getValue("proposalId").trim()).toString()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalKeptChoice",
+        label = "Get Multiple Choice Proposal Kept Choice",
+        description = "The choice a proposal's finished vote kept.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.keptChoice(inputs.getValue("proposalId").trim())?.toString()
+    },
+    QueryDefinition(
+        name = "getMasternodeMultipleChoiceVote",
+        label = "Get Masternode Multiple Choice Vote",
+        description = "A masternode's answer among a proposal's choices while the vote runs.",
+        inputs = listOf(
+            QueryInput("proTxHash", "pro_tx_hash (64 hex chars, wire order)", required = true),
+            QueryInput("proposalId", "Proposal ID", required = true),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        val proTxHash = requireNotNull(decode32ByteHex(inputs.getValue("proTxHash"))) {
+            "pro_tx_hash must be 32 bytes (64 hex characters)"
+        }
+        sdk.multipleChoiceProposals
+            .masternodeVote(proTxHash, inputs.getValue("proposalId").trim())
+            ?.toString()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalProcessingFee",
+        label = "Get Multiple Choice Proposal Processing Fee",
+        description = "What creating a multiple choice proposal adds to the processing fee, in credits.",
+        inputs = emptyList(),
+        runsInDiagnostics = false,
+    ) { sdk, _ ->
+        "${sdk.multipleChoiceProposals.processingFee()} credits"
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalChoiceFundToJoin",
+        label = "Get Choice Fund to Join",
+        description = "The contest fund a choice entered now for a proposal pays, in credits.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        "${sdk.multipleChoiceProposals.choiceFundToJoin(inputs.getValue("proposalId").trim())} credits"
     },
 
     // ── Protocol & Version ────────────────────────────────────────────────
@@ -567,6 +796,45 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
             startAfter = inputs["startAfter"]?.takeIf { it.isNotBlank() },
         )
+    },
+
+    // Blocks (protocol version 15): the Block Explorer is the full flow; these rows return
+    // the JSON rs-sdk-ffi writes, decoded and written back
+    QueryDefinition(
+        name = "getBlocks",
+        label = "Get Blocks",
+        description = "Up to 10 consecutive blocks with every state transition and its " +
+            "result, proved by the block's quorum signature (protocol version 15).",
+        inputs = listOf(
+            QueryInput("startHeight", "Start Height", required = true, placeholder = "The first block's height, from 1"),
+            QueryInput("count", "Count", required = true, placeholder = "1 to 10"),
+        ),
+        runsInDiagnostics = false,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val blocks = sdk.blocks.getBlocks(
+            startHeight = requiredWholeNumber(inputs, "startHeight", "Start Height"),
+            count = requiredWholeNumber(inputs, "count", "Count").toIntOrThrow("Count"),
+        )
+        CatalogJson.encodeToString(PlatformBlockList.serializer(), blocks)
+    },
+    QueryDefinition(
+        name = "getOwnerTransactionsInBlock",
+        label = "Get Owner Transactions In Block",
+        description = "An identity's state transitions in one block: each proved, the list " +
+            "not proved complete (protocol version 15).",
+        inputs = listOf(
+            QueryInput("height", "Block Height", required = true),
+            QueryInput("ownerId", "Identity ID", required = true, placeholder = "Base58 identity id"),
+        ),
+        runsInDiagnostics = false,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val answer = sdk.blocks.getOwnerTransactionsInBlock(
+            height = requiredWholeNumber(inputs, "height", "Block Height"),
+            ownerId = inputs.getValue("ownerId"),
+        )
+        CatalogJson.encodeToString(OwnerTransactionsInBlock.serializer(), answer)
     },
 
     // ── Token ─────────────────────────────────────────────────────────────
@@ -788,4 +1056,58 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             keysJson = inputs["keys"]?.takeIf { it.isNotBlank() },
         )
     },
+    // Transition status (protocol version 15): the Transition Status Checker is the full flow
+    QueryDefinition(
+        name = "getRecentStateTransitionStatus",
+        label = "Get Recent State Transition Status (unproved)",
+        description = "Public transitions only: the hash goes to the app's nodes. What one " +
+            "node says of a transition hash: committed, pending or unknown. Unproved, one " +
+            "node's word (protocol version 15).",
+        inputs = listOf(
+            QueryInput("transitionHash", "State Transition Hash", required = true, placeholder = "64 hex characters"),
+        ),
+        runsInDiagnostics = false,
+        privacyNote = TransitionStatusPrivacy.NOTE,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val status = sdk.blocks.getRecentStateTransitionStatus(inputs.getValue("transitionHash"))
+        CatalogJson.encodeToString(NodeTransitionStatus.serializer(), status)
+    },
+    QueryDefinition(
+        name = "getStateTransitionStatusByHash",
+        label = "Check State Transition Status",
+        description = "Public transitions only: the hash goes to the app's nodes. A " +
+            "transition hash's status, proved by its block when the node says committed; " +
+            "otherwise the node's unproved word (protocol version 15).",
+        inputs = listOf(
+            QueryInput("transitionHash", "State Transition Hash", required = true, placeholder = "64 hex characters"),
+        ),
+        runsInDiagnostics = false,
+        privacyNote = TransitionStatusPrivacy.NOTE,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val status = sdk.blocks.getStateTransitionStatusByHash(inputs.getValue("transitionHash"))
+        CatalogJson.encodeToString(TransitionStatusByHash.serializer(), status)
+    },
 )
+
+/** Writes a decoded block or status answer back as the snake_case JSON rs-sdk-ffi wrote. */
+private val CatalogJson = Json
+
+/** The form input [key] read as a whole number, refused with its [label] otherwise. */
+private fun requiredWholeNumber(inputs: Map<String, String>, key: String, label: String): Long =
+    inputs[key]?.trim()?.toLongOrNull()?.takeIf { it >= 0 }
+        ?: throw IllegalArgumentException("$label must be a whole number")
+
+/** This whole number as an Int, refused with its [label] when it does not fit. */
+private fun Long.toIntOrThrow(label: String): Int =
+    takeIf { it <= Int.MAX_VALUE }?.toInt()
+        ?: throw IllegalArgumentException("$label must be a whole number")
+
+/**
+ * A decision proposal listing page (yes/no or multiple choice) as text: its size, then one
+ * proposal per line.
+ */
+private fun List<Any>.describeProposals(): String =
+    "$size proposal" + (if (size == 1) "" else "s") +
+        joinToString(separator = "\n", prefix = if (isEmpty()) "" else "\n")

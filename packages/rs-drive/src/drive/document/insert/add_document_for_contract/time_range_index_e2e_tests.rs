@@ -22,7 +22,7 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexBucketing};
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -88,7 +88,6 @@ fn insert_ttl_like(drive: &Drive, contract: &DataContract, doc: &Document) {
             true,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .unwrap();
 }
@@ -156,7 +155,6 @@ fn assert_index_only_ttl_delete(step: u64, ttl: u64, elapsed: u64, permanent: bo
             true,
             None,
             pv,
-            None,
         )
         .expect("expired paths must not prevent deletion of surviving entries");
     if permanent {
@@ -382,7 +380,6 @@ fn assert_maximum_overlap_ttl_throughput(deep_and_burst: bool) {
                 true,
                 Some(&tx),
                 pv,
-                None,
             )
             .unwrap();
         if [127, 191, 319].contains(&i) {
@@ -492,7 +489,6 @@ fn assert_ttl_document_batch(case: TtlBatchCase, ttl: bool) {
                 true,
                 None,
                 pv,
-                None,
             )
             .unwrap();
     }
@@ -505,6 +501,7 @@ fn assert_ttl_document_batch(case: TtlBatchCase, ttl: bool) {
             .map(|i| {
                 DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
                     document_id: docs[i].id(),
+                    deleter_id: None,
                     contract_info: DataContractInfo::BorrowedDataContract(&contract),
                     document_type_info: DocumentTypeInfo::DocumentTypeRef(dt),
                 })
@@ -575,10 +572,10 @@ fn assert_ttl_document_batch(case: TtlBatchCase, ttl: bool) {
                 .unwrap();
         } else {
             let estimated = drive
-                .apply_drive_operations(ops.clone(), false, &now, Some(&tx), pv, None)
+                .apply_drive_operations(ops.clone(), false, &now, Some(&tx), pv)
                 .unwrap();
             let actual = drive
-                .apply_drive_operations(ops.clone(), true, &now, Some(&tx), pv, None)
+                .apply_drive_operations(ops.clone(), true, &now, Some(&tx), pv)
                 .unwrap();
             assert!(estimated.storage_fee >= actual.storage_fee);
             assert!(estimated.processing_fee >= actual.processing_fee);
@@ -677,10 +674,15 @@ fn should_apply_time_range_batches_through_raw_conversion_without_ttl() {
 /// without the caller's transaction. Neither refusal may leave a trace.
 #[test]
 fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
+    for pv in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+        assert_raw_conversion_refusals(pv);
+    }
+}
+
+fn assert_raw_conversion_refusals(pv: &PlatformVersion) {
     use crate::error::drive::DriveError;
     use crate::util::batch::drive_op_batch::{DocumentOperationType, DriveOperation};
     use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
-    let pv = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(pv));
     let contract = build_ttl_contract_with_index_keys(230, vec![]);
     drive
@@ -724,7 +726,6 @@ fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
             true,
             None,
             pv,
-            None,
         )
         .unwrap();
     // Inside the bucket's TTL, so the delete still removes ephemeral entries.
@@ -736,6 +737,7 @@ fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
         vec![DriveOperation::DocumentOperation(
             DocumentOperationType::DeleteDocument {
                 document_id: doc.id(),
+                deleter_id: None,
                 contract_info: DataContractInfo::BorrowedDataContract(&contract),
                 document_type_info: DocumentTypeInfo::DocumentTypeRef(dt),
             },
@@ -1003,7 +1005,6 @@ fn time_range_insert_fans_out_to_overlapping_buckets_and_delete_removes_them() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -1038,7 +1039,6 @@ fn time_range_insert_fans_out_to_overlapping_buckets_and_delete_removes_them() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("delete document");
 
@@ -1123,7 +1123,6 @@ fn time_range_update_moves_between_buckets_and_suffix_changes() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -1139,7 +1138,6 @@ fn time_range_update_moves_between_buckets_and_suffix_changes() {
                 None,
                 None,
                 platform_version,
-                None,
             )
             .unwrap_or_else(|e| panic!("update document ({step}): {e:?}"));
     };
@@ -1188,7 +1186,6 @@ fn time_range_update_moves_between_buckets_and_suffix_changes() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("delete document");
     for bucket in &second_buckets {
@@ -1341,7 +1338,6 @@ fn insert_post(
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 }
@@ -1908,7 +1904,6 @@ fn unique_time_range_index_update_moves_the_entry_between_suffixes() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -1935,7 +1930,6 @@ fn unique_time_range_index_update_moves_the_entry_between_suffixes() {
             None,
             None,
             platform_version,
-            None,
         )
         .expect("update document");
 
@@ -1980,7 +1974,6 @@ fn unique_time_range_index_update_moves_the_entry_between_suffixes() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add second document into the vacated slot");
     assert_eq!(
@@ -1999,7 +1992,6 @@ fn unique_time_range_index_update_moves_the_entry_between_suffixes() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("delete document");
     assert_eq!(
@@ -2187,7 +2179,6 @@ fn two_grids_over_one_timestamp_write_and_read_independently() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -2259,7 +2250,6 @@ fn two_grids_over_one_timestamp_write_and_read_independently() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("delete document");
     assert_eq!(count_for(&trending, shared_bucket), 0);
@@ -2542,7 +2532,6 @@ fn ranked_chain_below_bucket_update_materializes_like_insert() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -2563,7 +2552,6 @@ fn ranked_chain_below_bucket_update_materializes_like_insert() {
             None,
             None,
             platform_version,
-            None,
         )
         .expect("update document to a new group value");
 
@@ -2769,7 +2757,6 @@ fn ttl_drops_expired_buckets_and_walkers_skip_them() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
         document
@@ -2811,7 +2798,6 @@ fn ttl_drops_expired_buckets_and_walkers_skip_them() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("deleting a document whose windows were dropped succeeds");
 
@@ -2846,7 +2832,6 @@ fn ttl_drops_expired_buckets_and_walkers_skip_them() {
             None,
             None,
             platform_version,
-            None,
         )
         .expect("updating a document whose windows were all dropped succeeds");
     assert!(
@@ -2873,7 +2858,6 @@ fn ttl_drops_expired_buckets_and_walkers_skip_them() {
             None,
             None,
             platform_version,
-            None,
         )
         .expect("updating a live document under a TTL'd index succeeds");
 
@@ -3035,7 +3019,6 @@ fn an_unwritten_window_ranks_empty_and_proves_it() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
     };
@@ -3376,7 +3359,6 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
         document
@@ -3450,7 +3432,6 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .unwrap_or_else(|e| panic!("deleting a doc from a {label} must succeed: {e:?}"));
     }
@@ -3482,6 +3463,20 @@ fn build_time_range_contract_with_index_keys(
     seed: u8,
     ttl_seconds: Option<u64>,
     extra_index_keys: Vec<(Value, Value)>,
+) -> DataContract {
+    build_time_range_contract_with_amount(seed, ttl_seconds, extra_index_keys, 100_000_000, false)
+}
+
+/// The same contract with `amount` declared up to `amount_maximum`, and, when
+/// `sums_documents`, the type keeping the total of `amount` over its documents
+/// (`documentsSummable`). An `amount_maximum` past 2^27 makes the type keep its
+/// sums in 128 bits from protocol version 15, which takes the type total.
+fn build_time_range_contract_with_amount(
+    seed: u8,
+    ttl_seconds: Option<u64>,
+    extra_index_keys: Vec<(Value, Value)>,
+    amount_maximum: u64,
+    sums_documents: bool,
 ) -> DataContract {
     let factory =
         DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
@@ -3522,18 +3517,26 @@ fn build_time_range_contract_with_index_keys(
         time_range_map.push((Value::Text("ttl".to_string()), Value::U64(ttl)));
     }
     index_map.extend(extra_index_keys);
-    let document_schema = platform_value!({
+    let mut document_schema = platform_value!({
         "type": "object",
         "properties": {
             // 59: the Avg axis's 16-byte sort key tightens the ranked
             // group-key cap below the Count axis's 61.
             "hashtag": {"type": "string", "maxLength": 59, "position": 0},
-            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1},
+            "amount": {"type": "integer", "minimum": 0, "maximum": amount_maximum, "position": 1},
         },
         "required": ["hashtag", "amount", "$createdAt"],
         "indices": Value::Array(vec![Value::Map(index_map)]),
         "additionalProperties": false,
     });
+    if sums_documents {
+        document_schema
+            .insert(
+                "documentsSummable".to_string(),
+                Value::Text("amount".to_string()),
+            )
+            .expect("expected to set documentsSummable");
+    }
     let schemas = platform_value!({ "post": document_schema });
     factory
         .create_with_value_config(Identifier::from([seed; 32]), 0, schemas, None, None)
@@ -3607,7 +3610,6 @@ fn run_ttl_drain_cycle(contract: &DataContract) {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
     };
@@ -3684,6 +3686,57 @@ fn ttl_drainage_covers_every_parent_layout() {
     // ProvableCountProvableSumIndexedTree parent (rankedAverageable).
     run_ttl_drain_cycle(&build_ttl_contract_with_index_keys(
         213,
+        vec![
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rankedAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ],
+    ));
+}
+
+/// The two indexed parents of a type that keeps its sums in 128 bits
+/// (protocol version 15): a group under each leaves through the indexed-tree
+/// delete of its parent's width, and a later write finds the bucket gone.
+#[test]
+fn ttl_drainage_covers_the_parent_layouts_of_128_bit_sums() {
+    let wide = |seed: u8, keys: Vec<(Value, Value)>| {
+        let contract = build_time_range_contract_with_amount(
+            seed,
+            Some(4 * HOUR_SECONDS),
+            keys,
+            u64::from(u32::MAX),
+            true,
+        );
+        assert!(contract
+            .document_type_for_name("post")
+            .expect("post")
+            .uses_big_sums());
+        contract
+    };
+    // ProvableBigSumIndexedTree parent (rankedSummable over `amount`).
+    run_ttl_drain_cycle(&wide(
+        216,
+        vec![
+            (
+                Value::Text("summable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(true)),
+            (Value::Text("rankedSummable".to_string()), Value::Bool(true)),
+        ],
+    ));
+    // ProvableCountProvableBigSumIndexedTree parent (rankedAverageable).
+    run_ttl_drain_cycle(&wide(
+        217,
         vec![
             (
                 Value::Text("averageable".to_string()),
@@ -3790,7 +3843,6 @@ fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -3845,9 +3897,10 @@ fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
             document.id(),
             &contract,
             document_type,
+            &BlockInfo::default_with_time(after_expiry_ms),
+            None,
             None,
             &mut None,
-            after_expiry_ms,
             None,
             platform_version,
         )
@@ -3957,7 +4010,6 @@ fn ttl_draining_write_never_exceeds_its_estimate() {
                 apply,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document")
     };
@@ -4065,7 +4117,6 @@ fn ttl_update_only_write_drains_expired_buckets() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -4086,7 +4137,6 @@ fn ttl_update_only_write_drains_expired_buckets() {
             None,
             None,
             platform_version,
-            None,
         )
         .expect("an update past the horizon succeeds and drains");
 
@@ -4219,7 +4269,6 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
                 apply,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document")
     };
@@ -4272,7 +4321,6 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("delete document")
     };
@@ -4450,7 +4498,6 @@ fn ttl_shared_grid_drains_once_per_write() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
 
@@ -4499,7 +4546,6 @@ fn ttl_shared_grid_drains_once_per_write() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add extra group document");
     }
@@ -4525,7 +4571,6 @@ fn ttl_shared_grid_drains_once_per_write() {
                 None,
                 None,
                 platform_version,
-                None,
             )
             .expect("an update against a partially drained shared-grid bucket succeeds");
     };
@@ -4650,7 +4695,6 @@ fn ttl_delete_only_write_drains_expired_buckets() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
         document.id()
@@ -4671,7 +4715,6 @@ fn ttl_delete_only_write_drains_expired_buckets() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("a delete past the horizon succeeds and drains");
 
@@ -4799,7 +4842,6 @@ fn grouped_creates_reuse_pending_trees_under_a_ttl_level() {
             },
             None,
             platform_version,
-            None,
         )
         .expect("a grouped create sharing one new live TTL bucket must apply");
 
@@ -4896,7 +4938,6 @@ fn apply_drive_operations_rolls_back_ttl_preparation_when_conversion_fails_witho
             true,
             None,
             platform_version,
-            None,
         )
         .expect("add document");
     let root_before = drive
@@ -4913,6 +4954,7 @@ fn apply_drive_operations_rolls_back_ttl_preparation_when_conversion_fails_witho
             vec![DriveOperation::DocumentOperation(
                 DocumentOperationType::DeleteDocument {
                     document_id: missing,
+                    deleter_id: None,
                     contract_info: DataContractInfo::BorrowedDataContract(&contract),
                     document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
                 },
@@ -4924,7 +4966,6 @@ fn apply_drive_operations_rolls_back_ttl_preparation_when_conversion_fails_witho
             },
             None,
             platform_version,
-            None,
         )
         .expect_err("deleting a missing document fails conversion");
     let root_after = drive
@@ -4980,7 +5021,6 @@ fn delete_index_only_document_rolls_back_ttl_preparation_when_the_tuple_mismatch
             true,
             None,
             pv,
-            None,
         )
         .expect_err("a tuple no entry commits to must be rejected");
     let root_after = drive

@@ -8,8 +8,8 @@ use crate::platform_types::platform_state::platform_state_for_saving::v2::{
 };
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::bincode::config;
 use dpp::dashcore::hashes::Hash;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::platform_state::PlatformStateEntryKind;
@@ -74,11 +74,7 @@ impl<C> Platform<C> {
             // Always structure 1 here: this is the store that writes the entries
             // the record depends on.
             let record = PlatformStateForSaving::V2(PlatformStateForSavingV2::from(state));
-            let bytes = bincode::encode_to_vec(
-                record,
-                config::standard().with_big_endian().with_no_limit(),
-            )
-            .map_err(|e| {
+            let bytes = bincode::encode_to_vec(record, PLATFORM_BINCODE_CONFIG).map_err(|e| {
                 ProtocolError::PlatformSerializationError(format!(
                     "unable to serialize PlatformState: {e}"
                 ))
@@ -179,8 +175,7 @@ mod tests {
     use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dpp::bincode::config;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls::SecretKey;
     use dpp::core_types::validator::v0::ValidatorV0;
     use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
     use dpp::core_types::validator_set::ValidatorSet;
@@ -190,6 +185,7 @@ mod tests {
     use dpp::dashcore_rpc::dashcore_rpc_json::{
         DMNState, DMNStateDiff, MasternodeListItem, MasternodeType,
     };
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::PlatformVersion;
     use drive::drive::platform_state::PlatformStateEntryKind;
     use drive::grovedb::Transaction;
@@ -259,7 +255,7 @@ mod tests {
     /// threshold key derived from `byte`.
     fn validator_set(byte: u8, core_height: u32) -> ValidatorSet {
         let mut rng = StdRng::seed_from_u64(byte as u64);
-        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let threshold_public_key = SecretKey::random(&mut rng).public_key();
         let member = ValidatorV0 {
             pro_tx_hash: pro_tx_hash(byte),
             public_key: None,
@@ -356,12 +352,10 @@ mod tests {
             .fetch_platform_state_bytes(Some(&transaction), PlatformVersion::latest())
             .expect("fetch record")
             .expect("a record was stored");
-        let record: PlatformStateForSaving = bincode::decode_from_slice(
-            &bytes,
-            config::standard().with_big_endian().with_no_limit(),
-        )
-        .expect("decode record")
-        .0;
+        let record: PlatformStateForSaving =
+            bincode::decode_from_slice(&bytes, PLATFORM_BINCODE_CONFIG)
+                .expect("decode record")
+                .0;
         assert!(
             matches!(record, PlatformStateForSaving::V2(_)),
             "the record is structure 1"

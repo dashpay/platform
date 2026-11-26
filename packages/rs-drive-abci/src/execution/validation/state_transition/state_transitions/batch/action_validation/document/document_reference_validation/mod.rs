@@ -1,4 +1,7 @@
+pub(crate) mod choose_first_reservation;
+pub(crate) mod reference_lookup_reservation;
 pub mod v0;
+pub mod v1;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,6 +20,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::DocumentReferenceValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v1::DocumentReferenceValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 /// A document a create consumes: the commitment a `refersTo` lookup with a computed key
@@ -99,6 +103,12 @@ pub(crate) trait DocumentReferenceValidation {
     /// `minimumAgeBlocks`, and when the reference declares `consume` the document is pushed onto
     /// `consumed_documents` for the caller to delete with the create once it accepts it. A
     /// replace leaves it alone, since nothing it reads can have changed.
+    /// `opens_or_joins_contest` is whether the write is a create that opens or joins a contest
+    /// (it states the contest's fund): from protocol version 15 such a create reads no
+    /// `chooseFirst` competitors when its contest decides the `chooseFirst` (commitments to the
+    /// contest's values alone, ranked by creation height alone, at least a block old), the
+    /// contest deciding between its contenders.
+    /// Generation 0 does not take it, and holds every create to `chooseFirst`.
     ///
     /// When `derived_index_values` is given (a create, protocol version 14), an accepted write
     /// records there the value of each derived index property of the document type, read from
@@ -123,6 +133,7 @@ pub(crate) trait DocumentReferenceValidation {
         referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
+        opens_or_joins_contest: bool,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -152,7 +163,10 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
             .batch_state_transition
             .document_reference_validation
         {
-            0 => self.deletable_document_reference_target_is_gone_v0(
+            // Generation 1 changes nothing this check reads: what a consume keeps and a
+            // contested create's `chooseFirst` belong to a create's lookup, and a dynamic
+            // reference, which it resolves, is never deletable
+            0 | 1 => self.deletable_document_reference_target_is_gone_v0(
                 property,
                 referenced_id,
                 platform,
@@ -164,7 +178,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentBaseTransitionAction::deletable_document_reference_target_is_gone"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -178,6 +192,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
+        opens_or_joins_contest: bool,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -210,9 +225,26 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_document_references_v1(
+                document_data,
+                owner_id,
+                creator_id,
+                referring_system,
+                changed_fields,
+                stored_values,
+                opens_or_joins_contest,
+                platform,
+                block_info,
+                consumed_documents,
+                derived_index_values,
+                referenced_documents,
+                transaction,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentBaseTransitionAction::validate_document_references".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

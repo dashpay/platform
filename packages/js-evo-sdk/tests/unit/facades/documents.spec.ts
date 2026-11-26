@@ -27,6 +27,7 @@ describe('DocumentsFacade', () => {
   let getContestFundToJoinStub: SinonStub;
   let documentReplaceStub: SinonStub;
   let documentDeleteStub: SinonStub;
+  let documentEraseStub: SinonStub;
   let documentTransferStub: SinonStub;
   let documentPurchaseStub: SinonStub;
   let documentSetPriceStub: SinonStub;
@@ -73,7 +74,10 @@ describe('DocumentsFacade', () => {
       proof: {},
       metadata: {},
     });
-    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves(new Map());
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({
+      entries: [],
+      lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) },
+    });
     getDocumentHistoryWithProofInfoStub = this.sinon.stub(
       wasmSdk,
       'getDocumentHistoryWithProofInfo',
@@ -94,6 +98,7 @@ describe('DocumentsFacade', () => {
     getContestFundToJoinStub = this.sinon.stub(wasmSdk, 'getContestFundToJoin').resolves(undefined);
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
+    documentEraseStub = this.sinon.stub(wasmSdk, 'documentErase').resolves();
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
     documentPurchaseStub = this.sinon.stub(wasmSdk, 'documentPurchase').resolves();
     documentSetPriceStub = this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
@@ -168,12 +173,19 @@ describe('DocumentsFacade', () => {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
         documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
-        startAtMs: 1000,
+        startAfter: { timeMs: BigInt(1000), revision: BigInt(1) },
         limit: 10,
-        offset: 1,
       };
 
-      await client.documents.history(query);
+      const result = {
+        entries: [
+          { timeMs: BigInt(1000), revision: BigInt(2), document },
+          { timeMs: BigInt(1000), revision: BigInt(3), document },
+        ],
+        lifecycle: { state: 'ACTIVE', remainingRevisions: BigInt(3) },
+      };
+      getDocumentHistoryStub.resolves(result);
+      expect(await client.documents.history(query)).to.equal(result);
 
       expect(getDocumentHistoryStub).to.be.calledOnceWithExactly(query);
     });
@@ -185,11 +197,46 @@ describe('DocumentsFacade', () => {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
         documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        revision: BigInt(2),
       };
 
-      await client.documents.historyWithProof(query);
+      const result = {
+        data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } },
+        proof: { grovedbProof: new Uint8Array([2]) },
+        metadata: {},
+      };
+      getDocumentHistoryWithProofInfoStub.resolves(result);
+      expect(await client.documents.historyWithProof(query)).to.equal(result);
 
       expect(getDocumentHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  (['history', 'historyWithProof'] as const).forEach((method) => {
+    it(`should forward a returned history entry unchanged as the ${method} cursor`, async () => {
+      const entry = { timeMs: BigInt(1000), revision: BigInt(2), document };
+      const data = { entries: [entry], lifecycle: undefined };
+      const stub = method === 'history'
+        ? getDocumentHistoryStub : getDocumentHistoryWithProofInfoStub;
+      stub.resolves(method === 'history' ? data : { data, proof: {}, metadata: {} });
+      const query: wasmSDKPackage.DocumentHistoryQuery = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        startAtMs: BigInt(0),
+      };
+      const response = await client.documents[method](query);
+      const page = 'data' in response ? response.data : response;
+      const nextQuery: wasmSDKPackage.DocumentHistoryQuery = {
+        ...query,
+        startAtMs: undefined,
+        startAfter: page.entries[0],
+      };
+
+      await client.documents[method](nextQuery);
+
+      expect(stub.secondCall).to.have.been.calledWithExactly(nextQuery);
+      expect(stub.secondCall.args[0].startAfter).to.equal(entry);
     });
   });
 
@@ -305,6 +352,37 @@ describe('DocumentsFacade', () => {
     });
   });
 
+  describe('erase()', () => {
+    it('should erase the retained revisions of a deleted document', async () => {
+      const options = {
+        document,
+        identityKey,
+        signer,
+      };
+
+      await client.documents.erase(options);
+
+      expect(documentEraseStub).to.be.calledOnceWithExactly(options);
+    });
+
+    it('should accept document identifiers instead of a Document instance', async () => {
+      const options = {
+        document: {
+          id: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+          ownerId: '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
+          dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+          documentTypeName: 'note',
+        },
+        identityKey,
+        signer,
+      };
+
+      await client.documents.erase(options);
+
+      expect(documentEraseStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
   describe('transfer()', () => {
     it('should transfer document ownership to another identity', async () => {
       const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
@@ -353,6 +431,85 @@ describe('DocumentsFacade', () => {
       await client.documents.setPrice(options);
 
       expect(documentSetPriceStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('document revision on writes', () => {
+    const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+    const ownerId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
+    const documentId = '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah';
+    const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
+
+    // A document as Platform stores it: revision 1
+    async function fetchStoredDocument(): Promise<wasmSDKPackage.Document> {
+      getDocumentStub.resolves(new wasmSDKPackage.Document({
+        properties: { name: 'Card' },
+        documentTypeName: 'card',
+        dataContractId: contractId,
+        ownerId,
+        id: documentId,
+        revision: BigInt(1),
+      }));
+      const fetched = await client.documents.get(contractId, 'card', documentId);
+      expect(fetched).to.exist();
+      expect(fetched.revision).to.equal(BigInt(1));
+      return fetched;
+    }
+
+    const writes: Array<{
+      name: string;
+      stub: () => SinonStub;
+      call: (doc: wasmSDKPackage.Document) => Promise<void>;
+    }> = [
+      {
+        name: 'replace()',
+        stub: () => documentReplaceStub,
+        call: (doc) => client.documents.replace({ document: doc, identityKey, signer }),
+      },
+      {
+        name: 'transfer()',
+        stub: () => documentTransferStub,
+        call: (doc) => client.documents.transfer({
+          document: doc, recipientId, identityKey, signer,
+        }),
+      },
+      {
+        name: 'purchase()',
+        stub: () => documentPurchaseStub,
+        call: (doc) => client.documents.purchase({
+          document: doc, buyerId: recipientId, price: BigInt(1000), identityKey, signer,
+        }),
+      },
+      {
+        name: 'setPrice()',
+        stub: () => documentSetPriceStub,
+        call: (doc) => client.documents.setPrice({
+          document: doc, price: BigInt(1000), identityKey, signer,
+        }),
+      },
+    ];
+
+    writes.forEach(({ name, stub, call }) => {
+      it(`${name} should send the revision the caller set, without increasing it`, async () => {
+        const doc = await fetchStoredDocument();
+        doc.revision = (doc.revision ?? BigInt(0)) + BigInt(1);
+
+        await call(doc);
+
+        const [options] = stub().firstCall.args;
+        expect(options.document).to.equal(doc);
+        expect(options.document.revision).to.equal(BigInt(2));
+      });
+    });
+
+    it('delete() should send the document as fetched', async () => {
+      const doc = await fetchStoredDocument();
+
+      await client.documents.delete({ document: doc, identityKey, signer });
+
+      const [options] = documentDeleteStub.firstCall.args;
+      expect(options.document).to.equal(doc);
+      expect(options.document.revision).to.equal(BigInt(1));
     });
   });
 

@@ -144,6 +144,14 @@ describe('createDAPIAddressProviderFromOptions', () => {
       expect(result).to.be.an.instanceOf(SimplifiedMasternodeListDAPIAddressProvider);
     });
 
+    it('should connect `local` network to the local gateway', async () => {
+      const liveAddress = await createDAPIAddressProviderFromOptions({ network: 'local' })
+        .getLiveAddress();
+
+      expect(liveAddress.toString()).to.equal('https://127.0.0.1:2443');
+      expect(liveAddress.isSelfSignedCertificateAllowed()).to.be.true();
+    });
+
     it('should throw DAPIClientError if there is no config for a specified network', async () => {
       options.network = 'unknown';
 

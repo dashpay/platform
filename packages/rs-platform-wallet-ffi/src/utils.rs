@@ -1,13 +1,17 @@
 use crate::error::*;
+use crate::types::FFINetwork;
 use crate::{check_ptr, unwrap_result_or_return};
+use dashcore::Address;
+use std::ffi::CStr;
 use std::os::raw::{c_char, c_uchar};
+use std::str::FromStr;
 
-/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_slice`
+/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_secret_bytes`
 /// allocates a 32-byte scalar copy of the caller's private key, and `SecretKey`
 /// has no `Drop` wipe of its own — so without this the copy would survive on the
 /// stack after the call returns. Mirrors `WipingSecretKey` in
 /// `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs`.
-struct WipingSecretKey(dashcore::secp256k1::SecretKey);
+struct WipingSecretKey(dpp::secp256k1::SecretKey);
 
 impl Drop for WipingSecretKey {
     fn drop(&mut self) {
@@ -162,7 +166,6 @@ pub unsafe extern "C" fn platform_wallet_hash160(
     if data.is_null() || data_len == 0 || out_hash.is_null() {
         return -1;
     }
-    use dashcore::hashes::Hash;
     let bytes = std::slice::from_raw_parts(data, data_len);
     let hash = dashcore::hashes::hash160::Hash::hash(bytes);
     let h: [u8; 20] = hash.to_byte_array();
@@ -201,33 +204,55 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
     if private_key.is_null() || out_hash.is_null() {
         return -1;
     }
-    use dashcore::hashes::Hash;
-    use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use dpp::secp256k1::{PublicKey, SecretKey};
 
     let sk_bytes = std::slice::from_raw_parts(private_key, 32);
-    let secp = Secp256k1::new();
-    // `WipingSecretKey` scrubs the `from_slice`-allocated scalar copy on every
+    // `WipingSecretKey` scrubs the `from_secret_bytes`-allocated scalar copy on every
     // exit path (the success return below, the `Err` early return, and any
     // panic) — the caller's `private_key` bytes are theirs to manage, but this
     // copy must not linger.
-    let secret_key = match SecretKey::from_slice(sk_bytes) {
+    let secret_key = match <[u8; 32]>::try_from(sk_bytes)
+        .map_err(|_| dpp::secp256k1::Error::InvalidSecretKey)
+        .and_then(SecretKey::from_secret_bytes)
+    {
         Ok(sk) => WipingSecretKey(sk),
         Err(_) => return -1,
     };
-    let pubkey = PublicKey::from_secret_key(&secp, &secret_key.0).serialize();
+    let pubkey = PublicKey::from_secret_key(&secret_key.0).serialize();
     let hash = dashcore::hashes::hash160::Hash::hash(&pubkey);
     let h: [u8; 20] = hash.to_byte_array();
     std::ptr::copy_nonoverlapping(h.as_ptr(), out_hash, 20);
     0
 }
 
+/// Checks that `address` is a valid Core address for `network`.
+///
+/// Returns `Success` for a valid address and `ErrorInvalidParameter` when the
+/// address does not parse or belongs to another network.
+///
+/// # Safety
+/// `address` must point to a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_address_validate(
+    address: *const c_char,
+    network: FFINetwork,
+) -> PlatformWalletFFIResult {
+    check_ptr!(address);
+    let address = unwrap_result_or_return!(CStr::from_ptr(address).to_str());
+    let parsed = unwrap_result_or_return!(Address::from_str(address));
+    unwrap_result_or_return!(parsed.require_network(network.into()));
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Network;
+    use std::ffi::CString;
+    use std::ptr;
 
     #[test]
     fn test_hash160_matches_known_vector() {
-        use dashcore::hashes::Hash;
         let input = [0u8; 33];
         let mut out = [0u8; 20];
         let rc = unsafe { platform_wallet_hash160(input.as_ptr(), input.len(), out.as_mut_ptr()) };
@@ -262,8 +287,7 @@ mod tests {
 
     #[test]
     fn test_pubkey_hash_from_private_key_matches_canonical_derivation() {
-        use dashcore::hashes::Hash;
-        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use dpp::secp256k1::{PublicKey, SecretKey};
 
         // A fixed, in-range scalar.
         let mut scalar = [0u8; 32];
@@ -275,9 +299,8 @@ mod tests {
         };
         assert_eq!(rc, 0);
 
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&scalar).expect("in-range scalar");
-        let pubkey = PublicKey::from_secret_key(&secp, &sk).serialize();
+        let sk = SecretKey::from_secret_bytes(scalar).expect("in-range scalar");
+        let pubkey = PublicKey::from_secret_key(&sk).serialize();
         let expected: [u8; 20] = dashcore::hashes::hash160::Hash::hash(&pubkey).to_byte_array();
         assert_eq!(out, expected);
     }
@@ -366,5 +389,43 @@ mod tests {
 
             crate::platform_wallet_string_free(hex);
         }
+    }
+
+    #[test]
+    fn should_validate_addresses() {
+        let validate = |address: &str, network: FFINetwork| {
+            let address = CString::new(address).unwrap();
+            unsafe { platform_wallet_address_validate(address.as_ptr(), network) }.code
+        };
+        let testnet = Address::dummy(Network::Testnet, 1).to_string();
+        let mainnet = Address::dummy(Network::Mainnet, 1).to_string();
+
+        assert_eq!(
+            validate(&testnet, FFINetwork::Testnet),
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            validate(&testnet, FFINetwork::Regtest),
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            validate(&mainnet, FFINetwork::Mainnet),
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            validate(&testnet, FFINetwork::Mainnet),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            validate(&mainnet, FFINetwork::Testnet),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            validate("invalid_address", FFINetwork::Testnet),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+
+        let null = unsafe { platform_wallet_address_validate(ptr::null(), FFINetwork::Testnet) };
+        assert_eq!(null.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

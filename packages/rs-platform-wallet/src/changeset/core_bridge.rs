@@ -1854,6 +1854,32 @@ async fn build_core_changeset(
                 ..CoreChangeSet::default()
             }
         }
+        WalletEvent::ChainTruncated {
+            height,
+            txids,
+            unconfirmed_txids,
+            restored_outpoints,
+            ..
+        } => {
+            // TODO(#5380): mirror the truncation to the persister. The wallet
+            // has already dropped these records in memory, but `CoreChangeSet`
+            // cannot express it: the heights are monotonic-max on merge, a
+            // `SweepBatch` needs a winning transaction, and nothing demotes a
+            // confirmed record to unconfirmed. Until it can, the stored rows
+            // keep the replaced branch, and this arm does not lower the stored
+            // sync height: `PlatformWalletInfo::truncate_above` notes the
+            // truncation as an in-memory rewind instead, which the next
+            // DashPay backfill record round carries to the host unless a
+            // new-branch advance reaches it first.
+            tracing::warn!(
+                height,
+                removed = txids.len(),
+                unconfirmed = unconfirmed_txids.len(),
+                restored = restored_outpoints.len(),
+                "Chain truncation is not mirrored to the persister; stored wallet state keeps the replaced branch"
+            );
+            CoreChangeSet::default()
+        }
         WalletEvent::SyncHeightAdvanced { wallet_id, height } => {
             // A watermark queued before a rewind must not land after it.
             // `reconcile_dashpay_rescan` lowers the in-memory cursor and
@@ -2009,9 +2035,11 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => finality(inserted.iter().chain(updated.iter())),
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => {
-            Vec::new()
-        }
+        // TODO(#5380): a payment whose confirmation a truncation undid keeps
+        // the verdict it already has.
+        WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::ChainTruncated { .. } => Vec::new(),
     }
 }
 
@@ -2717,7 +2745,6 @@ mod swept_transaction_projection_tests {
     //! and a sweep that never reaches it leaves the dead rows on disk.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::Txid;
     use key_wallet::WalletCoreBalance;
     use key_wallet_manager::WalletManager;
@@ -2785,6 +2812,26 @@ mod swept_transaction_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         }
+    }
+
+    /// Pins the gap tracked in #5380: a truncation reaches the bridge but
+    /// produces no persistable change, least of all a sweep (it has no
+    /// winning transaction) or a height (heights only move up on merge).
+    #[tokio::test]
+    async fn should_persist_nothing_for_a_chain_truncation() {
+        let event = WalletEvent::ChainTruncated {
+            wallet_id: WALLET_ID,
+            height: WINNER_HEIGHT,
+            txids: vec![txid(1)],
+            unconfirmed_txids: vec![txid(2)],
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert!(cs.is_empty(), "a truncation is not mirrored yet");
     }
 
     #[tokio::test]
@@ -3002,7 +3049,6 @@ mod sent_payment_verdict_tests {
 
     use super::*;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
-    use dashcore::hashes::Hash as _;
     use dashcore::{BlockHash, Transaction, TxIn, Txid};
     use dpp::identity::{Identity, IdentityV0};
     use dpp::prelude::Identifier;
@@ -3430,7 +3476,6 @@ mod contact_watch_only_projection_tests {
     use crate::wallet::identity::IdentityManager;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, BlockHash, Txid};
     use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
@@ -4421,6 +4466,7 @@ mod contact_watch_only_projection_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         }
     }
 
@@ -4671,11 +4717,11 @@ mod contact_watch_only_projection_tests {
         );
     }
 
-    /// The order a pooled send with change takes when its lock is late: the
-    /// block confirms the slice that holds the change, the spend-only
-    /// sibling stays unconfirmed, and then the lock arrives. The stored row
-    /// keeps the block, and both slices go out, the mined one with the coin
-    /// that came back.
+    /// A pooled send with change whose lock is late, mined while the
+    /// spend-only sibling stays unconfirmed. Since rust-dashcore v0.46.1 the
+    /// block confirms every slice, but a wallet stored by v0.46.0 can still
+    /// hold such a row when the lock arrives. The stored row keeps the block,
+    /// and both slices go out, the mined one with the coin that came back.
     #[tokio::test]
     async fn should_re_emit_a_partly_mined_send_with_its_block_and_its_change() {
         let (mut ctx, spend) = dual_account_mempool_spend_with_change(1_000_000).await;
@@ -4685,8 +4731,14 @@ mod contact_watch_only_projection_tests {
         let mined = slice_contexts(&info, &txid);
         assert!(
             matches!(mined[&bip44_account_0()], TransactionContext::InBlock(_))
-                && matches!(mined[&bip32_account_0()], TransactionContext::Mempool),
-            "the block reaches only the slice with an output: {mined:?}"
+                && matches!(mined[&bip32_account_0()], TransactionContext::InBlock(_)),
+            "the block reaches every slice: {mined:?}"
+        );
+        set_slice_context(
+            &mut info,
+            bip32_account_0(),
+            &txid,
+            TransactionContext::Mempool,
         );
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);
@@ -5031,7 +5083,6 @@ mod usage_delta_tests {
     //! as the event adapter does at runtime.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::test_utils::TestWalletContext;
@@ -5275,7 +5326,6 @@ mod tests {
     /// enforce the address/script pairing.
     #[test]
     fn spent_utxos_carry_the_real_script_of_the_address_they_spend() {
-        use dashcore::hashes::Hash;
         use dashcore::{OutPoint, Transaction, TxIn, Txid};
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::managed_account::transaction_record::{
@@ -5631,6 +5681,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5683,6 +5734,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5748,6 +5800,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5828,6 +5881,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5943,6 +5997,64 @@ mod tests {
         assert_eq!(next[&wallet_id].core.synced_height, Some(1_200));
     }
 
+    /// The engine following a fork at `fork` after processing blocks up to
+    /// `processed`: the wallet is truncated under the manager's write lock.
+    async fn follow_fork(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        processed: u32,
+        fork: u32,
+    ) {
+        use key_wallet_manager::WalletInterface;
+        let mut wm = manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .metadata
+            .last_processed_height = processed;
+        WalletInterface::truncate_above(&mut *wm, fork).expect("the fork is followed");
+    }
+
+    /// A chain truncation lowers the cursor in memory like a rescan rewind.
+    /// Its `ChainTruncated` event reaches the adapter only after the advances
+    /// emitted before it, and projects to nothing (the persister does not
+    /// mirror it), so it cannot hold them back. Those advances, projected or
+    /// still queued, look current by height once the new branch has climbed
+    /// past them — yet storing one would put the durable cursor ahead of the
+    /// new branch's rows still in the channel, and a relaunch would skip them.
+    #[tokio::test]
+    async fn advances_from_before_a_chain_truncation_are_dropped_after_the_new_branch_climbs_past_them(
+    ) {
+        let (manager, mut receiver, wallet_id) = engine_wallet(0).await;
+        let durable = super::DurableCursors::default();
+        engine_advance(&manager, wallet_id, 1_000).await;
+        let mut projected = project(&manager, &durable, &mut receiver, 1).await; // in a batch
+        engine_advance(&manager, wallet_id, 1_001).await; // still queued
+        follow_fork(&manager, wallet_id, 1_001, 999).await;
+        engine_advance(&manager, wallet_id, 1_002).await; // the new branch climbs past both
+
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut projected).await;
+        assert_eq!(
+            projected[&wallet_id].core.synced_height, None,
+            "projected before the truncation: stripped at commit"
+        );
+        let mut queued = project(&manager, &durable, &mut receiver, 1).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut queued).await;
+        assert_eq!(
+            queued[&wallet_id].core.synced_height, None,
+            "queued before the truncation: dropped"
+        );
+
+        // The truncation itself, then the new branch's advance, which is stored.
+        let mut fresh = project(&manager, &durable, &mut receiver, 2).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut fresh).await;
+        assert_eq!(
+            fresh[&wallet_id].core.synced_height,
+            Some(1_002),
+            "the new branch's advance flows"
+        );
+    }
+
     /// A wallet removed and registered again under the same id shares the
     /// adapter with its predecessor, which can still hold that predecessor's
     /// advances — queued, or already projected. While nothing holds the id
@@ -5999,6 +6111,7 @@ mod tests {
         let retired = durable.retired().remove(&wallet_id).expect("retired");
         let mut successor = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -7060,7 +7173,6 @@ mod tests {
 
     /// A `TransactionsSwept` event for a helper below.
     fn swept_event(wallet_id: WalletId, txid_byte: u8, superseded_by_byte: u8) -> WalletEvent {
-        use dashcore::hashes::Hash as _;
         WalletEvent::TransactionsSwept {
             wallet_id,
             txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
@@ -7274,7 +7386,6 @@ mod tests {
     /// mirror after a wipe & recover.
     #[tokio::test]
     async fn block_processed_asset_lock_record_reconstructs_and_persists() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -7403,7 +7514,6 @@ mod tests {
     /// every store mirrors it forever.
     #[tokio::test]
     async fn transactions_swept_removes_the_tracked_asset_lock_it_funded() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -7553,7 +7663,6 @@ mod tests {
     /// funding transaction survived.
     #[tokio::test]
     async fn a_reinstating_reconstruction_folded_after_a_sweep_cancels_its_tombstone() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -7681,7 +7790,6 @@ mod tests {
         use std::sync::Arc;
 
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash as _;
         use key_wallet::account::account_type::StandardAccountType;
         use key_wallet::account::AccountType;
         use key_wallet::managed_account::transaction_record::{
@@ -7832,7 +7940,6 @@ mod tests {
     /// predicate considers both sub-changesets.
     #[test]
     fn asset_locks_only_batch_reaches_store() {
-        use dashcore::hashes::Hash as _;
         use dashcore::OutPoint;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -7845,6 +7952,8 @@ mod tests {
         asset_locks.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -8156,7 +8265,6 @@ mod tests {
     /// when the missing piece is the host's sweep capability.
     #[test]
     fn undeclared_sweep_capability_reports_the_watermark_as_frozen_not_rejected() {
-        use dashcore::hashes::Hash as _;
         let wallet_id = [9u8; 32];
         let (obs_tx, mut obs_rx) = unbounded_channel();
         // No capabilities declared, store() succeeds.
@@ -8695,7 +8803,6 @@ mod utxo_credit_verdict_tests {
     //! post-mutation state, as the event adapter does at runtime.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
@@ -8951,6 +9058,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -9047,6 +9155,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");

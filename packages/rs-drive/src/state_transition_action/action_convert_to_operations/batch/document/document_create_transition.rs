@@ -20,6 +20,8 @@ use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationTyp
 use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 use crate::error::drive::DriveError;
 
+mod v1;
+
 impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
         mut self,
@@ -50,11 +52,11 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                 let document_creation_token_cost_operations =
                     self.base().token_cost_operations(owner_id);
 
-                // In place in generation 0, which every table selects: only the protocol
-                // version 14 batch state validation sets consumed documents, and only for a
-                // create revealing a commitment through a `refersTo` lookup with a computed key
-                // declaring `consume`, which only that version's parser produces. Every earlier
-                // create has none and converts to exactly the operations it always did
+                // In place in generation 0: only the protocol version 14 batch state validation
+                // sets consumed documents, and only for a create revealing a commitment through a
+                // `refersTo` lookup with a computed key declaring `consume`, which only that
+                // version's parser produces. Every earlier create has none and converts to
+                // exactly the operations it always did
                 let consumed_documents = self.consumed_documents().to_vec();
 
                 // The values of the type's derived index properties (protocol version 14), which
@@ -187,10 +189,16 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
 
                 Ok(ops)
             }
+            1 => v1::into_high_level_batch_drive_operations_v1(
+                self,
+                epoch,
+                owner_id,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

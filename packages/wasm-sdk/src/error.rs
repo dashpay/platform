@@ -1,4 +1,5 @@
 use dash_sdk::dpp::ProtocolError;
+use dash_sdk::error::SDK_AHEAD_OF_NETWORK_ADVICE;
 use dash_sdk::platform::encrypted_for::EncryptedForError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
@@ -38,6 +39,7 @@ pub enum WasmSdkErrorKind {
     DriveInternalError,
 
     // Local helper kinds
+    /// An argument is invalid, including a query no node can answer as the requested result.
     InvalidArgument,
     SerializationError,
     NotFound,
@@ -93,12 +95,13 @@ impl WasmSdkError {
     }
 
     /// Converts `err` as `?` would, keeping its kind, consensus code and whether it can be
-    /// retried, under the message `"{context}: {err}"`.
+    /// retried, under the message `"{context}: {err}"`, with the SDK's advice for a protocol
+    /// version set ahead of the network replaced as `?` replaces it.
     pub(crate) fn with_context<E>(context: &str, err: E) -> Self
     where
         E: std::fmt::Display + Into<Self>,
     {
-        let message = format!("{context}: {err}");
+        let message = with_javascript_version_advice(format!("{context}: {err}"));
         Self {
             message,
             ..err.into()
@@ -166,7 +169,16 @@ impl From<SdkError> for WasmSdkError {
         let retriable = err.can_retry() || err.is_quorum_source_unavailable();
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
-            Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
+            Config(msg) => Self::new(
+                WasmSdkErrorKind::Config,
+                with_javascript_version_advice(msg),
+                None,
+                retriable,
+            ),
+            // The request has to change: no node answers it as the requested result type.
+            InvalidRequest(msg) => {
+                Self::new(WasmSdkErrorKind::InvalidArgument, msg, None, retriable)
+            }
             Drive(e) => Self::new(WasmSdkErrorKind::Drive, e.to_string(), None, retriable),
             DriveProofError(e, _proof, _block_info) => Self::new(
                 WasmSdkErrorKind::DriveProofError,
@@ -186,6 +198,14 @@ impl From<SdkError> for WasmSdkError {
             ExecutionNotProved(msg) => {
                 Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
             }
+            // The SDK's own text: it says that a node may have received the transition
+            // and that the cause is only the last error.
+            StateTransitionResultUnconfirmed(source) => Self::new(
+                WasmSdkErrorKind::Generic,
+                StateTransitionResultUnconfirmed(source).to_string(),
+                None,
+                false,
+            ),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,
@@ -303,6 +323,22 @@ impl From<SdkError> for WasmSdkError {
                 )
             }
         }
+    }
+}
+
+/// What a JavaScript app does about an SDK set ahead of its network: it sets the protocol
+/// version with the `version` option, not with the Rust builder method the SDK's own advice
+/// names.
+const SDK_AHEAD_OF_NETWORK_JAVASCRIPT_ADVICE: &str = "if the `version` option (`withVersion` \
+     on the builder) set the SDK ahead of its network, omit it so the SDK follows the \
+     network's protocol version, or set it to the network's protocol version";
+
+/// A configuration error's message, with the SDK's advice for a protocol version set ahead
+/// of the network replaced by the advice that names the JavaScript option.
+fn with_javascript_version_advice(message: String) -> String {
+    match message.strip_suffix(SDK_AHEAD_OF_NETWORK_ADVICE) {
+        Some(diagnosis) => format!("{diagnosis}{SDK_AHEAD_OF_NETWORK_JAVASCRIPT_ADVICE}"),
+        None => message,
     }
 }
 
@@ -442,6 +478,32 @@ mod tests {
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_keep_unconfirmed_submission_non_retriable_with_its_diagnostic() {
+        for depth in 0..=2 {
+            let mut source = SdkError::StateTransitionResultUnconfirmed(Box::new(
+                SdkError::InvalidProvedResponse("document result proof was invalid".into()),
+            ));
+            for _ in 0..depth {
+                source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+            }
+            let error = WasmSdkError::from(source);
+            assert!(!error.is_retriable());
+            assert!(error.message().contains("unconfirmed"));
+            assert!(error
+                .message()
+                .contains("a node accepted it or may have received it"));
+            assert!(error
+                .message()
+                .contains("last error: Invalid Proved Response error"));
+            assert!(error
+                .message()
+                .contains("document result proof was invalid"));
+            assert_eq!(error.code(), -1);
+        }
+    }
+
     fn property_constraint_violated() -> ConsensusError {
         DocumentPropertyConstraintViolatedError::new(
             "post".to_string(),
@@ -530,11 +592,42 @@ mod tests {
         assert_eq!(error.message(), message);
     }
 
+    /// An SDK without a context provider cannot verify any proof, and retrying cannot change
+    /// that: JS reads a context provider error that says what is missing, not a proof failure,
+    /// and is not told to retry.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_missing_context_provider_as_a_non_retriable_context_provider_error() {
+        let error = WasmSdkError::from(SdkError::from(
+            dash_sdk::ProofVerifierError::ContextProviderNotSet,
+        ));
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
+        assert!(!error.is_retriable());
+        assert!(
+            error.message().contains("context provider is not set"),
+            "{}",
+            error.message()
+        );
+    }
+
     /// What the SDK's retry loop ends a document request with when its node answered at an
     /// older protocol version than the SDK's and then no node was left to ask.
     #[cfg(not(target_arch = "wasm32"))]
     async fn every_node_answered_at_an_older_protocol_version() -> SdkError {
-        use dash_sdk::error::StaleNodeError;
+        every_node_answered_with(|| {
+            SdkError::StaleNode(dash_sdk::error::StaleNodeError::ProtocolVersion {
+                expected_protocol_version: 14,
+                received_protocol_version: 13,
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node answered with `spared`,
+    /// an answer that does not get the node banned, and then no node was left to ask.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn every_node_answered_with(spared: fn() -> SdkError) -> SdkError {
         use rs_dapi_client::{Address, AddressList, ExecutionError, ExecutionResponse};
         use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -552,15 +645,14 @@ mod tests {
             async move {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
-                        inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
-                            expected_protocol_version: 14,
-                            received_protocol_version: 13,
-                        }),
+                        possibly_accepted: false,
+                        inner: spared(),
                         retries: 0,
                         address: Some(node),
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: SdkError::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
@@ -586,6 +678,73 @@ mod tests {
             "{}",
             error.message()
         );
+        assert!(!error.is_retriable());
+    }
+
+    /// A JavaScript app sets the SDK's protocol version with the `version` option
+    /// (`withVersion` on the builder), and has no Rust builder to call: the error names that
+    /// option, and says to omit it or to set it to the network's version.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_name_the_javascript_version_option_when_the_sdk_is_ahead_of_its_network() {
+        let message =
+            WasmSdkError::from(every_node_answered_at_an_older_protocol_version().await).message();
+
+        for named in [
+            "protocol version 13",
+            "protocol version 14",
+            "`version` option",
+            "withVersion",
+            "omit it",
+            "network's protocol version",
+        ] {
+            assert!(message.contains(named), "{named}: {message}");
+        }
+        assert!(!message.contains("with_initial_version"), "{message}");
+    }
+
+    /// The JavaScript advice survives the context of the operation that failed, which
+    /// prefixes the message.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_name_the_javascript_version_option_under_the_operation_that_failed() {
+        let error = WasmSdkError::with_context(
+            "Failed to broadcast",
+            every_node_answered_at_an_older_protocol_version().await,
+        );
+        let message = error.message();
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Config);
+        assert!(message.starts_with("Failed to broadcast: "), "{message}");
+        assert!(message.contains("`version` option"), "{message}");
+        assert!(!message.contains("with_initial_version"), "{message}");
+    }
+
+    /// No node can help an SDK older than its network: the app has to update it. JavaScript
+    /// gets the configuration error, which is not retriable.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_report_a_request_no_node_could_answer_readably_on_a_newer_network_as_config() {
+        let error = WasmSdkError::from(
+            every_node_answered_with(|| {
+                SdkError::StaleNode(dash_sdk::error::StaleNodeError::NewerProtocolVersion {
+                    supported_protocol_version: 15,
+                    network_protocol_version: 16,
+                    error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                        error: "unexpected variant".to_string(),
+                    }),
+                })
+            })
+            .await,
+        );
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::Config,
+            "{}",
+            error.message()
+        );
+        assert!(error.message().contains("update the SDK"));
         assert!(!error.is_retriable());
     }
 
@@ -658,6 +817,7 @@ mod tests {
             let refused = SdkError::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 13,
                 pinned,
                 cause: None,
@@ -673,6 +833,7 @@ mod tests {
         let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network: 0,
             pinned: false,
             cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
@@ -692,6 +853,7 @@ mod tests {
             WasmSdkError::from(SdkError::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 0,
                 pinned: false,
                 cause: Some(Box::new(SdkError::Proof(
@@ -723,6 +885,19 @@ mod tests {
             "Failed to find quorum: HTTP 503".to_string(),
         ));
         assert!(unreachable.is_retriable());
+    }
+
+    /// A query no node answers as the requested result type is the app's argument to change:
+    /// JS reads it as an invalid argument, and retrying it does not help.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_query_no_node_can_answer_as_its_result_type_as_an_invalid_argument() {
+        let reason = "a documents select cannot be grouped".to_string();
+        let error = WasmSdkError::from(SdkError::InvalidRequest(reason.clone()));
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+        assert_eq!(error.name(), "InvalidArgument");
+        assert!(!error.is_retriable());
+        assert_eq!(error.message(), reason);
     }
 
     /// A node behind a protocol upgrade the network has proven answered a query that needs

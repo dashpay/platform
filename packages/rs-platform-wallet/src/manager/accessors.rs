@@ -1,5 +1,6 @@
 //! Read-only accessors on [`PlatformWalletManager`].
 
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use std::sync::Arc;
 
 use dashcore::{OutPoint, Txid};
@@ -81,6 +82,11 @@ pub struct PlatformAddressSyncConfigSnapshot {
 #[derive(Debug, Clone, Copy)]
 pub struct AccountBalanceRow {
     pub account_type: AccountType,
+    /// This wallet's balance in the account, computed from live UTXOs.
+    /// Zero for keys-only accounts and for a contact's watch-only
+    /// `DashpayExternalAccount`, whose outputs belong to the contact.
+    /// The rows sum to the wallet's live Core balance, which can differ
+    /// from the separately published wallet balance until it is refreshed.
     pub balance: WalletCoreBalance,
     pub keys_used: u32,
     pub keys_total: u32,
@@ -268,8 +274,10 @@ pub struct OutpointOwnershipQuery {
 /// on: the owning account recorded the funding transaction (its txid is in
 /// the account's records or its finalized set), recognises the output's
 /// script as its own, does not hold the coin, AND a funds account holds a
-/// MINED record whose transaction spends the outpoint. The last condition
-/// is what makes the answer durable. Absence from `utxos` alone is not:
+/// record whose transaction spends the outpoint, in a block the wallet's
+/// last applied ChainLock covers. The last condition is what makes the
+/// answer durable: no fork the engine follows can drop that spender (see
+/// `final_spends_among`). Absence from `utxos` alone is not:
 /// `update_utxos` removes the inputs of a mempool spend that may never
 /// confirm, and a conflict sweep releases a loser's other inputs without
 /// reinserting their coins — both leave the coin absent with its funding
@@ -288,7 +296,8 @@ pub enum OutpointClass {
     /// The coin is in a funds account's live `utxos`.
     Unspent = 1,
     /// The owning account knows the funding txid, owns the script, does
-    /// not hold the coin, and a mined record spends the outpoint.
+    /// not hold the coin, and a record in a ChainLocked block spends the
+    /// outpoint.
     KnownUncredited = 2,
     /// The owning account's pools do not monitor the script.
     NotOwned = 3,
@@ -303,8 +312,12 @@ impl OutpointClass {
 /// Whether `account_type` is a contact's watch-only chain
 /// (`DashpayExternalAccount`): coins there belong to the contact, so the
 /// inventory omits them and the classifier has no verdict for them.
+///
+/// Delegates to key-wallet's exhaustive [`AccountType::is_contact_owned`],
+/// the predicate `account_balances_blocking` and the persistence seam use,
+/// so a future contact-owned account type is left out everywhere at once.
 pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
-    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+    account_type.is_contact_owned()
 }
 
 /// One page of `wallet_id`'s UTXO inventory across every funds account
@@ -389,14 +402,22 @@ pub fn wallet_utxos_page(
 /// Classify each query's outpoint for `wallet_id` — see [`OutpointClass`]
 /// for the verdicts and the one a reconciler may act on. Positional:
 /// `result[i]` answers `queries[i]`. An unknown wallet answers `Unknown`
-/// for every query. Cost is `queries × funds accounts`, never the size of
-/// the inventory.
+/// for every query.
+///
+/// Cost is `queries × funds accounts`, never the size of the inventory,
+/// except for a query left a candidate for [`OutpointClass::KnownUncredited`]
+/// — an owned coin the engine does not hold, whose funding it knows. Those
+/// need the wallet's history: one walk of it per call, looking only for
+/// the call's own candidates and stopping once each has a spender, so the
+/// memory it takes is bounded by the call, not the history. A reconciled
+/// store offers no candidates, so a run over one walks no history.
 pub fn classify_outpoints(
     wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
     wallet_id: &WalletId,
     queries: &[OutpointOwnershipQuery],
 ) -> Vec<OutpointClass> {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     let Some(info) = wm.get_wallet_info(wallet_id) else {
         return vec![OutpointClass::Unknown; queries.len()];
@@ -415,24 +436,13 @@ pub fn classify_outpoints(
         })
         .collect();
 
-    // Durable spend evidence: the inputs of every MINED record in any funds
-    // account. A mempool spend, an IS-locked spend or a released loser input
-    // leaves a coin absent from `utxos` too, and none of those is a verdict.
-    let mined_spends: std::collections::HashSet<OutPoint> = accounts
+    // The candidates for a spend verdict, by position; each is `Unknown`
+    // until the history shows a final spender for it.
+    let mut candidates = Vec::new();
+    let mut classes: Vec<OutpointClass> = queries
         .iter()
-        .flat_map(|(_, funds)| funds.transactions().values())
-        .filter(|record| record.context.block_info().is_some())
-        .flat_map(|record| {
-            record
-                .transaction
-                .input
-                .iter()
-                .map(|input| input.previous_output)
-        })
-        .collect();
-    queries
-        .iter()
-        .map(|query| {
+        .enumerate()
+        .map(|(position, query)| {
             // A contact's watch-only chain gets no verdict at all — not
             // even `Unspent`: its coins are the contact's to spend, never
             // this wallet's to flip or to count.
@@ -461,14 +471,87 @@ pub fn classify_outpoints(
                 return OutpointClass::NotOwned;
             }
             let txid = &query.outpoint.txid;
-            let funding_known = owner.has_transaction(txid) || owner.transaction_is_finalized(txid);
-            if funding_known && mined_spends.contains(&query.outpoint) {
-                OutpointClass::KnownUncredited
-            } else {
-                OutpointClass::Unknown
+            if owner.has_transaction(txid) || owner.transaction_is_finalized(txid) {
+                candidates.push(position);
             }
+            OutpointClass::Unknown
         })
-        .collect()
+        .collect();
+    // A spender the ChainLock already dropped left its inputs behind
+    // (`finalized_spends`); only the rest need the history.
+    let (dropped, rest): (Vec<usize>, Vec<usize>) = candidates
+        .into_iter()
+        .partition(|&position| info.finalized_spends.contains(&queries[position].outpoint));
+    for position in dropped {
+        classes[position] = OutpointClass::KnownUncredited;
+    }
+    if rest.is_empty() {
+        return classes;
+    }
+    let Some(chain_locked) = info.last_applied_chain_lock().map(|lock| lock.block_height) else {
+        // No record is final before the wallet's first ChainLock.
+        return classes;
+    };
+    let funds: Vec<_> = accounts.iter().map(|(_, funds)| *funds).collect();
+    let spent = final_spends_among(
+        &funds,
+        rest.iter()
+            .map(|&position| queries[position].outpoint)
+            .collect(),
+        chain_locked,
+    );
+    for position in rest {
+        if spent.contains(&queries[position].outpoint) {
+            classes[position] = OutpointClass::KnownUncredited;
+        }
+    }
+    classes
+}
+
+/// Which of `wanted` an input of a record in `accounts` spends, where that
+/// record's block is at or below `chain_locked` — the wallet's last applied
+/// ChainLock. Records the ChainLock already dropped are not here: what
+/// they spent is in `PlatformWalletInfo::finalized_spends`. Such a spend is
+/// final: `truncate_above` refuses to drop a
+/// block the wallet's ChainLock covers, so no fork can take the spender
+/// away and give the coin back after the store has marked it spent (a
+/// truncation reaches no persistence round, dashpay/platform#5380, so a
+/// store row marked spent for a spender the fork dropped would never be
+/// marked unspent again). A mempool spend, an IS-locked spend, a spend in
+/// a block no ChainLock covers yet, and a released loser input all leave a
+/// coin absent from `utxos` too, and none of those is a verdict; the last
+/// but one earns it in a later run, once a ChainLock reaches its block.
+///
+/// One walk of the history, which ends once every wanted outpoint has a
+/// spender.
+fn final_spends_among(
+    accounts: &[&key_wallet::managed_account::ManagedCoreFundsAccount],
+    mut wanted: std::collections::HashSet<OutPoint>,
+    chain_locked: u32,
+) -> std::collections::HashSet<OutPoint> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let mut spent = std::collections::HashSet::new();
+    let final_records = accounts
+        .iter()
+        .flat_map(|funds| funds.transactions().values())
+        .filter(|record| {
+            record
+                .context
+                .block_info()
+                .is_some_and(|block| block.height() <= chain_locked)
+        });
+    for record in final_records {
+        for input in &record.transaction.input {
+            if wanted.remove(&input.previous_output) {
+                spent.insert(input.previous_output);
+            }
+        }
+        if wanted.is_empty() {
+            break;
+        }
+    }
+    spent
 }
 
 /// Snapshot of one transaction row inside an account.
@@ -656,9 +739,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Read per-account balance + key-usage snapshots for a wallet.
     ///
-    /// Returns one [`AccountBalanceSnapshot`] per managed account: the
+    /// Returns one [`AccountBalanceRow`] per managed account: the
     /// wallet's `AccountType`, the live `WalletCoreBalance` (zero on
-    /// keys-only variants by construction), and (`keys_used`,
+    /// keys-only variants by construction, and zero on a contact's
+    /// watch-only `DashpayExternalAccount`, whose coins are the
+    /// contact's), and (`keys_used`,
     /// `keys_total`) totals across the account's address pools.
     /// Funds variants and keys variants both expose pools the same
     /// way, so the count is meaningful in both directions — the
@@ -690,8 +775,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // (which coin selection reads) has moved on. Deriving from the
                 // same source selection uses makes disagreement impossible;
                 // the fold is bounded by the account's UTXO count.
+                //
+                // A contact's watch-only chain (`DashpayExternalAccount`)
+                // reports zero: its addresses derive from the CONTACT's
+                // xpub, so the outputs it observes are what this wallet paid
+                // to the contact, not coins it can spend. Hosts sum these
+                // rows into the wallet's Core balance, so counting them there
+                // inflated it by every payment to a contact. Same rule as
+                // `ManagedAccountCollection::all_funding_accounts`
+                // (rust-dashcore#926), which the wallet's own balance and
+                // coin selection use. The row stays, with its key counts.
+                let account_type = account.managed_account_type().to_account_type();
                 let balance = account
                     .as_funds()
+                    .filter(|_| !account_type.is_contact_owned())
                     .map(|a| computed_core_balance(a, last_processed_height))
                     .unwrap_or_default();
                 // Walk every pool on the account, sum
@@ -713,7 +810,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         (used + pool_used, total + pool_total)
                     });
                 AccountBalanceRow {
-                    account_type: account.managed_account_type().to_account_type(),
+                    account_type,
                     balance,
                     keys_used,
                     keys_total,
@@ -970,6 +1067,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     AssetLockStatus::InstantSendLocked => 2,
                     AssetLockStatus::ChainLocked => 3,
                     AssetLockStatus::Consumed => 4,
+                    AssetLockStatus::DrainCompleted => 6,
                     AssetLockStatus::RecoveredFromChain => 5,
                 };
                 let (instant_lock_present, chain_lock_height) = match &lock.proof {
@@ -1298,9 +1396,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     for entry in pool.addresses.values() {
                         if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
                             if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
-                                let node_id =
-                                    dashcore::PlatformNodeId::from_ed25519_public_key(&pk32)
-                                        .to_byte_array();
+                                let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32))
+                                    .to_canonical_bytes();
                                 platform_index.insert(node_id, entry.index);
                             }
                         }
@@ -1792,6 +1889,140 @@ mod computed_balance_tests {
         );
     }
 
+    /// A wallet that paid a contact holds a watch-only `DashpayExternalAccount`
+    /// whose UTXO set carries that payment: the address derives from the
+    /// contact's xpub, so the coin is the contact's. Hosts sum the rows into
+    /// the wallet's Core balance, so that row must report zero, while a
+    /// `DashpayReceivingFunds` account (this wallet's own xpub) still counts.
+    #[tokio::test]
+    async fn should_leave_a_contacts_watch_only_account_out_of_the_account_balances() {
+        use dashcore::{BlockHash, Transaction};
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        const BIP44: u64 = 9_000_000;
+        const RECEIVED_FROM_CONTACT: u64 = 2_000_000;
+        const PAID_TO_CONTACT: u64 = 100_000;
+
+        let (funded, wallet_id, _generation, _signer, receiving_type) =
+            crate::test_support::funded_wallet_manager_with_contact(
+                &[BIP44],
+                &[RECEIVED_FROM_CONTACT],
+            )
+            .await;
+
+        // The contact's watch-only chain, built as
+        // `register_external_contact_account` builds it, then paid into.
+        let external_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [0xAA; 32],
+            friend_identity_id: [0xBB; 32],
+        };
+        // The wallet's own Core balance (what `platform_wallet_get_balance`
+        // reports), read after the payment lands.
+        let wallet_balance = {
+            let mut wm = funded.write().await;
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+            let contact_xpub = ExtendedPubKey::from_priv(
+                &ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &[7u8; 64])
+                    .expect("contact master key"),
+            );
+            let mut managed = ManagedCoreFundsAccount::from_account(&key_wallet::Account {
+                parent_wallet_id: Some(wallet_id),
+                account_type: external_type,
+                network: key_wallet::Network::Testnet,
+                account_xpub: contact_xpub,
+                is_watch_only: true,
+            });
+            let contact_address = managed
+                .next_address_with_info(Some(&contact_xpub), true)
+                .expect("contact address")
+                .address;
+            wallet
+                .add_account(external_type, Some(contact_xpub))
+                .expect("add external account");
+            info.core_wallet
+                .accounts
+                .insert_funds_bearing_account(managed)
+                .expect("insert external account");
+
+            let payment = Transaction::dummy(&contact_address, 2..3, &[PAID_TO_CONTACT]);
+            let context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+                2,
+                BlockHash::all_zeros(),
+                1_700_000_100,
+            ));
+            assert!(
+                info.check_core_transaction(&payment, context, wallet, true, true)
+                    .await
+                    .is_relevant,
+                "the contact's chain must be monitored"
+            );
+            let held: u64 = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .values()
+                .flat_map(|account| account.utxos.values())
+                .map(|utxo| utxo.txout.value)
+                .sum();
+            assert_eq!(
+                held, PAID_TO_CONTACT,
+                "precondition: the external account's UTXO set holds the payment"
+            );
+            info.core_wallet.update_balance();
+            info.core_wallet.balance().total()
+        };
+
+        let manager = manager_over_funded_fixture(funded).await;
+        let rows = {
+            let manager = Arc::clone(&manager);
+            tokio::task::spawn_blocking(move || manager.account_balances_blocking(&wallet_id))
+                .await
+                .expect("blocking accessor task")
+        };
+
+        let external = rows
+            .iter()
+            .find(|row| row.account_type == external_type)
+            .expect("the external account keeps its row");
+        assert_eq!(
+            external.balance.total(),
+            0,
+            "a contact's coins are not this wallet's balance"
+        );
+        assert!(
+            external.keys_total > 0,
+            "the row still reports the account's keys"
+        );
+
+        let receiving = rows
+            .iter()
+            .find(|row| row.account_type == receiving_type)
+            .expect("the receiving account has a row");
+        assert_eq!(
+            receiving.balance.total(),
+            RECEIVED_FROM_CONTACT,
+            "coins a contact sent to this wallet are this wallet's"
+        );
+
+        let total: u64 = rows.iter().map(|row| row.balance.total()).sum();
+        assert_eq!(
+            total,
+            BIP44 + RECEIVED_FROM_CONTACT,
+            "the rows sum to the wallet's own coins"
+        );
+        assert_eq!(
+            total, wallet_balance,
+            "the rows sum to the wallet balance, which already leaves contacts' coins out"
+        );
+    }
+
     /// Bucket-policy companion to
     /// [`account_balances_blocking_ignores_the_stale_cache`], asserted
     /// directly on the fold: `computed_core_balance` duplicates
@@ -1858,7 +2089,7 @@ mod computed_balance_tests {
 }
 
 #[cfg(test)]
-mod txo_inventory_tests {
+pub(crate) mod txo_inventory_tests {
     //! Coverage for [`wallet_utxos_page`] and [`classify_outpoints`] — the
     //! two engine reads a store reconcile is built on. Drives a real
     //! `ManagedWalletInfo` through `check_core_transaction` in the exact
@@ -1867,7 +2098,6 @@ mod txo_inventory_tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::test_utils::TestWalletContext;
@@ -1882,14 +2112,14 @@ mod txo_inventory_tests {
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
-    fn bip44_account_0() -> AccountType {
+    pub(crate) fn bip44_account_0() -> AccountType {
         AccountType::Standard {
             index: 0,
             standard_account_type: StandardAccountType::BIP44Account,
         }
     }
 
-    fn in_block(height: u32) -> TransactionContext {
+    pub(crate) fn in_block(height: u32) -> TransactionContext {
         TransactionContext::InBlock(BlockInfo::new(
             height,
             BlockHash::from_slice(&[6u8; 32]).expect("valid block hash"),
@@ -1906,7 +2136,7 @@ mod txo_inventory_tests {
         }
     }
 
-    fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
+    pub(crate) fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
         Transaction {
             version: 2,
             lock_time: 0,
@@ -1923,7 +2153,7 @@ mod txo_inventory_tests {
     }
 
     /// The rust-dashcore#992 shape: one input, one zero-value `OP_RETURN`.
-    fn collateral_burn(coin: OutPoint) -> Transaction {
+    pub(crate) fn collateral_burn(coin: OutPoint) -> Transaction {
         Transaction {
             version: 2,
             lock_time: 0,
@@ -1949,7 +2179,9 @@ mod txo_inventory_tests {
         dashcore::Address::p2pkh(&pubkey, key_wallet::Network::Testnet).script_pubkey()
     }
 
-    fn manager_with(ctx: TestWalletContext) -> (WalletManager<PlatformWalletInfo>, WalletId) {
+    pub(crate) fn manager_with(
+        ctx: TestWalletContext,
+    ) -> (WalletManager<PlatformWalletInfo>, WalletId) {
         let info = PlatformWalletInfo {
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
@@ -1959,13 +2191,14 @@ mod txo_inventory_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
         (wm, wallet_id)
     }
 
-    fn query(
+    pub(crate) fn query(
         account_type: AccountType,
         outpoint: OutPoint,
         script: &ScriptBuf,
@@ -2034,8 +2267,8 @@ mod txo_inventory_tests {
     }
 
     /// The four answers, each from the arrival order that produces it.
-    /// `KnownUncredited` needs a mined spender on record: a coin funded and
-    /// then burned while held. The field case — a collateral burn processed
+    /// `KnownUncredited` needs a spender on record in a block the wallet's
+    /// ChainLock covers: a coin funded and then burned while held. The field case — a collateral burn processed
     /// before its funding is never recorded, the funding is, the coin is
     /// absent — is `Unknown` here: no record spends it, so absence is not
     /// durable evidence (the emit-time verdict covers that shape). A coin
@@ -2113,6 +2346,10 @@ mod txo_inventory_tests {
             .await
             .is_relevant
         );
+        // A ChainLock over the ordinary spend's block: the spend is final.
+        ctx.managed_wallet.metadata.last_applied_chain_lock = Some(
+            dashcore::ephemerealdata::chain_lock::ChainLock::dummy(100_005),
+        );
         let (wm, wallet_id) = manager_with(ctx);
         let never_seen = OutPoint {
             txid: Txid::from_slice(&[0x99u8; 32]).expect("valid txid"),
@@ -2164,5 +2401,118 @@ mod txo_inventory_tests {
             vec![OutpointClass::Unknown, OutpointClass::Unknown]
         );
         assert!(classify_outpoints(&wm, &wallet_id, &[]).is_empty());
+    }
+
+    /// A funded and spent coin: the funding and the spend both mined, the
+    /// spend not yet covered by a ChainLock.
+    async fn wallet_with_a_spent_coin() -> (
+        WalletManager<PlatformWalletInfo>,
+        WalletId,
+        OutpointOwnershipQuery,
+        Transaction,
+    ) {
+        let mut ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+        let funded = funding(script.clone(), 41, 6_000);
+        assert!(
+            ctx.check_transaction(&funded, in_block(100_000))
+                .await
+                .is_relevant
+        );
+        let coin = OutPoint {
+            txid: funded.txid(),
+            vout: 0,
+        };
+        let spend = collateral_burn(coin);
+        let (wm, wallet_id) = manager_with(ctx);
+        (
+            wm,
+            wallet_id,
+            query(bip44_account_0(), coin, &script),
+            spend,
+        )
+    }
+
+    fn spend_record_kept(
+        wm: &WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+        spend: &Transaction,
+    ) -> bool {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        wm.get_wallet_info(wallet_id)
+            .expect("wallet")
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.as_funds())
+            .any(|funds| funds.transactions().contains_key(&spend.txid()))
+    }
+
+    /// The ChainLock promotion drops the spender's record (with
+    /// `keep-finalized-transactions` off), and the spend still counts: the
+    /// wallet kept what the record spent.
+    #[tokio::test]
+    async fn a_spend_counts_after_the_chain_lock_drops_its_record() {
+        use key_wallet::transaction_checking::WalletTransactionChecker;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let (mut wm, wallet_id, coin, spend) = wallet_with_a_spent_coin().await;
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        assert!(
+            info.check_core_transaction(&spend, in_block(100_001), wallet, true, true)
+                .await
+                .is_relevant
+        );
+        info.apply_chain_lock(dashcore::ephemerealdata::chain_lock::ChainLock::dummy(
+            100_001,
+        ));
+
+        #[cfg(not(feature = "keep-finalized-transactions"))]
+        assert!(
+            !spend_record_kept(&wm, &wallet_id, &spend),
+            "the promotion dropped the spender"
+        );
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, std::slice::from_ref(&coin)),
+            vec![OutpointClass::KnownUncredited]
+        );
+    }
+
+    /// A spend first seen in a ChainLocked block is dropped as it is
+    /// recorded, before any ChainLock reaches the wallet's metadata. The
+    /// engine can no longer give that coin back, so the spend counts too.
+    #[tokio::test]
+    async fn a_spend_first_seen_chain_locked_counts() {
+        use key_wallet::transaction_checking::WalletTransactionChecker;
+
+        let (mut wm, wallet_id, coin, spend) = wallet_with_a_spent_coin().await;
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        let block = in_block(100_001).block_info().copied().expect("mined");
+        assert!(
+            info.check_core_transaction(
+                &spend,
+                TransactionContext::InChainLockedBlock(block),
+                wallet,
+                true,
+                true
+            )
+            .await
+            .is_relevant
+        );
+
+        // With `keep-finalized-transactions` on the record stays, and no
+        // ChainLock in the wallet's metadata covers its block yet:
+        // `truncate_above` could still drop it, so it is no verdict.
+        let expected = if cfg!(feature = "keep-finalized-transactions") {
+            OutpointClass::Unknown
+        } else {
+            assert!(!spend_record_kept(&wm, &wallet_id, &spend));
+            OutpointClass::KnownUncredited
+        };
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, std::slice::from_ref(&coin)),
+            vec![expected]
+        );
     }
 }

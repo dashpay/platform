@@ -1,15 +1,14 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
 use grovedb::element::SumValue;
-use grovedb::{Element, EstimatedLayerInformation};
+use grovedb::Element;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Version 0 implementation of setting a balance for an address.
@@ -30,9 +29,7 @@ impl Drive {
         address: PlatformAddress,
         nonce: AddressNonce,
         balance: Credits,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let path = Self::clear_addresses_path();

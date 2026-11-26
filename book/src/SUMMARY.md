@@ -11,6 +11,7 @@
 
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
+- [Core Fork Activations](architecture/core-fork-activations.md)
 
 # Contributing
 
@@ -64,6 +65,7 @@
 - [Key Budgets and Expiry](data-model/key-limits.md)
 - [Token Shielded Pools](data-model/token-shielded-pools.md)
 - [Non-Transferable Tokens](data-model/non-transferable-tokens.md)
+- [Token Marketplace](data-model/token-marketplace.md)
 
 # Contract Keywords
 
@@ -85,6 +87,7 @@
   - [Finding by Properties (findBy)](contract-keywords/refers-to-lookup.md)
   - [Expressions](contract-keywords/refers-to-expressions.md)
   - [List Elements (inList)](contract-keywords/refers-to-list-element.md)
+  - [A Target the Document Names](contract-keywords/refers-to-dynamic.md)
   - [Writer and Creator References](contract-keywords/owner-refers-to.md)
 - [distinctFrom](contract-keywords/distinct-from.md)
 - [maxBytes](contract-keywords/max-bytes.md)
@@ -121,6 +124,7 @@
 - [Ranked Index Examples](drive/ranked-index-examples.md)
 - [Time-Range Index TTL](drive/time-range-ttl.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
+- [Keep-History Documents](drive/keep-history-documents.md)
 
 # Testing
 
@@ -132,7 +136,7 @@
 
 - [Overview](evo-sdk/overview.md)
 - [Getting Started](evo-sdk/getting-started.md)
-- [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
+- [Trusted and Verified Mode](evo-sdk/trusted-mode.md)
 - [State Transitions](evo-sdk/state-transitions.md)
 - [Wallet Utilities](evo-sdk/wallet-utilities.md)
 - [DashPay Contact Requests](evo-sdk/dashpay-contact-requests.md)
@@ -147,7 +151,9 @@
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
+- [Protocol Versions in the SDK](sdk/protocol-versions.md)
 - [Features from Protocol Version 14](sdk/protocol-version-gate.md)
+- [Updating Apps for Protocol Version 15](sdk/protocol-version-15-upgrade.md)
 - [Put Operations](sdk/put-operations.md)
 - [Identity Keys Deep Dive](sdk/identity-keys.md)
 - [BLAST Sync](sdk/blast-sync.md)

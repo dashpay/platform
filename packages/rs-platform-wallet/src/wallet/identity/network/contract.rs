@@ -26,10 +26,12 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
+use super::signing_key::AvailableSigningKey;
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
@@ -38,15 +40,17 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::version::TryFromPlatformVersioned;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
+use std::collections::BTreeSet;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use dash_sdk::platform::transition::put_contract::PutContract;
-use dash_sdk::platform::transition::waitable::Waitable;
+use dash_sdk::platform::transition::put_contract::{
+    ensure_private_document_entries_fit, PutContract,
+};
 use dash_sdk::platform::Fetch;
 
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 use super::*;
 
@@ -148,7 +152,6 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         // 1. Owner identity + signing key from the wallet manager.
-        use dpp::identity::accessors::IdentityGettersV0;
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -161,17 +164,19 @@ impl IdentityWallet {
                 .identity(owner_identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+            drop(wm);
             // Contract create requires CRITICAL + AUTHENTICATION +
             // ECDSA_SECP256K1 specifically — DPP rejects HIGH /
             // MEDIUM / non-ECDSA keys on this state-transition
             // shape.
             identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No CRITICAL authentication key found on owner identity \
@@ -297,9 +302,11 @@ impl IdentityWallet {
             .put_to_platform_and_wait_for_response(&self.sdk, signing_key, &SignerRef(signer), None)
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to put data contract to platform: {e}"
-                ))
+                preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to put data contract to platform: {e}"
+                    ))
+                })
             })?;
 
         Ok(confirmed)
@@ -346,6 +353,16 @@ impl IdentityWallet {
     ///      `DataContractUpdateTransition`, signs it via the external
     ///      signer, broadcasts, and waits for the confirmed contract.
     ///
+    /// `expected_current_version` binds the update to the contract a
+    /// caller reviewed (see `preview_data_contract_update`): when it is
+    /// `Some` and the contract Platform now holds is at another version,
+    /// the update is refused before any nonce is read, and the caller
+    /// should review again. `None` updates whatever version is live.
+    ///
+    /// A broadcast that may have reached Platform but whose result could
+    /// not be confirmed comes back as the SDK's
+    /// `StateTransitionResultUnconfirmed`: the update may have executed.
+    ///
     /// # JSON shapes
     ///
     /// Identical to `create_data_contract_with_signer`, but every
@@ -366,13 +383,13 @@ impl IdentityWallet {
         keywords_json: Option<&str>,
         description: Option<&str>,
         config_json: Option<&str>,
+        expected_current_version: Option<u32>,
         signer: &S,
     ) -> Result<DataContract, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         // 1. Owner identity + signing key from the wallet manager.
-        use dpp::identity::accessors::IdentityGettersV0;
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -385,17 +402,19 @@ impl IdentityWallet {
                 .identity(owner_identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+            drop(wm);
             // Contract update requires the same CRITICAL +
             // AUTHENTICATION + ECDSA_SECP256K1 key as create — DPP
             // rejects HIGH / MEDIUM / non-ECDSA keys on this
             // state-transition shape.
             identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No CRITICAL authentication key found on owner identity \
@@ -406,16 +425,173 @@ impl IdentityWallet {
                 .clone()
         };
 
+        // 2 + 3. Fetch the live contract and build the contract the
+        //    update puts in its place. `preview_data_contract_update`
+        //    builds it the same way, so what a preview reports is what
+        //    this broadcasts.
+        //    A contract that changed since the caller's review is refused
+        //    there, before the draft is built and before any nonce is read.
+        let ContractUpdateDraft { updated, .. } = self
+            .draft_data_contract_update(
+                owner_identity_id,
+                contract_id,
+                documents_schema_json,
+                tokens_schema_json,
+                groups_schema_json,
+                keywords_json,
+                description,
+                config_json,
+                expected_current_version,
+            )
+            .await?;
+        let platform_version = self.sdk.version();
+
+        // 4. Build + broadcast the update transition. There's no
+        //    `UpdateContract` SDK extension mirroring `PutContract`,
+        //    so assemble the `DataContractUpdateTransition` directly:
+        //    fetch+bump the identity-contract nonce, sign via the
+        //    external signer, broadcast on the platform-wallet 8 MB
+        //    worker stack, and wait for the contract. The SDK's combined
+        //    broadcast and wait marks a wait that fails after the
+        //    transition may have been accepted as unconfirmed, and waits
+        //    for the affected state, as an update proof requires.
+        let new_identity_contract_nonce = self
+            .sdk
+            .get_identity_contract_nonce(*owner_identity_id, *contract_id, true, None)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        let key_id = {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            signing_key.id()
+        };
+        let partial_identity = PartialIdentity {
+            id: *owner_identity_id,
+            loaded_public_keys: [(key_id, signing_key.clone())].into_iter().collect(),
+            balance: None,
+            revision: None,
+            not_found_public_keys: Default::default(),
+        };
+
+        let transition = DataContractUpdateTransition::new_from_data_contract(
+            updated,
+            &partial_identity,
+            key_id,
+            new_identity_contract_nonce,
+            0,
+            &SignerRef(signer),
+            platform_version,
+            None,
+        )
+        .await
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to build contract-update transition: {e}"
+            ))
+        })?;
+
+        let confirmed = transition
+            .broadcast_and_wait_for_affected_state::<DataContract>(&self.sdk, None)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        // The proof-verified contract replaces the SDK's resolver entry, so
+        // a document of a type this update added can be built and verified
+        // on this SDK without another fetch.
+        self.register_contract_for_proof_verification(&confirmed);
+
+        Ok(confirmed)
+    }
+
+    /// Report what `update_data_contract_with_signer` would change, called
+    /// with the same sections, without signing or broadcasting anything.
+    ///
+    /// Fetches the contract as Platform holds it, checks that
+    /// `owner_identity_id` owns it, merges the supplied sections onto it and
+    /// builds the updated contract exactly as the update does, then compares
+    /// the two. A section the update would refuse to build (JSON that does
+    /// not parse, a schema the contract parser rejects, a private document
+    /// type whose entries do not fit) is the same error here.
+    ///
+    /// The preview says what the update changes, not whether Platform accepts
+    /// it: the contract update rules are checked by the network when the
+    /// update is broadcast. It reads the contract once, so a contract that
+    /// changes between the preview and the update is updated as it is then.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn preview_data_contract_update(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        documents_schema_json: &str,
+        tokens_schema_json: Option<&str>,
+        groups_schema_json: Option<&str>,
+        keywords_json: Option<&str>,
+        description: Option<&str>,
+        config_json: Option<&str>,
+    ) -> Result<DataContractUpdatePreview, PlatformWalletError> {
+        let draft = self
+            .draft_data_contract_update(
+                owner_identity_id,
+                contract_id,
+                documents_schema_json,
+                tokens_schema_json,
+                groups_schema_json,
+                keywords_json,
+                description,
+                config_json,
+                None,
+            )
+            .await?;
+        let platform_version = self.sdk.version();
+        let existing_format = contract_format_json(&draft.existing, "existing", platform_version)?;
+        let updated_format = contract_format_json(&draft.updated, "updated", platform_version)?;
+
+        let mut preview = DataContractUpdatePreview::between(
+            draft.existing.version(),
+            draft.updated.version(),
+            &existing_format,
+            &updated_format,
+        );
+        let (added, removed) = moderator_changes(
+            &named_moderators(&draft.existing),
+            &named_moderators(&draft.updated),
+        );
+        preview.moderators_added = added;
+        preview.moderators_removed = removed;
+        Ok(preview)
+    }
+
+    /// Fetch the contract `contract_id` as Platform holds it and build the
+    /// contract an update with these sections puts in its place: the shared
+    /// first half of `update_data_contract_with_signer` and
+    /// `preview_data_contract_update`. Reads Platform, writes nothing and
+    /// consumes no nonce.
+    ///
+    /// With `expected_current_version`, a contract Platform now holds at
+    /// another version is refused right after the ownership check, before
+    /// the sections are merged, so a build error cannot hide the mismatch.
+    #[allow(clippy::too_many_arguments)]
+    async fn draft_data_contract_update(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        documents_schema_json: &str,
+        tokens_schema_json: Option<&str>,
+        groups_schema_json: Option<&str>,
+        keywords_json: Option<&str>,
+        description: Option<&str>,
+        config_json: Option<&str>,
+        expected_current_version: Option<u32>,
+    ) -> Result<ContractUpdateDraft, PlatformWalletError> {
         // 2. Fetch the live contract. We seed the update payload from
         //    it (so omitted sections are preserved) and read its
         //    current version to bump.
+        // A failed fetch (a timeout, a proof that does not verify) keeps the
+        // SDK's typed error; only a contract that is not there is reported
+        // as invalid input.
         let existing = DataContract::fetch(&self.sdk, *contract_id)
             .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to fetch contract {contract_id} for update: {e}"
-                ))
-            })?
+            .map_err(PlatformWalletError::Sdk)?
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Data contract {contract_id} not found on Platform; cannot update"
@@ -436,6 +612,16 @@ impl IdentityWallet {
             )));
         }
 
+        if let Some(expected) = expected_current_version {
+            if existing.version() != expected {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Data contract {contract_id} is at version {}, not the reviewed version \
+                     {expected}; review the update again",
+                    existing.version()
+                )));
+            }
+        }
+
         let new_version = existing.version().checked_add(1).ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "Contract version overflow; cannot update".to_string(),
@@ -450,20 +636,7 @@ impl IdentityWallet {
         //    its on-chain version, document/token/group sets are
         //    complete). We then overlay only what the caller supplied.
         let platform_version = self.sdk.version();
-        let base_format = DataContractInSerializationFormat::try_from_platform_versioned(
-            &existing,
-            platform_version,
-        )
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to convert existing contract to serialization format: {e}"
-            ))
-        })?;
-        let base_value = serde_json::to_value(&base_format).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to serialize existing contract format: {e}"
-            ))
-        })?;
+        let base_value = contract_format_json(&existing, "existing", platform_version)?;
 
         let merged_value = merge_contract_update_payload(
             base_value,
@@ -492,7 +665,7 @@ impl IdentityWallet {
             })?;
 
         let mut errors = vec![];
-        let updated_contract =
+        let updated =
             DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version)
                 .map_err(|e| {
                     PlatformWalletError::InvalidIdentityData(format!(
@@ -500,58 +673,251 @@ impl IdentityWallet {
                     ))
                 })?;
 
-        // 4. Build + broadcast the update transition. There's no
-        //    `UpdateContract` SDK extension mirroring `PutContract`,
-        //    so assemble the `DataContractUpdateTransition` directly:
-        //    fetch+bump the identity-contract nonce, sign via the
-        //    external signer, broadcast on the platform-wallet 8 MB
-        //    worker stack, and wait for the confirmed contract.
-        let new_identity_contract_nonce = self
-            .sdk
-            .get_identity_contract_nonce(*owner_identity_id, *contract_id, true, None)
-            .await
+        // A private document type the update adds, or whose properties it changes, takes entries
+        // that must hold its largest payload, as `PutContract` checks on create; `existing` is the
+        // contract as Platform holds it, so an unchanged type is not checked again.
+        ensure_private_document_entries_fit(&updated, Some(&existing))
             .map_err(PlatformWalletError::Sdk)?;
 
-        let key_id = {
-            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-            signing_key.id()
-        };
-        let partial_identity = PartialIdentity {
-            id: *owner_identity_id,
-            loaded_public_keys: [(key_id, signing_key.clone())].into_iter().collect(),
-            balance: None,
-            revision: None,
-            not_found_public_keys: Default::default(),
-        };
-
-        let transition = DataContractUpdateTransition::new_from_data_contract(
-            updated_contract,
-            &partial_identity,
-            key_id,
-            new_identity_contract_nonce,
-            0,
-            &SignerRef(signer),
-            platform_version,
-            None,
-        )
-        .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to build contract-update transition: {e}"
-            ))
-        })?;
-
-        transition
-            .broadcast(&self.sdk, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        Ok(confirmed)
+        Ok(ContractUpdateDraft { existing, updated })
     }
+}
+
+/// The contract Platform holds and the contract an update would put in its
+/// place, as `IdentityWallet::draft_data_contract_update` builds them.
+struct ContractUpdateDraft {
+    existing: DataContract,
+    updated: DataContract,
+}
+
+/// The entries of one keyed section of a contract (document types by name,
+/// tokens or groups by position) that an update adds or changes. An update
+/// never removes an entry: the sections it supplies are merged onto the
+/// contract Platform holds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContractSectionChanges {
+    /// Keys the contract does not have yet.
+    pub added: Vec<String>,
+    /// Keys the contract has, with a different definition.
+    pub changed: Vec<String>,
+}
+
+impl ContractSectionChanges {
+    /// Whether the update leaves the section as it is.
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.changed.is_empty()
+    }
+}
+
+/// What an update would change in a data contract, read against the contract
+/// as Platform holds it. Built by
+/// `IdentityWallet::preview_data_contract_update`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataContractUpdatePreview {
+    /// The version of the contract Platform holds.
+    pub current_version: u32,
+    /// The version the update would give it.
+    pub new_version: u32,
+    /// Document types, by name.
+    pub document_types: ContractSectionChanges,
+    /// Tokens, by contract position.
+    pub tokens: ContractSectionChanges,
+    /// Groups, by contract position.
+    pub groups: ContractSectionChanges,
+    /// Whether the keywords would differ.
+    pub keywords_changed: bool,
+    /// Whether the description would differ.
+    pub description_changed: bool,
+    /// Whether the contract configuration would differ.
+    pub config_changed: bool,
+    /// The members of the contract configuration that would differ (for
+    /// example `readonly` or `moderation`), sorted.
+    pub config_changed_fields: Vec<String>,
+    /// Identities the configuration would newly name as moderators, base58,
+    /// sorted: the appointed set, or the interim set of an elected contract.
+    pub moderators_added: Vec<String>,
+    /// Identities the configuration would no longer name as moderators.
+    pub moderators_removed: Vec<String>,
+}
+
+impl DataContractUpdatePreview {
+    /// Whether the update would change anything besides the version, which
+    /// every update raises.
+    pub fn has_changes(&self) -> bool {
+        !self.document_types.is_empty()
+            || !self.tokens.is_empty()
+            || !self.groups.is_empty()
+            || self.keywords_changed
+            || self.description_changed
+            || self.config_changed
+    }
+
+    /// Compare two contracts in their serialization-format JSON
+    /// (`contract_format_json`). Both sides are read in that one form, so a
+    /// section the update did not touch compares equal however the caller
+    /// wrote its JSON.
+    fn between(
+        current_version: u32,
+        new_version: u32,
+        existing: &serde_json::Value,
+        updated: &serde_json::Value,
+    ) -> Self {
+        let differs = |field: &str| existing.get(field) != updated.get(field);
+        Self {
+            current_version,
+            new_version,
+            document_types: section_changes(existing, updated, "documentSchemas"),
+            tokens: section_changes(existing, updated, "tokens"),
+            groups: section_changes(existing, updated, "groups"),
+            keywords_changed: differs("keywords"),
+            description_changed: differs("description"),
+            config_changed: differs("config"),
+            config_changed_fields: object_member_changes(
+                existing.get("config"),
+                updated.get("config"),
+            ),
+            moderators_added: Vec::new(),
+            moderators_removed: Vec::new(),
+        }
+    }
+}
+
+/// The members of two JSON objects whose values differ, sorted. A side that
+/// is absent or not an object counts as empty.
+fn object_member_changes(
+    existing: Option<&serde_json::Value>,
+    updated: Option<&serde_json::Value>,
+) -> Vec<String> {
+    let empty = serde_json::Map::new();
+    let existing = existing
+        .and_then(serde_json::Value::as_object)
+        .unwrap_or(&empty);
+    let updated = updated
+        .and_then(serde_json::Value::as_object)
+        .unwrap_or(&empty);
+    let names: BTreeSet<&String> = existing.keys().chain(updated.keys()).collect();
+    names
+        .into_iter()
+        .filter(|name| existing.get(*name) != updated.get(*name))
+        .cloned()
+        .collect()
+}
+
+/// The identities `contract`'s configuration names as moderators: the
+/// appointed set, or the interim set of an elected declaration. Empty when
+/// the contract has no moderation, or only its owner moderates.
+fn named_moderators(contract: &DataContract) -> BTreeSet<Identifier> {
+    contract
+        .config()
+        .moderation()
+        .and_then(|moderation| moderation.moderators.identity_ids())
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// The identities `updated` names that `existing` does not, and the reverse,
+/// each base58 and sorted.
+fn moderator_changes(
+    existing: &BTreeSet<Identifier>,
+    updated: &BTreeSet<Identifier>,
+) -> (Vec<String>, Vec<String>) {
+    let base58 = |ids: std::collections::btree_set::Difference<'_, Identifier>| {
+        let mut names: Vec<String> = ids
+            .map(|id| bs58::encode(id.to_buffer()).into_string())
+            .collect();
+        names.sort();
+        names
+    };
+    (
+        base58(updated.difference(existing)),
+        base58(existing.difference(updated)),
+    )
+}
+
+/// A document type definition with its `indices` listed by name, so a
+/// reordering of unchanged indexes does not count as a change. Platform
+/// reads indexes by name; a changed index, or a changed property order
+/// within one, still differs.
+fn with_indices_by_name(definition: &serde_json::Value) -> serde_json::Value {
+    let mut definition = definition.clone();
+    if let Some(serde_json::Value::Array(indices)) = definition.get_mut("indices") {
+        indices.sort_by(|a, b| {
+            let name = |index: &serde_json::Value| {
+                index
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            };
+            name(a).cmp(&name(b))
+        });
+    }
+    definition
+}
+
+/// The keys of the keyed section `section` that `updated` adds to, or
+/// defines differently from, `existing`. A section that is absent or not an
+/// object counts as empty. Keys are sorted, numeric positions by value.
+fn section_changes(
+    existing: &serde_json::Value,
+    updated: &serde_json::Value,
+    section: &str,
+) -> ContractSectionChanges {
+    let existing_entries = existing.get(section).and_then(serde_json::Value::as_object);
+    let mut changes = ContractSectionChanges::default();
+    let Some(updated_entries) = updated.get(section).and_then(serde_json::Value::as_object) else {
+        return changes;
+    };
+    // A document type is compared as text, member order included:
+    // `serde_json::Value` equality ignores the order of an object's members,
+    // but Platform stores and checks it (protocol version 15 refuses a
+    // reorder), so a reordered schema must show as a change.
+    let differs = |existing: &serde_json::Value, updated: &serde_json::Value| {
+        if section == "documentSchemas" {
+            let existing_text = with_indices_by_name(existing).to_string();
+            let updated_text = with_indices_by_name(updated).to_string();
+            existing_text != updated_text
+        } else {
+            existing != updated
+        }
+    };
+    for (key, definition) in updated_entries {
+        match existing_entries.and_then(|entries| entries.get(key)) {
+            None => changes.added.push(key.clone()),
+            Some(existing_definition) if differs(existing_definition, definition) => {
+                changes.changed.push(key.clone())
+            }
+            Some(_) => {}
+        }
+    }
+    let positions_then_names = |key: &String| match key.parse::<u64>() {
+        Ok(position) => (0, position, String::new()),
+        Err(_) => (1, 0, key.clone()),
+    };
+    changes.added.sort_by_cached_key(positions_then_names);
+    changes.changed.sort_by_cached_key(positions_then_names);
+    changes
+}
+
+/// `contract` in its serialization-format JSON, the form the update merges
+/// the caller's sections onto.
+/// `which` names the contract in errors (`existing` or `updated`).
+fn contract_format_json(
+    contract: &DataContract,
+    which: &str,
+    platform_version: &PlatformVersion,
+) -> Result<serde_json::Value, PlatformWalletError> {
+    let format =
+        DataContractInSerializationFormat::try_from_platform_versioned(contract, platform_version)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to convert {which} contract to serialization format: {e}"
+                ))
+            })?;
+    serde_json::to_value(&format).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to serialize {which} contract format: {e}"
+        ))
+    })
 }
 
 /// Parse a required JSON `&str`. `field_name` only feeds the error
@@ -627,10 +993,10 @@ fn merge_contract_update_payload(
 
     merge_map_section(obj, "documentSchemas", documents)?;
     if let Some(v) = tokens {
-        merge_map_section(obj, "tokens", v)?;
+        merge_map_section(obj, "tokens", canonical_position_keys("tokens", v)?)?;
     }
     if let Some(v) = groups {
-        merge_map_section(obj, "groups", v)?;
+        merge_map_section(obj, "groups", canonical_position_keys("groups", v)?)?;
     }
 
     if let Some(v) = keywords {
@@ -663,6 +1029,40 @@ fn merge_contract_update_payload(
     }
 
     Ok(base)
+}
+
+/// Re-key a caller-supplied tokens or groups map by its contract
+/// positions written in canonical decimal form, the form the fetched
+/// contract's section carries.
+///
+/// The contract parser reads a key as a `u16` position, so `"0"` and
+/// `"00"` would name the same token or group, and one of the two
+/// definitions would be dropped without a word. A key that is not a
+/// position, or two keys naming one position, is refused instead. A
+/// value that is not an object is left for `merge_map_section` to
+/// judge.
+fn canonical_position_keys(
+    section: &str,
+    supplied: serde_json::Value,
+) -> Result<serde_json::Value, PlatformWalletError> {
+    let serde_json::Value::Object(entries) = supplied else {
+        return Ok(supplied);
+    };
+    let mut canonical = serde_json::Map::new();
+    for (key, definition) in entries {
+        let position: u16 = key.trim().parse().map_err(|_| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "{section} update payload key {key:?} is not a contract position (0 to {})",
+                u16::MAX
+            ))
+        })?;
+        if canonical.insert(position.to_string(), definition).is_some() {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "{section} update payload names position {position} more than once"
+            )));
+        }
+    }
+    Ok(serde_json::Value::Object(canonical))
 }
 
 /// Merge a caller-supplied keyed map (`addition`, e.g. document
@@ -750,7 +1150,6 @@ fn build_config_object(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::version::PlatformVersion;
     use serde_json::json;
 
     /// A minimal serialized-V1-contract base value, shaped like the
@@ -877,6 +1276,554 @@ mod tests {
         assert_eq!(merged["description"], json!("new description"));
         assert_eq!(merged["config"]["$formatVersion"], json!("1"));
         assert_eq!(merged["config"]["canBeDeleted"], json!(true));
+    }
+
+    #[test]
+    fn should_report_added_and_changed_entries_of_each_section() {
+        let existing = base_contract();
+        let updated = merge_contract_update_payload(
+            existing.clone(),
+            2,
+            json!({
+                "note": { "type": "object", "revised": true },
+                "comment": { "type": "object" }
+            }),
+            Some(json!({ "0": { "conventions": {} }, "10": {}, "2": {} })),
+            Some(json!({ "0": { "requiredPower": 1 } })),
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert_eq!(preview.current_version, 1);
+        assert_eq!(preview.new_version, 2);
+        assert_eq!(preview.document_types.added, vec!["comment"]);
+        assert_eq!(preview.document_types.changed, vec!["note"]);
+        // Token 0 was sent again as it is, so it is not a change; positions
+        // sort by value, not as text.
+        assert_eq!(preview.tokens.added, vec!["2", "10"]);
+        assert!(preview.tokens.changed.is_empty());
+        assert_eq!(preview.groups.added, vec!["0"]);
+        assert!(!preview.keywords_changed);
+        assert!(!preview.description_changed);
+        assert!(!preview.config_changed);
+        assert!(preview.has_changes());
+    }
+
+    #[test]
+    fn should_report_changed_keywords_description_and_config() {
+        let existing = base_contract();
+        let updated = merge_contract_update_payload(
+            existing.clone(),
+            2,
+            json!({}),
+            None,
+            None,
+            Some(json!(["gamma"])),
+            Some("new description"),
+            Some(json!({ "canBeDeleted": true })),
+        )
+        .expect("merge");
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert!(preview.document_types.is_empty());
+        assert!(preview.tokens.is_empty());
+        assert!(preview.groups.is_empty());
+        assert!(preview.keywords_changed);
+        assert!(preview.description_changed);
+        assert!(preview.config_changed);
+        assert!(preview.has_changes());
+    }
+
+    #[test]
+    fn should_report_no_changes_when_every_section_is_sent_as_it_is() {
+        let existing = base_contract();
+        let updated = merge_contract_update_payload(
+            existing.clone(),
+            2,
+            json!({ "note": { "type": "object" } }),
+            Some(json!({ "0": { "conventions": {} } })),
+            None,
+            Some(json!(["alpha", "beta"])),
+            Some("original description"),
+            Some(json!({ "canBeDeleted": false })),
+        )
+        .expect("merge");
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert_eq!(preview.new_version, 2);
+        assert!(!preview.has_changes(), "{preview:?}");
+    }
+
+    /// A contract with one document type, built as the update builds one,
+    /// from serialization-format JSON.
+    fn build_contract(format: serde_json::Value) -> DataContract {
+        let format: DataContractInSerializationFormat =
+            serde_json::from_str(&format.to_string()).expect("format deserializes");
+        let mut errors = vec![];
+        DataContract::try_from_platform_versioned(
+            format,
+            true,
+            &mut errors,
+            PlatformVersion::latest(),
+        )
+        .expect("contract builds")
+    }
+
+    /// The preview compares the built contracts, so it has to read a section
+    /// the update did not touch as unchanged after the merged payload went
+    /// through the contract parser and back.
+    #[test]
+    fn should_report_only_the_supplied_document_type_after_the_contract_is_rebuilt() {
+        let platform_version = PlatformVersion::latest();
+        let note = json!({
+            "type": "object",
+            "properties": {
+                "message": { "type": "string", "position": 0, "maxLength": 63 }
+            },
+            "additionalProperties": false
+        });
+        let id = bs58::encode(Identifier::default().to_buffer()).into_string();
+        let existing = build_contract(json!({
+            "$formatVersion": "1",
+            "id": id,
+            "ownerId": id,
+            "version": INITIAL_DATA_CONTRACT_VERSION,
+            "documentSchemas": { "note": note },
+            "keywords": ["alpha"],
+            "description": "original description",
+            "config": { "$formatVersion": latest_config_version().to_string() }
+        }));
+        let existing_format =
+            contract_format_json(&existing, "existing", platform_version).expect("format");
+
+        let rebuild = |documents: serde_json::Value| {
+            let merged = merge_contract_update_payload(
+                existing_format.clone(),
+                existing.version() + 1,
+                documents,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("merge");
+            let updated = build_contract(merged);
+            let updated_format =
+                contract_format_json(&updated, "updated", platform_version).expect("format");
+            DataContractUpdatePreview::between(
+                existing.version(),
+                updated.version(),
+                &existing_format,
+                &updated_format,
+            )
+        };
+
+        let untouched = rebuild(json!({}));
+        assert!(!untouched.has_changes(), "{untouched:?}");
+        assert_eq!(untouched.new_version, untouched.current_version + 1);
+
+        let comment = json!({
+            "type": "object",
+            "properties": {
+                "text": { "type": "string", "position": 0, "maxLength": 63 }
+            },
+            "additionalProperties": false
+        });
+        let added = rebuild(json!({ "comment": comment }));
+        assert_eq!(added.document_types.added, vec!["comment"]);
+        assert!(added.document_types.changed.is_empty(), "{added:?}");
+        assert!(!added.keywords_changed && !added.description_changed && !added.config_changed);
+    }
+
+    #[test]
+    fn should_merge_token_and_group_positions_in_canonical_form() {
+        let merged = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({}),
+            Some(json!({ "01": { "conventions": {} } })),
+            Some(json!({ " 2 ": { "requiredPower": 1 } })),
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        let tokens = merged["tokens"].as_object().unwrap();
+        assert!(tokens.contains_key("0") && tokens.contains_key("1"));
+        assert!(!tokens.contains_key("01"));
+        assert!(merged["groups"].as_object().unwrap().contains_key("2"));
+    }
+
+    #[test]
+    fn should_refuse_two_keys_naming_one_position() {
+        for (tokens, groups) in [
+            (Some(json!({ "0": {}, "00": {} })), None),
+            (
+                None,
+                Some(json!({ "3": { "requiredPower": 1 }, "03": { "requiredPower": 2 } })),
+            ),
+        ] {
+            let err = merge_contract_update_payload(
+                base_contract(),
+                2,
+                json!({}),
+                tokens,
+                groups,
+                None,
+                None,
+                None,
+            )
+            .expect_err("a repeated position must be refused");
+            assert!(
+                err.to_string().contains("more than once"),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_key_that_is_not_a_position() {
+        for key in ["group", "-1", "65536"] {
+            let err = merge_contract_update_payload(
+                base_contract(),
+                2,
+                json!({}),
+                None,
+                Some(json!({ key: { "requiredPower": 1 } })),
+                None,
+                None,
+                None,
+            )
+            .expect_err("a key that is not a position must be refused");
+            assert!(
+                err.to_string().contains("is not a contract position"),
+                "unexpected error for {key}: {err}"
+            );
+        }
+    }
+
+    /// A registered contract owned by `[1; 32]` with one document type,
+    /// `note`.
+    fn registered_contract() -> DataContract {
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .unwrap()
+            .create_with_value_config(
+                Identifier::from([1; 32]),
+                1,
+                platform_value!({
+                    "note": { "type": "object",
+                    "properties": {"message": {"type": "string", "maxLength": 63, "position": 0}},
+                    "additionalProperties": false }
+                }),
+                None,
+                None,
+            )
+            .unwrap()
+            .data_contract_owned()
+    }
+
+    /// A wallet over a mock SDK that answers only the fetch of `contract`:
+    /// any other request (a nonce read, a broadcast) fails the call.
+    async fn wallet_answering_only_the_fetch_of(
+        contract: &DataContract,
+    ) -> std::sync::Arc<crate::PlatformWallet> {
+        use super::super::signing_key::tests::wallet_with_signing_keys_on;
+        use crate::wallet::persister::NoPlatformPersistence;
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .unwrap();
+        wallet_with_signing_keys_on(sdk, std::sync::Arc::new(NoPlatformPersistence)).await
+    }
+
+    #[tokio::test]
+    async fn should_preview_the_update_of_the_fetched_contract() {
+        let contract = registered_contract();
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let preview = wallet
+            .identity()
+            .preview_data_contract_update(
+                &Identifier::from([1; 32]),
+                &contract.id(),
+                r#"{"comment": {"type": "object", "properties": {"text": {"type": "string", "maxLength": 63, "position": 0}}, "additionalProperties": false}}"#,
+                None,
+                None,
+                Some(r#"["notes"]"#),
+                None,
+                None,
+            )
+            .await
+            .expect("preview");
+
+        assert_eq!(preview.current_version, contract.version());
+        assert_eq!(preview.new_version, contract.version() + 1);
+        assert_eq!(preview.document_types.added, vec!["comment"]);
+        assert!(preview.document_types.changed.is_empty());
+        assert!(preview.keywords_changed);
+        assert!(!preview.description_changed);
+        assert!(preview.has_changes());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_preview_for_an_identity_that_does_not_own_the_contract() {
+        let contract = registered_contract();
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let err = wallet
+            .identity()
+            .preview_data_contract_update(
+                &Identifier::from([9; 32]),
+                &contract.id(),
+                "{}",
+                None,
+                None,
+                None,
+                Some("new description"),
+                None,
+            )
+            .await
+            .expect_err("a preview by another identity must be refused");
+
+        assert!(
+            err.to_string().contains("cannot update with this identity"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Through the public update: the stale review is refused before the
+    /// draft is built and before any nonce is read. The mock answers only the
+    /// contract fetch, so a nonce request or a broadcast would fail the call
+    /// with another error.
+    #[tokio::test]
+    async fn should_refuse_a_stale_reviewed_version_through_the_public_update() {
+        use super::super::signing_key::tests::available;
+        // Owned by the identity the test wallet holds, whose keys 1 and 2
+        // are CRITICAL ECDSA authentication keys.
+        let contract = {
+            use dpp::data_contract::factory::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .unwrap()
+                .create_with_value_config(
+                    Identifier::default(),
+                    1,
+                    platform_value!({
+                        "note": { "type": "object",
+                        "properties": {"message": {"type": "string", "maxLength": 63, "position": 0}},
+                        "additionalProperties": false }
+                    }),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned()
+        };
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let err = wallet
+            .identity()
+            .update_data_contract_with_signer(
+                &Identifier::default(),
+                &contract.id(),
+                r#"{"broken": {"type": "not-a-type"}}"#,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(contract.version() + 7),
+                &available(&[1, 2]),
+            )
+            .await
+            .expect_err("a stale reviewed version must be refused");
+
+        assert!(
+            err.to_string().contains("not the reviewed version"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_stale_reviewed_version_before_building_the_draft() {
+        let contract = registered_contract();
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        // The documents section would fail to build; the stale version must
+        // be what the caller hears about.
+        let err = wallet
+            .identity()
+            .draft_data_contract_update(
+                &Identifier::from([1; 32]),
+                &contract.id(),
+                r#"{"broken": {"type": "not-a-type"}}"#,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(contract.version() + 7),
+            )
+            .await
+            .err()
+            .expect("a stale reviewed version must be refused");
+
+        assert!(
+            err.to_string().contains("not the reviewed version"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn should_not_count_a_reordering_of_unchanged_indexes_as_a_change() {
+        let note = |indices: serde_json::Value| json!({ "note": { "type": "object", "properties": {}, "indices": indices } });
+        let by_a = json!({ "name": "byA", "properties": [{ "a": "asc" }] });
+        let by_b = json!({ "name": "byB", "properties": [{ "b": "asc" }] });
+        let existing = json!({ "documentSchemas": note(json!([by_a.clone(), by_b.clone()])) });
+
+        let reordered = json!({ "documentSchemas": note(json!([by_b.clone(), by_a.clone()])) });
+        assert!(section_changes(&existing, &reordered, "documentSchemas").is_empty());
+
+        let changed_index = json!({ "documentSchemas": note(json!([
+            by_a,
+            { "name": "byB", "properties": [{ "b": "desc" }] }
+        ])) });
+        assert_eq!(
+            section_changes(&existing, &changed_index, "documentSchemas").changed,
+            vec!["note"]
+        );
+    }
+
+    #[test]
+    fn should_name_the_configuration_members_that_change() {
+        let existing =
+            json!({ "config": { "$formatVersion": "2", "readonly": false, "moderation": null } });
+        let updated = json!({ "config": {
+            "$formatVersion": "2", "readonly": false,
+            "moderation": { "moderators": { "$type": "contractOwner" } }
+        } });
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert!(preview.config_changed);
+        assert_eq!(preview.config_changed_fields, vec!["moderation"]);
+    }
+
+    #[test]
+    fn should_list_moderators_added_and_removed() {
+        let kept = Identifier::from([1; 32]);
+        let revoked = Identifier::from([2; 32]);
+        let granted = Identifier::from([3; 32]);
+        let existing = BTreeSet::from([kept, revoked]);
+        let updated = BTreeSet::from([kept, granted]);
+
+        let (added, removed) = moderator_changes(&existing, &updated);
+
+        assert_eq!(added, vec![bs58::encode(granted.to_buffer()).into_string()]);
+        assert_eq!(
+            removed,
+            vec![bs58::encode(revoked.to_buffer()).into_string()]
+        );
+        assert_eq!(moderator_changes(&existing, &existing), (vec![], vec![]));
+    }
+
+    #[test]
+    fn should_count_a_reordering_of_an_objects_members_as_a_change() {
+        let existing: serde_json::Value = serde_json::from_str(
+            r#"{"documentSchemas":{"note":{"type":"object","properties":{"z":{"type":"string","position":0},"a":{"type":"string","position":1}}}}}"#,
+        )
+        .unwrap();
+        let reordered: serde_json::Value = serde_json::from_str(
+            r#"{"documentSchemas":{"note":{"type":"object","properties":{"a":{"type":"string","position":1},"z":{"type":"string","position":0}}}}}"#,
+        )
+        .unwrap();
+
+        // `Value` equality ignores member order; the preview must not.
+        assert_eq!(existing, reordered);
+        assert_eq!(
+            section_changes(&existing, &reordered, "documentSchemas").changed,
+            vec!["note"]
+        );
+        assert!(section_changes(&existing, &existing.clone(), "documentSchemas").is_empty());
+    }
+
+    /// Through the public preview, against a contract whose configuration
+    /// appoints two moderators: the update keeps one and appoints another.
+    #[tokio::test]
+    async fn should_report_moderator_appointments_through_the_public_preview() {
+        let platform_version = PlatformVersion::latest();
+        let base58 = |id: Identifier| bs58::encode(id.to_buffer()).into_string();
+        let kept = Identifier::from([0x11; 32]);
+        let revoked = Identifier::from([0x22; 32]);
+        let granted = Identifier::from([0x33; 32]);
+        let owner = Identifier::from([1; 32]);
+        let config_version = latest_config_version().to_string();
+        let contract = build_contract(json!({
+            "$formatVersion": "1",
+            "id": base58(Identifier::from([9; 32])),
+            "ownerId": base58(owner),
+            "version": INITIAL_DATA_CONTRACT_VERSION,
+            "documentSchemas": { "note": {
+                "type": "object",
+                "properties": { "message": { "type": "string", "position": 0, "maxLength": 63 } },
+                "additionalProperties": false
+            } },
+            "config": {
+                "$formatVersion": config_version,
+                "moderation": { "moderators": {
+                    "$type": "appointedModerators",
+                    "identities": [base58(kept), base58(revoked)]
+                } }
+            }
+        }));
+        assert_eq!(
+            named_moderators(&contract),
+            BTreeSet::from([kept, revoked]),
+            "fixture must appoint two moderators at {platform_version:?}"
+        );
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let config = json!({
+            "$formatVersion": config_version,
+            "moderation": { "moderators": {
+                "$type": "appointedModerators",
+                "identities": [base58(kept), base58(granted)]
+            } }
+        })
+        .to_string();
+        let preview = wallet
+            .identity()
+            .preview_data_contract_update(
+                &owner,
+                &contract.id(),
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                Some(&config),
+            )
+            .await
+            .expect("preview");
+
+        assert_eq!(preview.moderators_added, vec![base58(granted)]);
+        assert_eq!(preview.moderators_removed, vec![base58(revoked)]);
+        assert!(preview.config_changed);
+        assert_eq!(preview.config_changed_fields, vec!["moderation"]);
     }
 
     /// The current default config version for the latest protocol — 1 on

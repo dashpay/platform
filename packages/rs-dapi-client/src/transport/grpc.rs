@@ -3,6 +3,8 @@
 use std::time::Duration;
 
 use super::create_channel;
+#[cfg(not(target_arch = "wasm32"))]
+use super::proxy::is_proxy_failure;
 use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use super::{CoreGrpcClient, PlatformGrpcClient};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
@@ -13,6 +15,10 @@ use dapi_grpc::tonic::{IntoRequest, Streaming};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 
 impl TransportClient for PlatformGrpcClient {
+    /// Ignores any proxy the [DapiClient](crate::DapiClient) has: without
+    /// settings the channel connects directly. Use
+    /// [with_uri_and_settings](TransportClient::with_uri_and_settings) with
+    /// the client's settings to connect through its proxy.
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
@@ -61,6 +67,10 @@ impl TransportClient for PlatformGrpcClient {
 }
 
 impl TransportClient for CoreGrpcClient {
+    /// Ignores any proxy the [DapiClient](crate::DapiClient) has: without
+    /// settings the channel connects directly. Use
+    /// [with_uri_and_settings](TransportClient::with_uri_and_settings) with
+    /// the client's settings to connect through its proxy.
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(PoolPrefix::Core, &uri, None, || {
@@ -120,8 +130,55 @@ const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
     "proved path queries can not be for limit 0",
 ];
 
+/// A node's refusal of a query version older than the ones it serves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OlderQueryVersionRefusal<'a> {
+    /// The query's name, as Drive names it: `document_history`.
+    pub query: &'a str,
+    /// The request version the node refused.
+    pub given: u32,
+}
+
+/// Read `status` as a node refusing a query version older than the ones it serves (Drive's
+/// `QueryError::UnsupportedQueryVersion`): an UNKNOWN status whose whole message is
+/// "unsupported version for query: {name}, currently supporting versions {min} to {max} on
+/// platform protocol {n}, given {given}", with `min` to `max` in order and `given` below
+/// `min`. A message that only resembles it is not read as one.
+///
+/// The network has moved past that request version, so every node in step with it refuses
+/// the request the same way: the node is not at fault, and the caller must choose a newer
+/// version. Such a status is not retryable ([`CanRetry`]), so the node is neither banned nor
+/// passed over. A version above `max` is the opposite case, a node behind the network: it
+/// is `None` here and stays retryable on another node.
+pub fn older_query_version_refusal(
+    status: &dapi_grpc::tonic::Status,
+) -> Option<OlderQueryVersionRefusal<'_>> {
+    if status.code() != dapi_grpc::tonic::Code::Unknown {
+        return None;
+    }
+    let rest = status
+        .message()
+        .strip_prefix("unsupported version for query: ")?;
+    let (query, rest) = rest.split_once(", currently supporting versions ")?;
+    let (min, rest) = rest.split_once(" to ")?;
+    let (max, rest) = rest.split_once(" on platform protocol ")?;
+    let (protocol, given) = rest.split_once(", given ")?;
+    let number = |text: &str| text.parse::<u32>().ok();
+    let (min, max, given) = (number(min)?, number(max)?, number(given)?);
+    number(protocol)?;
+    (!query.is_empty() && min <= max && given < min)
+        .then_some(OlderQueryVersionRefusal { query, given })
+}
+
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
+        // A failing SOCKS5 proxy fails every node alike: retrying elsewhere
+        // cannot help, and the node must not be banned for it.
+        #[cfg(not(target_arch = "wasm32"))]
+        if is_proxy_failure(self) {
+            return false;
+        }
+
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
@@ -131,6 +188,9 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 .iter()
                 .any(|refusal| self.message().contains(refusal))
         {
+            return false;
+        }
+        if older_query_version_refusal(self).is_some() {
             return false;
         }
 
@@ -208,6 +268,19 @@ impl CanRetry for dapi_grpc::tonic::Status {
         Some(std::time::Duration::from_secs(
             secs.clamp(MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS),
         ))
+    }
+
+    fn is_node_busy(&self) -> bool {
+        use dapi_grpc::tonic::Code;
+
+        match self.code() {
+            Code::ResourceExhausted => true,
+            // A node that asks to be tried again later is working: what was asked is not
+            // ready yet, such as the results of a block rs-dapi's node has just stored.
+            // A node that is down, or a proxy in front of one, sends no such header.
+            Code::Unavailable => self.metadata().contains_key("retry-after"),
+            _ => false,
+        }
     }
 }
 
@@ -304,20 +377,9 @@ macro_rules! impl_transport_request_grpc {
 /// runs 5.0 or newer, and serves the methods and request fields 5.0 added.
 const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 
-/// A 4.x node drops a composite query's `sub_queries` and a chained query's `chained`, and
-/// proves the plain page or the inner query instead.
-fn documents_request_needs_protocol_version(
-    request: &platform_proto::GetDocumentsRequest,
-) -> Option<u32> {
-    match &request.version {
-        Some(platform_proto::get_documents_request::Version::V1(v1))
-            if v1.chained.is_some() || !v1.sub_queries.is_empty() =>
-        {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
-    }
-}
+/// The first protocol version no 5.0 release can sign: every node that answers at it runs 5.1
+/// or newer, and serves the methods and request fields 5.1 added.
+const PROTOCOL_VERSION_OF_5_1: u32 = 15;
 
 /// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
 /// answers for the credit pool instead.
@@ -345,8 +407,10 @@ impl_transport_request_grpc!(
     get_identity
 );
 
+// Which networks serve a document request depends on the query it was encoded from, so the
+// SDK decides it before encoding (`DocumentQuery::required_protocol_version` in
+// `dash-platform-queries`), and the wire request declares nothing.
 impl_transport_request_grpc!(
-    needs_protocol_version: documents_request_needs_protocol_version;
     platform_proto::GetDocumentsRequest,
     platform_proto::GetDocumentsResponse,
     PlatformGrpcClient,
@@ -511,6 +575,11 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        // A 5.0 node does not know V1, and every node before protocol 15 refuses it.
+        Some(platform_proto::get_document_history_request::Version::V1(_)) => Some(PROTOCOL_VERSION_OF_5_1),
+        Some(platform_proto::get_document_history_request::Version::V0(_)) | None => None,
+    };
     platform_proto::GetDocumentHistoryRequest,
     platform_proto::GetDocumentHistoryResponse,
     PlatformGrpcClient,
@@ -518,13 +587,34 @@ impl_transport_request_grpc!(
     get_document_history
 );
 
-impl_transport_request_grpc!(
-    platform_proto::BroadcastStateTransitionRequest,
-    platform_proto::BroadcastStateTransitionResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    broadcast_state_transition
-);
+impl TransportRequest for platform_proto::BroadcastStateTransitionRequest {
+    type Client = PlatformGrpcClient;
+    type Response = platform_proto::BroadcastStateTransitionResponse;
+    const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+    fn method_name(&self) -> &'static str {
+        "broadcast_state_transition"
+    }
+    fn classify_error(&self, error: &TransportError) -> super::RequestErrorClassification {
+        broadcast::classify_error(error)
+    }
+    fn execute_transport<'c>(
+        self,
+        client: &'c mut Self::Client,
+        settings: &AppliedRequestSettings,
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+        let mut request = self.into_request();
+        if !settings.timeout.is_zero() {
+            request.set_timeout(settings.timeout);
+        }
+        client
+            .broadcast_state_transition(request)
+            .map_err(TransportError::Grpc)
+            .map_ok(|response| response.into_inner())
+            .boxed()
+    }
+}
+
+mod broadcast;
 
 impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultRequest,
@@ -534,10 +624,22 @@ impl_transport_request_grpc!(
         timeout: Some(Duration::from_secs(30)),
         retries: Some(3),
         ban_failed_address: None,
+        ban_busy_address: None,
         connect_timeout: None,
         max_decoding_message_size: None,
     },
     wait_for_state_transition_result
+);
+
+// rpc getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetRecentStateTransitionStatusRequest,
+    platform_proto::GetRecentStateTransitionStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_state_transition_status
 );
 
 impl_transport_request_grpc!(
@@ -719,6 +821,82 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_vote_polls_by_end_date
+);
+
+// rpc getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetYesNoVotePollStateRequest,
+    platform_proto::GetYesNoVotePollStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_yes_no_vote_poll_state
+);
+
+// rpc getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetMasternodeYesNoVoteRequest,
+    platform_proto::GetMasternodeYesNoVoteResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_masternode_yes_no_vote
+);
+
+// rpc getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetPrivateDocumentEntriesRequest,
+    platform_proto::GetPrivateDocumentEntriesResponse,
+    PlatformGrpcClient,
+    // A page reads at most a chunk of the store, about 512 KiB; its proof can carry the store's
+    // first chunk too, as the anchor of its chunks, so up to about 1 MiB.
+    RequestSettings {
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    get_private_document_entries
+);
+
+// rpc getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetOwnerTransactionsInBlockRequest,
+    platform_proto::GetOwnerTransactionsInBlockResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // A block can hold 2 MiB, and every transition in it can belong to the one owner.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // rs-dapi refuses this method when too many are in progress. A busy node is not a
+        // failed one, and a ban would take it away from the client's other requests too.
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_owner_transactions_in_block
+);
+
+// rpc getBlocks(GetBlocksRequest) returns (GetBlocksResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetBlocksRequest,
+    platform_proto::GetBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // A response can reach about 4 MB.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // The gateway limits this method far below every other one. A ban lasts until the
+        // limit resets and would take the node away from the client's other requests too.
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_blocks
 );
 
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
@@ -905,6 +1083,7 @@ impl_transport_request_grpc!(
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
         ban_failed_address: None,
+        ban_busy_address: None,
         connect_timeout: None,
         retries: None,
         max_decoding_message_size: None,
@@ -934,6 +1113,11 @@ impl_transport_request_grpc!(
 
 //   rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest) returns (GetIdentityByNonUniquePublicKeyHashResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        // A node before protocol 14 refuses V1 with UNKNOWN, which gets it banned.
+        Some(platform_proto::get_identity_by_non_unique_public_key_hash_request::Version::V1(_)) => Some(PROTOCOL_VERSION_OF_5_0),
+        Some(platform_proto::get_identity_by_non_unique_public_key_hash_request::Version::V0(_)) | None => None,
+    };
     platform_proto::GetIdentityByNonUniquePublicKeyHashRequest,
     platform_proto::GetIdentityByNonUniquePublicKeyHashResponse,
     PlatformGrpcClient,

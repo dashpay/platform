@@ -5,9 +5,13 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 
+use dash_sdk::drive::query::document_history_drive_query::DocumentHistoryState;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
+use platform_wallet::wallet::identity::network::{
+    DocumentEraseNotSubmittedReason, DocumentEraseOutcome, DocumentLifecycleObservation,
+};
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -151,7 +155,9 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
 ///
 /// Note: `dash_sdk_document_get_info` (single-document fetch) emits a different,
 /// per-field shape (bytes as hex); this parity is with the list-query path only.
-fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWalletError> {
+pub(crate) fn confirmed_document_to_json(
+    document: &Document,
+) -> Result<String, PlatformWalletError> {
     let document_value = document.to_object().map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to convert confirmed document to a value: {e}"
@@ -171,14 +177,14 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 
 /// Replace + broadcast `document_id`'s properties on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, signed via the
-/// external `signer_handle` with key `signing_key_id`.
+/// external `signer_handle`.
 ///
 /// Goes through `IdentityWallet::replace_document_with_signer`, which
 /// fetches the current document, applies `properties_json` (schema-
-/// sanitized), bumps the revision, validates `signing_key_id` is an
-/// AUTHENTICATION + ECDSA key on the owner, broadcasts on the
-/// platform-wallet 8 MB worker stack, and waits for the confirmed
-/// document.
+/// sanitized), bumps the revision, selects the owner's AUTHENTICATION
+/// key that the document type's security level allows and the signer
+/// can sign with, broadcasts on the platform-wallet 8 MB worker stack,
+/// and waits for the confirmed document.
 ///
 /// On success the confirmed document's 32-byte id is written to
 /// `out_document_id`, and a NUL-terminated, owned canonical-document
@@ -195,7 +201,6 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
     document_type_name: *const c_char,
     document_id: *const u8,
     properties_json: *const c_char,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -229,7 +234,6 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
                         &document_type_str,
                         &document_id_value,
                         properties_str,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -251,21 +255,20 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
 
 /// Delete + broadcast `document_id` on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, signed via the
-/// external `signer_handle` with key `signing_key_id`.
+/// external `signer_handle` with the owner's AUTHENTICATION key that the
+/// document type's security level allows and the signer can sign with.
 ///
 /// Goes through `IdentityWallet::delete_document_with_signer`. On
 /// success the deleted document's 32-byte id is written to
 /// `out_document_id`. Delete returns no document body, so there is no
 /// JSON out-param — Swift removes the local row by id.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_document_delete(
     wallet_handle: Handle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
     document_id: *const u8,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
 ) -> PlatformWalletFFIResult {
@@ -292,7 +295,6 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
                     &contract_id_value,
                     &document_type_str,
                     &document_id_value,
-                    signing_key_id,
                     signer,
                 )
                 .await?;
@@ -309,9 +311,254 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
     PlatformWalletFFIResult::ok()
 }
 
+/// Delete + broadcast a document by its values: the delete an `indexOnly`
+/// document type needs, which [`platform_wallet_document_delete`] (ids
+/// only) cannot perform.
+///
+/// Goes through `IdentityWallet::delete_document_by_values_with_signer`.
+/// `document_id` is the id the document was created under and
+/// `properties_json` a NUL-terminated UTF-8 JSON object holding the
+/// document's own properties as it was created with them, in the format
+/// [`platform_wallet_create_document_with_signer`] takes, plus a
+/// `"$createdAt"` number of milliseconds for a type whose entries commit to
+/// it. A type that is not `indexOnly`, a property the type does not
+/// declare and any other `$` field are refused before anything is signed.
+/// The signing key is the owner's AUTHENTICATION key that the document
+/// type's security level allows and the signer can sign with. On success
+/// the deleted document's 32-byte id is written to `out_document_id`.
+///
+/// # Safety
+/// `owner_identity_id`, `contract_id` and `document_id` must each point to
+/// 32 readable bytes; `document_type_name` and `properties_json` must be
+/// valid NUL-terminated strings; `signer_handle` must be a live signer;
+/// `out_document_id` must point to 32 writable bytes.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_document_delete_by_values(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    properties_json: *const c_char,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(signer_handle);
+    check_ptr!(document_type_name);
+    check_ptr!(properties_json);
+    check_ptr!(out_document_id);
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_id_value = unwrap_result_or_return!(read_identifier(document_id));
+
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
+    let properties_str =
+        unwrap_result_or_return!(CStr::from_ptr(properties_json).to_str()).to_string();
+
+    let signer_addr = signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let result: Result<Identifier, PlatformWalletError> = block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            let deleted_id: Identifier = identity_wallet
+                .delete_document_by_values_with_signer(
+                    &owner_id,
+                    &contract_id_value,
+                    &document_type_str,
+                    &document_id_value,
+                    &properties_str,
+                    signer,
+                )
+                .await?;
+            Ok::<_, PlatformWalletError>(deleted_id)
+        });
+        result
+    });
+    let result = unwrap_option_or_return!(option);
+    let deleted_id = unwrap_result_or_return!(result);
+
+    let bytes = deleted_id.to_buffer();
+    let dst = slice::from_raw_parts_mut(out_document_id, 32);
+    dst.copy_from_slice(&bytes);
+    PlatformWalletFFIResult::ok()
+}
+
+/// The operation populated an outcome only after all Rust work succeeded.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DocumentEraseOutcomeKindFFI {
+    #[default]
+    Unset = 0,
+    NotSubmitted = 1,
+    Submitted = 2,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DocumentEraseNotSubmittedReasonFFI {
+    #[default]
+    None = 0,
+    Active = 1,
+    Absent = 2,
+    NotNewestOwner = 3,
+    PreflightUnavailable = 4,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DocumentLifecycleObservationTagFFI {
+    #[default]
+    Unavailable = 0,
+    Active = 1,
+    Absent = 2,
+    Deleted = 3,
+    Erasing = 4,
+}
+
+/// Unavailable has no lifecycle fields; observed tags preserve every u64 exactly.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DocumentLifecycleObservationFFI {
+    pub state: DocumentLifecycleObservationTagFFI,
+    pub remaining_revisions: u64,
+    pub deleted_at_ms: u64,
+    pub erasing_started_at_ms: u64,
+    pub erasing_from_time_ms: u64,
+    pub erasing_from_revision: u64,
+}
+
+/// Caller-owned output, with no allocations to free. `owner` is present only
+/// for NotNewestOwner. `after` is an observation only for Submitted.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DocumentEraseOutcomeFFI {
+    pub kind: DocumentEraseOutcomeKindFFI,
+    pub reason: DocumentEraseNotSubmittedReasonFFI,
+    pub owner: [u8; 32],
+    pub before: DocumentLifecycleObservationFFI,
+    pub after: DocumentLifecycleObservationFFI,
+}
+
+impl From<DocumentLifecycleObservation> for DocumentLifecycleObservationFFI {
+    fn from(value: DocumentLifecycleObservation) -> Self {
+        let DocumentLifecycleObservation::Observed(lifecycle) = value else {
+            return Self::default();
+        };
+        let state = match lifecycle.state {
+            DocumentHistoryState::Active => DocumentLifecycleObservationTagFFI::Active,
+            DocumentHistoryState::Absent => DocumentLifecycleObservationTagFFI::Absent,
+            DocumentHistoryState::Deleted => DocumentLifecycleObservationTagFFI::Deleted,
+            DocumentHistoryState::Erasing => DocumentLifecycleObservationTagFFI::Erasing,
+        };
+        Self {
+            state,
+            remaining_revisions: lifecycle.remaining_revisions,
+            deleted_at_ms: lifecycle.times.deleted_at_ms,
+            erasing_started_at_ms: lifecycle.times.erasing_started_at_ms,
+            erasing_from_time_ms: lifecycle.times.erasing_from_time_ms,
+            erasing_from_revision: lifecycle.times.erasing_from_revision,
+        }
+    }
+}
+
+impl From<DocumentEraseOutcome> for DocumentEraseOutcomeFFI {
+    fn from(value: DocumentEraseOutcome) -> Self {
+        match value {
+            DocumentEraseOutcome::NotSubmitted { reason, before } => {
+                let (reason, owner) = match reason {
+                    DocumentEraseNotSubmittedReason::Active => {
+                        (DocumentEraseNotSubmittedReasonFFI::Active, [0; 32])
+                    }
+                    DocumentEraseNotSubmittedReason::Absent => {
+                        (DocumentEraseNotSubmittedReasonFFI::Absent, [0; 32])
+                    }
+                    DocumentEraseNotSubmittedReason::PreflightUnavailable => (
+                        DocumentEraseNotSubmittedReasonFFI::PreflightUnavailable,
+                        [0; 32],
+                    ),
+                    DocumentEraseNotSubmittedReason::NotNewestOwner { owner } => (
+                        DocumentEraseNotSubmittedReasonFFI::NotNewestOwner,
+                        owner.to_buffer(),
+                    ),
+                };
+                Self {
+                    kind: DocumentEraseOutcomeKindFFI::NotSubmitted,
+                    reason,
+                    owner,
+                    before: before.into(),
+                    ..Default::default()
+                }
+            }
+            DocumentEraseOutcome::Submitted { before, after } => Self {
+                kind: DocumentEraseOutcomeKindFFI::Submitted,
+                before: before.into(),
+                after: after.into(),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// Run one Rust-owned preflight/select/submit/observe operation. An unreadable
+/// preflight does not submit. An unavailable closing read stays Submitted.
+/// Submission errors (including code 20, whose outcome is unknown) leave
+/// `out` at Default; callers must read history before considering a retry.
+/// The caller retains the signer and output for the duration of this call.
+///
+/// # Safety
+/// Identifier pointers address 32 readable bytes and the type is a readable
+/// NUL-terminated UTF-8 string. The signer and its callbacks remain live for
+/// this blocking call. `out` is aligned, writable, and does not overlap an
+/// input. Inputs and output are not concurrently mutated.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_document_erase_and_observe(
+    wallet_handle: Handle,
+    submitting_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    signer_handle: *mut SignerHandle,
+    out: *mut DocumentEraseOutcomeFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out);
+    *out = DocumentEraseOutcomeFFI::default();
+    check_ptr!(signer_handle);
+    check_ptr!(document_type_name);
+    let submitter = unwrap_result_or_return!(read_identifier(submitting_identity_id));
+    let contract = unwrap_result_or_return!(read_identifier(contract_id));
+    let document = unwrap_result_or_return!(read_identifier(document_id));
+    let document_type =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_owned();
+    let identity_wallet = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let signer_addr = signer_handle as usize;
+    let result = block_on_worker(async move {
+        let signer = &*(signer_addr as *const VTableSigner);
+        identity_wallet
+            .erase_document_and_observe_with_signer(
+                &submitter,
+                &contract,
+                &document_type,
+                &document,
+                signer,
+            )
+            .await
+    });
+    *out = unwrap_result_or_return!(result).into();
+    PlatformWalletFFIResult::ok()
+}
+
 /// Transfer + broadcast `document_id` on `contract_id`'s
 /// `document_type_name`, from `owner_identity_id` to `recipient_id`,
-/// signed via the external `signer_handle` with key `signing_key_id`.
+/// signed via the external `signer_handle` with the owner's
+/// AUTHENTICATION key that the document type's security level allows and
+/// the signer can sign with.
 ///
 /// Goes through `IdentityWallet::transfer_document_with_signer`. On
 /// success the confirmed document's 32-byte id is written to
@@ -328,7 +575,6 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
     document_type_name: *const c_char,
     document_id: *const u8,
     recipient_id: *const u8,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -361,7 +607,6 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
                         &document_type_str,
                         &document_id_value,
                         &recipient_id_value,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -383,8 +628,9 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
 
 /// Set (update) the trade price of `document_id` on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, to `price`
-/// credits — signed via the external `signer_handle` with key
-/// `signing_key_id`.
+/// credits — signed via the external `signer_handle` with the owner's
+/// AUTHENTICATION key that the document type's security level allows and
+/// the signer can sign with.
 ///
 /// Goes through `IdentityWallet::set_document_price_with_signer`. On
 /// success the confirmed document's 32-byte id is written to
@@ -400,7 +646,6 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
     document_type_name: *const c_char,
     document_id: *const u8,
     price: u64,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -432,7 +677,6 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
                         &document_type_str,
                         &document_id_value,
                         price,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -455,7 +699,8 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
 /// Purchase + broadcast for-sale `document_id` on `contract_id`'s
 /// `document_type_name` for `price` credits, with `purchaser_id` as
 /// the buyer (and new owner) — signed via the external `signer_handle`
-/// with key `signing_key_id` (resolved on the purchaser).
+/// with the purchaser's AUTHENTICATION key that the document type's
+/// security level allows and the signer can sign with.
 ///
 /// Goes through `IdentityWallet::purchase_document_with_signer`. On
 /// success the confirmed document's 32-byte id is written to
@@ -473,7 +718,6 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
     document_type_name: *const c_char,
     document_id: *const u8,
     price: u64,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -505,7 +749,6 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
                         &document_type_str,
                         &document_id_value,
                         price,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -528,6 +771,7 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform_wallet_ffi_result_free;
     use dpp::document::DocumentV0;
     use dpp::platform_value::Value;
     use std::collections::BTreeMap;
@@ -587,4 +831,218 @@ mod tests {
             json.get("$createdAt")
         );
     }
+
+    #[test]
+    fn should_refuse_null_pointers_for_delete_by_values() {
+        let id = [0u8; 32];
+        let mut out = [0u8; 32];
+        let name = CString::new("loginKeyResponse").unwrap();
+        let properties = CString::new("{}").unwrap();
+        // A dangling but non-null signer: every call below returns at a
+        // pointer check before the signer is read.
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+
+        let call = |type_name: *const c_char,
+                    properties_json: *const c_char,
+                    signer_handle: *mut SignerHandle,
+                    out_document_id: *mut u8| unsafe {
+            platform_wallet_document_delete_by_values(
+                0,
+                id.as_ptr(),
+                id.as_ptr(),
+                type_name,
+                id.as_ptr(),
+                properties_json,
+                signer_handle,
+                out_document_id,
+            )
+        };
+
+        for result in [
+            call(ptr::null(), properties.as_ptr(), signer, out.as_mut_ptr()),
+            call(name.as_ptr(), ptr::null(), signer, out.as_mut_ptr()),
+            call(
+                name.as_ptr(),
+                properties.as_ptr(),
+                ptr::null_mut(),
+                out.as_mut_ptr(),
+            ),
+            call(name.as_ptr(), properties.as_ptr(), signer, ptr::null_mut()),
+        ] {
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+    }
+    #[test]
+    fn should_initialize_erase_outcome_before_rejecting_invalid_inputs() {
+        let id = [1; 32];
+        let name = CString::new("note").unwrap();
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        for (owner, contract, doc, type_name, signer, expected) in [
+            (
+                ptr::null(),
+                id.as_ptr(),
+                id.as_ptr(),
+                name.as_ptr(),
+                signer,
+                10,
+            ),
+            (
+                id.as_ptr(),
+                ptr::null(),
+                id.as_ptr(),
+                name.as_ptr(),
+                signer,
+                10,
+            ),
+            (
+                id.as_ptr(),
+                id.as_ptr(),
+                ptr::null(),
+                name.as_ptr(),
+                signer,
+                10,
+            ),
+            (
+                id.as_ptr(),
+                id.as_ptr(),
+                id.as_ptr(),
+                ptr::null(),
+                signer,
+                3,
+            ),
+            (
+                id.as_ptr(),
+                id.as_ptr(),
+                id.as_ptr(),
+                name.as_ptr(),
+                ptr::null_mut(),
+                3,
+            ),
+            (
+                id.as_ptr(),
+                id.as_ptr(),
+                id.as_ptr(),
+                name.as_ptr(),
+                signer,
+                98,
+            ),
+        ] {
+            let mut out = DocumentEraseOutcomeFFI {
+                kind: DocumentEraseOutcomeKindFFI::Submitted,
+                ..Default::default()
+            };
+            let mut result = unsafe {
+                platform_wallet_document_erase_and_observe(
+                    0, owner, contract, type_name, doc, signer, &mut out,
+                )
+            };
+            assert_eq!(result.code as u32, expected);
+            assert_eq!(out.kind, DocumentEraseOutcomeKindFFI::Unset);
+            assert_eq!(
+                out.before.state,
+                DocumentLifecycleObservationTagFFI::Unavailable
+            );
+            unsafe {
+                platform_wallet_ffi_result_free(&mut result);
+            }
+        }
+        let mut result = unsafe {
+            platform_wallet_document_erase_and_observe(
+                0,
+                id.as_ptr(),
+                id.as_ptr(),
+                name.as_ptr(),
+                id.as_ptr(),
+                signer,
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code as u32, 3);
+        unsafe {
+            platform_wallet_ffi_result_free(&mut result);
+        }
+    }
+    #[test]
+    fn should_marshal_every_erase_outcome_without_losing_observation_fields() {
+        use dash_sdk::drive::query::document_history_drive_query::{
+            DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes, DocumentHistoryState,
+        };
+        use platform_wallet::wallet::identity::network::{
+            DocumentEraseNotSubmittedReason, DocumentEraseOutcome, DocumentLifecycleObservation,
+        };
+        assert_eq!(std::mem::size_of::<DocumentEraseOutcomeFFI>(), 136);
+        assert_eq!(std::mem::align_of::<DocumentEraseOutcomeFFI>(), 8);
+        for (state, tag) in [
+            (DocumentHistoryState::Active, 1),
+            (DocumentHistoryState::Absent, 2),
+            (DocumentHistoryState::Deleted, 3),
+            (DocumentHistoryState::Erasing, 4),
+        ] {
+            let lifecycle = DocumentLifecycleObservation::Observed(DocumentHistoryLifecycle {
+                state,
+                remaining_revisions: u64::MAX,
+                times: DocumentHistoryLifecycleTimes {
+                    deleted_at_ms: 1,
+                    erasing_started_at_ms: 2,
+                    erasing_from_time_ms: 3,
+                    erasing_from_revision: u64::MAX,
+                },
+            });
+            let out = DocumentEraseOutcomeFFI::from(DocumentEraseOutcome::Submitted {
+                before: DocumentLifecycleObservation::Unavailable,
+                after: lifecycle,
+            });
+            assert_eq!(out.kind, DocumentEraseOutcomeKindFFI::Submitted);
+            assert_eq!(
+                out.before.state,
+                DocumentLifecycleObservationTagFFI::Unavailable
+            );
+            assert_eq!(out.after.state as u8, tag);
+            assert_eq!(out.after.remaining_revisions, u64::MAX);
+            assert_eq!(out.after.erasing_from_revision, u64::MAX);
+            assert_eq!(
+                (
+                    out.after.deleted_at_ms,
+                    out.after.erasing_started_at_ms,
+                    out.after.erasing_from_time_ms
+                ),
+                (1, 2, 3)
+            );
+        }
+        for (reason, tag, owner) in [
+            (DocumentEraseNotSubmittedReason::Active, 1, [0; 32]),
+            (DocumentEraseNotSubmittedReason::Absent, 2, [0; 32]),
+            (
+                DocumentEraseNotSubmittedReason::NotNewestOwner {
+                    owner: Identifier::from([7; 32]),
+                },
+                3,
+                [7; 32],
+            ),
+            (
+                DocumentEraseNotSubmittedReason::PreflightUnavailable,
+                4,
+                [0; 32],
+            ),
+        ] {
+            let out = DocumentEraseOutcomeFFI::from(DocumentEraseOutcome::NotSubmitted {
+                reason,
+                before: DocumentLifecycleObservation::Unavailable,
+            });
+            assert_eq!(out.kind, DocumentEraseOutcomeKindFFI::NotSubmitted);
+            assert_eq!(out.reason as u8, tag);
+            assert_eq!(out.owner, owner);
+            assert_eq!(
+                out.after.state,
+                DocumentLifecycleObservationTagFFI::Unavailable
+            );
+        }
+        assert_eq!(
+            PlatformWalletFFIResult::from(PlatformWalletError::DocumentEraseBusy).code as u32,
+            6
+        );
+    }
 }
+
+#[cfg(test)]
+mod erase_tests;

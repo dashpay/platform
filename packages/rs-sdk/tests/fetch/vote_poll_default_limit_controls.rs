@@ -74,11 +74,14 @@ async fn should_preserve_exact_voting_pages_for_short_full_descending_and_explic
                     .map(|i| {
                         let poll = fixture::poll(&contract, i);
                         (
-                            poll.unique_id().unwrap(),
-                            Some(ResourceVote::V0(ResourceVoteV0 {
-                                vote_poll: poll,
-                                resource_vote_choice: ResourceVoteChoice::Abstain,
-                            })),
+                            poll.unique_id(sdk.version()).unwrap(),
+                            Some(ResourceVoteWithCount {
+                                resource_vote: ResourceVote::V0(ResourceVoteV0 {
+                                    vote_poll: poll,
+                                    resource_vote_choice: ResourceVoteChoice::Abstain,
+                                }),
+                                vote_count: 1,
+                            }),
                         )
                     })
                     .collect();
@@ -88,7 +91,7 @@ async fn should_preserve_exact_voting_pages_for_short_full_descending_and_explic
                 }
                 expected.truncate(limit as usize);
                 assert_eq!(
-                    ResourceVote::fetch_many(&sdk, query)
+                    ResourceVoteWithCount::fetch_many(&sdk, query)
                         .await
                         .expect("identity page")
                         .into_iter()
@@ -151,7 +154,7 @@ fn should_preserve_explicit_unproved_unversioned_and_unrelated_query_bytes() {
                 expected_polls.mock_serialize().unwrap()
             );
             assert_eq!(
-                <ResourceVote as FetchMany<Identifier, ResourceVotesByIdentity>>::prepare_query(
+                <ResourceVoteWithCount as FetchMany<Identifier, ResourceVotesByIdentity>>::prepare_query(
                     votes
                 )
                 .mock_serialize()
@@ -167,7 +170,7 @@ fn should_preserve_explicit_unproved_unversioned_and_unrelated_query_bytes() {
     );
     let votes = GetContestedResourceIdentityVotesRequest { version: None };
     assert_eq!(
-        <ResourceVote as FetchMany<Identifier, ResourceVotesByIdentity>>::prepare_query(
+        <ResourceVoteWithCount as FetchMany<Identifier, ResourceVotesByIdentity>>::prepare_query(
             votes.clone()
         ),
         votes

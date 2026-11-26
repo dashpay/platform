@@ -1,6 +1,7 @@
 use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::DerivedIndexProperty;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -9,6 +10,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait providing getters for DocumentTypeV2-specific fields.
 pub trait DocumentTypeV2Getters {
+    /// Whether a deleted document's retained history may be erased.
+    fn documents_can_be_erased(&self) -> bool {
+        false
+    }
     /// Returns whether documents of this type are countable.
     /// When true, the primary key tree uses a CountTree enabling O(1) total document count queries.
     fn documents_countable(&self) -> bool;
@@ -33,6 +38,13 @@ pub trait DocumentTypeV2Getters {
     /// true, the primary-key sum tree is a `ProvableSumTree` (per-node
     /// aggregated sums). Implies [`Self::documents_summable`] is `Some`.
     fn range_summable(&self) -> bool;
+
+    /// Returns whether the trees holding this document type's sums keep a 128-bit total
+    /// rather than a 64-bit one. True from protocol version 15 for a type whose summed
+    /// property is not declared within the bounds that keep a 64-bit sum in range
+    /// (`SystemLimits::max_summed_value_magnitude_in_64_bit_sums`); false for every type that
+    /// sums nothing and for every type parsed under an earlier protocol version.
+    fn uses_big_sums(&self) -> bool;
 
     /// Returns whether this document type is **indexOnly**: documents are
     /// never written to primary storage — the index entries are the rows,
@@ -101,6 +113,19 @@ pub trait DocumentTypeV2Getters {
     /// documents live until someone deletes them, and is what every document type that
     /// predates the keyword answers.
     fn documents_ttl_seconds(&self) -> Option<u32>;
+
+    /// What the type's `private` keyword declares (protocol version 15): its documents are
+    /// fixed-size encrypted entries an anonymous shielded transition appends, which the chain
+    /// never reads. `None` on every other type, and what every document type that predates
+    /// the keyword answers.
+    fn private_document(&self) -> Option<PrivateDocumentConfig>;
+
+    /// Whether the type is private ([`Self::private_document`]): a Batch refuses every
+    /// document transition on it (`DocumentTypePrivateError`), and no document reference,
+    /// lookup, list or aggregate may point at it.
+    fn is_private(&self) -> bool {
+        self.private_document().is_some()
+    }
 
     /// Whether a document of the type can stop existing once written: its owner may delete
     /// it (`canBeDeleted`), a create consuming it may (`canBeDeleted: "onlyWhenConsumed"`),

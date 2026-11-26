@@ -17,31 +17,32 @@ use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
     GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
     GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
-    GetAddressesTrunkStateResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
-    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
-    GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse,
-    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
-    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
-    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
-    GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
-    GetContractModerationActionCountsRequest, GetContractModerationActionCountsResponse,
-    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
-    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
-    GetContractTeamActionSignersRequest, GetContractTeamActionSignersResponse,
-    GetContractTeamActionsRequest, GetContractTeamActionsResponse, GetCurrentQuorumsInfoRequest,
-    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
-    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
-    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
-    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
-    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
-    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
-    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetAddressesTrunkStateResponse, GetBlocksRequest, GetBlocksResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetContractDocumentRemovalsRequest,
+    GetContractDocumentRemovalsResponse, GetContractFeePotsRequest, GetContractFeePotsResponse,
+    GetContractGroupInfoRequest, GetContractGroupInfoResponse, GetContractGroupMembersRequest,
+    GetContractGroupMembersResponse, GetContractGroupsForContractRequest,
+    GetContractGroupsForContractResponse, GetContractModerationActionCountsRequest,
+    GetContractModerationActionCountsResponse, GetContractModerationEntriesRequest,
+    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
+    GetContractModerationStatusResponse, GetContractTeamActionSignersRequest,
+    GetContractTeamActionSignersResponse, GetContractTeamActionsRequest,
+    GetContractTeamActionsResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
+    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
+    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
+    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
+    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -53,24 +54,29 @@ use dapi_grpc::platform::v0::{
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
     GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
     GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
-    GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
-    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
-    GetRecentCompactedAddressBalanceChangesResponse, GetShieldedAnchorsRequest,
-    GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
-    GetShieldedEncryptedNotesResponse, GetShieldedNotesCountRequest, GetShieldedNotesCountResponse,
-    GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
-    GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest,
-    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
-    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
-    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
-    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetMasternodeYesNoVoteRequest,
+    GetMasternodeYesNoVoteResponse, GetMostRecentShieldedAnchorRequest,
+    GetMostRecentShieldedAnchorResponse, GetOwnerTransactionsInBlockRequest,
+    GetOwnerTransactionsInBlockResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetPrivateDocumentEntriesRequest, GetPrivateDocumentEntriesResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
+    GetRecentCompactedAddressBalanceChangesRequest,
+    GetRecentCompactedAddressBalanceChangesResponse, GetRecentStateTransitionStatusRequest,
+    GetRecentStateTransitionStatusResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
+    GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
+    GetShieldedNotesCountRequest, GetShieldedNotesCountResponse, GetShieldedNullifiersRequest,
+    GetShieldedNullifiersResponse, GetShieldedPoolStateRequest, GetShieldedPoolStateResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest, GetTokenContractInfoResponse,
+    GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
+    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
+    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
+    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetYesNoVotePollStateRequest, GetYesNoVotePollStateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -611,6 +617,27 @@ impl PlatformService for QueryService {
         respond_with_unimplemented("wait_for_state_transition_result")
     }
 
+    async fn get_recent_state_transition_status(
+        &self,
+        _request: Request<GetRecentStateTransitionStatusRequest>,
+    ) -> Result<Response<GetRecentStateTransitionStatusResponse>, Status> {
+        respond_with_unimplemented("get_recent_state_transition_status")
+    }
+
+    async fn get_owner_transactions_in_block(
+        &self,
+        _request: Request<GetOwnerTransactionsInBlockRequest>,
+    ) -> Result<Response<GetOwnerTransactionsInBlockResponse>, Status> {
+        respond_with_unimplemented("get_owner_transactions_in_block")
+    }
+
+    async fn get_blocks(
+        &self,
+        _request: Request<GetBlocksRequest>,
+    ) -> Result<Response<GetBlocksResponse>, Status> {
+        respond_with_unimplemented("get_blocks")
+    }
+
     async fn get_consensus_params(
         &self,
         _request: Request<GetConsensusParamsRequest>,
@@ -723,6 +750,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_vote_polls_by_end_date_query,
             "get_vote_polls_by_end_date",
+        )
+        .await
+    }
+
+    async fn get_yes_no_vote_poll_state(
+        &self,
+        request: Request<GetYesNoVotePollStateRequest>,
+    ) -> Result<Response<GetYesNoVotePollStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_yes_no_vote_poll_state,
+            "get_yes_no_vote_poll_state",
+        )
+        .await
+    }
+
+    async fn get_masternode_yes_no_vote(
+        &self,
+        request: Request<GetMasternodeYesNoVoteRequest>,
+    ) -> Result<Response<GetMasternodeYesNoVoteResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_masternode_yes_no_vote,
+            "get_masternode_yes_no_vote",
         )
         .await
     }
@@ -1134,6 +1185,18 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    async fn get_private_document_entries(
+        &self,
+        request: Request<GetPrivateDocumentEntriesRequest>,
+    ) -> Result<Response<GetPrivateDocumentEntriesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_private_document_entries,
+            "get_private_document_entries",
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -1168,8 +1231,18 @@ fn query_error_into_status(error: QueryError) -> Status {
         error @ QueryError::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
             ..
         })) => Status::invalid_argument(bounded_message(error.to_string())),
-        // A request this node cannot decode, or a request version it does not serve, may be
-        // one a newer node serves, so these stay retryable on another node.
+        // A request version below the ones the current protocol version serves was retired by
+        // a protocol upgrade. The versions served depend only on the protocol version, which
+        // every node at this height shares, so no other node serves it either: the refusal is
+        // the request's to change, and must not get this node banned by a client older than
+        // the network.
+        error @ QueryError::UnsupportedQueryVersion(_, min_version, _, _, given)
+            if given < min_version =>
+        {
+            Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        // A request this node cannot decode, or a request version above the ones it serves,
+        // may be one a newer node serves, so these stay retryable on another node.
         _ => {
             tracing::error!("unexpected query error: {:?}", error);
 
@@ -1218,10 +1291,7 @@ fn bounded_message(mut message: String) -> String {
     if message.len() <= MAX_STATUS_MESSAGE_BYTES {
         return message;
     }
-    let mut end = MAX_STATUS_MESSAGE_BYTES;
-    while !message.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = message.floor_char_boundary(MAX_STATUS_MESSAGE_BYTES);
     let truncated = message.len() - end;
     message.truncate(end);
     message.push_str(&format!("... ({} bytes truncated)", truncated));
@@ -1337,6 +1407,36 @@ mod query_error_status_tests {
             "could not decode data contracts query".to_string(),
         ));
         assert_eq!(undecodable.code(), Code::Unknown);
+    }
+
+    /// A protocol upgrade can retire a request version, as protocol version 15 retires document
+    /// history version 0. Every node at that height refuses it alike, so the refusal ends the
+    /// request instead of sending a client older than the network to ban one node after another.
+    /// A request version above the ones served stays retryable: a newer node may serve it.
+    #[test]
+    fn should_answer_a_retired_request_version_with_invalid_argument() {
+        let retired = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "document_history".to_string(),
+            1,
+            1,
+            15,
+            0,
+        ));
+        assert_eq!(retired.code(), Code::InvalidArgument);
+        assert!(retired
+            .message()
+            .contains("unsupported version for query: document_history"));
+        assert!(!retired.can_retry(), "{retired}");
+
+        let not_served_yet = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "document_history".to_string(),
+            0,
+            0,
+            14,
+            1,
+        ));
+        assert_eq!(not_served_yet.code(), Code::Unknown);
+        assert!(not_served_yet.can_retry(), "{not_served_yet}");
     }
 
     /// Every node at a height runs the same protocol version, so a feature that version does not

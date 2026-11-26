@@ -6,6 +6,7 @@ use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::{
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -29,6 +30,7 @@ pub use v0::*;
 pub use v1::*;
 pub use v2::*;
 
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentType {
     fn schema_mut(&mut self) -> &mut Value {
         match self {
@@ -962,6 +964,12 @@ static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap:
 static NO_DERIVED_INDEX_PROPERTIES: BTreeMap<String, DerivedIndexProperty> = BTreeMap::new();
 
 impl DocumentTypeV2Getters for DocumentType {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentType::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentType::V0(_) => false,
@@ -991,6 +999,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.range_summable(),
+        }
+    }
+
+    fn uses_big_sums(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.uses_big_sums(),
         }
     }
 
@@ -1080,6 +1096,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(_) => None,
             DocumentType::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.private_document(),
         }
     }
 
@@ -1230,6 +1254,12 @@ impl DocumentTypeV2Setters for DocumentType {
 }
 
 impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentTypeRef::V0(_) => false,
@@ -1259,6 +1289,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => false,
             DocumentTypeRef::V1(_) => false,
             DocumentTypeRef::V2(v2) => v2.range_summable(),
+        }
+    }
+
+    fn uses_big_sums(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.uses_big_sums(),
         }
     }
 
@@ -1348,6 +1386,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(_) => None,
             DocumentTypeRef::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.private_document(),
         }
     }
 
@@ -1464,6 +1510,12 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentTypeMutRef::V0(_) => false,
@@ -1493,6 +1545,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.range_summable(),
+        }
+    }
+
+    fn uses_big_sums(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.uses_big_sums(),
         }
     }
 
@@ -1582,6 +1642,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.private_document(),
         }
     }
 

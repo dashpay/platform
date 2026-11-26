@@ -9,9 +9,21 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
+import org.dashfoundation.dashsdk.wallet.op
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URL
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -74,6 +86,33 @@ class Sdk private constructor(
         org.dashfoundation.dashsdk.queries.Voting(this)
     }
 
+    /**
+     * Decision proposal reads and the masternode vote on them (protocol version 15);
+     * mirrors the Swift SDK's `SDK+DecisionProposals.swift`. Creating and editing a
+     * proposal go through `PlatformWalletManager.decisionProposals`.
+     */
+    val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposals by lazy {
+        org.dashfoundation.dashsdk.voting.DecisionProposals(this)
+    }
+
+    /**
+     * Multiple choice proposal reads, the amounts a proposal and a choice cost, and the
+     * masternode vote among a proposal's choices (protocol version 15); mirrors the Swift
+     * SDK's `SDK+MultipleChoiceProposals.swift`. Creating and editing a proposal and
+     * entering a choice go through `PlatformWalletManager.multipleChoiceProposals`.
+     */
+    val multipleChoiceProposals: org.dashfoundation.dashsdk.voting.MultipleChoiceProposals by lazy {
+        org.dashfoundation.dashsdk.voting.MultipleChoiceProposals(this)
+    }
+
+    /**
+     * Contract moderation and fee pot reads (protocol version 14); mirrors the Swift SDK's
+     * `SDK+ContractModeration.swift`.
+     */
+    val contractModeration: org.dashfoundation.dashsdk.moderation.ContractModeration by lazy {
+        org.dashfoundation.dashsdk.moderation.ContractModeration(this)
+    }
+
     /** Evonode proposed-epoch-block queries. */
     val evonodes: org.dashfoundation.dashsdk.queries.Evonodes by lazy {
         org.dashfoundation.dashsdk.queries.Evonodes(this)
@@ -90,6 +129,14 @@ class Sdk private constructor(
     }
 
     /**
+     * Blocks with their state transitions and a transition's status by hash (protocol
+     * version 15) — mirrors Swift's `SDK.getBlocks` and its siblings.
+     */
+    val blocks: org.dashfoundation.dashsdk.queries.PlatformBlocks by lazy {
+        org.dashfoundation.dashsdk.queries.PlatformBlocks(this)
+    }
+
+    /**
      * The raw native handle for FFI calls. Throws if the SDK was closed —
      * matching the Swift SDK where a nil handle is a programmer error.
      */
@@ -99,6 +146,32 @@ class Sdk private constructor(
         }
 
     val isClosed: Boolean get() = handleRef.get() == 0L
+
+    /**
+     * The source proof verification asks first for quorum keys, as the
+     * native SDK's context provider reports it — port of `SDK.quorumSource`
+     * (`SwiftDashSDK/SDK.swift`). Fixed for a trusted SDK; for an adaptive
+     * one in [QuorumMode.AUTO] it follows SPV readiness, and a key SPV
+     * cannot serve still comes from the trusted service while this reports
+     * [QuorumSource.SPV]. Reading it can wait on the SPV client.
+     */
+    suspend fun quorumSource(): QuorumSource = queryGate.op {
+        when (SdkNative.quorumSource(handle)) {
+            0 -> QuorumSource.TRUSTED
+            1 -> QuorumSource.SPV
+            else -> QuorumSource.CUSTOM
+        }
+    }
+
+    /**
+     * Set the quorum mode of the native SDK's context provider without
+     * replacing it — port of `SDK.setQuorumMode` (`SwiftDashSDK/SDK.swift`).
+     * Only an adaptive SDK has one; any other refuses with a
+     * [org.dashfoundation.dashsdk.errors.DashSdkError].
+     */
+    suspend fun setQuorumMode(mode: QuorumMode): Unit = queryGate.op {
+        mapNativeErrors { SdkNative.setQuorumMode(handle, mode.ffiValue) }
+    }
 
     /**
      * Lease fence for in-flight queries: every [org.dashfoundation.dashsdk.queries]
@@ -154,6 +227,55 @@ class Sdk private constructor(
 
     enum class LogLevel(val value: Int) {
         ERROR(0), WARN(1), INFO(2), DEBUG(3), TRACE(4)
+    }
+
+    /**
+     * The context provider the native SDK is built with, for its lifetime —
+     * port of `SDK.ContextProviderKind`. Contracts and tokens resolve
+     * locally with each of them.
+     */
+    enum class ContextProviderKind {
+        /** Quorum keys from the trusted quorum service only. */
+        TRUSTED,
+
+        /**
+         * Quorum keys routed by a [QuorumMode] that can change at run time,
+         * starting in [QuorumMode.AUTO]. The default.
+         */
+        ADAPTIVE,
+    }
+
+    /**
+     * Where an adaptive SDK takes quorum keys from — port of
+     * `SDK.QuorumMode`. [ffiValue] is the native `ContextProviderMode`.
+     */
+    enum class QuorumMode(val ffiValue: Int) {
+        /**
+         * SPV first while it is synced, with the trusted quorum service
+         * serving any key SPV cannot, such as a quorum SPV has not caught up
+         * with; the trusted service alone whenever SPV is not synced. Every
+         * key comes from one of the two, so Auto is only as strong as the
+         * trusted service: whoever controls it and a node can have a proof
+         * accepted that names a quorum SPV does not hold, and cutting the
+         * client off from its SPV peers moves every key onto it. Use [SPV]
+         * when proofs must never be verified with its keys.
+         */
+        AUTO(0),
+
+        /** SPV only; proofs fail whenever SPV is not synced. */
+        SPV(1),
+
+        /** The trusted quorum service only. */
+        TRUSTED(2),
+    }
+
+    /** Which quorum-key source proof verification asks first — port of `SDK.QuorumSource`. */
+    enum class QuorumSource {
+        TRUSTED,
+        SPV,
+
+        /** The SDK's context provider does not say where its keys come from. */
+        CUSTOM,
     }
 
     /**
@@ -427,9 +549,28 @@ class Sdk private constructor(
         }
 
         /**
-         * Create an SDK instance with trusted setup — port of
-         * `SDK.init(network:platformVersion:)` including the override
-         * gating and devnet auto-discovery policy:
+         * Create an SDK instance with the adaptive context provider, in
+         * [QuorumMode.AUTO] — port of `SDK.init(network:platformVersion:)`
+         * (`SwiftDashSDK/SDK.swift`),
+         * whose `contextProvider` defaults to `.adaptive`. Proofs are
+         * verified with the trusted quorum service's keys until a
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager] built on
+         * this SDK runs SPV and it has synced, then with SPV's keys, and
+         * still with the trusted service's for any key SPV cannot serve. An
+         * SDK no manager serves verifies like a trusted one. Only one manager
+         * serves an SDK: building a second on it while the first is open
+         * throws, so close a manager before building another on the same
+         * SDK.
+         *
+         * Same as `create(config, ContextProviderKind.ADAPTIVE)`.
+         */
+        suspend fun create(config: SdkConfig): Sdk = create(config, ContextProviderKind.ADAPTIVE)
+
+        /**
+         * Create an SDK instance with [contextProvider] — port of
+         * `SDK.init(network:platformVersion:contextProvider:)`
+         * (`SwiftDashSDK/SDK.swift`) including the
+         * override gating and devnet auto-discovery policy:
          *
          * - Regtest: DAPI/quorum overrides applied unconditionally (Rust
          *   has no built-in defaults for regtest).
@@ -439,7 +580,10 @@ class Sdk private constructor(
          * - Mainnet/testnet: overrides only under [SdkConfig.useDockerSetup];
          *   otherwise Rust picks canonical seeds and quorum endpoints.
          */
-        suspend fun create(config: SdkConfig): Sdk = withContext(Dispatchers.IO) {
+        suspend fun create(
+            config: SdkConfig,
+            contextProvider: ContextProviderKind,
+        ): Sdk = withContext(Dispatchers.IO) {
             initialize()
 
             val network = config.network
@@ -457,15 +601,19 @@ class Sdk private constructor(
                 else -> null
             }
 
+            val createNative = when (contextProvider) {
+                ContextProviderKind.TRUSTED -> SdkNative::createTrusted
+                ContextProviderKind.ADAPTIVE -> SdkNative::createAdaptive
+            }
             val handle = mapNativeErrors {
-                SdkNative.createTrusted(
-                    network = network.ffiValue,
-                    dapiAddresses = dapiAddresses,
-                    quorumUrl = quorumUrl,
-                    skipAssetLockProofVerification = config.skipAssetLockProofVerification,
-                    requestRetryCount = config.requestRetryCount,
-                    requestTimeoutMs = config.requestTimeoutMs,
-                    platformVersion = config.platformVersion,
+                createNative(
+                    network.ffiValue,
+                    dapiAddresses,
+                    quorumUrl,
+                    config.skipAssetLockProofVerification,
+                    config.requestRetryCount,
+                    config.requestTimeoutMs,
+                    config.platformVersion,
                 )
             }
             Sdk(handle, network)
@@ -497,16 +645,154 @@ class Sdk private constructor(
             } catch (_: Exception) {
                 return null
             }
-            val body = try {
+            val body = fetchBounded(url) ?: return null
+            return parseActiveMasternodes(body, defaultDapiPort)
+        }
+
+        /**
+         * GET [url] and return the body as UTF-8, or null on any failure, a
+         * body over [maxBytes], or a request not finished [deadlineMs] after
+         * it started (headers included).
+         */
+        internal fun fetchBounded(
+            url: URL,
+            deadlineMs: Long = MASTERNODES_DEADLINE_MS,
+            maxBytes: Int = MASTERNODES_MAX_BYTES,
+        ): String? {
+            val deadlineNanos = System.nanoTime() + deadlineMs * 1_000_000
+            return try {
                 val connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 5_000
                 connection.readTimeout = 5_000
                 connection.requestMethod = "GET"
-                connection.inputStream.use { it.readBytes().decodeToString() }
+                // The read timeout bounds each read only, and opening the
+                // stream resolves the host and waits for the response
+                // headers before the body loop checks its deadline: the
+                // caller stops waiting at the deadline wherever the request
+                // is stuck. Disconnecting can itself wait for a read in
+                // progress, so it never runs on the caller's thread.
+                withDeadline(deadlineMs, abort = connection::disconnect) {
+                    try {
+                        connection.inputStream.use { readBounded(it, maxBytes, deadlineNanos) }
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
             } catch (_: Exception) {
-                return null
+                null
             }
-            return parseActiveMasternodes(body, defaultDapiPort)
+        }
+
+        /**
+         * Largest `/masternodes` body read, far above a mainnet-sized list.
+         * The endpoint may be a user-entered devnet URL, so a larger body is
+         * refused rather than buffered.
+         */
+        private const val MASTERNODES_MAX_BYTES = 16 * 1024 * 1024
+
+        /**
+         * Overall time allowed for a `/masternodes` lookup. The read timeout
+         * bounds each read only, so a server trickling bytes would otherwise
+         * keep the lookup open indefinitely.
+         */
+        private const val MASTERNODES_DEADLINE_MS = 15_000L
+
+        /**
+         * Run [block] and return its result, or throw an [IOException] once
+         * [timeoutMs] have passed. [block] runs on its own daemon thread, so
+         * the caller returns at the deadline even when [block] is stuck in a
+         * call nothing can interrupt, such as a host name lookup. [abort]
+         * is then called to make [block] end soon, such as by disconnecting
+         * the connection it reads from; its thread is left to finish.
+         * [abort] runs on a thread of its own too, since it may block.
+         * Also throws when [MAX_OUTSTANDING_REQUESTS] blocks are running.
+         */
+        internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
+            // A slot is held until [block], and an [abort] started for it,
+            // have really ended, not until the caller stopped waiting.
+            if (!requestSlots.tryAcquire()) {
+                throw IOException("$MAX_OUTSTANDING_REQUESTS earlier requests are still running")
+            }
+            val threads = AtomicInteger(1)
+            fun leave() {
+                if (threads.decrementAndGet() == 0) requestSlots.release()
+            }
+            fun startAbort() {
+                // Nothing is left to abort once the request has ended.
+                while (true) {
+                    val running = threads.get()
+                    if (running == 0) return
+                    if (threads.compareAndSet(running, running + 1)) break
+                }
+                startOrLeave("dash-sdk-bounded-request-abort", ::leave) { abort() }
+            }
+            val task = FutureTask(Callable { block() })
+            startOrLeave("dash-sdk-bounded-request", ::leave, task)
+            try {
+                return task.get(timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (e: ExecutionException) {
+                throw e.cause ?: e
+            } catch (_: TimeoutException) {
+                startAbort()
+                throw IOException("the request did not finish in $timeoutMs ms")
+            } catch (e: InterruptedException) {
+                startAbort()
+                Thread.currentThread().interrupt()
+                throw e
+            }
+        }
+
+        /**
+         * How many [withDeadline] requests may be running at once, counting
+         * those whose caller already gave up on them and their aborts:
+         * retries against a host that never answers cannot pile up threads.
+         */
+        internal const val MAX_OUTSTANDING_REQUESTS = 4
+        private val requestSlots = Semaphore(MAX_OUTSTANDING_REQUESTS)
+
+        /**
+         * Run [task] on a daemon thread and call [leave] when it ends, or at
+         * once if the thread cannot be started.
+         */
+        private fun startOrLeave(name: String, leave: () -> Unit, task: Runnable) {
+            val thread = Thread(
+                {
+                    try {
+                        task.run()
+                    } finally {
+                        leave()
+                    }
+                },
+                name,
+            ).apply { isDaemon = true }
+            try {
+                thread.start()
+            } catch (e: Throwable) {
+                leave()
+                throw e
+            }
+        }
+
+        /**
+         * [input] as UTF-8, or null once it passes [maxBytes] or a read
+         * returns after [deadlineNanos] (on the [System.nanoTime] clock).
+         * A read in progress is bounded by the connection's read timeout.
+         */
+        internal fun readBounded(
+            input: InputStream,
+            maxBytes: Int,
+            deadlineNanos: Long,
+            nanoTime: () -> Long = System::nanoTime,
+        ): String? {
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                if (nanoTime() - deadlineNanos > 0) return null
+                val read = input.read(buffer)
+                if (read < 0) return out.toByteArray().decodeToString()
+                if (out.size() + read > maxBytes) return null
+                out.write(buffer, 0, read)
+            }
         }
 
         /**
@@ -556,6 +842,21 @@ class Sdk private constructor(
         fun hasShielded(): Boolean {
             initialize()
             return SdkNative.hasShielded()
+        }
+
+        /**
+         * The quorum service base URL of the devnet named [devnetName],
+         * `https://quorums.<name>.networks.dash.org`, as the Rust trusted
+         * context provider resolves it.
+         *
+         * @throws org.dashfoundation.dashsdk.errors.DashSdkError for a name
+         *   the provider refuses: empty, characters other than letters,
+         *   digits and hyphens, a leading or trailing hyphen, or a reserved
+         *   network name such as `mainnet`
+         */
+        fun devnetQuorumBaseUrl(devnetName: String): String {
+            initialize()
+            return mapNativeErrors { SdkNative.devnetQuorumBaseUrl(devnetName) }
         }
 
         /** Native SDK version string. */

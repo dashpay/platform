@@ -77,6 +77,7 @@ Generate a pull request title and description for the current branch using the p
 ## Checklist:
 <!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
 - [ ] I have performed a self-review of my own code
+- [ ] My Rust, FFI, WASM, Swift or Kotlin changes follow [the coding conventions](https://github.com/dashpay/platform/blob/HEAD/book/src/contributing/coding-conventions.md)
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have added or updated relevant unit/integration/functional/e2e tests
 - [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
@@ -100,3 +101,4 @@ Output the entire PR description (title + body) as a single raw Markdown code bl
 - For large diffs, focus on architectural changes rather than listing every file
 - Group related changes together in "What was done?" using sub-headers if needed
 - Avoid repeating the same information across sections
+- Check Rust, FFI, WASM, Swift and Kotlin changes against `book/src/contributing/coding-conventions.md` and report any violation to the user. If the diff edits a shipped `vN` in place, add an `## In-place changes to shipped generations` section before `## Breaking Changes`, as that document describes

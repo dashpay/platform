@@ -26,6 +26,15 @@ internal object SdkNative {
     external fun version(): String
 
     /**
+     * The quorum service base URL of the devnet named [devnetName]
+     * (`dash_sdk_devnet_quorum_base_url`).
+     *
+     * @throws DashSDKException for a name the trusted context provider
+     *   refuses, such as a reserved network name
+     */
+    external fun devnetQuorumBaseUrl(devnetName: String): String
+
+    /**
      * Create a trusted-context SDK instance.
      *
      * @param network FFINetwork ordinal (0=Mainnet, 1=Testnet, 2=Devnet, 3=Regtest)
@@ -46,11 +55,43 @@ internal object SdkNative {
         platformVersion: Int,
     ): Long
 
-    /** Destroy a handle returned by [createTrusted]. Safe on 0. */
+    /**
+     * Create an SDK instance with the adaptive context provider, in Auto
+     * mode (`dash_sdk_create_adaptive`). Parameters as [createTrusted].
+     *
+     * @return non-zero SDK handle
+     * @throws DashSDKException on failure
+     */
+    external fun createAdaptive(
+        network: Int,
+        dapiAddresses: String?,
+        quorumUrl: String?,
+        skipAssetLockProofVerification: Boolean,
+        requestRetryCount: Int,
+        requestTimeoutMs: Long,
+        platformVersion: Int,
+    ): Long
+
+    /** Destroy a handle returned by [createTrusted] or [createAdaptive]. Safe on 0. */
     external fun destroy(handle: Long)
 
     /** FFINetwork ordinal of a live SDK handle. */
     external fun getNetwork(handle: Long): Int
+
+    /**
+     * Set the quorum mode of the SDK's context provider
+     * (`dash_sdk_set_context_provider_mode`): 0=Auto, 1=SPV, 2=Trusted.
+     *
+     * @throws DashSDKException when the provider has no mode, or [mode] is unknown
+     */
+    external fun setQuorumMode(handle: Long, mode: Int)
+
+    /**
+     * The source the SDK's context provider asks first for quorum keys
+     * (`dash_sdk_get_context_provider_source`): 0=Trusted, 1=SPV, 2=a
+     * provider that does not say.
+     */
+    external fun quorumSource(handle: Long): Int
 
     /** Whether the native library was built with shielded (Orchard) support. */
     external fun hasShielded(): Boolean

@@ -14,7 +14,7 @@ runs:
 
         ci-image-contract verify .github/runner-requirements.json
         python3 packages/dapi-grpc/scripts/setup-codegen.py
-        for pkg in build-essential cmake curl jq libgmp-dev libssl-dev pkg-config python3 unzip zip; do
+        for pkg in build-essential cmake curl jq libssl-dev pkg-config python3 unzip zip; do
           dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
         done
         test -x "$HOME/.cargo/bin/rustup"
@@ -59,8 +59,25 @@ runs:
         # import executable state from the ordinary CI cache namespace.
         cache: ${{ env.DASH_RELEASE_RUNNER != '1' }}
 
-    - name: Install Cargo binstall
-      uses: cargo-bins/cargo-binstall@v1.3.1
+    # One release, checksum-verified in this job's temp directory. The
+    # upstream action runs the installer script from `main`, which fetches
+    # whatever release is newest; and `cargo binstall` could run a copy an earlier job
+    # left in ~/.cargo/bin, so the steps below call this binary by its path.
+    - name: Install cargo-binstall v1.26.2
+      env:
+        BINSTALL_SHA256: 9e0e064f189a9abb9f8df5fb93c3c810ef5cc19e7212d998c7a64c9e4d3527d5
+      shell: bash
+      run: |
+        set -euo pipefail
+        ARCHIVE="$RUNNER_TEMP/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+        curl -fsSL -o "$ARCHIVE" \
+          https://github.com/cargo-bins/cargo-binstall/releases/download/v1.26.2/cargo-binstall-x86_64-unknown-linux-musl.tgz
+        echo "$BINSTALL_SHA256  $ARCHIVE" | sha256sum -c -
+        BINSTALL_DIR="$RUNNER_TEMP/cargo-binstall-1.26.2"
+        rm -rf "$BINSTALL_DIR"
+        mkdir -p "$BINSTALL_DIR"
+        tar -xzf "$ARCHIVE" -C "$BINSTALL_DIR" cargo-binstall
+        echo "CARGO_BINSTALL=$BINSTALL_DIR/cargo-binstall" >> "$GITHUB_ENV"
 
     # Always reinstalled, never trusted from an earlier job: a binary left on
     # this persistent runner can print the pinned version and still be
@@ -69,14 +86,14 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cargo binstall wasm-bindgen-cli@0.2.108 --no-confirm --force
+        "$CARGO_BINSTALL" wasm-bindgen-cli@0.2.108 --no-confirm --force
         wasm-bindgen --version | grep -Fxq 'wasm-bindgen 0.2.108'
 
     - name: Install wasm-pack
       shell: bash
       run: |
         set -euo pipefail
-        cargo binstall wasm-pack@0.15.0 --no-confirm --force
+        "$CARGO_BINSTALL" wasm-pack@0.15.0 --no-confirm --force
         wasm-pack --version | grep -Fxq 'wasm-pack 0.15.0'
 
     # Fresh, checksum-verified copy in this job's temp directory rather than

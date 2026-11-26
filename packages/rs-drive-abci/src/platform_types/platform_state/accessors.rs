@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::masternode::apply_diff_replacing_revived_height;
 use crate::platform_types::platform_state::masternode_list_changes::MasternodeListChanges;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
@@ -182,7 +183,10 @@ pub trait PlatformStateV0Methods {
 
     /// Applies a Core state diff to a listed masternode in both lists, recording
     /// an entry change only when its stored state changes. Returns false,
-    /// changing nothing, when the masternode is not listed.
+    /// changing nothing, when the masternode is not listed. The revived height
+    /// is replaced by the diff's, as `update_state_masternode_list` v0, which
+    /// uses this, has always applied diffs; a generation that keeps Core's
+    /// revived height must not use this.
     fn apply_masternode_state_diff(
         &mut self,
         pro_tx_hash: &ProTxHash,
@@ -578,10 +582,12 @@ impl PlatformStateV0Methods for PlatformState {
             return false;
         };
         let previous_state = masternode.state.clone();
-        masternode.state.apply_diff(state_diff.clone());
+        // Inert for update_state_masternode_list v0, the only caller: it has always applied
+        // diffs with the revived height replaced by the diff's.
+        apply_diff_replacing_revived_height(&mut masternode.state, state_diff.clone());
         let entry_changed = masternode.state != previous_state;
         if let Some(hpmn) = self.hpmn_masternode_list.get_mut(pro_tx_hash) {
-            hpmn.state.apply_diff(state_diff.clone());
+            apply_diff_replacing_revived_height(&mut hpmn.state, state_diff.clone());
         }
         self.heavy_fields_dirty = true;
         // A mixed Core diff can include payment-only updates alongside real

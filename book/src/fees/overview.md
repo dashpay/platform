@@ -151,15 +151,30 @@ contest's prefunded balance, each vote takes a fixed cost from it, and what is
 left when the contest ends is released as processing fees. The amounts are
 `VoteResolutionFundFees` in the fee version:
 
-| Component | Protocol versions 1 to 13 | Protocol version 14 |
-|---|---|---|
-| Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash |
-| Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash |
-| One vote | 0.0001 Dash | 0.00002 Dash |
+| Component | Protocol versions 1 to 13 | Protocol version 14 | Protocol version 15 |
+|---|---|---|---|
+| Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash | 0.1 Dash |
+| Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash | 0.5 Dash |
+| Decision proposal fund (a `proposal` on the decision proposals contract) | none exist | none exist | 0.5 Dash |
+| Multiple choice proposal processing fee (a `multipleChoiceProposal` on the decision proposals contract; not a fund, see below) | none exist | none exist | 0.2 Dash |
+| One vote | 0.0001 Dash | 0.00002 Dash | 0.00002 Dash |
 
-`required_vote_resolution_fund` in `rs-dpp` picks between the two funds; the
-schedules before 14 carry the contested document amount in the moderation
-field, so the choice changes nothing there.
+`required_vote_resolution_fund` in `rs-dpp` picks between the two contest
+funds; the schedules before 14 carry the contested document amount in the
+moderation field, so the choice changes nothing there.
+
+A decision proposal (see `docs/protocol/decision-proposals.md`) opens a yes/no
+vote poll rather than a contest, and its fund
+(`decision_proposal_fund_required_amount`, added in `FEE_VERSION4` for
+protocol version 15) prefunds that poll's votes the same way. The schedules
+before 15 carry 0 there, unread.
+
+A multiple choice proposal opens no poll of its own: the first choice entered
+for it opens a contest, and each choice pays the contested document fund. So
+its create prefunds nothing, and pays a flat processing fee instead
+(`multiple_choice_proposal_processing_fee`, also added in `FEE_VERSION4`): the
+amount is added to the processing fee of the batch that creates it and goes
+to the fee pools. The schedules before 15 carry 0 there.
 
 ## User Fee Increase
 
@@ -230,13 +245,37 @@ budget) has to cover, or the batch is refused unpaid
 (`IdentityInsufficientBalanceError`, 40210). A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
-40129). Storage refunds still go to the document's owner, whoever paid the
-storage: a sponsored document refunds its owner when it is deleted or replaced
-by a smaller one, even when the sponsor pays for that transition too. Each
-token the sponsor hands out is therefore worth up to the storage fee of the
-largest document the type allows, so a document type that offers sponsorship
-should bound its documents' size (`maxLength`, `maxItems`) and price the
-action accordingly.
+40129).
+
+Storage refunds go to whoever paid for the storage. From protocol version 15,
+execution names the sponsor it charges as the owner in the storage flags of
+everything the batch's documents write (`record_gas_sponsor_as_storage_owner`;
+the owner's 32 bytes are there either way and the estimate reads no owner, so
+no fee changes), and a contest's end date entries name whoever the document's
+flags name. A sponsored document therefore refunds the sponsor when it is
+deleted or shrinks. A document of a type with a `ttl` is stored without storage
+flags and refunds nobody, sponsored or not. The sponsor still pays the storage
+fee of every document it sponsors, up to the largest the type allows, and gets
+back only the part not yet paid out to past epochs, so a document type that
+offers sponsorship should bound its documents' size (`maxLength`, `maxItems`,
+`maxBytes`) and price the action accordingly.
+
+From protocol version 15 the owner a document update names owns the element
+afterwards, at any size. Other writes, such as a moderator replacing a contract
+suspension, keep the old rules. What happens to the bytes depends on who is
+involved:
+
+- When the old or new owner is the owner of a contract whose document type the
+  batch updates offers sponsorship, the handover is full: the old owner is
+  refunded for the whole element and the payer charged for all of it. Otherwise
+  a document's owner could keep storage the sponsor paid for, by growing the
+  document or by transferring it to a second identity and deleting it there.
+  This does not change the estimate: a document update is already estimated as
+  the insertion of everything it writes.
+- Any other owner change, an ordinary transfer or purchase, keeps the stored
+  bytes and moves them to the new owner, the references of the indexes it
+  leaves unchanged included. Nobody is refunded for them, and the new owner is
+  the one refunded when they are freed later.
 
 The signer's minimum balance pre-check runs before the contracts are loaded;
 its v1 asks a batch that requests sponsorship for its principal only
@@ -475,6 +514,15 @@ have elapsed since the data was stored — the longer the data has been stored, 
 smaller the refund, because more of the distributed fees have already been paid
 out to proposers.
 
+From protocol version 15 a refund is priced at the storage rate the bytes were
+paid at. The storage flags say which epoch stored them, the first block of every
+epoch records the epoch's protocol version in its epoch tree, and that version's
+fee schedule has the rate, so `Drive::calculate_fee` reads it from there and adds
+the read to the processing fee, once per earlier storing epoch in a calculation.
+Bytes stored in the current epoch use the current block's rate, which is the same
+schedule. Earlier protocol versions price every refund at the current block's
+rate. Every schedule so far has the same storage rate, so the two agree.
+
 There is a **dust limit**: refunds below 32 bytes worth of storage credits are
 discarded to prevent micro-refund spam.
 
@@ -554,10 +602,15 @@ the fees of documents whose type declares a [`ttl`](../data-model/document-ttl.m
 and the budget of a [`chooseFirst`](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)
 competitor scan (`choose_first_credits_per_candidate`, 100,000 credits a
 candidate, times `SystemLimits::max_choose_first_candidates`), which check tx
-reserves on top of a reveal's estimated fee, and the processing fee of a
+reserves on top of a reveal's estimated fee, the processing fee of a
 [`where` entry comparing typed arrays](../contract-keywords/refers-to.md#typed-arrays)
 (`where_list_credits_per_element`, 100 credits for each list element it reads,
-billed before it compares them). Platform states store only
+billed before it compares them), and what check tx reserves for each `refersTo`
+lookup query a create's references may make (`lookup_query_credits_reserved`,
+12,000,000 credits; a block bills the query at what it reads). Check tx holds a
+signer to its reservations, and leaves out of the gas it reports a transition
+as wanting those that only bound what a block may bill: the query allowance, the
+competitor scan's budget and its competitors' hashes. Platform states store only
 `fee_version_number`, so neither group touches a stored format.
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The

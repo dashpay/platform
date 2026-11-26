@@ -109,10 +109,30 @@ final class PlatformWalletStopSpvTests: XCTestCase {
         line: UInt = #line
     ) {
         XCTAssertThrowsError(try call(), name, file: file, line: line) { error in
-            guard case PlatformWalletError.walletOperation(let message) = error,
-                  message.contains("SPV stop in progress") else {
-                return XCTFail("\(name): expected the in-flight stop refusal, got \(error)", file: file, line: line)
-            }
+            assertIsStopRefusal(error, name, file: file, line: line)
+        }
+    }
+
+    /// The async counterpart for the SPV calls that only have an `async`
+    /// form (the start).
+    private func assertRefusedWhileStopping(
+        _ name: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ call: () async throws -> Void
+    ) async {
+        do {
+            try await call()
+            XCTFail("\(name): expected the in-flight stop refusal, got no error", file: file, line: line)
+        } catch {
+            assertIsStopRefusal(error, name, file: file, line: line)
+        }
+    }
+
+    private func assertIsStopRefusal(_ error: Error, _ name: String, file: StaticString, line: UInt) {
+        guard case PlatformWalletError.walletOperation(let message) = error,
+              message.contains("SPV stop in progress") else {
+            return XCTFail("\(name): expected the in-flight stop refusal, got \(error)", file: file, line: line)
         }
     }
 
@@ -156,9 +176,9 @@ final class PlatformWalletStopSpvTests: XCTestCase {
         let stopTask = Task { try await manager.stopSpv() }
         try await waitUntilStopStarted(recorder)
 
-        assertRefusedWhileStopping(
-            try manager.startSpv(config: PlatformSpvStartConfig(dataDir: "/tmp/unused", network: .testnet)),
-            "startSpv")
+        await assertRefusedWhileStopping("startSpv") {
+            try await manager.startSpv(config: PlatformSpvStartConfig(dataDir: "/tmp/unused", network: .testnet))
+        }
 
         gate.signal()
         try await stopTask.value

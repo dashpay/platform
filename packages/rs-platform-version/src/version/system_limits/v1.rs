@@ -1,15 +1,33 @@
 use crate::version::system_limits::SystemLimits;
 
 pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: None,
+    max_enum_violation_listed_values: None,
+    max_enum_violation_listed_bytes: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     max_document_value_depth: None,
     max_typed_array_items: 1024,
+    max_index_property_name_bytes: 255,
+    max_contract_schema_patterns: 32,
+    max_schema_pattern_compiled_size: 131_072,
+    max_schema_pattern_bytes: 256,
+    max_contract_schema_pattern_bytes: 4096,
+    max_schema_pattern_case_folded_code_points: 4096,
+    max_compiled_contract_size: None,
+    max_private_document_entry_size: None,
+    private_document_store_target_chunk_bytes: None,
+    private_document_store_min_chunk_power: None,
+    private_document_store_max_chunk_power: None,
+    max_private_document_entries_per_transition: None,
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,
+    max_document_type_requirement_slots: 4,
+    max_document_type_requirement_condition_nodes: 16,
+    max_document_type_requirement_condition_text_length: 256,
     max_property_constraints: 16,
     max_property_constraint_nodes: 32,
     max_property_constraint_aggregates: 4,
@@ -61,6 +79,13 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_contract_moderators: 16,
     max_contract_suspension_until: 9_007_199_254_740_991,
     max_contract_moderation_reason_length: 1024,
+    max_yes_no_vote_poll_minimum_voting_power: 2000,
+    max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
+    max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+    min_yes_no_vote_poll_duration_ms: 604_800_000,   // one week
+    min_yes_no_vote_poll_supermajority_percent: 50,  // a simple majority
+    yes_no_vote_poll_masternode_vote_strength: 1,
+    yes_no_vote_poll_evonode_vote_strength: 4,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
     min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day
@@ -91,9 +116,12 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 0,
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
     max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_summed_value_magnitude_without_type_total: None, // read from protocol version 15
+    max_summed_value_magnitude_in_64_bit_sums: None, // read from protocol version 15
     max_indexed_array_items: None,
     max_windowed_indexed_array_items: None,
     max_index_entries_per_document: None,
     max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
     max_rekey_batch_moves: None,        // read only by the protocol version 14 upgrade
+    max_history_migration_batch_operations: None, // read only by the protocol version 15 upgrade
 };

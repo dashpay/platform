@@ -18,6 +18,17 @@ package org.dashfoundation.dashsdk.ffi
 internal object TransactionsNative {
 
     /**
+     * Decode any DPP state transition (a `dash-st:` payload or a DashPay
+     * Connect `sign` request) into the packed big-endian blob documented
+     * in `rs-unified-sdk-jni/src/parse_state_transition.rs`, decoded by
+     * [org.dashfoundation.dashsdk.identity.StateTransitionParser.parseBlob].
+     * Bridges `platform_wallet_parse_state_transition`. Accepts tagged and
+     * Yappr's tagless framing; never signs or broadcasts. Throws
+     * [DashSDKException] on undecodable bytes.
+     */
+    external fun parseStateTransition(transitionBytes: ByteArray): ByteArray
+
+    /**
      * Add public keys and/or disable existing key ids on an identity,
      * signing the resulting `IdentityUpdateTransition` via [signerHandle]
      * (the identity's MASTER auth key). Bridges
@@ -66,7 +77,8 @@ internal object TransactionsNative {
     /**
      * Purchase for-sale [documentId] on [contractId]'s [documentType] for
      * [price] credits, with [purchaserId] as the buyer — signed via
-     * [signerHandle] with key [signingKeyId]. Bridges
+     * [signerHandle] with the purchaser's AUTHENTICATION key the Rust side
+     * selects for the document type. Bridges
      * `platform_wallet_document_purchase`. Returns the confirmed document's
      * canonical JSON (the confirmed 32-byte id is its `$id` field).
      */
@@ -77,14 +89,14 @@ internal object TransactionsNative {
         documentType: String,
         documentId: ByteArray,
         price: Long,
-        signingKeyId: Int,
         signerHandle: Long,
     ): String
 
     /**
      * Set the trade price of [documentId] on [contractId]'s [documentType],
      * owned by [ownerId], to [price] credits — signed via [signerHandle] with
-     * key [signingKeyId]. Bridges `platform_wallet_document_set_price`.
+     * the owner's AUTHENTICATION key the Rust side selects for the document
+     * type. Bridges `platform_wallet_document_set_price`.
      * Returns the confirmed document's canonical JSON (now carrying
      * `$price`).
      */
@@ -95,7 +107,6 @@ internal object TransactionsNative {
         documentType: String,
         documentId: ByteArray,
         price: Long,
-        signingKeyId: Int,
         signerHandle: Long,
     ): String
 
@@ -103,10 +114,10 @@ internal object TransactionsNative {
      * Create + broadcast a new document on [contractId]'s [documentType],
      * owned by [ownerId], signed via [signerHandle]. Bridges
      * `platform_wallet_create_document_with_signer` (Swift
-     * `ManagedPlatformWallet.createDocument`). Unlike purchase / set-price
-     * there is **no** `signingKeyId` — the Rust side selects an
-     * AUTHENTICATION + ECDSA key satisfying the document type's security
-     * level from the wallet's `IdentityManager`.
+     * `ManagedPlatformWallet.createDocument`). Like every document write
+     * here there is no key id — the Rust side selects an AUTHENTICATION +
+     * ECDSA key satisfying the document type's security level from the
+     * wallet's `IdentityManager`.
      *
      * @param propertiesJson JSON object keyed by property name (byte-array
      *   fields as hex, identifier fields as base58); `"{}"` for a type with
@@ -130,7 +141,8 @@ internal object TransactionsNative {
     /**
      * Replace + broadcast the full property set of [documentId] on
      * [contractId]'s [documentType], owned by [ownerId], signed via
-     * [signerHandle] with key [signingKeyId]. Bridges
+     * [signerHandle] with the owner's AUTHENTICATION key the Rust side
+     * selects for the document type. Bridges
      * `platform_wallet_document_replace` (Swift
      * `ManagedPlatformWallet.replaceDocument`). The revision is bumped on
      * the Rust side — the caller does not pass a revision.
@@ -148,13 +160,13 @@ internal object TransactionsNative {
         documentType: String,
         documentId: ByteArray,
         propertiesJson: String,
-        signingKeyId: Int,
         signerHandle: Long,
     ): String
 
     /**
      * Delete + broadcast [documentId] on [contractId]'s [documentType],
-     * owned by [ownerId], signed via [signerHandle] with key [signingKeyId].
+     * owned by [ownerId], signed via [signerHandle] with the owner's
+     * AUTHENTICATION key the Rust side selects for the document type.
      * Bridges `platform_wallet_document_delete` (Swift
      * `ManagedPlatformWallet.deleteDocument`). Delete returns no document
      * body, so this returns the deleted document's 32-byte id for
@@ -166,14 +178,24 @@ internal object TransactionsNative {
         contractId: ByteArray,
         documentType: String,
         documentId: ByteArray,
-        signingKeyId: Int,
         signerHandle: Long,
     ): ByteArray
 
+    /** Bridges the Rust wallet's single read/decide/submit/observe operation. */
+    external fun documentEraseAndObserve(
+        walletHandle: Long,
+        submittingIdentityId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signerHandle: Long,
+    ): String
+
     /**
      * Transfer + broadcast [documentId] on [contractId]'s [documentType],
-     * from [ownerId] to [recipientId], signed via [signerHandle] with key
-     * [signingKeyId]. Bridges `platform_wallet_document_transfer` (Swift
+     * from [ownerId] to [recipientId], signed via [signerHandle] with the
+     * owner's AUTHENTICATION key the Rust side selects for the document type.
+     * Bridges `platform_wallet_document_transfer` (Swift
      * `ManagedPlatformWallet.transferDocument`). Only valid for document
      * types whose schema is `transferable`.
      *
@@ -187,7 +209,6 @@ internal object TransactionsNative {
         documentType: String,
         documentId: ByteArray,
         recipientId: ByteArray,
-        signingKeyId: Int,
         signerHandle: Long,
     ): String
 
@@ -218,5 +239,35 @@ internal object TransactionsNative {
         voterProTxHash: ByteArray,
         votingPrivateKey: ByteArray,
         networkOrd: Int,
+    )
+
+    /**
+     * Cast a masternode contested-resource vote signed by [signerHandle] and
+     * wait for the response. Bridges
+     * `dash_sdk_contested_resource_cast_vote_with_signer` (Swift
+     * `SDK.castContestedResourceVote(..., votingAddress:, signer:)` in
+     * `PlatformQueryExtensions.swift`). Rust builds the ECDSA_HASH160 voting
+     * key from [votingAddress] and asks the signer to sign with it, so the
+     * signer is asked for the 20 address bytes with key type 2.
+     *
+     * @param voteChoice as for [castContestedResourceVote].
+     * @param contenderIdentityId as for [castContestedResourceVote].
+     * @param voterProTxHash 32-byte masternode pro_tx_hash in wire order.
+     * @param votingAddress 20-byte voting address (hash160 of the compressed
+     *   voting public key).
+     * @param signerHandle a live signer handle the caller keeps alive for the
+     *   call (`PlatformWalletManager.signerHandle`).
+     */
+    external fun castContestedResourceVoteWithSigner(
+        sdkHandle: Long,
+        contractId: String,
+        documentType: String,
+        indexName: String,
+        indexValuesJson: String,
+        voteChoice: Int,
+        contenderIdentityId: String?,
+        voterProTxHash: ByteArray,
+        votingAddress: ByteArray,
+        signerHandle: Long,
     )
 }

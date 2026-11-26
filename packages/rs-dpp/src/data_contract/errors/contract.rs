@@ -96,6 +96,10 @@ pub enum DataContractError {
 
     #[error("Json schema error: {0}")]
     JsonSchema(JsonSchemaError),
+
+    /// Decoded value budget exceeded while reading serialized document or removal fields
+    #[error("decoded value budget exceeded: {0}")]
+    DecodedValueBudgetExceeded(String),
 }
 
 impl From<platform_value::Error> for DataContractError {

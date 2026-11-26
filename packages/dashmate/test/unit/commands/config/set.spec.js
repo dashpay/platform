@@ -4,6 +4,10 @@ import ConfigSetCommand from '../../../../src/commands/config/set.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
+import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
+import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
 
 describe('Config set command', () => {
   const flags = {};
@@ -156,6 +160,110 @@ describe('Config set command', () => {
       await run('dashmate.helper.api.enable', 120).catch(() => {});
 
       expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(before);
+    });
+  });
+
+  describe('node identity', () => {
+    const render = renderServiceTemplatesFactory(renderTemplateFactory());
+
+    /**
+     * Save a node next to the base template and return it as loaded at startup.
+     *
+     * @param {Object} options
+     * @param {boolean} options.masternode
+     * @param {boolean} options.platform
+     * @return {Config}
+     */
+    function seedNode({ masternode, platform }) {
+      const configFile = new ConfigFile([getBaseConfigFactory(homeDir)()], '4.1.0', 'abcdef12', 'base', null);
+      configFile.createConfig('node1', 'base');
+
+      const node = configFile.getConfig('node1');
+      node.set('core.masternode.enable', masternode);
+      node.set('platform.enable', platform);
+
+      fs.writeFileSync(
+        homeDir.joinPath('config.json'),
+        `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`,
+        'utf8',
+      );
+
+      return node;
+    }
+
+    function savedIdentity() {
+      return new ConfigFileJsonRepository((data) => data, homeDir, () => null)
+        .read()
+        .getConfig('node1')
+        .get('platform.drive.tenderdash.node');
+    }
+
+    function runOn(node, option, value) {
+      return command.runWithDependencies(
+        { option, value },
+        flags,
+        node,
+        configFileRepository,
+        writeConfigTemplates,
+      );
+    }
+
+    // Tenderdash reads its identity from the rendered node_key.json. If the key
+    // it was rendered with is not saved too, the next render generates another
+    // one and the node's ID changes.
+    it('should save the identity it renders when platform is enabled on a fullnode', async () => {
+      const node = seedNode({ masternode: false, platform: false });
+
+      let renderedKey;
+      writeConfigTemplates = (renderedConfig) => {
+        renderedKey = JSON.parse(render(renderedConfig)['platform/drive/tenderdash/node_key.json'])
+          .priv_key.value;
+      };
+
+      await runOn(node, 'platform.enable', 'true');
+
+      const { key, id } = savedIdentity();
+      expect(key).to.be.a('string');
+      expect(id).to.equal(deriveTenderdashNodeId(key));
+      expect(renderedKey).to.equal(key);
+
+      await runOn(node, 'description', 'fullnode');
+
+      expect(savedIdentity().key).to.equal(key);
+      expect(renderedKey).to.equal(key);
+    });
+
+    // node_key.json takes the ID and the key from separate options, so an ID
+    // derived from any other key would make Tenderdash reject its own identity.
+    it('should keep a key set by the operator and derive the ID from it', async () => {
+      const node = seedNode({ masternode: false, platform: true });
+      const operatorKey = generateTenderdashNodeKey();
+
+      await runOn(node, 'platform.drive.tenderdash.node.key', operatorKey);
+
+      expect(savedIdentity()).to.deep.equal({
+        id: deriveTenderdashNodeId(operatorKey),
+        key: operatorKey,
+      });
+    });
+
+    it('should complete the identity when a platform node leaves masternode mode', async () => {
+      const node = seedNode({ masternode: true, platform: true });
+
+      await runOn(node, 'core.masternode.enable', 'false');
+
+      const { key, id } = savedIdentity();
+      expect(key).to.be.a('string');
+      expect(id).to.equal(deriveTenderdashNodeId(key));
+    });
+
+    // A masternode must run the identity its operator registered on chain.
+    it('should not generate an identity for a masternode', async () => {
+      const node = seedNode({ masternode: true, platform: true });
+
+      await runOn(node, 'description', 'evonode');
+
+      expect(savedIdentity()).to.deep.equal({ id: null, key: null });
     });
   });
 });

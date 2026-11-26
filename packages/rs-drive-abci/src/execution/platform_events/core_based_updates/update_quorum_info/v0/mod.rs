@@ -16,7 +16,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
 use tracing::Level;
 

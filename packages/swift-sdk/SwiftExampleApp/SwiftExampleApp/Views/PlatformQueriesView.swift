@@ -116,6 +116,58 @@ struct QueryCategoryDetailView: View {
                             .padding(.vertical, 4)
                         }
                         .accessibilityIdentifier("systemQueries.getPathElementsLink")
+                    } else if query.name == "browseBlocks" {
+                        NavigationLink(destination: PlatformBlocksView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("epochQueries.browseBlocksLink")
+                    } else if query.name == "checkTransitionStatus" {
+                        NavigationLink(destination: TransitionStatusCheckView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("systemQueries.checkTransitionStatusLink")
+                    } else if query.name == "decisionProposals" {
+                        NavigationLink(destination: DecisionProposalsView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("votingQueries.decisionProposalsLink")
+                    } else if query.name == "multipleChoiceProposals" {
+                        NavigationLink(destination: MultipleChoiceProposalsView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("votingQueries.multipleChoiceProposalsLink")
                     } else if query.name == "testDPNSQueries" {
                         NavigationLink(destination: DPNSTestView()) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -169,13 +221,21 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getDataContract", label: "Get Data Contract", description: "Fetch a data contract by its identifier"),
                 QueryDefinition(name: "getDataContractHistory", label: "Get Data Contract History", description: "Get the version history of a data contract"),
                 QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers"),
-                QueryDefinition(name: "getDataContractsByRange", label: "Get Data Contracts by Range", description: "Enumerate data contracts one page at a time, ordered by id")
+                QueryDefinition(name: "getDataContractsByRange", label: "Get Data Contracts by Range", description: "Enumerate data contracts one page at a time, ordered by id"),
+                QueryDefinition(name: "getContractModerationStatus", label: "Get Contract Moderation Status", description: "One identity's status on a moderated contract's banlist, suspension list and warning list (protocol version 14)"),
+                QueryDefinition(name: "getContractModerationEntries", label: "Get Contract Moderation Entries", description: "One page of a moderated contract's banlist, suspension list or warning list (protocol version 14)"),
+                QueryDefinition(name: "getContractDocumentRemovals", label: "Get Contract Document Removals", description: "The records of documents a contract's moderators deleted, a page or the ids named (protocol version 14)"),
+                QueryDefinition(name: "getContractTeamActions", label: "Get Contract Team Actions", description: "One page of the actions an elected contract's moderation team votes on (protocol version 14)"),
+                QueryDefinition(name: "getContractTeamActionSigners", label: "Get Contract Team Action Signers", description: "Who approved one team action of an elected contract (protocol version 14)"),
+                QueryDefinition(name: "getContractModerationActionCounts", label: "Get Contract Moderation Action Counts", description: "Moderation actions each team member signed since the moderators pot was last claimed or settled (protocol version 14)"),
+                QueryDefinition(name: "getContractFeePots", label: "Get Contract Fee Pots", description: "The owner and moderators fee pots of a contract and their last claims (protocol version 14)")
             ]
 
         case .documents:
             return [
                 QueryDefinition(name: "getDocuments", label: "Get Documents", description: "Query documents from a data contract"),
-                QueryDefinition(name: "getDocument", label: "Get Document", description: "Fetch a specific document by ID")
+                QueryDefinition(name: "getDocument", label: "Get Document", description: "Fetch a specific document by ID"),
+                QueryDefinition(name: "getDocumentHistory", label: "Get Document History", description: "Read a keep-history document's revisions and lifecycle state")
             ]
 
         case .dpns:
@@ -194,9 +254,11 @@ struct QueryCategoryDetailView: View {
 
         case .voting:
             return [
+                QueryDefinition(name: "decisionProposals", label: "Decision Proposals", description: "Browse, file, edit and vote on yes/no questions put to the masternodes (protocol version 15)"),
+                QueryDefinition(name: "multipleChoiceProposals", label: "Multiple Choice Proposals", description: "Browse, file, edit, enter choices for and vote on questions with several answers (protocol version 15)"),
                 QueryDefinition(name: "getContestedResources", label: "Get Contested Resources", description: "Get list of contested resources"),
                 QueryDefinition(name: "getContestedResourceVoteState", label: "Get Contested Resource Vote State", description: "Get the current vote state for a contested resource"),
-                QueryDefinition(name: "getContestedResourceVotersForIdentity", label: "Get Contested Resource Voters for Identity", description: "Get voters who voted for a specific identity in a contested resource"),
+                QueryDefinition(name: "getContestedResourceVotersForIdentity", label: "Get Contested Resource Voters for Identity", description: "Get voters who voted for a specific identity in a contested resource. Live votes only: an ended contest returns none, so empty does not mean nobody voted"),
                 QueryDefinition(name: "getContestedResourceIdentityVotes", label: "Get Contested Resource Identity Votes", description: "Get all votes cast by a specific identity"),
                 QueryDefinition(name: "getVotePollsByEndDate", label: "Get Vote Polls by End Date", description: "Get vote polls within a time range")
             ]
@@ -213,7 +275,10 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getCurrentEpoch", label: "Get Current Epoch", description: "Get information about the current epoch"),
                 QueryDefinition(name: "getFinalizedEpochInfos", label: "Get Finalized Epoch Info", description: "Get information about finalized epochs"),
                 QueryDefinition(name: "getEvonodesProposedEpochBlocksByIds", label: "Get Evonodes Proposed Epoch Blocks by IDs", description: "Get proposed blocks by evonode IDs"),
-                QueryDefinition(name: "getEvonodesProposedEpochBlocksByRange", label: "Get Evonodes Proposed Epoch Blocks by Range", description: "Get proposed blocks by range")
+                QueryDefinition(name: "getEvonodesProposedEpochBlocksByRange", label: "Get Evonodes Proposed Epoch Blocks by Range", description: "Get proposed blocks by range"),
+                QueryDefinition(name: "browseBlocks", label: "Block Explorer", description: "Read blocks with their state transitions, open one, and find an identity's transitions in it (protocol version 15)"),
+                QueryDefinition(name: "getBlocks", label: "Get Blocks", description: "Up to 10 consecutive blocks with every state transition and its result, proved by the block's quorum signature (protocol version 15)"),
+                QueryDefinition(name: "getOwnerTransactionsInBlock", label: "Get Owner Transactions In Block", description: "An identity's state transitions in one block: each proved, the list not proved complete (protocol version 15)")
             ]
 
         case .token:
@@ -234,7 +299,8 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getGroupInfo", label: "Get Group Info", description: "Get information about a group"),
                 QueryDefinition(name: "getGroupInfos", label: "Get Group Infos", description: "Get information about multiple groups"),
                 QueryDefinition(name: "getGroupActions", label: "Get Group Actions", description: "Get actions for a group"),
-                QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action")
+                QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action"),
+                QueryDefinition(name: "getContractGroupInfo", label: "Get Contract Group Info", description: "Get the owner, admins, name and description of a contract group")
             ]
 
         case .system:
@@ -243,11 +309,15 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform"),
                 QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
                 QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account"),
-                QueryDefinition(name: "getPathElements", label: "Get GroveDB Path Elements", description: "Fetch raw GroveDB elements by path and keys (diagnostic)")
+                QueryDefinition(name: "getPathElements", label: "Get GroveDB Path Elements", description: "Fetch raw GroveDB elements by path and keys (diagnostic)"),
+                QueryDefinition(name: "checkTransitionStatus", label: "Transition Status Checker", description: "Public transitions only: the hash goes to the app's nodes. Paste a state transition hash to see whether a proved block holds it, with its result (protocol version 15)"),
+                QueryDefinition(name: "getRecentStateTransitionStatus", label: "Get Recent State Transition Status (unproved)", description: "Public transitions only: the hash goes to the app's nodes. What one node says of a transition hash: committed, pending or unknown. Unproved, one node's word (protocol version 15)"),
+                QueryDefinition(name: "getStateTransitionStatusByHash", label: "Check State Transition Status", description: "Public transitions only: the hash goes to the app's nodes. A transition hash's status, proved by its block when the node says committed; otherwise the node's unproved word (protocol version 15)")
             ]
 
         case .addresses:
-            // Addresses use a dedicated view, but define queries for completeness
+            // Not shown: `QueryCategoryDetailView` routes addresses to the
+            // dedicated `AddressQueriesView`, which lists every address query.
             return [
                 QueryDefinition(name: "getAddressInfo", label: "Get Address Info", description: "Fetch balance and nonce for a single Platform address"),
                 QueryDefinition(name: "getAddressesInfos", label: "Get Addresses Infos", description: "Fetch balance and nonce for multiple Platform addresses")

@@ -29,6 +29,7 @@ struct TransitionCategoryView: View {
                 ("documentCreate", "Create Document", "Create a new document"),
                 ("documentReplace", "Replace Document", "Replace an existing document"),
                 ("documentDelete", "Delete Document", "Delete a document"),
+                ("documentErase", "Erase Document", "Erase a deleted keep-history document's revisions"),
                 ("documentTransfer", "Transfer Document", "Transfer document ownership"),
                 ("documentUpdatePrice", "Update Price", "Update document sale price"),
                 ("documentPurchase", "Purchase Document", "Purchase a document")
@@ -168,6 +169,23 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
+            }
+
+            // Key limits update (protocol 14) uses its own wallet-signed sheet,
+            // not the generic TransitionDetailView. Drives QA test ID-17.
+            if category == .identity {
+                NavigationLink(destination: KeyLimitsKeysListView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Update Key Limits")
+                            .font(.headline)
+                        Text("Raise a key's budget or extend its expiry")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("transition.identity.updateKeyLimits")
             }
 
             // Read-only COUNT aggregation query lives alongside the Document

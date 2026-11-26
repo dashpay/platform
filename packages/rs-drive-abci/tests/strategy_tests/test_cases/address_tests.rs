@@ -75,12 +75,7 @@ mod tests {
                 .iter()
                 .map(|(quorum_hash, quorum_info)| {
                     let quorum_hash_bytes: [u8; 32] = *quorum_hash.as_raw_hash().as_byte_array();
-                    let public_key_bytes: [u8; 48] = quorum_info
-                        .public_key
-                        .0
-                        .to_compressed()
-                        .try_into()
-                        .expect("public key should be 48 bytes");
+                    let public_key_bytes: [u8; 48] = quorum_info.public_key.to_bytes();
                     ((quorum_hash_bytes, quorum_type), public_key_bytes)
                 })
                 .collect();

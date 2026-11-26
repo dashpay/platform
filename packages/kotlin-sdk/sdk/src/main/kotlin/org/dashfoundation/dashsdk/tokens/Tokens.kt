@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.TokensNative
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 /**
  * Token state-transition surface — the Android analog of the Swift
@@ -297,7 +298,12 @@ class Tokens internal constructor(private val walletHandle: Long,
     /**
      * Update the token configuration. [change] renders the FFI change-item
      * tag + JSON payload (only [TokenConfigChange.MaxSupply] is wired in this
-     * release, matching the FFI).
+     * release, matching the FFI). Returns what the update did: still pending
+     * (a group action), or applied with the contract it produced (or why
+     * that contract could not be fetched), for the host to store. If the
+     * caller is cancelled after the native call completed, the outcome is
+     * still returned (see `opReturningCompletedResult`), so a confirmed
+     * update is never reported only as a cancellation.
      */
     suspend fun updateConfig(
         identityId: ByteArray,
@@ -308,17 +314,18 @@ class Tokens internal constructor(private val walletHandle: Long,
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = gate.op {
+    ): TokenConfigUpdateOutcome = gate.opReturningCompletedResult {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
-        mapNativeErrors {
-            TokensNative.tokenUpdateConfig(
+        val outcome = mapNativeErrors {
+            TokensNative.tokenUpdateConfigAndRefresh(
                 walletHandle, identityId, tokenContractId, tokenPosition,
                 change.tag, change.payloadJson, publicNote,
                 g.kind, g.position, g.actionId, g.actionIsProposer,
                 signingKeyId, signerHandle,
             )
-        }
+        } ?: throw IllegalStateException("token config update returned no outcome")
+        TokenConfigUpdateOutcome.fromJson(outcome)
     }
 
     /**

@@ -37,7 +37,12 @@ impl StateTransitionStructureValidation for TokenUnshieldWithShieldedFeeTransiti
                 .into(),
             );
         }
-        if self.amount == 0 || self.amount > MAX_DISTRIBUTION_PARAM {
+        // `is_valid_amount` is `amount != 0 && amount <= MAX_DISTRIBUTION_PARAM`, so its negation
+        // is exactly the `amount == 0 || amount > MAX_DISTRIBUTION_PARAM` this shipped generation
+        // checked before the predicate was split out for the wallet and the builder to share;
+        // `should_bound_the_unshield_amount_at_the_shipped_protocol_version` pins it at protocol
+        // version 14. Changing the predicate changes this generation's validation.
+        if !Self::is_valid_amount(self.amount) {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidTokenAmountError(InvalidTokenAmountError::new(
                     MAX_DISTRIBUTION_PARAM,
@@ -129,6 +134,38 @@ mod tests {
             fee_binding_signature: [9u8; 64],
             credit_amount: 2_000,
         }
+    }
+
+    /// The amount bound, held in [`TokenUnshieldWithShieldedFeeTransitionV0::is_valid_amount`],
+    /// refuses and accepts at protocol version 14, where the transition shipped, exactly as
+    /// its structure validation did before the predicate was split out: zero and one past
+    /// [`MAX_DISTRIBUTION_PARAM`] are refused with `InvalidTokenAmountError`, the bound itself
+    /// is accepted.
+    #[test]
+    fn should_bound_the_unshield_amount_at_the_shipped_protocol_version() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        for amount in [0, MAX_DISTRIBUTION_PARAM + 1] {
+            let mut t = valid();
+            t.amount = amount;
+            let result = t.validate_structure(platform_version);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidTokenAmountError(_)
+                )],
+                "amount {amount}"
+            );
+            assert!(!TokenUnshieldWithShieldedFeeTransitionV0::is_valid_amount(
+                amount
+            ));
+        }
+        let mut t = valid();
+        t.amount = MAX_DISTRIBUTION_PARAM;
+        let result = t.validate_structure(platform_version);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert!(TokenUnshieldWithShieldedFeeTransitionV0::is_valid_amount(
+            MAX_DISTRIBUTION_PARAM
+        ));
     }
 
     #[test]

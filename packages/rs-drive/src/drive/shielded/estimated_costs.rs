@@ -4,12 +4,12 @@ use crate::drive::shielded::paths::{
     shielded_credit_pool_path, SHIELDED_NOTES_CHUNK_POWER,
 };
 use crate::drive::{Drive, RootTree};
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 /// Average size of a note value: 32 cmx + 32 rho + 32 cv_net + 216 encrypted note = 312 bytes
 /// (encrypted note = 32 epk + 104 enc_ciphertext + 80 out_ciphertext, using DashMemo 36-byte memos)
@@ -38,7 +38,7 @@ impl Drive {
     /// Also registers parent paths (root and ShieldedBalances) needed by the
     /// GroveDB cost estimation system.
     pub(crate) fn add_estimation_costs_for_shielded_pool_operations(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // Root level: [] — needed so GroveDB can estimate traversal to ShieldedBalances
         estimated_costs_only_with_layer_info.insert(
@@ -58,6 +58,9 @@ impl Drive {
                         provable_count_trees_weight: 0,
                         provable_count_sum_trees_weight: 0,
                         provable_count_provable_sum_trees_weight: 0,
+                        provable_count_provable_big_sum_trees_weight: 0,
+                        count_big_sum_trees_weight: 0,
+                        provable_big_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -84,6 +87,9 @@ impl Drive {
                         provable_count_trees_weight: 0,
                         provable_count_sum_trees_weight: 0,
                         provable_count_provable_sum_trees_weight: 0,
+                        provable_count_provable_big_sum_trees_weight: 0,
+                        count_big_sum_trees_weight: 0,
+                        provable_big_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -118,6 +124,9 @@ impl Drive {
                             provable_count_trees_weight: 0,
                             provable_count_sum_trees_weight: 0,
                             provable_count_provable_sum_trees_weight: 0,
+                            provable_count_provable_big_sum_trees_weight: 0,
+                            count_big_sum_trees_weight: 0,
+                            provable_big_sum_trees_weight: 0,
                         },
                         None,
                         4, // 4 subtrees: notes, permanent nullifiers, anchors, anchors-by-height

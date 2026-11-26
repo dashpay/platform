@@ -1,18 +1,21 @@
 //! FFI bindings for PlatformWalletManager's SPV runtime.
 
 use std::ffi::{CStr, CString};
+use std::net::SocketAddr;
 use std::os::raw::c_char;
 
-use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
 use dashcore::PubkeyHash;
 use platform_wallet::spv::{
-    ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SyncProgress, SyncState,
+    ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SpvRuntime, SyncProgress,
+    SyncState,
 };
+use platform_wallet::PlatformWalletError;
+use std::sync::Arc;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
+use crate::runtime::block_on_worker;
 use crate::types::{FFINetwork, IdentifierArray};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
@@ -344,7 +347,8 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers_free(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
-/// Whether the SPV client is currently running.
+/// Whether SPV sync is running or starting. `false` once background sync has
+/// failed. Never blocks, so an event callback may call it.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     handle: Handle,
@@ -352,7 +356,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
     let option =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_started());
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_running());
     *out_running = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
@@ -383,6 +387,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
 }
 
 /// Start SPV sync in the background.
+///
+/// `network` must be the manager's network, its SDK's: the manager serves
+/// that SDK's SPV quorum keys from this client. Another network is refused
+/// with `ErrorInvalidParameter`.
 ///
 /// `enable_masternodes` is NOT a caller knob: platform-wallet always
 /// needs `ChainLockManager` + `InstantSendManager` running so
@@ -489,12 +497,21 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             "llmq_devnet_params is only valid on devnet",
         );
     }
+    let (Ok(llmq_devnet_size), Ok(llmq_devnet_threshold)) = (
+        u16::try_from(llmq_devnet_size),
+        u16::try_from(llmq_devnet_threshold),
+    ) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "llmq_devnet_size and llmq_devnet_threshold must fit in 16 bits",
+        );
+    };
 
     // Dash Core devnet peers disconnect any inbound connection whose
     // user agent doesn't contain `devnet.devnet-<name>`. Rebuild the
     // user agent to embed the substring while keeping whatever base
     // the caller (or our default) provided. Mirrors the dash-spv
-    // binary's `/rust-dash-spv:VERSION(devnet.devnet-NAME)/` format.
+    // binary's `/dash-spv:VERSION(devnet.devnet-NAME)/` format.
     if let Some(name) = devnet_name_str.as_deref() {
         let base = user_agent_str
             .clone()
@@ -515,81 +532,624 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         }
     }
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let mut config = ClientConfig::default();
-        config.network = net;
-        config.storage_path = std::path::PathBuf::from(&data_dir_str);
-        if let Some(ua) = user_agent_str.clone() {
-            config.user_agent = Some(ua);
+    let mut config = ClientConfig::default();
+    config.network = net;
+    config.storage_path = std::path::PathBuf::from(&data_dir_str);
+    if let Some(ua) = user_agent_str {
+        config.user_agent = ua;
+    }
+    if start_from_height > 0 {
+        config.start_from_height = Some(start_from_height);
+    }
+    // Asset-lock proof acquisition (`AssetLockManager::wait_for_proof`)
+    // depends on `CLSig` / `ISLock` P2P messages reaching the wallet,
+    // which only happens when `ChainLockManager` + `InstantSendManager`
+    // are spawned (see dash-spv/src/client/lifecycle.rs). Hardcode
+    // here so trusted-SDK callers (who'd otherwise disable masternode
+    // sync) don't silently break asset-lock-funded identity
+    // registration.
+    config.enable_masternodes = true;
+    config.restrict_to_configured_peers = restrict_to_configured_peers;
+    // Decoding only: every address that parses is passed on, and what a
+    // given list means for the client is decided in `platform-wallet`.
+    config.peers = decoded_peers(&peer_list);
+    // Peers were given and none could be decoded. Passed on, that would be
+    // an empty list, which is how a host asks for an offline start: only
+    // this boundary can still tell the two apart, so it refuses here.
+    // "Given" is the caller's count, so entries skipped above (null, not
+    // UTF-8) still count as given.
+    let peers_given = !peers.is_null() && peer_count > 0;
+    if restrict_to_configured_peers && peers_given && config.peers.is_empty() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "no usable SPV peer: restrict_to_configured_peers needs at least one IP:port \
+                 address, and none of the {peer_count} given is one{}",
+                peer_examples(&peer_list)
+            ),
+        );
+    }
+    if let Some(name) = devnet_name_str.as_deref() {
+        let mut devnet = DevnetConfig::new(name);
+        if llmq_devnet_size > 0 {
+            devnet.llmq_params = Some(LlmqDevnetParams {
+                size: llmq_devnet_size,
+                threshold: llmq_devnet_threshold,
+            });
         }
-        if start_from_height > 0 {
-            config.start_from_height = Some(start_from_height);
-        }
-        // Asset-lock proof acquisition (`AssetLockManager::wait_for_proof`)
-        // depends on `CLSig` / `ISLock` P2P messages reaching the wallet,
-        // which only happens when `ChainLockManager` + `InstantSendManager`
-        // are spawned (see dash-spv/src/client/lifecycle.rs). Hardcode
-        // here so trusted-SDK callers (who'd otherwise disable masternode
-        // sync) don't silently break asset-lock-funded identity
-        // registration.
-        config.enable_masternodes = true;
-        config.restrict_to_configured_peers = restrict_to_configured_peers;
-        for p in &peer_list {
-            if let Ok(addr) = p.parse() {
-                config.peers.push(addr);
-            }
-        }
-        if let Some(name) = devnet_name_str.as_deref() {
-            let mut devnet = DevnetConfig::new(name);
-            if llmq_devnet_size > 0 {
-                devnet.llmq_params = Some(LlmqDevnetParams {
-                    size: llmq_devnet_size,
-                    threshold: llmq_devnet_threshold,
-                });
-            }
-            config.devnet = Some(devnet);
-        }
+        config.devnet = Some(devnet);
+    }
 
-        // Deliberately UNDER the registry guard, unlike the read-only
-        // exports: this one mutates the manager's runtime. Dropping the
-        // guard would let `platform_wallet_manager_destroy` remove the
-        // handle, join the workers and fire the host's `release_fn` while
-        // the start is in flight — and the run loop below would then
-        // deliver block events into released host contexts. Holding the
-        // guard makes the destroy wait, which is the whole point of the
-        // registry.
-        let spv = manager.spv_arc();
-        let start_result = {
-            let spv = spv.clone();
-            block_on_worker(async move { spv.start(config).await })
+    start_spv_outside_registry(handle, move |spv, still_owned| {
+        block_on_worker(async move { spv.start_and_spawn(config, still_owned).await })
+    })
+}
+
+/// How many refused peers an error message quotes, and how much of each.
+const MAX_PEER_EXAMPLES: usize = 3;
+const MAX_PEER_EXAMPLE_CHARS: usize = 64;
+
+/// The first few of `peer_list`, each cut short, for an error message. The
+/// entries come from the host (or a service it asked), so the message must
+/// not grow with them.
+fn peer_examples(peer_list: &[String]) -> String {
+    let shown: Vec<String> = peer_list
+        .iter()
+        .take(MAX_PEER_EXAMPLES)
+        .map(|peer| peer.chars().take(MAX_PEER_EXAMPLE_CHARS).collect())
+        .collect();
+    if shown.is_empty() {
+        String::new()
+    } else {
+        format!(", for example {shown:?}")
+    }
+}
+
+/// The entries of `peer_list` that are an `IP:port` address. Hostnames are
+/// skipped: the SPV client takes socket addresses only.
+fn decoded_peers(peer_list: &[String]) -> Vec<SocketAddr> {
+    peer_list
+        .iter()
+        .filter_map(|peer| peer.parse::<SocketAddr>().ok())
+        .collect()
+}
+
+/// Run `run_start` on `handle`'s SPV runtime with the handle registry
+/// released.
+///
+/// The runtime is looked up under the registry guard, but the start runs
+/// outside it — see `platform_wallet_manager_sync_progress`. The start opens
+/// the SPV disk store, which can run a one-time storage migration taking
+/// many seconds; a registry read guard held across it would stall every
+/// `platform_wallet_manager_create` (a registry write) and, through
+/// parking_lot's writer preference, every other registry reader for that
+/// long — a host that frees its main thread during the start would park it
+/// again on the first other manager it configures.
+///
+/// With the guard dropped during the start, `platform_wallet_manager_destroy`
+/// may have removed the handle and torn the manager down meanwhile, and a run
+/// loop published then would run for a client nothing can stop any more. So
+/// `run_start` receives `still_owned`, an owner check it must run between the
+/// client's construction and the run loop's publication —
+/// `SpvRuntime::start_and_spawn` runs it under its shutdown lock, which also
+/// keeps a concurrent native stop from slipping in between the two — and
+/// reports `Ok(false)` when the owner is gone: the runtime stopped the client
+/// it had built, and the call fails with `ErrorInvalidHandle`.
+///
+/// `still_owned` reads the runtime's owner flag (`destroy` sets it before the
+/// teardown's SPV stop), never the registry: a registry read under the
+/// shutdown lock would cycle with a native stop that holds the registry's
+/// read guard while it waits for that lock, once a registry writer (a manager
+/// create or destroy) is queued and parking_lot makes every new reader wait
+/// behind it.
+///
+/// `run_start` is the native start for the FFI entry point; the tests inject
+/// a gated one so the registry release and the destroyed-handle branch are
+/// covered without a network.
+fn start_spv_outside_registry<F>(handle: Handle, run_start: F) -> PlatformWalletFFIResult
+where
+    F: FnOnce(
+        Arc<SpvRuntime>,
+        Box<dyn FnOnce() -> bool + Send>,
+    ) -> Result<bool, PlatformWalletError>,
+{
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
+    let spv = unwrap_option_or_return!(option);
+    let owner = Arc::clone(&spv);
+    let still_owned: Box<dyn FnOnce() -> bool + Send> = Box::new(move || !owner.owner_released());
+
+    match run_start(spv, still_owned) {
+        Ok(true) => PlatformWalletFFIResult::ok(),
+        Ok(false) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "manager was destroyed while SPV was starting",
+        ),
+        Err(error) => error.into(),
+    }
+}
+
+#[cfg(test)]
+mod spv_start_peer_tests {
+    use super::*;
+    use crate::handle::NULL_HANDLE;
+    use std::ffi::CString;
+
+    /// A restricted start with `peers` on no manager: the peer check runs
+    /// before the handle is looked up, so a list that passes it fails with
+    /// `NotFound`.
+    fn restricted_start(peers: &[&str]) -> (PlatformWalletFFIResultCode, String) {
+        let data_dir = CString::new("/nonexistent").expect("no NUL");
+        let owned: Vec<CString> = peers
+            .iter()
+            .map(|peer| CString::new(*peer).expect("no NUL"))
+            .collect();
+        let pointers: Vec<*const c_char> = owned.iter().map(|peer| peer.as_ptr()).collect();
+        let mut result = unsafe {
+            platform_wallet_manager_spv_start(
+                NULL_HANDLE,
+                data_dir.as_ptr(),
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                pointers.as_ptr(),
+                pointers.len(),
+                true,
+                0,
+                std::ptr::null(),
+                0,
+                0,
+            )
         };
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
 
-        if start_result.is_ok() {
-            let _guard = runtime().enter();
-            spv.spawn_run_loop();
+    #[test]
+    fn should_refuse_a_restricted_start_whose_peers_are_not_addresses() {
+        for peers in [
+            &["seed.example.org:19999"][..],
+            &["192.0.2.1", "not a peer"][..],
+        ] {
+            let (code, message) = restricted_start(peers);
+            assert_eq!(
+                code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "{peers:?}"
+            );
+            assert!(message.contains(peers[0]), "{message}");
+        }
+    }
+
+    #[test]
+    fn should_let_a_restricted_start_through_with_a_usable_peer_or_no_peers() {
+        // No peers at all is an offline start, not a mistake. Port 0 is an
+        // address: `platform-wallet` decides about it, with a manager.
+        for peers in [
+            &[][..],
+            &["192.0.2.1:0", "192.0.2.2:19999"][..],
+            &["192.0.2.1:0"][..],
+        ] {
+            let (code, message) = restricted_start(peers);
+            assert_eq!(
+                code,
+                PlatformWalletFFIResultCode::NotFound,
+                "{peers:?}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_restricted_start_whose_peers_cannot_be_decoded() {
+        let data_dir = CString::new("/nonexistent").expect("no NUL");
+        // Not UTF-8, and a null entry: both are skipped while decoding, and
+        // must not turn a start with peers into an offline one.
+        let not_utf8: [u8; 3] = [0xff, 0xfe, 0];
+        let peers = [not_utf8.as_ptr() as *const c_char, std::ptr::null()];
+        let mut result = unsafe {
+            platform_wallet_manager_spv_start(
+                NULL_HANDLE,
+                data_dir.as_ptr(),
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                peers.as_ptr(),
+                peers.len(),
+                true,
+                0,
+                std::ptr::null(),
+                0,
+                0,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(message.ends_with("none of the 2 given is one"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_quote_only_a_few_short_examples_of_the_refused_peers() {
+        let long = "x".repeat(10_000);
+        let peers: Vec<&str> = vec![long.as_str(); 50];
+        let (code, message) = restricted_start(&peers);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("none of the 50 given is one"), "{message}");
+        assert_eq!(
+            message.matches(&"x".repeat(MAX_PEER_EXAMPLE_CHARS)).count(),
+            MAX_PEER_EXAMPLES,
+            "{message}"
+        );
+        assert!(message.len() < 1_000, "{} bytes", message.len());
+    }
+
+    #[test]
+    fn should_pass_on_every_peer_that_is_an_address() {
+        // Port 0 stays in the list: which peers a client can use is not
+        // decided while decoding.
+        let peers = [
+            "192.0.2.1:19999",
+            "192.0.2.1:0",
+            "seed.example.org:19999",
+            "[2001:db8::1]:19999",
+        ]
+        .map(String::from);
+        assert_eq!(
+            decoded_peers(&peers),
+            vec![
+                "192.0.2.1:19999".parse::<SocketAddr>().expect("an address"),
+                "192.0.2.1:0".parse::<SocketAddr>().expect("an address"),
+                "[2001:db8::1]:19999"
+                    .parse::<SocketAddr>()
+                    .expect("an address"),
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod spv_start_registry_tests {
+    use super::*;
+    use crate::test_fixtures::mock_manager;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    const WAIT: Duration = Duration::from_secs(10);
+
+    /// Take the code and the owned message out of a result and free it, so
+    /// a result can be inspected (and sent across threads) as plain values.
+    fn code_and_message(
+        mut result: PlatformWalletFFIResult,
+    ) -> (PlatformWalletFFIResultCode, String) {
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    /// The responsiveness fix: while the native start is suspended, the
+    /// registry is free, so another manager can be created (a registry
+    /// write) instead of parking behind the start's store open.
+    #[test]
+    fn should_create_another_manager_while_a_start_is_suspended() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let (entered_tx, entered_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+
+        let start_thread = std::thread::spawn(move || {
+            code_and_message(start_spv_outside_registry(
+                handle,
+                move |_spv, still_owned| {
+                    entered_tx.send(()).expect("test observes the start");
+                    release_rx
+                        .recv_timeout(WAIT)
+                        .expect("test releases the start");
+                    assert!(still_owned(), "the handle is still registered");
+                    Ok(true)
+                },
+            ))
+        });
+        entered_rx
+            .recv_timeout(WAIT)
+            .expect("the start must reach its native step");
+
+        // A registry write on another thread, bounded so a regression (the
+        // guard held across the start again) fails instead of hanging.
+        let (inserted_tx, inserted_rx) = mpsc::channel::<Handle>();
+        std::thread::spawn(move || {
+            let other = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+            inserted_tx.send(other).expect("test observes the insert");
+        });
+        let other = inserted_rx
+            .recv_timeout(WAIT)
+            .expect("creating another manager must not wait for the suspended start");
+
+        release_tx.send(()).expect("start thread alive");
+        let (code, message) = start_thread.join().expect("start thread panicked");
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
+
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(other));
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+    }
+
+    /// The new lifetime boundary: a manager destroyed while its start was
+    /// suspended has no owner for the started client, so the start fails
+    /// with `ErrorInvalidHandle` and the client that the native start really
+    /// did bring up (an offline testnet client on a scratch store, as the
+    /// runtime's own tests start one) is stopped instead of being published
+    /// for nobody to stop.
+    #[test]
+    fn should_fail_a_start_whose_manager_was_destroyed_and_stop_its_client() {
+        let storage = std::env::temp_dir().join(format!(
+            "spv-start-registry-{}-{}",
+            std::process::id(),
+            next_handle()
+        ));
+        std::fs::create_dir_all(&storage).expect("scratch store");
+        let config = ClientConfig::testnet()
+            .with_storage_path(&storage)
+            .with_restrict_to_configured_peers(true);
+
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let spv = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |manager| manager.spv_arc())
+            .expect("manager registered");
+
+        let (code, message) =
+            code_and_message(start_spv_outside_registry(handle, |spv, still_owned| {
+                // The real native step, with the registry released; the owner
+                // check runs under the runtime's shutdown lock, after the client
+                // exists and before any run loop is published.
+                let observed = Arc::clone(&spv);
+                block_on_worker(async move {
+                    spv.start_and_spawn(config, move || {
+                        assert!(
+                            observed.is_started(),
+                            "the native start brought a client up"
+                        );
+                        // `platform_wallet_manager_destroy`'s first two steps,
+                        // racing the start: the manager leaves the registry and
+                        // releases its runtime.
+                        let manager = PLATFORM_WALLET_MANAGER_STORAGE
+                            .remove(handle)
+                            .expect("the manager was registered");
+                        manager.spv().release_owner();
+                        still_owned()
+                    })
+                    .await
+                })
+            }));
+
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "{message}"
+        );
+        assert!(
+            PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(handle, |_| ())
+                .is_none(),
+            "the handle stays destroyed"
+        );
+        assert!(
+            !spv.is_started(),
+            "the orphaned client must be stopped, not published"
+        );
+        let _ = std::fs::remove_dir_all(&storage);
+    }
+
+    /// The lock cycle the owner check must not form: the start holds the
+    /// runtime's shutdown lock while it checks its owner; a native stop
+    /// holds the registry's read guard while it waits for that lock; a
+    /// registry writer queued behind the stop makes parking_lot hold every
+    /// new reader back. An owner check that read the registry would wait on
+    /// the writer, the writer on the stop, the stop on the start. The check
+    /// reads the owner flag instead, so the start completes, the stop runs
+    /// after it and the writer gets in.
+    ///
+    /// The scenario runs in a child process (this test binary, re-invoked on
+    /// this test alone with [`REGISTRY_DEADLOCK_CHILD`] set): a regression
+    /// forms a real deadlock whose threads no timeout can unwind, and in the
+    /// test process they would hold the process-wide registry and wedge every
+    /// other registry-backed test. The parent bounds the child and kills it
+    /// instead.
+    #[test]
+    fn should_not_wedge_a_start_overlapping_a_native_stop_and_a_queued_registry_writer() {
+        if std::env::var_os(REGISTRY_DEADLOCK_CHILD).is_some() {
+            registry_deadlock_scenario();
+            return;
         }
 
-        start_result
-    });
+        let test_name = format!(
+            "{}::should_not_wedge_a_start_overlapping_a_native_stop_and_a_queued_registry_writer",
+            module_path!()
+                .split_once("::")
+                .map(|(_, path)| path)
+                .expect("test module path below the crate root")
+        );
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args(["--exact", &test_name, "--nocapture"])
+            .env(REGISTRY_DEADLOCK_CHILD, "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn the scenario child");
 
-    let start_result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(start_result);
+        let deadline = std::time::Instant::now() + WAIT;
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("child status") {
+                break Some(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let output = child.wait_with_output().expect("reap the scenario child");
+        let transcript = format!(
+            "--- child stdout ---\n{}\n--- child stderr ---\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        match status {
+            Some(status) => assert!(
+                status.success(),
+                "the scenario failed in the child process ({status})\n{transcript}"
+            ),
+            None => {
+                panic!("the scenario deadlocked: the child was killed after {WAIT:?}\n{transcript}")
+            }
+        }
+    }
 
-    PlatformWalletFFIResult::ok()
+    /// Set in the child process that runs [`registry_deadlock_scenario`].
+    const REGISTRY_DEADLOCK_CHILD: &str = "PLATFORM_WALLET_FFI_REGISTRY_DEADLOCK_CHILD";
+
+    /// Each contender is established explicitly before the owner check runs:
+    /// the stop signals once it holds the registry's read guard (the lock
+    /// pattern of `platform_wallet_manager_spv_stop`, which keeps that guard
+    /// across its blocking stop), the writer's manager is built before its
+    /// insert is spawned so the thread goes straight for the write lock, and
+    /// the check waits until a fresh `try_read` of the registry is refused
+    /// while that known reader is still held — which, with a reader present,
+    /// only a queued writer causes.
+    fn registry_deadlock_scenario() {
+        let storage = std::env::temp_dir().join(format!(
+            "spv-start-registry-{}-{}",
+            std::process::id(),
+            next_handle()
+        ));
+        std::fs::create_dir_all(&storage).expect("scratch store");
+        let config = ClientConfig::testnet()
+            .with_storage_path(&storage)
+            .with_restrict_to_configured_peers(true);
+
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        type StopThread = std::thread::JoinHandle<Option<Result<(), String>>>;
+        let (threads_tx, threads_rx) =
+            mpsc::channel::<(StopThread, std::thread::JoinHandle<Handle>)>();
+
+        let (result_tx, result_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let result =
+                code_and_message(start_spv_outside_registry(handle, |spv, still_owned| {
+                    block_on_worker(async move {
+                        spv.start_and_spawn(config, move || {
+                            // Under the shutdown lock. The native stop's lock
+                            // pattern: the registry's read guard, held across a
+                            // blocking stop that now waits for the shutdown lock.
+                            let (guard_held_tx, guard_held_rx) = mpsc::channel::<()>();
+                            let stop: StopThread = std::thread::spawn(move || {
+                                PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+                                    let spv = manager.spv_arc();
+                                    guard_held_tx.send(()).expect("test observes the guard");
+                                    block_on_worker(async move { spv.stop().await })
+                                        .map_err(|error| error.to_string())
+                                })
+                            });
+                            guard_held_rx
+                                .recv_timeout(WAIT)
+                                .expect("the stop holds the registry's read guard");
+
+                            // A registry writer, built first so its thread goes
+                            // straight for the write lock and queues behind the
+                            // stop's guard.
+                            let other = mock_manager();
+                            let writer = std::thread::spawn(move || {
+                                PLATFORM_WALLET_MANAGER_STORAGE.insert(other)
+                            });
+                            let deadline = std::time::Instant::now() + WAIT;
+                            while !PLATFORM_WALLET_MANAGER_STORAGE.try_read_refused() {
+                                assert!(
+                                    std::time::Instant::now() < deadline,
+                                    "the writer never queued behind the stop's guard"
+                                );
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+
+                            threads_tx
+                                .send((stop, writer))
+                                .expect("test collects the threads");
+                            still_owned()
+                        })
+                        .await
+                    })
+                }));
+            result_tx.send(result).expect("test observes the start");
+        });
+
+        let (code, message) = result_rx
+            .recv_timeout(WAIT)
+            .expect("the start must complete: its owner check must not wait on the registry");
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
+
+        let (stop, writer) = threads_rx.recv_timeout(WAIT).expect("the owner check ran");
+        assert_eq!(
+            stop.join().expect("stop thread"),
+            Some(Ok(())),
+            "the stop runs once the start released the shutdown lock"
+        );
+        let other = writer.join().expect("writer thread");
+
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(other));
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+        let _ = std::fs::remove_dir_all(&storage);
+    }
+
+    /// A start whose native step fails reports the native error as-is.
+    #[test]
+    fn should_report_a_failed_native_start_as_is() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+
+        let (code, message) = code_and_message(start_spv_outside_registry(handle, |_spv, _| {
+            Err(PlatformWalletError::SpvError("store is locked".to_string()))
+        }));
+
+        assert_ne!(code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            message.contains("store is locked"),
+            "unexpected message: {message:?}"
+        );
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+    }
 }
 
 /// Stop the SPV client.
+///
+/// `ErrorShutdownIncomplete`: teardown is still running; call stop again.
+/// `ErrorSpvProcessRestartRequired`: restart the host process.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     // Under the registry guard on purpose — it mutates the manager's
-    // runtime; see `platform_wallet_manager_spv_start`.
+    // runtime, and holding the guard makes `platform_wallet_manager_destroy`
+    // wait for the stop instead of tearing the runtime down underneath it.
+    // (The start cannot afford this hold: it releases the guard for its
+    // multi-second store open and never re-reads the registry under the
+    // runtime's shutdown lock — it reads the runtime's owner flag instead;
+    // see `start_spv_outside_registry`.)
     //
-    // A stop that did not complete (the client stop ran over its budget, or
-    // the run loop survived the abort and was re-parked for a retry) is
-    // returned as an error: a start issued after it would find the parked
-    // run loop and spawn none.
+    // A stop that did not complete (teardown outlived the stop deadline and
+    // stays tracked for a retry, or it failed) is returned as an error: a
+    // start issued after it is refused until a later stop joins the teardown.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
         block_on_worker(async move { spv.stop().await })
@@ -651,12 +1211,17 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
 }
 
 /// Clear all persisted SPV storage (headers, filters, state).
+///
+/// A running SPV client is stopped first and stays stopped; nothing is
+/// cleared, and an error is returned, when that stop does not complete.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     // Under the registry guard on purpose — it mutates the manager's
-    // storage; see `platform_wallet_manager_spv_start`.
+    // storage, and holding the guard makes `platform_wallet_manager_destroy`
+    // wait instead of releasing the host contexts while the clear runs; see
+    // `platform_wallet_manager_spv_stop`.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
         block_on_worker(async move { spv.clear_storage().await })

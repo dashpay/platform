@@ -78,14 +78,20 @@ An array that is neither is refused.
 | **Value** | An integer, 0 or more |
 | **Since** | protocol version 1 |
 | **On update** | Fixed (10246) |
-| **Errors** | `MissingPositionsInDocumentTypePropertiesError` (10411) at registration |
+| **Errors** | `MissingPositionsInDocumentTypePropertiesError` (10411) at registration; for an object's members, `InvalidContractStructure` (10231) from protocol version 15 |
 
 A document is stored with its values one after another and no property names. `position` is the property's place in that sequence.
 
 - The top-level properties of a document type must use the positions 0, 1, 2 and so on, with no gap and no number used twice (10411). A top-level property without a `position` is refused.
-- The members of an object need a `position` too. Number them from 0 within the object; only the top level is checked for gaps.
-- A property that takes its schema from a [`$ref`](#ref) writes its `position` next to the `$ref`.
-- A property added by a contract update takes the next free position. An existing position can never change, or stored documents would be read in the wrong order.
+- The members of an object need a `position` too, but inside an object the stored order is the order its `properties` map lists them in, at every protocol version. From protocol version 15:
+  - A new contract's objects must list their members at consecutive integer positions in map order: no gap, no number used twice, and no value such as `1.0` (`InvalidContractStructure`, 10231). The same holds for an object, a document type or a `$defs` definition that an update adds. Number them from 0; an object whose positions start higher, as DPNS's `records` (`identity` at 1), is accepted. In those objects the two orders agree, so their members are stored as a document type's own properties are.
+  - A `$ref` such a contract or update gains in a storage schema (a property, an object's member or a `$defs` definition) points into the contract's `$defs` (`#/$defs/...`), at a schema whose objects, and those its own `$ref`s reach, are listed the same way (10231). A `$ref` only the document validator reads, such as one inside an array's `contains`, does not decide how a document is stored and is not held to this rule.
+  - A schema a contract gains reached through `$ref`s deeper than the parse admits, or a `$ref` it gains that reaches the schema it is written in, that the document type parser can not follow or follows to no property schema (a map with a `type`), or that is not text, is refused (10231): the parse refuses each in a document type, and in a contract with only tokens, whose `$defs` no parse reads, no document type could ever read what such a `$ref` reaches. A contract with only tokens may have stored a cycle or a chain of any length before protocol version 15: an update that keeps it is accepted, and the members it gives the schemas on the cycle or chain are still judged, each schema from its own depth, whatever path reaches it. A schema it stored deeper than the parse admits stays only as it was. A `$ref` a contract keeps that pointed at nothing as stored, and reaches a schema once an update writes one there, reaches a schema the contract gains, held to the same rules.
+  - A contract registered earlier may list an object's members out of position order, or with gaps, repeated or non-integer positions. It is stored, and read, in its map order, and stays updatable.
+
+  Before protocol version 15 nested positions were not checked beyond being there.
+- A property that takes its schema from a [`$ref`](#ref) writes its `position` next to the `$ref`. A position inside the definition is not read for it.
+- A property added by a contract update takes the next free position. An existing position can never change, or stored documents would be read in the wrong order. A member added to an object is listed after the object's existing members in its `properties` map, since that is the order they are stored in. From protocol version 15 it also takes the object's next free position (one above the highest integer position its members have), the existing members keep their order, and the members one update adds follow one another. The same holds for an object a property keeps taking from a `$ref`, as the update rewrites its definition. When a stored position reads as no integer (a value past every integer, which registration before protocol version 15 accepted), the object has no next free position: the members an update adds still come after its existing ones and follow one another, from any position. An update that breaks this is refused by the first check that finds it. The walk of each document type runs first: it refuses an object it reaches inline or through a `$ref` it keeps with `DocumentTypeUpdateError` (40212), and an object a `$ref` it gains points at whose members are not at consecutive positions with `InvalidContractStructure` (10231). The walk of each `$defs` definition against the one stored runs after, and refuses with `DataContractUpdateActionNotAllowedError` (40004). So a definition a `$ref` reaches can still be refused with 40004, when the type's walk accepts what it reads there.
 
 ## Strings
 
@@ -112,6 +118,13 @@ A `username` is 3 to 63 letters, digits or underscores.
 
 - `minLength` and `maxLength` count characters, and a character takes 1 to 4 bytes in UTF-8. To cap the stored size, add [`maxBytes`](max-bytes.md). Whatever `maxLength` says, no single string may exceed 5120 bytes (10417).
 - `pattern` is written in the syntax of Rust's `regex` crate, which has no lookaround and no backreferences. A pattern that does not compile is refused at registration (10101).
+- From protocol version 15 a contract holds at most 32 patterns across its document schemas and `$defs`, a contested index's `regexPattern`s counted with them and one in `$defs` counted once for each document type (`InvalidContractStructure`, 10231). Before any is compiled:
+  - each pattern is at most 256 bytes long as written;
+  - the patterns take at most 4096 bytes together, one in `$defs` counted once for each document type;
+  - a pattern that matches case-insensitively (`(?i)`) may fold at most 4096 code points, as its syntax shows. A class naming a Unicode property, and a negated or Perl class inside a bracketed class, count as every code point; a range counts the code points it spans, once more for each bracketed class around it. `(?i)^[a-z0-9-]{3,63}$` is well within it, `(?i)\p{L}` is not.
+
+  Then each must compile to at most 128 KiB. Compiling a pattern takes memory in proportion to its compiled size, and time in proportion to its compiled size, its length and, under case-insensitive matching, the code points its classes span: a bounded repetition of a Unicode class such as `\pL{20}` compiles to far more than `\pL+` beside a `maxLength`.
+- Before protocol version 15 a node's mempool accepts less than a block does. It holds a contract to these limits, and refuses a schema declaring `format: regex`, a `patternProperties`, and, in a contract holding a pattern, a `$ref` that is not `#/$defs/` followed by a definition's name or an `$id` that is not a plain name. A contract a block accepts may so be refused when it is submitted. From protocol version 15 the mempool holds patterns to what a block does.
 - `format` is checked on every document. The validator knows `date-time`, `date`, `time`, `email`, `idn-email`, `hostname`, `ipv4`, `ipv6`, `uri` and `regex`. Any other format, `uuid` and `uri-reference` included, is refused at registration (10101).
 - A string with `pattern` or `format` must declare a `maxLength` of at most 50000, so that matching stays cheap.
 - A string used in an index needs a `maxLength` of at most 63 (`InvalidIndexedPropertyConstraintError`, 10205). See [Indexes](indexes.md).
@@ -276,7 +289,7 @@ The two spellings are the same property: a value is validated, indexed and store
 | **Where** | Properties of type `object` |
 | **Value** | The same as at the top of a document type: see [Document Shape](document-shape.md) |
 | **Since** | protocol version 1 |
-| **On update** | Members may be added, never removed; `required` and `additionalProperties` are fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
+| **On update** | Members may be added, never removed (10246). They are added after the existing ones in the `properties` map, and from protocol version 15 at the object's next free positions: an update that reorders the members, or adds one before them in the map or at another position, is refused (by the first check that finds it: 40212 from the walk of a document type, 10231 when a `$ref` it gains points at members not at consecutive positions, 40004 from the walk of the `$defs`). `required` follows the rules of the type's own `required` from protocol version 15 (10276), and may not name more members than `maxProperties` allows; before, it is fixed (10246). The lists of an object a contract gains are held to what a document can meet (see [Document Shape](document-shape.md#required)). `additionalProperties` is fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
 | **Errors** | `JsonSchemaError` (10101) |
 
 ```json
@@ -294,7 +307,9 @@ The two spellings are the same property: a value is validated, indexed and store
 An object groups members under one property, as DPNS groups a name's records.
 
 - An object declares `properties`, 1 to 100 members each with a `position`, and `additionalProperties: false`, unless it takes its schema from a [`$ref`](#ref).
-- Its `required` names the members every value of the object must hold. It cannot change after the type exists, so a member added by an update is optional.
+- Its `required` names the members every value of the object must hold. A member the object's `required` names is stored without a presence byte (unless it carries `requiredSince`), so on update, as for the type's own properties, a member keeps its requiredness and nothing leaves the list. From protocol version 15 a member added by an update may join the list with [`requiredSince`](required-since.md#members-of-an-object); before, the list is fixed and an added member is optional.
+- The members are stored in the order of the object's `properties` map, at every protocol version. From protocol version 15 a new object must list them at consecutive positions (see [`position`](#position)), so the two orders agree. An update adds members after the existing ones; from protocol version 15 one that reorders them or puts a member before them is refused (40212). Tools that rewrite a schema's maps in another key order (sorting them, or putting integer-like keys first) produce such an update.
+- Under an [immutable](mutability.md) property, in a type whose moderators change fields (`moderatorAbilities.changeFields`), or inside an object declaring a whole-object `const` or `enum`, a member is added only as optional (10276). A document stored before would have to add a required one: on replace, which changes the immutable property or may break the constraint, and on a moderator's change, which checks the whole document again but can not add the member.
 - An object is stored with its members inline. An object cannot be indexed, but a member can: an index names it by its dotted path, such as `records.identity`.
 
 ## `$ref`
@@ -329,7 +344,8 @@ A property of any document type of the contract then reads `"shippingAddress": {
 - A reference that does not resolve, or that leads back to itself, is refused (10207).
 - The property keeps its own `position`; the definition supplies everything else.
 - A definition may be written with a [shorthand](#shorthands-identifier-and-bytes): `"schemaDefs": { "owner": { "type": "identifier" } }`.
-- The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213).
+- The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213). An object definition's members follow the rules of [Objects](#objects) in every type that references it: members only after the existing ones.
+- Requiredness through a `$ref` comes from the `required` written beside it. On update that list can not change (10276), nor can the `required` lists in `properties` written beside a `$ref` (10246). A definition's own `required` lists, at any depth of the definition, are not read for storage (a member only they list is stored as optional) and are fixed. So through a `$ref`, members can only be added as optional.
 
 ## Annotations
 

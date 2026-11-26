@@ -285,6 +285,82 @@ final class DPNSContestDecoderTests: XCTestCase {
                   "callers must fall back to the normalized label, not guess one")
   }
 
+  // MARK: - Request dates
+
+  func testCreatedAtIsDecodedFromMilliseconds() {
+    var entry = contender("Ab1", 3, label: "pizza")
+    entry["created_at"] = 1_760_140_800_123
+    let state = decode(["contenders": [entry]])
+
+    XCTAssertEqual(
+      state.contenders.first?.createdAt,
+      Date(timeIntervalSince1970: 1_760_140_800.123))
+  }
+
+  func testMissingCreatedAtIsNil() {
+    // Absent on the same terms as `label`: the document did not decode.
+    let state = decode(["contenders": [contender("Ab1", 3)]])
+
+    XCTAssertNil(state.contenders.first?.createdAt)
+  }
+
+  func testMalformedCreatedAtIsNil() {
+    var text = contender("Cd2", 1)
+    text["created_at"] = "yesterday"
+    var negative = contender("Ef3", 1)
+    negative["created_at"] = -1
+    var bool = contender("Gh4", 1)
+    bool["created_at"] = true
+    var fraction = contender("Jk5", 1)
+    fraction["created_at"] = 0.4
+    let state = decode(["contenders": [text, negative, bool, fraction]])
+
+    XCTAssertEqual(state.contenders.map(\.createdAt), [nil, nil, nil, nil])
+  }
+
+  func testPresentZeroCreatedAtIsTheEpoch() {
+    // Presence says the document has a date; the SDK passes 0 through as is.
+    var zero = contender("Ab1", 3)
+    zero["created_at"] = 0
+    let state = decode(["contenders": [zero]])
+
+    XCTAssertEqual(state.contenders.first?.createdAt, Date(timeIntervalSince1970: 0))
+  }
+
+  func testListContenderCarriesCreatedAtOnlyWhenFlagged() {
+    "Ab1".withCString { id in
+      let idPtr = UnsafeMutablePointer(mutating: id)
+      let flagged = DashSDKContender(
+        identity_id: idPtr, vote_count: 3, label: nil,
+        created_at: 1_760_140_800_000, has_created_at: true)
+      let unflagged = DashSDKContender(
+        identity_id: idPtr, vote_count: 3, label: nil,
+        created_at: 1_760_140_800_000, has_created_at: false)
+
+      XCTAssertEqual(
+        SDK.contender(from: flagged)?.createdAt,
+        Date(timeIntervalSince1970: 1_760_140_800))
+      XCTAssertNil(SDK.contender(from: unflagged)?.createdAt)
+    }
+  }
+
+  func testListContenderKeepsAFlaggedZeroDate() {
+    "Ab1".withCString { id in
+      let zero = DashSDKContender(
+        identity_id: UnsafeMutablePointer(mutating: id), vote_count: 3, label: nil,
+        created_at: 0, has_created_at: true)
+
+      XCTAssertEqual(SDK.contender(from: zero)?.createdAt, Date(timeIntervalSince1970: 0))
+    }
+  }
+
+  func testListContenderWithoutIdentityIdIsDropped() {
+    let contender = DashSDKContender(
+      identity_id: nil, vote_count: 3, label: nil, created_at: 0, has_created_at: false)
+
+    XCTAssertNil(SDK.contender(from: contender))
+  }
+
   // MARK: - Vote poll coordinates
 
   func testIndexValuesPutTheParentDomainFirst() {
@@ -300,5 +376,46 @@ final class DPNSContestDecoderTests: XCTestCase {
     XCTAssertEqual(
       DPNSVotePoll.indexValues(normalizedLabel: "alice"),
       ["dash", "alice"])
+  }
+
+  func testIndexValuesSendALabelStartingWith0xAsText() {
+    // `oxford` normalizes to `0xf0rd`; sent raw, the FFI would read it as
+    // hex bytes. One leading backslash marks it as text.
+    XCTAssertEqual(
+      DPNSVotePoll.indexValues(normalizedLabel: "0xf0rd"),
+      ["dash", "\\0xf0rd"])
+  }
+
+  // MARK: - Contested index value encoding
+
+  func testTextPrefixesABackslashToAValueStartingWith0x() {
+    XCTAssertEqual(ContestedIndexValue.text("0xf0rd"), "\\0xf0rd")
+    XCTAssertEqual(ContestedIndexValue.text("0x"), "\\0x")
+  }
+
+  func testTextPrefixesABackslashToAValueStartingWithABackslash() {
+    XCTAssertEqual(ContestedIndexValue.text("\\a11ce"), "\\\\a11ce")
+    XCTAssertEqual(ContestedIndexValue.text("\\0xf0rd"), "\\\\0xf0rd")
+  }
+
+  func testTextComparesPrefixesAsUTF8BytesNotGraphemes() {
+    // A combining mark after the prefix merges it into one grapheme, so
+    // `hasPrefix` would miss it; Rust still sees the `0x` or `\` bytes.
+    XCTAssertEqual(ContestedIndexValue.text("0x\u{301}"), "\\0x\u{301}")
+    XCTAssertEqual(ContestedIndexValue.text("\\\u{301}a"), "\\\\\u{301}a")
+  }
+
+  func testTextLeavesOtherValuesUnchanged() {
+    XCTAssertEqual(ContestedIndexValue.text("a11ce"), "a11ce")
+    XCTAssertEqual(ContestedIndexValue.text("dash"), "dash")
+    XCTAssertEqual(ContestedIndexValue.text(""), "")
+    // Only the exact lowercase `0x` prefix is hex to the FFI.
+    XCTAssertEqual(ContestedIndexValue.text("0Xf0rd"), "0Xf0rd")
+    XCTAssertEqual(ContestedIndexValue.text("a\\b"), "a\\b")
+  }
+
+  func testBytesAreLowercaseHexWith0xPrefix() {
+    XCTAssertEqual(ContestedIndexValue.bytes(Data([0xFA, 0xCE, 0x00, 0x01])), "0xface0001")
+    XCTAssertEqual(ContestedIndexValue.bytes(Data()), "0x")
   }
 }

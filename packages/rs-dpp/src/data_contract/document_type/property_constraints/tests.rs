@@ -1,5 +1,6 @@
 use super::*;
 use platform_value::platform_value;
+use platform_value::string_encoding::Encoding;
 use platform_version::version::PLATFORM_VERSIONS;
 
 /// The paths the unit tests treat as string properties, `labels` an array of
@@ -29,7 +30,7 @@ fn property_kind(path: &str) -> Option<EqualityKind> {
 /// The rules of a schema whose `propertyConstraints` is `declaration`.
 fn parse(declaration: Value) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let schema = platform_value!({ "type": "object", "propertyConstraints": declaration });
-    parse_property_constraints(&schema, "order", &property_kind)
+    parse_property_constraints(&schema, "order", &property_kind, PlatformVersion::latest())
 }
 
 /// The one rule of a declaration naming it `rule`.
@@ -192,15 +193,23 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
 #[test]
 fn should_read_nothing_from_a_schema_without_the_keyword() {
     let schema = platform_value!({ "type": "object" });
-    assert!(parse_property_constraints(&schema, "order", &property_kind)
-        .expect("parses")
-        .is_empty());
+    assert!(parse_property_constraints(
+        &schema,
+        "order",
+        &property_kind,
+        PlatformVersion::latest()
+    )
+    .expect("parses")
+    .is_empty());
     // A schema that is not an object is the core parser's to refuse
-    assert!(
-        parse_property_constraints(&Value::Text("x".to_string()), "order", &property_kind)
-            .expect("parses")
-            .is_empty()
-    );
+    assert!(parse_property_constraints(
+        &Value::Text("x".to_string()),
+        "order",
+        &property_kind,
+        PlatformVersion::latest(),
+    )
+    .expect("parses")
+    .is_empty());
 }
 
 #[test]
@@ -3280,6 +3289,7 @@ fn should_parse_byte_at_as_an_integer_operand() {
         &platform_value!({ "equal": [{ "byteAt": ["$old.address", 0] }, 1] }),
         "order",
         &property_kind,
+        PlatformVersion::latest(),
     )
     .expect("the condition parses");
     assert_eq!(
@@ -3592,17 +3602,32 @@ fn should_refuse_a_malformed_test_of_a_byte_array() {
         expect_refusal(platform_value!({ "rule": rule }), needle);
     }
 
-    // Looked in for an integer, or bound in a total's filter, a byte array
-    // reads as an integer, which the parsed document type refuses
+    // Looked in for an integer a byte array reads as an integer, which the parsed
+    // document type refuses
     let looked_in = parse_rule_value(platform_value!({ "contains": ["address", 0] }));
     assert_eq!(
         looked_in.property_reads(),
         [("address", PropertyRead::Elements(ElementKind::Integer))]
     );
-    let bound = parse_rule_value(platform_value!({
-        "lessThan": [{ "countOf": ["order", { "key": "address" }] }, 3]
-    }));
-    assert_eq!(bound.property_reads(), [("address", PropertyRead::Value)]);
+    // Bound in a total's filter it reads as an integer too at protocol version 14, and as
+    // the byte array it is from 15 (`parse_property_constraints` 1)
+    let bound_rule = platform_value!({
+        "rule": { "lessThan": [{ "countOf": ["order", { "key": "address" }] }, 3] }
+    });
+    let schema = platform_value!({ "type": "object", "propertyConstraints": bound_rule });
+    for (platform_version, read) in [
+        (
+            PlatformVersion::get(14).expect("protocol version 14"),
+            PropertyRead::Value,
+        ),
+        (PlatformVersion::latest(), PropertyRead::Bytes { extent: 0 }),
+    ] {
+        let bound = parse_property_constraints(&schema, "order", &property_kind, platform_version)
+            .expect("the rule parses")
+            .remove("rule")
+            .expect("the rule is parsed under its name");
+        assert_eq!(bound.property_reads(), [("address", read)]);
+    }
 }
 
 /// Byte for byte: an array starts and ends with the empty one and with
@@ -4251,7 +4276,21 @@ fn should_refuse_a_malformed_aggregate() {
         (
             platform_value!({ "countOf": ["listing", { "a": true }] }),
             "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, \
-             $id, an integer or a { \"const\": ... }",
+             $id, an integer, a { \"const\": ... } string or base58 identifier, or \
+             { \"in\": path } naming a typed array of the document",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "in": 3 } }] }),
+            "must be a property path of the document",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "in": "$ownerId" } }] }),
+            "at lessThan[0].countOf[1].a takes any element of \"$ownerId\", but an \"in\" names \
+             a typed array property of the document being written",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "in": "$old.tags" } }] }),
+            "but an \"in\" names a typed array property of the document being written",
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": { "const": 3 } }] }),
@@ -4800,4 +4839,18 @@ fn should_take_the_revision_and_stored_version_of_a_create_and_of_a_document() {
             .flatten(),
         Some(&Value::U64(7))
     );
+}
+
+/// A rule's identifier constant longer than any identifier's base 58 form is refused as one
+/// that is not an identifier, whether its characters are base 58 or not, without decoding it:
+/// every parse reads the rules, and a full decode of a constant of a million characters takes
+/// minutes, as base 58 decoding takes time quadratic in a text's length.
+#[test]
+fn should_refuse_a_long_identifier_constant_without_decoding_it() {
+    for constant in ["2".repeat(1_000_000), format!("{}0", "2".repeat(999_999))] {
+        expect_refusal(
+            platform_value!({ "rule": { "equal": ["$ownerId", { "const": constant }] } }),
+            "which is not a base58 identifier of 32 bytes",
+        );
+    }
 }

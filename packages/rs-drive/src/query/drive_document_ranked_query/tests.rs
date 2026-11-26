@@ -883,7 +883,6 @@ fn insert_docs(
                 true,
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| panic!("expected to insert a {document_type_name} document: {e}"));
     }
@@ -1283,6 +1282,82 @@ fn sum_axis_ranks_reads_and_proves_consistently() {
         vec!["delta", "gamma", "alpha"],
         "ascending by sum: delta(1) < gamma(24) < alpha(25) < beta(100)"
     );
+    assert_eq!(
+        entries.iter().map(|entry| entry.value).collect::<Vec<_>>(),
+        vec![
+            RankedEntryValue::Sum(1),
+            RankedEntryValue::Sum(24),
+            RankedEntryValue::Sum(25)
+        ]
+    );
+    assert_proof_round_trips(&drive, &contract, &bottom_three, &entries);
+}
+
+/// The restaurants contract with the tip `amount` declared up to `u32::MAX`, past 2^27, so the
+/// `tip` type keeps its sums in 128 bits and ranks them on the big sum axis (protocol
+/// version 15).
+fn setup_restaurants_with_big_tips() -> (Drive, DataContract) {
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let mut json = dpp::tests::json_document::json_document_to_json_value(
+        "tests/supporting_files/contract/restaurants/restaurants-contract.json",
+    )
+    .expect("expected to read the restaurants contract");
+    json["documentSchemas"]["tip"]["properties"]["amount"]["maximum"] =
+        serde_json::Value::from(u32::MAX);
+    let contract =
+        DataContract::from_json(json, false, pv).expect("expected the contract to parse");
+    assert!(contract
+        .document_type_for_name("tip")
+        .expect("tip")
+        .uses_big_sums());
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the restaurants contract");
+    (drive, contract)
+}
+
+/// A summing index of a type that keeps its sums in 128 bits ranks on the big sum axis: the
+/// read and the proof walk it, and agree, as on the sum axis.
+#[test]
+fn big_sum_axis_ranks_reads_and_proves_consistently() {
+    let (drive, contract) = setup_restaurants_with_big_tips();
+    insert_docs(
+        &drive,
+        &contract,
+        "tip",
+        "amount",
+        1,
+        &[
+            ("alpha", 10),
+            ("alpha", 15),
+            ("beta", 4_000_000_000),
+            ("gamma", 7),
+            ("gamma", 8),
+            ("gamma", 9),
+            ("delta", 1),
+        ],
+    );
+
+    let top_one = RankedCase::sum(false, Some(1));
+    let entries = entries_of(run(&drive, &contract, &top_one, false).expect("read must succeed"));
+    assert_eq!(keys_of(&entries), vec!["beta"]);
+    assert_eq!(entries[0].value, RankedEntryValue::Sum(4_000_000_000));
+    assert_proof_round_trips(&drive, &contract, &top_one, &entries);
+
+    let bottom_three = RankedCase::sum(true, Some(3));
+    let entries =
+        entries_of(run(&drive, &contract, &bottom_three, false).expect("read must succeed"));
+    assert_eq!(keys_of(&entries), vec!["delta", "gamma", "alpha"]);
     assert_eq!(
         entries.iter().map(|entry| entry.value).collect::<Vec<_>>(),
         vec![
@@ -1941,7 +2016,6 @@ fn insert_dishes(drive: &Drive, contract: &DataContract, rows: &[(&str, &str, i6
                 true,
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| panic!("expected to insert a dish document: {e}"));
     }
@@ -2243,7 +2317,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a grade document");
         }
@@ -2478,7 +2551,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a tagged grade document");
         }
@@ -3176,7 +3248,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a dualGrade document");
         }
@@ -3387,7 +3458,6 @@ mod pinned_prefix {
                 true,
                 Some(&transaction),
                 pv,
-                None,
             )
             .expect("expected to insert Y's grade inside the transaction");
 
@@ -3658,7 +3728,6 @@ mod pinned_prefix {
                         true,
                         None,
                         pv,
-                        None,
                     )
                     .expect("expected to commit the mid-window grade");
             }
@@ -3825,7 +3894,6 @@ mod prefix_level {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a trending document");
         }

@@ -100,21 +100,15 @@ describe('ListDAPIAddressProvider', () => {
       expect(address).to.be.undefined();
     });
 
-    it('should return modified address for localhost node', async () => {
-      options = {
-        network: 'local',
-      };
-
+    it('should not modify addresses on regtest', async () => {
       listDAPIAddressProvider = new ListDAPIAddressProvider(
-        addresses,
-        options,
+        [new DAPIAddress('127.0.0.1:45003:no-ssl')],
+        { network: 'local' },
       );
 
       const liveAddress = await listDAPIAddressProvider.getLiveAddress();
 
-      expect(liveAddress.host).to.equal('127.0.0.1');
-      expect(liveAddress.protocol).to.equal('https');
-      expect(liveAddress.allowSelfSignedCertificate).to.be.true();
+      expect(liveAddress.toString()).to.equal('http://127.0.0.1:45003');
     });
   });
 

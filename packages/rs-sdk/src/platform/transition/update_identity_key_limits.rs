@@ -180,7 +180,9 @@ impl UpdateIdentityKeyLimits for Identity {
 /// The absolute limits to send for adding `add_budget` credits to the budget of the key
 /// `key_id` of `identity` and moving its expiry to `expires_at`, computed from the key as the
 /// identity holds it. What consensus would refuse and charge for is refused here for free: a
-/// limit the key does not have (40220), and a value that does not raise it (40221).
+/// disabled key (40208), a limit the key does not have (40220), and a value that does not
+/// raise it (40221). A key cannot be enabled again, so a copy of the identity that shows it
+/// disabled is never too old to refuse on.
 pub fn raised_key_limits(
     identity: &Identity,
     key_id: KeyID,
@@ -191,6 +193,11 @@ pub fn raised_key_limits(
         .public_keys()
         .get(&key_id)
         .ok_or_else(|| Error::Generic(format!("identity has no key {key_id}")))?;
+    if key.is_disabled() {
+        return Err(Error::Generic(format!(
+            "key {key_id} is disabled: the limits of a disabled key cannot be raised"
+        )));
+    }
 
     let total_budget = add_budget
         .map(|amount| {
@@ -231,10 +238,10 @@ pub fn raised_key_limits(
     Ok((total_budget, expires_at))
 }
 
-/// The first MASTER key, else the first CRITICAL authentication key without limits and without
-/// contract bounds (a bound key may only sign batches), that is enabled and that the signer can
-/// sign with.
-fn signing_key_for_key_limits_update<S: Signer<IdentityPublicKey>>(
+/// The key that signs a key limits update when the caller names none: the first MASTER key,
+/// else the first CRITICAL authentication key without limits and without contract bounds (a
+/// bound key may only sign batches), that is enabled and that the signer can sign with.
+pub fn signing_key_for_key_limits_update<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     signer: &S,
 ) -> Result<KeyID, Error> {
@@ -264,6 +271,7 @@ mod tests {
     use super::*;
     use dpp::address_funds::AddressWitness;
     use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::KeyType;
@@ -384,6 +392,27 @@ mod tests {
             raised_key_limits(&identity, 2, Some(10), None),
             Err(Error::Generic(_))
         ));
+    }
+
+    #[test]
+    fn should_refuse_to_raise_the_limits_of_a_disabled_key() {
+        let mut identity = identity();
+        assert!(matches!(
+            raised_key_limits(&identity, 3, Some(10), None),
+            Ok((Some(1_010), None))
+        ));
+        identity
+            .public_keys_mut()
+            .get_mut(&3)
+            .expect("expected key 3")
+            .set_disabled_at(1);
+        for add_budget in [Some(10), None] {
+            let result = raised_key_limits(&identity, 3, add_budget, None);
+            assert!(
+                matches!(&result, Err(Error::Generic(message)) if message.contains("disabled")),
+                "a disabled key must be refused locally: {result:?}"
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use derive_more::{Deref, DerefMut, From};
-use dpp::bls_signatures;
-pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
-use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
+use dpp::bls;
+pub use dpp::bls::PublicKey as ThresholdBlsPublicKey;
+
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::{QuorumHash, Txid};
 use std::collections::BTreeMap;
@@ -10,7 +10,7 @@ use std::fmt::Debug;
 
 use crate::error::Error;
 use crate::platform_types::signature_verification_quorum_set::QuorumConfig;
-use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 
 /// Quorum per hash
 #[derive(Clone, Deref, DerefMut, From)]
@@ -80,7 +80,8 @@ impl<Q: Quorum> Quorums<Q> {
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash, quorum, hash_result.into()));
+            // Scores use raw digest bytes, without reversal, at every protocol version.
+            scores.push((quorum_hash, quorum, hash_result.to_byte_array()));
         }
 
         if scores.is_empty() {
@@ -100,10 +101,9 @@ impl<Q: Quorum> Quorums<Q> {
         quorum_config: &QuorumConfig,
         request_id: &[u8; 32],
     ) -> Option<(QuorumHash, &Q)> {
-        let active_signers = quorum_config.active_signers as u32;
-
-        // binary (base-2) logarithm from active_signers
-        let n = 31 - active_signers.leading_zeros();
+        // binary (base-2) logarithm of active_signers, rounded down; at least one signer is
+        // active, so it is always defined
+        let n = quorum_config.active_signers.ilog2();
 
         // Extract last 64 bits of request_id
         let b = u64::from_le_bytes(
@@ -149,7 +149,7 @@ pub struct VerificationQuorum {
 
     /// Quorum threshold public key is used to verify
     /// signatures produced by corresponding quorum
-    pub public_key: ThresholdBlsPublicKey<Bls12381G2Impl>,
+    pub public_key: ThresholdBlsPublicKey,
 }
 
 impl Debug for VerificationQuorum {
@@ -206,39 +206,34 @@ impl SigningQuorum {
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        let private_key =
-            bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&self.private_key)
-                .into_option()
-                .ok_or(Error::BLSError(
-                    dpp::bls_signatures::BlsError::DeserializationError(
-                        "Could not deserialize private key".to_string(),
-                    ),
-                ))?;
+        let private_key = bls::SecretKey::from_be_bytes(&self.private_key).ok_or(
+            Error::BLSError(dpp::bls::BlsError::DeserializationError(
+                "Could not deserialize private key".to_string(),
+            )),
+        )?;
 
         let signature = private_key
-            .sign(
-                SignatureSchemes::Basic,
-                message_digest.as_byte_array().as_slice(),
-            )
+            .sign(message_digest.as_byte_array().as_slice())
             .map_err(Error::BLSError)?;
 
-        Ok(BLSSignature::from(signature.as_raw_value().to_compressed()))
+        Ok(BLSSignature::from(signature.to_bytes()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::bls::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
+    use std::num::{NonZeroU16, NonZeroU32};
 
     /// Helper: generate a deterministic BLS public key from a seed byte.
-    fn make_public_key(seed: u8) -> ThresholdBlsPublicKey<Bls12381G2Impl> {
+    fn make_public_key(seed: u8) -> ThresholdBlsPublicKey {
         let mut key_bytes = [0u8; 32];
         key_bytes[0] = seed;
         key_bytes[31] = 1; // ensure nonzero
-        let sk = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes)
+        let sk = BlsPrivateKey::from_be_bytes(&key_bytes)
             .expect("expected a valid secret key from test bytes");
         sk.public_key()
     }
@@ -253,18 +248,18 @@ mod tests {
     fn make_classic_config() -> QuorumConfig {
         QuorumConfig {
             quorum_type: QuorumType::Llmq100_67,
-            active_signers: 24,
+            active_signers: NonZeroU16::new(24).unwrap(),
             rotation: false,
-            window: 24,
+            window: NonZeroU32::new(24).unwrap(),
         }
     }
 
     fn make_rotating_config(active_signers: u16) -> QuorumConfig {
         QuorumConfig {
             quorum_type: QuorumType::Llmq60_75,
-            active_signers,
+            active_signers: NonZeroU16::new(active_signers).unwrap(),
             rotation: true,
-            window: 24,
+            window: NonZeroU32::new(24).unwrap(),
         }
     }
 
@@ -455,6 +450,34 @@ mod tests {
             result.is_none(),
             "no quorum should match index 999 when mask is 31"
         );
+    }
+
+    #[test]
+    fn should_take_rotating_quorum_signer_from_log2_of_active_signers_bits() {
+        // The signer is the `log2(active_signers)` bits below the top bit of the request id's
+        // last 8 bytes. All of them are set here, so the signer is the largest index those bits
+        // can hold, from a single active signer (no bits) to u16::MAX of them (15 bits).
+        let request_id = [0xff; 32];
+        for (active_signers, signer) in [(1, 0), (2, 1), (32, 31), (u16::MAX, 32767)] {
+            let quorums: Quorums<VerificationQuorum> = [0, signer]
+                .into_iter()
+                .map(|index| {
+                    (
+                        QuorumHash::from_byte_array([index as u8; 32]),
+                        make_verification_quorum(1, Some(index)),
+                    )
+                })
+                .collect();
+
+            let (_, chosen) = quorums
+                .choose_quorum(&make_rotating_config(active_signers), &request_id)
+                .expect("the signer's quorum is held");
+            assert_eq!(
+                chosen.index,
+                Some(signer),
+                "{active_signers} active signers"
+            );
+        }
     }
 
     #[test]

@@ -58,12 +58,38 @@ but a poll is hashed from its values, and that hash keys the contest's prefunded
 date: two contenders writing the same identifier two ways would otherwise split one contest into
 two polls. Before 14 the values are taken as given.
 
+From protocol version 15 every index value is written one way, the way its property's type keys
+it: an integer in any integer form as the type's own integer, a date as a `u64`, an integer or a
+float of a float property as a float, bytes in any form as bytes, and `"\0"` as the empty string
+it shares a key with. That is the value a query of the contest returns. A masternode vote names
+its poll by the values it sends, unchanged, and is refused unless a prefunded balance is held
+under that poll, so a voter sends the values as the contest query returns them.
+
+A contest under way keeps the poll it was opened under. A contender that joins a contest opened
+at an earlier protocol version has its index values written as that version wrote them, so it
+funds the same prefunded balance and the contest keeps its end date.
+
 ## Resolution 0: masternode vote
 
 The DPNS rule. The choices are a contender, abstain, or **lock**, which gives the value to nobody.
 The contender with the most votes wins unless the lock tally exceeds it, in which case the value is
 locked and may be contested again later. The contest always runs the full poll duration, even with
 a single contender, so the masternodes may lock the value.
+
+A name the vote awarded is never contested again: the record of its contest stays. From protocol
+version 15 (DPNS v3) the owner of a name may delete it, which frees it for anybody, but not a
+contested name, whose delete the DPNS delete trigger refuses: it can only be tombstoned, which
+keeps it from being registered again ([A tombstone](../contract-keywords/deletion.md#a-tombstone-deleted-for-good)).
+
+Each contender for a DPNS name reveals a preorder of its own, at least a block old. From protocol
+version 15 (DPNS v3) the vote, not the order of the preorders, decides between them: a create that
+opens or joins a name's contest is not refused because another identity holds an older preorder of
+the name, which would otherwise let whoever holds preorders of a name easy to guess older than a
+rival's delay the rival's reveal ([Choosing the first
+commitment](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)). On
+testnet, devnet and regtest a contest admits joiners for 45 minutes, less than a preorder's hour,
+so a preorder revealed late can find a contest a rival opened closed; on mainnet the join window
+is a week.
 
 ## Resolution 1: masternode vote without locking
 
@@ -78,6 +104,30 @@ poll duration, which opens the vote window, and removes the join window's end da
 contest ends then. `getVotePollsByEndDate` shows whichever end applies.
 
 The moderation charters contract uses this resolution to elect moderation teams.
+
+## Resolution 2: masternode vote among documents
+
+`ContestedIndexResolution::MasternodeVoteOnDocuments`, admitted where
+`parse_contested_documents_resolution` is set (protocol version 15). The choices are a contender,
+abstain, or lock, and the contest runs and ends exactly as under resolution 0. What differs is
+what a contender is. Under resolutions 0 and 1 a contender is an identity: the contest keeps its
+document under the identity's id, so an identity enters one document, and a vote, a tally and the
+result name the identity. Under resolution 2 a contender is a document: the contest keeps it
+under its document id, so an identity may enter several, each paying the fund and counting
+towards `max_contenders_per_contest`, and a second document from the same identity is not
+refused (no `DocumentContestIdentityAlreadyContestantError`).
+
+Everything that names a contender then carries a document id where it carries an identity id
+under the other resolutions: the identifier of a `TowardsIdentity` vote choice, a contender's
+identifier in `getContestedResourceVoteState`, the contender asked for in
+`getContestedResourceVotersForIdentity`, and the winner in the stored result. A vote towards an
+identifier that names no contender is refused (`VoteChoiceNotAllowedForVotePollError`, 40307),
+so a vote towards the id of an identity that entered documents is refused: the voter names the
+document. The winning document is stored under the owner the document itself names.
+
+The decision proposals contract uses this resolution for the `choice` documents entered for a
+`multipleChoiceProposal`: the contest is keyed by the proposal's id, each choice is a contender,
+and a lock means none of the choices (see `docs/protocol/decision-proposals.md`).
 
 ## Moderation elections
 
@@ -116,13 +166,17 @@ which holds its contenders, stored result and tallies, is a count tree, so a joi
 contenders there are in one fetch; a contest started before 14 keeps its plain tree, and a join
 counts its contenders by reading their keys. The masternodes' vote references live under
 `votes / contested_resource / identity_votes`, and the end dates under `votes / end_date_queries`,
-one tree per end date holding an entry for each contest ending then.
+one tree per end date holding an entry for each vote poll ending then. From protocol version 15
+that index also lists yes/no vote polls (the masternode polls that ask "should this happen?",
+stored under `votes / decisions`), so an end date can hold contests and yes/no polls side by side.
 Once the contest ends, the winning document is awarded, the losers are removed, and the stored
 result stays for the `getContestedResourceVoteState` query.
 
-A block ends at most `maximum_vote_polls_to_process` contests (a drive-abci `event_constants`
-value, two at protocol version 14), the earliest end date first, so contests due together may end
-over several blocks. The cleanup removes each ended contest's
-end-date entry, and removes an end date only once none of its contests remain under it; the rest
-end in the next blocks. Before that read, a block removes any end date among the first due that
-holds no contest, since each would take a place in the read and end nothing.
+A block ends at most `maximum_vote_polls_to_process` vote polls (a drive-abci `event_constants`
+value, two at protocol version 14), the earliest end date first, so polls due together may end
+over several blocks; from protocol version 15 yes/no polls count toward the same limit, so a
+yes/no poll due earlier can push a contest to the next block. The cleanup removes each ended
+poll's end-date entry, and removes an end date only once none of its polls, of either kind,
+remain under it; the rest end in the next blocks. Before that read, a block removes any end date
+among the first due that holds no vote poll, since each would take a place in the read and end
+nothing.

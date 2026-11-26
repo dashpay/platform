@@ -25,7 +25,6 @@
 use std::os::raw::c_char;
 use std::sync::Arc;
 
-use dashcore::hashes::Hash;
 use platform_wallet::masternode::{
     execute_masternode_update_service, parse_secret_for_role, prepare_masternode_update_service,
     LocatorSecret, MasternodeKeyRole, MasternodeUpdateServiceParams,

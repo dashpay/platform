@@ -36,6 +36,7 @@ use drive::drive::Drive;
 // in `drive::query` yet — landing them is part of the sum-tree feature.
 // Named to parallel the count surface (`DriveDocumentCountQuery`,
 // `DocumentCountRequest`, `DocumentCountResponse`, `CountMode`).
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use drive::query::{
     DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode, WhereClause,
     WhereOperator,
@@ -348,7 +349,6 @@ fn insert_tip_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert sum bench document");
 }
@@ -1668,9 +1668,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 // with the structured display in the book. PathQuery
                 // proofs are bincode-encoded big-endian with no length
                 // limit; mirror count's analog config.
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let bincode_config = PLATFORM_BINCODE_CONFIG;
                 match bincode::decode_from_slice::<GroveDBProof, _>(&proof_bytes, bincode_config) {
                     Ok((decoded, _)) => eprintln!("  proof_ast:\n{decoded}"),
                     Err(e) => eprintln!("  proof deserialize error: {e:?}"),
@@ -1688,9 +1686,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                     Err(e) => eprintln!("  verify_aggregate_sum_query error: {e:?}"),
                 }
 
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let bincode_config = PLATFORM_BINCODE_CONFIG;
                 match bincode::decode_from_slice::<GroveDBProof, _>(&proof_bytes, bincode_config) {
                     Ok((decoded, _)) => eprintln!("  proof_ast:\n{decoded}"),
                     Err(e) => eprintln!("  proof deserialize error: {e:?}"),
@@ -1721,9 +1717,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                     }
                 }
 
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let bincode_config = PLATFORM_BINCODE_CONFIG;
                 match bincode::decode_from_slice::<GroveDBProof, _>(&proof_bytes, bincode_config) {
                     Ok((decoded, _)) => eprintln!("  proof_ast:\n{decoded}"),
                     Err(e) => eprintln!("  proof deserialize error: {e:?}"),
@@ -1852,7 +1846,7 @@ fn drive_sum_outcome(
     {
         Ok(DocumentSumResponse::Aggregate(s)) => format!("Aggregate({s})"),
         Ok(DocumentSumResponse::Entries(entries)) => {
-            let summed: i64 = entries.iter().filter_map(|e| e.sum).sum();
+            let summed: i128 = entries.iter().filter_map(|e| e.sum).sum();
             format!("Entries(len={}, sum={})", entries.len(), summed)
         }
         Ok(DocumentSumResponse::Proof(p)) => format!("Proof({} bytes)", p.len()),

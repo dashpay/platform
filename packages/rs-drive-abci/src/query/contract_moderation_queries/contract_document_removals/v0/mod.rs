@@ -92,7 +92,7 @@ impl<C> Platform<C> {
 
         let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
             contract_id.to_buffer(),
-            false,
+            true,
             None,
             platform_version,
         )?
@@ -250,7 +250,6 @@ mod tests {
                 &BlockInfo::default(),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected to record a removal");
     }

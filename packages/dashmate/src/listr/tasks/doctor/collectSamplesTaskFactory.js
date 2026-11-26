@@ -1,17 +1,19 @@
 import fs from 'fs';
-import os from 'os';
 import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
 import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
+import createSecretScrubber from '../../../doctor/createSecretScrubber.js';
+import getSampleFreeTextFields from '../../../doctor/getSampleFreeTextFields.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
-import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
+import { getOptionValue, isOption } from '../../../util/commandLineOption.js';
+import maskOperatorIdentity, { getOperatorIdentity } from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
 
@@ -45,52 +47,174 @@ async function fetchTextOrError(url) {
  * @return {collectSamplesTask}
  */
 /**
- * Mask the name of whoever is running dashmate out of collected data.
- *
- * A report is the artefact an operator hands to whoever is helping them, and
- * the paths in it are absolute, so they carry a home directory. The paths stay
- * - they are what makes a problem actionable - and the name in them does not.
- *
- * The name is read from the operating system rather than the environment.
- * Doctor runs unattended often enough - from cron, from a service manager -
- * that USER cannot be relied on, and replacing an undefined needle silently
- * masks nothing at all. When no name can be determined there is nothing to
- * mask and the data is left alone rather than having "undefined" replaced in
- * it.
- *
- * @return {{username: string|null, homePath: string|null}}
- */
-function getOperatorIdentity() {
-  let username = null;
-  let homePath = null;
-
-  try {
-    ({ username, homedir: homePath } = os.userInfo());
-  } catch {
-    // A process running under a uid with no passwd entry has no name to read.
-  }
-
-  return {
-    username: username || process.env.USER || process.env.USERNAME || null,
-    homePath: homePath || os.homedir() || null,
-  };
-}
-
-/**
  * @param {Object} data - mutated in place
+ * @param {function(string): string} scrub - masks the config's secrets
+ * @param {string[]|null} [freeTextFields] - the only fields to rewrite, for
+ *   a sample whose other fields are facts doctor decides on
  */
-function obfuscateOperatorName(data) {
+function obfuscateOperatorName(data, scrub, freeTextFields = null) {
   const identity = getOperatorIdentity();
 
-  obfuscateObjectRecursive(data, (_field, value) => maskOperatorIdentity(value, identity));
+  obfuscateObjectRecursive(data, (field, value) => {
+    if (freeTextFields !== null && !freeTextFields.includes(field)) {
+      return value;
+    }
+
+    return maskOperatorIdentity(typeof value === 'string' ? scrub(value) : value, identity);
+  });
 }
 
 /**
  * @param {string|undefined} text
+ * @param {function(string): string} scrub - masks the config's secrets
  * @return {string|undefined}
  */
-function hideOperatorNameIn(text) {
-  return maskOperatorIdentity(text, getOperatorIdentity());
+function hideOperatorNameIn(text, scrub) {
+  return maskOperatorIdentity(typeof text === 'string' ? scrub(text) : text, getOperatorIdentity());
+}
+
+const REDACTED_VALUE = '<redacted>';
+
+/**
+ * @param {*} entry - a `NAME=value` string
+ * @return {string}
+ */
+function redactEnvironmentEntry(entry) {
+  if (typeof entry !== 'string') {
+    return REDACTED_VALUE;
+  }
+
+  const separatorIndex = entry.indexOf('=');
+
+  // Docker reports every variable as NAME=value, so an entry without a
+  // separator is not a name it is safe to assume
+  if (separatorIndex === -1) {
+    return REDACTED_VALUE;
+  }
+
+  // A variable set to nothing has nothing to hide, and that it is empty can
+  // be what is wrong with it
+  if (separatorIndex === entry.length - 1) {
+    return entry;
+  }
+
+  return `${entry.slice(0, separatorIndex)}=${REDACTED_VALUE}`;
+}
+
+/**
+ * Keep the names of a container's environment variables and drop their values.
+ *
+ * Services receive their credentials through the environment, and a report is
+ * what an operator hands to whoever is helping them. The values are not worth
+ * keeping: each one either repeats the dashmate config, which the report
+ * carries with its secrets hidden, or comes with the image, which the inspect
+ * output names. The names stay, because which variables a container was
+ * started with tells one created before a variable existed apart from one
+ * created after.
+ *
+ * Every value goes, not only those whose name looks secret, so a variable
+ * added later is covered without anyone having to remember to list it.
+ *
+ * @param {Object} inspect - mutated in place
+ */
+function redactContainerEnvironment(inspect) {
+  const environment = inspect?.Config?.Env;
+
+  if (environment === undefined || environment === null) {
+    return;
+  }
+
+  // eslint-disable-next-line no-param-reassign
+  inspect.Config.Env = Array.isArray(environment)
+    ? environment.map(redactEnvironmentEntry)
+    : REDACTED_VALUE;
+}
+
+/**
+ * @param {*[]} command
+ * @param {*} [before] - the argument the command follows, if it continues
+ *   another one
+ * @return {string[]} the values in the command that can carry a secret: the
+ *   value of each `-name=value` option, a value given as the argument after
+ *   its option, and a whole shell command line
+ */
+function collectCommandValues(command, before = undefined) {
+  const values = [];
+
+  command.forEach((argument, index) => {
+    if (typeof argument !== 'string') {
+      return;
+    }
+
+    const previous = index === 0 ? before : command[index - 1];
+    const inlineValue = getOptionValue(argument);
+
+    if (inlineValue !== null) {
+      values.push(inlineValue);
+    }
+
+    if (/\s/.test(argument)
+      || (!isOption(argument) && isOption(previous) && getOptionValue(previous) === null)) {
+      values.push(argument);
+    }
+  });
+
+  return values;
+}
+
+/**
+ * Leave the command a container runs out of its inspect sample, and say what
+ * in it can be a secret.
+ *
+ * Options are how some operators pass a service a key or a password, and an
+ * image can bring credentials of its own that the config does not know. A
+ * command line has too many ways of carrying one - a value after its option,
+ * a value starting with a hyphen, a positional argument to a shell script -
+ * to mask it argument by argument, and no doctor analyser reads it, so the
+ * startup command and the health check command are replaced whole. The
+ * executable, in `Path`, stays.
+ *
+ * Docker runs the entrypoint with the command after it, so an option at the
+ * end of the entrypoint takes its value from the start of the command.
+ *
+ * @param {Object} inspect - mutated in place
+ * @return {string[]} the values that can be secrets, for the container's logs
+ *   to be scrubbed of
+ */
+function omitContainerCommand(inspect) {
+  const config = inspect?.Config;
+  const entrypoint = config?.Entrypoint;
+
+  const commands = [
+    [inspect, 'Args', undefined],
+    [config, 'Cmd', Array.isArray(entrypoint) ? entrypoint[entrypoint.length - 1] : undefined],
+    [config, 'Entrypoint', undefined],
+    [config?.Healthcheck, 'Test', undefined],
+  ];
+
+  const values = [];
+
+  for (const [holder, field, before] of commands) {
+    const command = holder?.[field];
+
+    if (command === undefined || command === null) {
+      continue;
+    }
+
+    if (Array.isArray(command)) {
+      // Appended one by one: a command can hold more arguments than a call
+      // can take spread
+      for (const value of collectCommandValues(command, before)) {
+        values.push(value);
+      }
+    } else if (typeof command === 'string') {
+      values.push(command);
+    }
+
+    holder[field] = REDACTED_VALUE;
+  }
+
+  return values;
 }
 
 export default function collectSamplesTaskFactory(
@@ -112,6 +236,10 @@ export default function collectSamplesTaskFactory(
    * @return {Listr}
    */
   function collectSamplesTask(config) {
+    // Secrets are taken out of collected text before the operator's identity
+    // is masked in it, which could otherwise rewrite part of a secret
+    const scrub = createSecretScrubber(config);
+
     return new Listr(
       [
         {
@@ -141,6 +269,27 @@ export default function collectSamplesTaskFactory(
                 enabled: () => config.get('platform.enable'),
                 title: 'Gateway SSL certificates',
                 task: async () => {
+                  // The private key permissions are collected for every provider,
+                  // since a key readable by other users is a problem regardless
+                  // of how it was obtained. Windows reports a writable file as
+                  // 0666 whatever its ACL allows, so its mode says nothing there.
+                  const privateKeyFilePath = homeDir.joinPath(
+                    config.getName(),
+                    'platform',
+                    'gateway',
+                    'ssl',
+                    'private.key',
+                  );
+
+                  if (process.platform !== 'win32' && fs.existsSync(privateKeyFilePath)) {
+                    ctx.samples.setServiceInfo(
+                      'gateway',
+                      'sslPrivateKeyMode',
+                      // eslint-disable-next-line no-bitwise
+                      fs.statSync(privateKeyFilePath).mode & 0o777,
+                    );
+                  }
+
                   if (!config.get('platform.gateway.ssl.enabled')) {
                     ctx.samples.setServiceInfo('gateway', 'ssl', {
                       error: 'disabled',
@@ -166,7 +315,7 @@ export default function collectSamplesTaskFactory(
                         Certificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateOperatorName(data);
+                      obfuscateOperatorName(data, scrub);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -184,7 +333,7 @@ export default function collectSamplesTaskFactory(
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateOperatorName(data);
+                      obfuscateOperatorName(data, scrub);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -210,7 +359,7 @@ export default function collectSamplesTaskFactory(
                         privateFilePath,
                       };
 
-                      obfuscateOperatorName(data);
+                      obfuscateOperatorName(data, scrub);
 
                       if (!fs.existsSync(chainFilePath) || !fs.existsSync(privateFilePath)) {
                         ctx.samples.setServiceInfo('gateway', 'ssl', {
@@ -279,7 +428,7 @@ export default function collectSamplesTaskFactory(
                   // hands to whoever is helping them, so the path stays - it is
                   // what makes the problem actionable - and the name in it does
                   // not.
-                  obfuscateOperatorName(installed);
+                  obfuscateOperatorName(installed, scrub);
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },
@@ -310,7 +459,11 @@ export default function collectSamplesTaskFactory(
                   // Same treatment as the certificate above: the path is what
                   // makes a problem actionable and stays, the operator's name
                   // in it does not.
-                  obfuscateOperatorName(sample);
+                  obfuscateOperatorName(
+                    sample,
+                    scrub,
+                    getSampleFreeTextFields('gateway', 'certificateRenewal'),
+                  );
 
                   ctx.samples.setServiceInfo('gateway', 'certificateRenewal', sample);
                 },
@@ -544,17 +697,28 @@ export default function collectSamplesTaskFactory(
                   dockerStats = await si.dockerContainerStats(containerId);
                 }
 
+                redactContainerEnvironment(inspect);
+
+                // What the container's command could carry is scrubbed from
+                // its logs too: an image can pass itself credentials the
+                // config does not know, and a service can print its own
+                // command
+                const commandSecrets = omitContainerCommand(inspect);
+                const serviceScrub = commandSecrets.length > 0
+                  ? createSecretScrubber(config, commandSecrets)
+                  : scrub;
+
                 if (logs?.out) {
                   // Hide username & external ip from logs
-                  logs.out = hideOperatorNameIn(logs.out);
+                  logs.out = hideOperatorNameIn(logs.out, serviceScrub);
                 }
 
                 if (logs?.err) {
-                  logs.err = hideOperatorNameIn(logs.err);
+                  logs.err = hideOperatorNameIn(logs.err, serviceScrub);
                 }
 
                 // Hide username & external ip from inspect
-                obfuscateOperatorName(inspect);
+                obfuscateOperatorName(inspect, serviceScrub);
 
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);

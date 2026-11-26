@@ -39,7 +39,11 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.documents.DocumentEraseOutcome
+import org.dashfoundation.dashsdk.documents.DocumentEraseNotSubmittedReason
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.queries.describeEraseProgress
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -49,6 +53,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
 import org.dashfoundation.example.ui.components.RecipientSelection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.hexToBytes
@@ -57,17 +62,19 @@ import org.dashfoundation.example.util.truncateMiddle
 
 /**
  * Owned-document actions for one document — the DOC-03 replace / DOC-04
- * delete / DOC-05 transfer flows the iOS document ops menu ships
- * (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
- * `transferDocument`). Reached from a document row's "Actions…" button and
- * from the document replace/delete/transfer transition-catalog entries.
+ * delete / DOC-05 transfer flows the iOS document ops menu ships, plus the
+ * erase (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
+ * `eraseDocumentAndObserve` / `transferDocument`). Reached from a document row's
+ * "Actions…" button and from the document replace/delete/erase/transfer
+ * transition-catalog entries.
  *
  * The document is probed by id (debounced, like [DocumentWithPriceScreen]) so
  * the acting-identity ownership badge and the replace-field prefill reflect
  * on-chain state. Replace reuses [DocumentPropertyField] / [buildPropertiesJson]
  * (the create form's schema-driven field dispatch); all three actions sign
- * through [resolveSigning] / [submitDocumentTransaction] on the current
- * owner's wallet, so cross-wallet ownership is honored.
+ * through [resolveWallet] / [submitDocumentTransaction] on the current
+ * owner's wallet, so cross-wallet ownership is honored; the Rust wallet
+ * picks the signing key.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,11 +97,11 @@ fun DocumentActionsScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractIdBytes)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var actingIdentity by remember { mutableStateOf<IdentityEntity?>(null) }
 
     var documentIdText by rememberSaveable { mutableStateOf(initialDocumentId) }
@@ -120,11 +127,13 @@ fun DocumentActionsScreen(
 
     var recipient by remember { mutableStateOf<RecipientSelection?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showEraseConfirm by remember { mutableStateOf(false) }
 
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var replaceSuccess by remember { mutableStateOf<String?>(null) }
     var deleteSuccess by remember { mutableStateOf<String?>(null) }
+    var eraseSuccess by remember { mutableStateOf<String?>(null) }
     var transferSuccess by remember { mutableStateOf<String?>(null) }
 
     val schema = remember(contract?.lastUpdated, typeName) {
@@ -148,6 +157,7 @@ fun DocumentActionsScreen(
     val documentsMutable = capabilities.documentsMutable
     val immutability = remember(schema) { documentTypeImmutability(schema) }
     val canBeDeleted = capabilities.canBeDeleted
+    val canBeErased = capabilities.canBeErased
 
     // Default acting identity to the on-chain owner when it's one of ours,
     // else the first identity — replace/delete/transfer require ownership.
@@ -440,7 +450,7 @@ fun DocumentActionsScreen(
                         fail = { error = it },
                         scope = scope,
                     ) {
-                        val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                        val (wallet, mgr) = resolveWallet(container, owner)
                         val json = mgr.documentTransactions.replace(
                             walletHandle = wallet,
                             ownerId = owner.identityId,
@@ -448,7 +458,6 @@ fun DocumentActionsScreen(
                             documentType = typeName,
                             documentId = docIdBytes,
                             propertiesJson = propertiesJson,
-                            signingKeyId = signingKeyId,
                             signerHandle = mgr.signerHandle,
                         )
                         replaceSuccess =
@@ -490,6 +499,45 @@ fun DocumentActionsScreen(
                         .fillMaxWidth()
                         .testTag("deleteDocument.button"),
                 ) { showDeleteConfirm = true }
+            }
+
+            // ── Erase ─────────────────────────────────────────────────────
+            // The probe above is for presentation. Rust checks the newest
+            // retained owner before starting erasure of a deleted document;
+            // any submitting identity may continue an erasing document.
+            FormSection(title = "Erase") {
+                Text(
+                    "Remove the retained revisions of a document that has already " +
+                        "been deleted. Each erase removes up to 100 revisions; the " +
+                        "lifecycle read after each one says how many remain.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("documentActions.erase"),
+                )
+                eraseSuccess?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("eraseDocument.success"),
+                    )
+                }
+                if (!canBeErased) {
+                    Text(
+                        "This document type cannot be erased — an erase will be " +
+                            "rejected by consensus (fees are still charged).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                SubmitButton(
+                    text = "Erase Document…",
+                    isLoading = false,
+                    enabled = !isSubmitting && actingIdentity != null && manager != null &&
+                        canBeErased && documentIdText.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("eraseDocument.button"),
+                ) { showEraseConfirm = true }
             }
 
             // ── Transfer (DOC-05) ─────────────────────────────────────────
@@ -541,7 +589,7 @@ fun DocumentActionsScreen(
                         fail = { error = it },
                         scope = scope,
                     ) {
-                        val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                        val (wallet, mgr) = resolveWallet(container, owner)
                         mgr.documentTransactions.transfer(
                             walletHandle = wallet,
                             ownerId = owner.identityId,
@@ -549,7 +597,6 @@ fun DocumentActionsScreen(
                             documentType = typeName,
                             documentId = docIdBytes,
                             recipientId = recipientBytes,
-                            signingKeyId = signingKeyId,
                             signerHandle = mgr.signerHandle,
                         )
                         transferSuccess = "Transferred to ${recipientSel.label}."
@@ -580,14 +627,13 @@ fun DocumentActionsScreen(
                             fail = { error = it },
                             scope = scope,
                         ) {
-                            val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                            val (wallet, mgr) = resolveWallet(container, owner)
                             mgr.documentTransactions.delete(
                                 walletHandle = wallet,
                                 ownerId = owner.identityId,
                                 contractId = contractIdBytes,
                                 documentType = typeName,
                                 documentId = docIdBytes,
-                                signingKeyId = signingKeyId,
                                 signerHandle = mgr.signerHandle,
                             )
                             deleteSuccess = "Deleted on-chain."
@@ -603,7 +649,77 @@ fun DocumentActionsScreen(
         )
     }
 
+    if (showEraseConfirm) {
+        AlertDialog(
+            onDismissRequest = { showEraseConfirm = false },
+            title = { Text("Erase document history?") },
+            text = {
+                Text(
+                    "This removes up to 100 retained revisions of the deleted document " +
+                        "${truncateMiddle(documentIdText.trim(), 8, 6)}. " +
+                        "Signing identity: $actingB58. " +
+                        "This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEraseConfirm = false
+                        val signer = actingIdentity ?: return@TextButton
+                        val docIdBytes = Base58.decodeIdentifier(documentIdText.trim())
+                            ?: return@TextButton
+                        submitDocumentTransaction(
+                            begin = { isSubmitting = true; eraseSuccess = null },
+                            end = { isSubmitting = false },
+                            fail = { error = it },
+                            scope = scope,
+                        ) {
+                            val mgr = container.walletManagerStore.activeManager.value
+                                ?: throw IllegalStateException("Wallet manager not active")
+                            val wallet = signer.walletId?.toHex()?.let { mgr.wallets.value[it] }
+                                ?: throw IllegalStateException("Identity has no loaded wallet linkage; cannot erase document history")
+                            val outcome = try {
+                                mgr.documentTransactions.eraseAndObserve(
+                                    walletHandle = wallet.handle,
+                                    submittingIdentityId = signer.identityId,
+                                    contractId = contractIdBytes,
+                                    documentType = typeName,
+                                    documentId = docIdBytes,
+                                    signerHandle = mgr.signerHandle,
+                                )
+                            } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
+                                throw IllegalStateException(
+                                    "Erase outcome unknown; do not resubmit automatically; read history first.", e,
+                                )
+                            }
+                            eraseSuccess = describeEraseOutcome(outcome)
+                        }
+                    },
+                    modifier = Modifier.testTag("eraseDocument.confirm"),
+                ) { Text("Erase") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEraseConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     ErrorAlertDialog(message = error, onDismiss = { error = null })
+}
+
+/** Display the Rust outcome without making another submission decision. */
+internal fun describeEraseOutcome(outcome: DocumentEraseOutcome): String = when (outcome) {
+    is DocumentEraseOutcome.NotSubmitted -> "Erase not submitted. " + when (outcome.reason) {
+        DocumentEraseNotSubmittedReason.ACTIVE -> "The document is active."
+        DocumentEraseNotSubmittedReason.ABSENT -> "No retained revisions exist."
+        DocumentEraseNotSubmittedReason.NOT_NEWEST_OWNER ->
+            "The newest retained revision belongs to ${outcome.owner}. Select that identity."
+        DocumentEraseNotSubmittedReason.PREFLIGHT_UNAVAILABLE ->
+            "Lifecycle or ownership could not be read; read history before retrying."
+    }
+    is DocumentEraseOutcome.Submitted -> "Erase submitted; document absence observed. " +
+        (outcome.after?.let { describeEraseProgress(outcome.before, it) }
+            ?: "Lifecycle not read; query the document history to see what remains.")
 }
 
 /** The owner + current field values [DocumentActionsScreen]'s probe reads. */

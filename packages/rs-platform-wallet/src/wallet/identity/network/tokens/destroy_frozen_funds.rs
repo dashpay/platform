@@ -73,7 +73,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         PlatformWalletError,
     > {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id).await?;
+        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
 
         self.token_destroy_frozen_funds_with_signer(
             data_contract,

@@ -25,10 +25,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.state.AppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -38,7 +40,9 @@ import org.dashfoundation.example.ui.components.LabeledContent
  * Settings tab root — port of `SettingsView` + `OptionsView.swift`'s
  * Network section. Network switching rebuilds the SDK (new manager
  * instance, never reconfiguration); the picker is disabled while a switch
- * is in flight. Devnet requires a quorum URL, matching the iOS gating.
+ * is in flight. Devnet needs a devnet name or a quorum URL (persisted, iOS
+ * `platformDevnetName` / `platformQuorumURL`); its fields show on devnet and
+ * after a failed switch to it, so they can be filled before picking Devnet.
  *
  * The SPV-peers, Platform-overrides, faucet, and data-management sections
  * attach in B-M1's follow-up as their backing services land.
@@ -64,7 +68,11 @@ fun SettingsScreen(navController: NavHostController) {
     val errorMessage by appState.errorMessage.collectAsStateWithLifecycle()
     val useDocker by appState.useDockerSetup.collectAsStateWithLifecycle()
 
-    var quorumUrl by remember { mutableStateOf("") }
+    val devnetName by appState.devnetName.collectAsStateWithLifecycle()
+    val devnetQuorumUrl by appState.devnetQuorumUrl.collectAsStateWithLifecycle()
+    // ← OptionsView.swift `devnetSettingsNeeded`: a failed switch to
+    // Devnet keeps the app on the old network and shows the devnet fields.
+    var devnetSettingsNeeded by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -85,15 +93,25 @@ fun SettingsScreen(navController: NavHostController) {
                     selected = network,
                     optionLabel = { it.displayName },
                     testTag = "settings.networkPicker",
+                    // A switch waits for an SDK build already running (a
+                    // devnet Apply); picking during it would queue a second.
+                    enabled = !isLoading,
                 ) { selected ->
                     // Ignore selection while a registration is in flight — the
                     // note below explains why (1:1 with the iOS disabled gate).
                     if (registrationInFlight) return@AccessiblePicker
                     scope.launch {
-                        appState.switchNetwork(
-                            selected,
-                            quorumUrl = quorumUrl.takeIf { it.isNotEmpty() },
-                        )
+                        // A failed build leaves the app on the old network
+                        // and is reported through AppState.errorMessage
+                        // (the alert below), so it must not escape here.
+                        try {
+                            appState.switchNetwork(selected)
+                            devnetSettingsNeeded = false
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            devnetSettingsNeeded = selected == Network.DEVNET
+                        }
                     }
                 }
                 if (registrationInFlight) {
@@ -123,15 +141,118 @@ fun SettingsScreen(navController: NavHostController) {
                         onCheckedChange = { appState.setUseDockerSetup(it) },
                     )
                 }
-                if (network == Network.DEVNET) {
+                if (network == Network.DEVNET || devnetSettingsNeeded) {
+                    if (network != Network.DEVNET) {
+                        Text(
+                            "Switching to Devnet failed. Fix these settings, then pick Devnet again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     androidx.compose.material3.OutlinedTextField(
-                        value = quorumUrl,
-                        onValueChange = { quorumUrl = it },
-                        label = { Text("Quorum URL (required for devnet)") },
-                        modifier = Modifier.fillMaxWidth(),
+                        value = devnetName,
+                        onValueChange = { appState.setDevnetName(it) },
+                        label = { Text("Devnet Name") },
+                        placeholder = { Text("e.g. palmatum (dashd -devnet=<name>)") },
+                        modifier = Modifier.fillMaxWidth().testTag("settings.devnetName"),
                         singleLine = true,
                     )
+                    val devnetQuorumUrlNotHttps = devnetQuorumUrl.isNotBlank() &&
+                        !AppState.isHttpsUrlWithHost(devnetQuorumUrl)
+                    androidx.compose.material3.OutlinedTextField(
+                        value = devnetQuorumUrl,
+                        onValueChange = { appState.setDevnetQuorumUrl(it) },
+                        label = { Text("Quorum URL (optional)") },
+                        placeholder = {
+                            Text(
+                                if (devnetName.isNotBlank()) {
+                                    "https://quorums.${devnetName.trim()}.networks.dash.org"
+                                } else {
+                                    "https://quorums.<name>.networks.dash.org"
+                                },
+                            )
+                        },
+                        isError = devnetQuorumUrlNotHttps,
+                        supportingText = if (devnetQuorumUrlNotHttps) {
+                            { Text(AppState.DEVNET_QUORUM_URL_NOT_HTTPS) }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("settings.devnetQuorumUrl"),
+                        singleLine = true,
+                    )
+                    Text(
+                        "The devnet name is required to start SPV. DAPI nodes and SPV peers " +
+                            "are discovered from {Quorum URL}/masternodes; an empty URL uses " +
+                            "https://quorums.<name>.networks.dash.org.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (network == Network.DEVNET) {
+                        // ← OptionsView.swift rebuilds the SDK when a devnet
+                        // field changed; here that is an explicit button.
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        appState.applyDevnetSettings()
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        // Reported through AppState.errorMessage.
+                                    }
+                                }
+                            },
+                            enabled = !isLoading && !registrationInFlight,
+                            modifier = Modifier.testTag("settings.devnetApply"),
+                        ) { Text("Apply Devnet Settings") }
+                    }
                 }
+            }
+
+            // Quorum source (← OptionsView.swift's "Quorum Source" picker and
+            // "Proof Quorum Source" indicator).
+            FormSection(title = "Quorum Source") {
+                val quorumMode by appState.quorumMode.collectAsStateWithLifecycle()
+                val quorumSource by appState.quorumSource.collectAsStateWithLifecycle()
+                AccessiblePicker(
+                    label = "Quorum Source",
+                    options = AppState.QuorumMode.entries,
+                    selected = quorumMode,
+                    optionLabel = { it.label },
+                    testTag = "settings.quorumMode",
+                    // The SDK a rebuild is creating takes the mode it read
+                    // before publishing; a pick meanwhile would miss it.
+                    enabled = !isLoading,
+                ) { selected ->
+                    appState.setQuorumMode(selected)
+                }
+                Text(
+                    "Which quorum public-key source to use for Platform proof verification, " +
+                        "applied live. Auto: SPV once its masternode list is synced, trusted " +
+                        "before that and for any key SPV cannot serve; losing the SPV peers " +
+                        "falls back to trusted. SPV: force SPV now (proofs fail closed whenever " +
+                        "SPV is not synced; no trusted fallback). Trusted: force the trusted " +
+                        "HTTP quorum service.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LabeledContent(
+                    label = "Proof Quorum Source",
+                    value = when (quorumSource) {
+                        Sdk.QuorumSource.SPV -> "SPV"
+                        Sdk.QuorumSource.TRUSTED -> "Trusted (HTTP)"
+                        Sdk.QuorumSource.CUSTOM -> "Custom"
+                    },
+                    modifier = Modifier.testTag("settings.quorumSource"),
+                )
+                Text(
+                    "The source the SDK asks first. In Auto it switches to SPV once the " +
+                        "masternode list has synced (start SPV from the Sync tab); keys SPV " +
+                        "cannot serve still come from the trusted service.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             // SPV peer override (← OptionsView.swift's "Use Custom SPV
@@ -156,7 +277,7 @@ fun SettingsScreen(navController: NavHostController) {
                     androidx.compose.material3.OutlinedTextField(
                         value = localPeers,
                         onValueChange = { appState.setLocalCorePeers(it) },
-                        label = { Text("Peers (host:port, comma-separated)") },
+                        label = { Text("Peers (IP:port, comma-separated; IPv6 as [address]:port)") },
                         placeholder = { Text("10.0.2.2:20301") },
                         modifier = Modifier
                             .fillMaxWidth()

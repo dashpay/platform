@@ -1,3 +1,4 @@
+use crate::block_proof::BlockProofError;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
 use drive::error::proof::ProofError;
@@ -74,6 +75,16 @@ pub enum Error {
     #[error("result encoding: {error}")]
     ResultEncodingError { error: String },
 
+    /// The proof and its signature verified, but the verified result cannot be returned as
+    /// the requested type: for example several documents for a single-document fetch, or a
+    /// total that does not fit its integer type.
+    ///
+    /// Every honest node proves the same result, so asking another node cannot help; the
+    /// request has to change. Raise it only after the proof and signature verified, never
+    /// for a result computed from parts of the response that are not verified yet.
+    #[error("unusable verified result: {reason}")]
+    UnusableVerifiedResult { reason: String },
+
     /// Cannot generate signature digest for data
     #[error("cannot generate signature digest for data: {error}")]
     SignDigestFailed { error: String },
@@ -142,6 +153,28 @@ pub enum Error {
         #[source]
         error: dash_context_provider::ContextProviderError,
     },
+
+    /// A Tenderdash block proof does not hold, or the answer it came with says something
+    /// about the block that the proof does not bear out.
+    #[error("invalid block proof: {0}")]
+    InvalidBlockProof(#[from] BlockProofError),
+}
+
+/// How the error of a GroveDB proof envelope that could not be decoded starts.
+pub(crate) const UNDECODABLE_GROVEDB_PROOF_ENVELOPE: &str = "invalid GroveDB proof envelope";
+
+impl Error {
+    /// Whether the GroveDB proof of an answer came in an envelope this build could not
+    /// decode, as the envelope of a GroveDB version newer than the build knows does. Every
+    /// other [`Error::ResponseDecodeError`] concerns the response around the proof, such as
+    /// a field it lacks or a quorum hash of the wrong length.
+    pub fn is_undecodable_grovedb_proof_envelope(&self) -> bool {
+        matches!(
+            self,
+            Error::ResponseDecodeError { error }
+                if error.starts_with(UNDECODABLE_GROVEDB_PROOF_ENVELOPE)
+        )
+    }
 }
 
 impl From<drive::error::Error> for Error {
@@ -204,6 +237,25 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::verify::require_supported_grovedb_proof_bytes;
+
+    /// An envelope this build cannot decode is told apart from the other response decode
+    /// errors, which concern the response around the proof.
+    #[test]
+    fn should_tell_an_undecodable_grovedb_proof_envelope_from_other_decode_errors() {
+        let envelope = require_supported_grovedb_proof_bytes(&[0xff; 16])
+            .expect_err("these bytes are no GroveDB proof envelope");
+        assert!(
+            envelope.is_undecodable_grovedb_proof_envelope(),
+            "{envelope:?}"
+        );
+
+        let around_the_proof = Error::ResponseDecodeError {
+            error: "invalid quorum hash length".to_string(),
+        };
+        assert!(!around_the_proof.is_undecodable_grovedb_proof_envelope());
+        assert!(!Error::NoProofInResult.is_undecodable_grovedb_proof_envelope());
+    }
     use drive::grovedb::{Error as GroveError, Query, SizedQuery};
 
     /// Helper: build a minimal `Proof` with the given grovedb_proof bytes.

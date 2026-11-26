@@ -11,7 +11,6 @@
 
 use std::path::PathBuf;
 
-use dashcore::hashes::Hash;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
@@ -277,6 +276,10 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::BlobDecode {
             reason: "bad shape",
         },
+        WalletStorageError::UnknownBlobFormat {
+            column: "identities.entry_format",
+            format: 2,
+        },
         WalletStorageError::BackupDestinationExists {
             path: PathBuf::from("/x"),
         },
@@ -406,6 +409,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BincodeEncode { .. } => (false, "bincode_encode"),
             WalletStorageError::BincodeDecode { .. } => (false, "bincode_decode"),
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
+            WalletStorageError::UnknownBlobFormat { .. } => (false, "unknown_blob_format"),
             WalletStorageError::HashDecode { .. } => (false, "hash_decode"),
             WalletStorageError::ConsensusCodec { .. } => (false, "consensus_codec"),
             WalletStorageError::AddressDecode { .. } => (false, "address_decode"),

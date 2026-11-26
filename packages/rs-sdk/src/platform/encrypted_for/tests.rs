@@ -34,8 +34,8 @@ const DASHPAY_VECTOR_HEX: &str = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a864d1b3807cf80
                                   b97cd32a5e36309f3bf9535c519b1b32b2f206696ec6d0e244a2e182fceaa750";
 
 fn key_pair(scalar: u8) -> (SecretKey, PublicKey) {
-    let secret_key = SecretKey::from_slice(&[scalar; 32]).expect("a valid scalar");
-    let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &secret_key);
+    let secret_key = SecretKey::from_secret_bytes([scalar; 32]).expect("a valid scalar");
+    let public_key = PublicKey::from_secret_key(&secret_key);
     (secret_key, public_key)
 }
 

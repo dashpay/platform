@@ -64,6 +64,12 @@ extension AssetLockResumeRow {
     /// which is the whole visible symptom — a chain-locked top-up the
     /// user funded appears nowhere and reads as lost funds.
     var isVisibleAsResumable: Bool {
+        Self.isVisibleAsResumable(statusRaw: statusRaw)
+    }
+
+    /// `isVisibleAsResumable` over a plain status, for filters that take
+    /// plain values instead of a row.
+    static func isVisibleAsResumable(statusRaw: Int) -> Bool {
         (statusRaw >= 1 && statusRaw <= 3) || statusRaw == 5
     }
 }
@@ -83,6 +89,7 @@ extension PersistentAssetLock {
         // Core finality proven, Platform-side consumption unknown.
         // Rendered as "Unknown(5)" before this case existed.
         case 5: return "RecoveredFromChain"
+        case 6: return "DrainCompleted"
         default: return "Unknown(\(statusRaw))"
         }
     }

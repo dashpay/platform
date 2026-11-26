@@ -994,9 +994,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenCla
 /// variant (0 = MaxSupply — the only tag wired by the FFI in this release);
 /// `changeItemPayloadJson` is the per-tag JSON payload (e.g. for MaxSupply
 /// `{"newMaxSupply":"<u64>"}` or `{"newMaxSupply":null}` to remove the cap).
+/// Returns the outcome JSON of `platform_wallet_token_update_config_and_refresh`
+/// (pending, applied with the refreshed contract, or applied but not
+/// refreshed), or null after throwing. Named apart from the void
+/// `tokenUpdateConfig` export it replaces, so an older native library fails to
+/// link here instead of sending the update and returning no outcome.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpdateConfig(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpdateConfigAndRefresh(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
@@ -1012,42 +1017,44 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
     group_info_action_is_proposer: jboolean,
     signing_key_id: jint,
     signer_handle: jlong,
-) {
-    guard(&mut env, (), |env| {
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
-            return;
+            return ptr::null_mut();
         };
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
-            return;
+            return ptr::null_mut();
         };
         // Payload is required by the FFI for the supported tags; a JVM-null
         // payload becomes a null C pointer the FFI rejects with a clear error.
         let Ok(payload) = read_cstring_opt(env, &change_item_payload_json) else {
-            return;
+            return ptr::null_mut();
         };
         let Ok(note) = read_cstring_opt(env, &public_note) else {
-            return;
+            return ptr::null_mut();
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
             Ok(v) => v,
-            Err(()) => return,
+            Err(()) => return ptr::null_mut(),
         };
         let Some(token_position) = checked_position(env, token_position, "tokenPosition") else {
-            return;
+            return ptr::null_mut();
         };
         let Some(group_info_position) =
             checked_position(env, group_info_position, "groupInfoPosition")
         else {
-            return;
+            return ptr::null_mut();
         };
-        let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
-            return;
-        };
+        // Validated like every token action's key id; Rust selects the key.
+        if checked_signing_key_id(env, signing_key_id).is_none() {
+            return ptr::null_mut();
+        }
         let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
-            return;
+            return ptr::null_mut();
         };
+        let mut out_json: *mut c_char = ptr::null_mut();
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_token_update_config(
+            platform_wallet_ffi::platform_wallet_token_update_config_and_refresh(
                 wallet_handle as Handle,
                 id.as_ptr(),
                 contract.as_ptr(),
@@ -1059,11 +1066,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
-                signing_key_id,
                 signer_handle as *mut SignerHandle,
+                &mut out_json as *mut *mut c_char,
             )
         };
-        let _ = take_pwffi_error(env, result);
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        unsafe { consume_pw_free_string(env, out_json) }
     })
 }
 
@@ -1583,6 +1593,31 @@ pub(crate) fn profile_to_json(profile: &DashPayProfileFFI) -> String {
             .collect();
         fields.push(format!("\"avatarFingerprint\":{}", json_string(&hex)));
     }
+    // The published payment addresses, in their stored form as lower hex;
+    // `DashpayNative.paymentAddressToString` renders them for display.
+    let addresses: [(&str, bool, &[u8]); 3] = [
+        (
+            "corePaymentAddress",
+            profile.core_payment_address_is_some,
+            &profile.core_payment_address,
+        ),
+        (
+            "platformPaymentAddress",
+            profile.platform_payment_address_is_some,
+            &profile.platform_payment_address,
+        ),
+        (
+            "shieldedAddress",
+            profile.shielded_address_is_some,
+            &profile.shielded_address,
+        ),
+    ];
+    for (name, present, bytes) in addresses {
+        if present {
+            let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            fields.push(format!("\"{name}\":{}", json_string(&hex)));
+        }
+    }
     format!("{{{}}}", fields.join(","))
 }
 
@@ -1625,12 +1660,35 @@ unsafe fn take_identifier_array_blob(
         .unwrap_or(ptr::null_mut())
 }
 
+/// Destroy every `ContactRequest` handle in a sync result, then free the
+/// array buffer. The sync bridges below call the FFI only for its side effect
+/// on wallet state and never hand these handles to Kotlin, so this is the
+/// only place that can release them; freeing just the buffer would leave one
+/// `CONTACT_REQUEST_STORAGE` entry per returned request on every sync.
+///
+/// # Safety
+/// `array` must be the (possibly empty) array a contact request sync wrote,
+/// not yet freed, whose handles nobody else holds.
+unsafe fn release_contact_request_handles(
+    array: &mut platform_wallet_ffi::ContactRequestHandleArray,
+) {
+    if !array.handles.is_null() && array.count > 0 {
+        let handles = std::slice::from_raw_parts(array.handles, array.count);
+        for &handle in handles {
+            let mut result = platform_wallet_ffi::contact_request_destroy(handle);
+            platform_wallet_ffi_result_free(&mut result);
+        }
+    }
+    platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(
+        array as *mut platform_wallet_ffi::ContactRequestHandleArray,
+    );
+}
+
 /// Sync incoming contact requests from Platform for every managed identity
 /// on the wallet (bridges `platform_wallet_sync_contact_requests`). Applies
 /// them to the wallet's in-memory state (the side effect that
 /// [`getManagedIdentity`] and the id readers then observe); the returned
-/// handle array is freed here (the underlying `ContactRequest` handles stay
-/// in native storage). Blocking.
+/// handles and their array are released here. Blocking.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_syncContactRequests(
     mut env: JNIEnv,
@@ -1648,21 +1706,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_syncCont
                 &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
             )
         };
-        // Free the array regardless of outcome (the handles it references
-        // remain valid in native storage; we only own the buffer).
-        unsafe {
-            platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(
-                &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
-            )
-        };
+        // Release regardless of outcome: on error the FFI leaves the empty
+        // sentinel, which this no-ops on.
+        unsafe { release_contact_request_handles(&mut array) };
         let _ = take_pwffi_error(env, result);
     })
 }
 
 /// Fetch the contact requests sent by `identityId` from Platform (bridges
 /// `platform_wallet_fetch_sent_contact_requests`). Applies them to the
-/// wallet's in-memory state; the returned handle array is freed here.
-/// Blocking.
+/// wallet's in-memory state; the returned handles and their array are
+/// released here. Blocking.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_fetchSentContactRequests(
     mut env: JNIEnv,
@@ -1685,11 +1739,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_fetchSen
                 &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
             )
         };
-        unsafe {
-            platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(
-                &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
-            )
-        };
+        unsafe { release_contact_request_handles(&mut array) };
         let _ = take_pwffi_error(env, result);
     })
 }
@@ -1963,9 +2013,70 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_getIncom
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_wallet_ffi::contact_request::CONTACT_REQUEST_STORAGE;
+    use platform_wallet_ffi::ContactRequestHandleArray;
 
     // profile_to_json is pure marshalling logic (no JNIEnv), so it is unit
     // testable on the JVM-free host. The natives above need a device.
+
+    /// Store a contact request through the public FFI, as a sync does, and
+    /// return its handle.
+    fn stored_contact_request(seed: u8) -> Handle {
+        let sender = [seed; 32];
+        let recipient = [seed.wrapping_add(1); 32];
+        let encrypted_key = [seed; 96];
+        let mut handle: Handle = 0;
+        let mut result = unsafe {
+            platform_wallet_ffi::contact_request_create(
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                0,
+                1,
+                0,
+                encrypted_key.as_ptr(),
+                encrypted_key.len(),
+                100_000,
+                1_700_000_000,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        handle
+    }
+
+    fn is_stored(handle: Handle) -> bool {
+        CONTACT_REQUEST_STORAGE.with_item(handle, |_| ()).is_some()
+    }
+
+    #[test]
+    fn should_destroy_every_contact_request_handle_a_sync_returned() {
+        let handles: Vec<Handle> = (1..=3).map(stored_contact_request).collect();
+        assert!(handles.iter().all(|&handle| is_stored(handle)));
+        // Same buffer layout `ContactRequestHandleArray::from_requests` builds.
+        let mut array = ContactRequestHandleArray {
+            handles: Box::into_raw(handles.clone().into_boxed_slice()) as *mut Handle,
+            count: handles.len(),
+        };
+
+        unsafe { release_contact_request_handles(&mut array) };
+
+        for handle in handles {
+            assert!(!is_stored(handle), "handle {handle} still in storage");
+        }
+        assert!(array.handles.is_null());
+        assert_eq!(array.count, 0);
+    }
+
+    #[test]
+    fn should_no_op_on_the_empty_array_a_failed_sync_leaves() {
+        let mut array = ContactRequestHandleArray::empty();
+
+        unsafe { release_contact_request_handles(&mut array) };
+
+        assert!(array.handles.is_null());
+        assert_eq!(array.count, 0);
+    }
 
     #[test]
     fn token_jlong_raw_bits_cover_the_full_u64_domain() {
@@ -2015,5 +2126,25 @@ mod tests {
             json.contains("\"avatarFingerprint\":\"10200000000000ff\""),
             "got {json}"
         );
+    }
+
+    #[test]
+    fn should_hex_encode_only_the_published_payment_addresses() {
+        let mut profile = DashPayProfileFFI::empty();
+        profile.core_payment_address_is_some = true;
+        profile.core_payment_address = [0x11; 21];
+        profile.platform_payment_address = [0x22; 21];
+        profile.shielded_address_is_some = true;
+        profile.shielded_address = [0x33; 43];
+        let json = profile_to_json(&profile);
+        assert!(
+            json.contains(&format!("\"corePaymentAddress\":\"{}\"", "11".repeat(21))),
+            "got {json}"
+        );
+        assert!(
+            json.contains(&format!("\"shieldedAddress\":\"{}\"", "33".repeat(43))),
+            "got {json}"
+        );
+        assert!(!json.contains("platformPaymentAddress"), "got {json}");
     }
 }

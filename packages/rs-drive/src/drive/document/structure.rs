@@ -1,4 +1,5 @@
 use crate::drive::contract::structure::CONTRACT_FLAGS;
+use crate::drive::document::paths::DOCUMENT_LIFECYCLE_TREE_KEY;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/document/paths.rs";
@@ -10,9 +11,11 @@ const LEVEL_FLAGS: &str = "The owner is the owner of the document that created t
      system data, or created by a document of a type declaring a `ttl`, carry no flags.";
 const DOCUMENT: &str = "contracts.contract.documents.document_type.primary_key.document";
 const REVISION: &str = "contracts.contract.documents.document_type.primary_key.document.revision";
+const RETAINED_REVISION: &str =
+    "contracts.contract.documents.document_type.history.document.revision";
 const INDEX_PROPERTY: &str = "contracts.contract.documents.document_type.index_property";
 
-const PRIMARY_KEY_TREES: [ElementKind; 8] = [
+const PRIMARY_KEY_TREES: [ElementKind; 13] = [
     ElementKind::Tree,
     ElementKind::CountTree,
     ElementKind::ProvableCountTree,
@@ -21,9 +24,15 @@ const PRIMARY_KEY_TREES: [ElementKind; 8] = [
     ElementKind::CountSumTree,
     ElementKind::ProvableCountSumTree,
     ElementKind::ProvableCountProvableSumTree,
+    ElementKind::PrivateDocumentStore,
+    // A type that keeps its sums in 128 bits (protocol version 15)
+    ElementKind::BigSumTree,
+    ElementKind::ProvableBigSumTree,
+    ElementKind::CountBigSumTree,
+    ElementKind::ProvableCountProvableBigSumTree,
 ];
 
-const INDEX_PROPERTY_TREES: [ElementKind; 10] = [
+const INDEX_PROPERTY_TREES: [ElementKind; 14] = [
     ElementKind::Tree,
     ElementKind::CountTree,
     ElementKind::ProvableCountTree,
@@ -34,6 +43,11 @@ const INDEX_PROPERTY_TREES: [ElementKind; 10] = [
     ElementKind::ProvableCountIndexedTree,
     ElementKind::ProvableSumIndexedTree,
     ElementKind::ProvableCountProvableSumIndexedTree,
+    // A type that keeps its sums in 128 bits (protocol version 15)
+    ElementKind::ProvableBigSumTree,
+    ElementKind::ProvableCountProvableBigSumTree,
+    ElementKind::ProvableBigSumIndexedTree,
+    ElementKind::ProvableCountProvableBigSumIndexedTree,
 ];
 const INDEX_PROPERTY_NOTE: &str = "A plain tree unless the index is range \
                                    countable, range summable or ranked, or the \
@@ -63,7 +77,9 @@ pub(crate) fn document_type() -> StructureNode {
                 &PRIMARY_KEY_TREES,
                 "Chosen by the document type's documentsCountable \
                                             and documentsSummable settings; see \
-                                            primary_key_tree_type.rs.",
+                                            primary_key_tree_type.rs. A private \
+                                            document store for a private type; see \
+                                            private_document_store.rs.",
             )
             .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
             .lazy()
@@ -71,7 +87,11 @@ pub(crate) fn document_type() -> StructureNode {
             .book("drive/document-count-trees.md")
             .describe(
                 "The documents, by id. Absent for index only \
-                           document types, which store no documents.",
+                           document types, which store no documents. For a \
+                           private document type (protocol version 15), its \
+                           fixed-size encrypted entries in append order, each \
+                           behind a 16-byte header of the block height and time; \
+                           such a type has no index levels.",
             )
             .child(
                 StructureNode::identifier("document", "document_id", "The document id")
@@ -81,13 +101,17 @@ pub(crate) fn document_type() -> StructureNode {
                             ElementKind::ItemWithSumItem,
                             ElementKind::Tree,
                             ElementKind::SumTree,
+                            ElementKind::Reference,
+                            ElementKind::ReferenceWithSumItem,
                         ],
                         "An item; with a sum when the document type is \
                              summable; a tree of revisions when it keeps \
-                             history.",
+                             history before protocol version 15, and a reference \
+                             to its retained current revision from version 15.",
                     )
                     .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                     .value("serialized document")
+                    .reference(RETAINED_REVISION)
                     .describe("One document.")
                     .children(vec![
                         StructureNode::fixed("latest", &[0], "Latest", "")
@@ -96,6 +120,11 @@ pub(crate) fn document_type() -> StructureNode {
                                 "With a sum when the document type is summable.",
                             )
                             .reference(REVISION)
+                            .flags(
+                                &[FlagsKind::EpochOwned, FlagsKind::None],
+                                "The document owner when the contract can be deleted; otherwise no flags.",
+                            )
+                            .until(14)
                             .describe("A sibling reference to the newest revision."),
                         StructureNode::dynamic(
                             "revision",
@@ -106,9 +135,60 @@ pub(crate) fn document_type() -> StructureNode {
                                                     u64 big endian with the sign bit flipped",
                         )
                         .kind(ElementKind::Item)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                         .value("serialized document")
+                        .until(14)
                         .describe("The document as it was at that time."),
                     ]),
+            ),
+        StructureNode::fixed(
+            "lifecycle",
+            &[DOCUMENT_LIFECYCLE_TREE_KEY],
+            "Lifecycle",
+            "DOCUMENT_LIFECYCLE_TREE_KEY",
+        )
+        .kind(ElementKind::Tree)
+        .since(15)
+        .lazy()
+        .describe(
+            "An unflagged normal tree of lifecycle records for a type that keeps history. \
+             Created on the first delete and retained after all records are erased.",
+        )
+        .child(
+            StructureNode::identifier("record", "document_id", "The deleted document id")
+                .kind(ElementKind::Item)
+                .flags(
+                    &[FlagsKind::EpochOwned, FlagsKind::None],
+                    "The deletion's storage payer, including its gas sponsor when sponsored; \
+                     no flags when the caller supplies no payer. Erase refunds the record's \
+                     stored flag owner.",
+                )
+                .value("versioned DPP DocumentLifecycleRecord")
+                .source("packages/rs-dpp/src/document/lifecycle/mod.rs")
+                .lazy()
+                .describe(
+                    "One document's lifecycle record, present while Deleted or Erasing. \
+                     The terminal erase removes it together with the remaining history.",
+                ),
+        ),
+        StructureNode::fixed("history", &[2], "History", "DOCUMENT_HISTORY_TREE_KEY")
+            .kind(ElementKind::Tree)
+            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+            .since(15)
+            .lazy()
+            .describe("Retained revisions of a type that keeps history, separate from its current primary entries.")
+            .child(
+                StructureNode::identifier("document", "document_id", "The document id")
+                    .kind(ElementKind::ProvableCountTree)
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
+                    .describe("One document's retained history, with an authenticated revision count.")
+                    .child(
+                        StructureNode::dynamic("revision", "block_time_and_revision", KeyMatcher::Len(16), KeyEncoding::Composite, "The block time followed by the revision, both unsigned u64 big endian")
+                            .kind(ElementKind::Item)
+                            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
+                            .value("serialized document")
+                            .describe("An immutable retained revision."),
+                    ),
             ),
         StructureNode::dynamic(
             "index_property",
@@ -152,6 +232,10 @@ fn index_value() -> StructureNode {
             ElementKind::ProvableCountSumTree,
             ElementKind::ProvableCountProvableSumTree,
             ElementKind::SumItem,
+            // A type that keeps its sums in 128 bits (protocol version 15)
+            ElementKind::BigSumTree,
+            ElementKind::CountBigSumTree,
+            ElementKind::ProvableCountProvableBigSumTree,
         ],
         "A plain tree unless the index is countable or \
          summable, so each value carries its count or \
@@ -179,6 +263,11 @@ fn index_value() -> StructureNode {
                     ElementKind::ProvableCountProvableSumTree,
                     ElementKind::Reference,
                     ElementKind::ReferenceWithSumItem,
+                    // A type that keeps its sums in 128 bits (protocol version 15)
+                    ElementKind::BigSumTree,
+                    ElementKind::ProvableBigSumTree,
+                    ElementKind::CountBigSumTree,
+                    ElementKind::ProvableCountProvableBigSumTree,
                 ],
                 "The end of an index: a tree of members, or for a \
                  unique index the one reference itself.",

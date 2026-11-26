@@ -62,6 +62,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::{Drive, RootTree};
@@ -78,9 +79,6 @@ use tracing::{debug, info, trace, warn};
 /// One-shot warning threshold for the end-of-pass replay buffer
 /// (`pending_unknown`). Cross-checked at the push site below.
 const PENDING_UNKNOWN_WARN_THRESHOLD: usize = 1000;
-
-/// Server limit for compacted address balance changes per request.
-const COMPACTED_BATCH_LIMIT: usize = 25;
 
 #[cfg(all(test, feature = "mocks"))]
 mod signed_trunk_tests;
@@ -244,18 +242,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
     }
 
     fn depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
-        (
-            platform_version
-                .drive
-                .methods
-                .address_funds
-                .address_funds_query_min_depth,
-            platform_version
-                .drive
-                .methods
-                .address_funds
-                .address_funds_query_max_depth,
-        )
+        address_query_depth_limits(platform_version)
     }
 
     async fn after_branch_iteration(
@@ -495,25 +482,27 @@ fn seed_base_balances<P: AddressProvider>(
 /// address balance changes RPCs.
 ///
 /// The function queries recent changes **first** to obtain a GroveDB proof, then
-/// uses [`Drive::verify_key_exists_as_boundary`] to check whether the boundary
-/// height still exists in the recent address balances tree. If it does, the
-/// compacted phase is skipped entirely -- this is the common hot path for
-/// frequent 15-second re-syncs where only the recent zone has changed.
+/// reads the boundary nodes of the recent address balances tree from it. If a
+/// boundary at or above the checkpoint is present, the compacted phase is
+/// skipped entirely -- this is the common hot path for frequent 15-second
+/// re-syncs where only the recent zone has changed.
 ///
 /// When `last_known_recent_block > 0`, the recent query uses **exclusive start**
-/// (`RangeAfter`) with that height. This causes the height to appear as a
-/// **boundary node** in the proof, which `key_exists_as_boundary` can detect.
-/// When `last_known_recent_block == 0`, the query falls back to inclusive start
-/// (`RangeFrom` on `start_height`) and the boundary check is skipped (compacted
-/// phase always runs).
+/// (`RangeAfter`) with that height. While the height is still in the recent
+/// tree, it appears as a **boundary node** in the proof. Once compacted away,
+/// it does not. When `last_known_recent_block == 0`, the query falls back to
+/// inclusive start (`RangeFrom` on `start_height`), whose proof does not carry
+/// its start key as a boundary. A proof with no boundary cannot show that the
+/// recent zone covers the blocks since `start_height`, so the compacted phase
+/// runs.
 ///
 /// - **Phase 1 (recent, always first)**: Single non-paginated query via
 ///   `fetch_with_metadata_and_proof`. The recent (uncompacted) zone covers at
 ///   most 64 blocks, well under the server limit of 100 entries per request.
 ///
 /// - **Phase 2 (compacted, conditional)**: Paginated query (25-entry batches)
-///   covering the compacted range. Only runs when the boundary check detects that
-///   the cursor height was compacted away.
+///   covering the compacted range. Skipped only when the recent proof shows the
+///   recent zone reaches back to the checkpoint.
 ///
 /// - **Phase 3 (apply recent)**: The recent results fetched in Phase 1 are applied
 ///   after the (optional) compacted phase.
@@ -607,47 +596,34 @@ async fn incremental_catch_up<P: AddressProvider>(
     //
     // Based on three values:
     // 1. checkpoint_height: the tree scan snapshot height
-    // 2. last_recent_block: highest boundary in the recent proof (the actual
-    //    last block in the recent tree)
+    // 2. last_recent_block: highest boundary in the recent proof, a block
+    //    proven to still be in the recent tree
     // 3. Whether boundaries exist at all
     //
     // If last_recent_block >= checkpoint_height → recent covers the full range,
     //   no compacted data can exist in the gap. Skip compacted.
     // If last_recent_block < checkpoint_height → there's a gap that may contain
     //   compacted data. Query compacted.
-    // If no boundaries → recent tree is empty, nothing to compact. Skip.
-    let need_compacted = match get_last_recent_block_from_proof(&recent_proof) {
-        Ok(Some(last_recent_block)) => {
-            if last_recent_block >= result.checkpoint_height {
-                debug!(
-                    "Address sync: last recent block {} >= checkpoint {} — skipping compacted",
-                    last_recent_block, result.checkpoint_height
-                );
-                false
-            } else {
-                debug!(
-                    "Address sync: last recent block {} < checkpoint {} — need compacted",
-                    last_recent_block, result.checkpoint_height
-                );
-                true
-            }
-        }
-        Ok(None) => {
-            // No boundaries in recent tree → empty, nothing to compact
-            debug!("Address sync: recent tree empty (no boundaries) — skipping compacted");
-            false
-        }
-        Err(e) => {
-            debug!(
-                "Address sync: boundary extraction failed ({}), running compacted to be safe",
-                e
-            );
-            true
-        }
-    };
+    // If no boundaries → nothing proves the recent tree reaches back to
+    //   start_height. A `RangeFrom` proof does not carry its start key as
+    //   one, and a `RangeAfter` start key compacted away leaves none, while
+    //   the blocks since start_height may sit in the compacted tree. Query
+    //   compacted.
+    let need_compacted = needs_compacted_phase(&recent_proof, result.checkpoint_height);
 
     // Phase 2b — Compacted (historical) catch-up (conditional)
     if need_compacted {
+        // Server limit for compacted address balance changes per request,
+        // from the version table the query handler and the proof verifier
+        // both read: 25, the constant used here before, in every shipped
+        // protocol version.
+        let compacted_batch_limit = usize::from(
+            sdk.version()
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_compacted_address_balance_changes_max_ranges,
+        );
         loop {
             let request = GetRecentCompactedAddressBalanceChangesRequest {
                 version: Some(
@@ -716,7 +692,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                 }
             }
 
-            if entry_count < COMPACTED_BATCH_LIMIT {
+            if entry_count < compacted_batch_limit {
                 break;
             }
         }
@@ -784,6 +760,39 @@ async fn incremental_catch_up<P: AddressProvider>(
     // this stays at 0 and the next sync falls back to RangeFrom (inclusive).
     result.last_known_recent_block = highest_recent_block;
     Ok(())
+}
+
+/// Phase 2 of [`incremental_catch_up`]: whether the compacted phase must run,
+/// judged from the boundary nodes of the recent query's proof.
+fn needs_compacted_phase(recent_proof: &Proof, checkpoint_height: u64) -> bool {
+    match get_last_recent_block_from_proof(recent_proof) {
+        Ok(Some(last_recent_block)) => {
+            if last_recent_block >= checkpoint_height {
+                debug!(
+                    "Address sync: last recent block {} >= checkpoint {} — skipping compacted",
+                    last_recent_block, checkpoint_height
+                );
+                false
+            } else {
+                debug!(
+                    "Address sync: last recent block {} < checkpoint {} — need compacted",
+                    last_recent_block, checkpoint_height
+                );
+                true
+            }
+        }
+        Ok(None) => {
+            debug!("Address sync: recent proof has no boundary — need compacted");
+            true
+        }
+        Err(e) => {
+            debug!(
+                "Address sync: boundary extraction failed ({}), running compacted to be safe",
+                e
+            );
+            true
+        }
+    }
 }
 
 // ── Address-balance change application ────────────────────────────────
@@ -1172,7 +1181,8 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
 ///
 /// Returns:
 /// - `Ok(Some(height))` — the highest block height found as a boundary
-/// - `Ok(None)` — no boundaries found (recent tree is empty)
+/// - `Ok(None)` — no boundaries found; this does not mean the recent tree is
+///   empty, only that the proof shows no block still in it
 /// - `Err(...)` — proof decoding failed
 fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error> {
     let path: [&[u8]; 2] = [
@@ -1180,9 +1190,7 @@ fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error>
         &[ADDRESS_BALANCES_KEY_U8],
     ];
 
-    let config = dpp::bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<{ 256 * 1024 * 1024 }>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
 
     let (grovedb_proof, _): (drive::grovedb::operations::proof::GroveDBProof, usize) =
         dpp::bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map_err(|e| {
@@ -1213,6 +1221,31 @@ fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error>
         .max();
 
     Ok(max_height)
+}
+
+// ── Branch query depth ───────────────────────────────────────────────
+
+/// The `(min, max)` depth an address branch query may ask for under
+/// `platform_version`.
+fn address_query_depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
+    let address_funds = &platform_version.drive.methods.address_funds;
+    (
+        address_funds.address_funds_query_min_depth,
+        address_funds.address_funds_query_max_depth,
+    )
+}
+
+/// The depth to ask for when querying the branch under a leaf boundary of
+/// the address tree that holds about `estimated_count` elements.
+///
+/// This is the depth the address sync's full tree scan picks for a leaf it
+/// queries directly (`trunk_branch_sync::direct_leaf_query_depth`, the
+/// same function `get_privacy_adjusted_leaves` uses) under the address
+/// branch query limits of `platform_version`. A count of 0 (unknown) gives
+/// the minimum depth.
+pub fn address_branch_query_depth(estimated_count: u64, platform_version: &PlatformVersion) -> u8 {
+    let (min_depth, max_depth) = address_query_depth_limits(platform_version);
+    trunk_branch_sync::direct_leaf_query_depth(estimated_count, min_depth, max_depth)
 }
 
 // ── Branch query helper (address-specific) ───────────────────────────
@@ -1262,6 +1295,7 @@ async fn execute_address_branch_query(
                 Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
                 None => {
                     return Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::Proof(drive_proof_verifier::Error::EmptyVersion),
                         address: Some(address),
                         retries,
@@ -1278,6 +1312,7 @@ async fn execute_address_branch_query(
                 platform_version,
             )
             .map_err(|e| ExecutionError {
+                possibly_accepted: false,
                 inner: e.into(),
                 address: Some(address.clone()),
                 retries,
@@ -1394,6 +1429,12 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::grovedb::operations::proof::{
+        GroveDBProof, GroveDBProofV0, MerkOnlyLayerProof, ProveOptions,
+    };
+    use drive::grovedb::{MerkProofNode, MerkProofOp};
+    use drive::grovedb_query::proofs::encode_into;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_extract_funds_from_element() {
@@ -1416,6 +1457,44 @@ mod tests {
         );
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_iterations, 50);
+    }
+
+    #[test]
+    fn should_clamp_a_small_or_unknown_branch_count_to_the_minimum_depth() {
+        let platform_version = PlatformVersion::latest();
+        let (min_depth, _) = address_query_depth_limits(platform_version);
+
+        assert_eq!(address_branch_query_depth(0, platform_version), min_depth);
+        assert_eq!(address_branch_query_depth(1, platform_version), min_depth);
+        assert_eq!(address_branch_query_depth(12, platform_version), min_depth);
+    }
+
+    #[test]
+    fn should_clamp_a_large_branch_count_to_the_maximum_depth() {
+        let platform_version = PlatformVersion::latest();
+        let (_, max_depth) = address_query_depth_limits(platform_version);
+
+        assert_eq!(
+            address_branch_query_depth(1_000_000, platform_version),
+            max_depth
+        );
+        assert_eq!(
+            address_branch_query_depth(u64::MAX, platform_version),
+            max_depth
+        );
+    }
+
+    #[test]
+    fn should_pick_the_tree_depth_of_a_mid_sized_branch() {
+        let platform_version = PlatformVersion::latest();
+        let (min_depth, max_depth) = address_query_depth_limits(platform_version);
+        // An AVL tree of 33 to 53 elements is at most 7 levels deep, which
+        // lies inside the limits, so no clamp applies.
+        assert!(min_depth < 7 && 7 < max_depth);
+
+        assert_eq!(address_branch_query_depth(33, platform_version), 7);
+        assert_eq!(address_branch_query_depth(53, platform_version), 7);
+        assert_eq!(address_branch_query_depth(54, platform_version), 8);
     }
 
     #[test]
@@ -1524,6 +1603,86 @@ mod tests {
         };
         let result = get_last_recent_block_from_proof(&proof);
         assert!(result.is_err());
+    }
+
+    /// A decodable recent-query proof whose `[SavedBlockTransactions, 'm']`
+    /// layer holds `ops`. Mock expectations return an empty proof, which takes
+    /// the decode-error arm, so the boundary arms need a real one.
+    fn recent_proof(ops: &[MerkProofOp]) -> Proof {
+        let mut merk_proof = Vec::new();
+        encode_into(ops.iter(), &mut merk_proof);
+        let layer = |merk_proof, key: u8, child| MerkOnlyLayerProof {
+            merk_proof,
+            lower_layers: BTreeMap::from([(vec![key], child)]),
+        };
+        let address_balances = MerkOnlyLayerProof {
+            merk_proof,
+            lower_layers: BTreeMap::new(),
+        };
+        let root_layer = layer(
+            Vec::new(),
+            RootTree::SavedBlockTransactions as u8,
+            layer(Vec::new(), ADDRESS_BALANCES_KEY_U8, address_balances),
+        );
+        let proof = GroveDBProof::V0(GroveDBProofV0 {
+            root_layer,
+            prove_options: ProveOptions::default(),
+        });
+        let config = dpp::bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<{ 256 * 1024 * 1024 }>();
+        Proof {
+            grovedb_proof: dpp::bincode::encode_to_vec(&proof, config).expect("encode proof"),
+            ..Default::default()
+        }
+    }
+
+    /// A block returned as a query result: a `KV` node, never a boundary.
+    fn block_result(height: u64) -> MerkProofOp {
+        MerkProofOp::Push(MerkProofNode::KV(height.to_be_bytes().to_vec(), vec![0; 4]))
+    }
+
+    /// The start key of an exclusive range that is still in the recent tree.
+    fn boundary(height: u64) -> MerkProofOp {
+        MerkProofOp::Push(MerkProofNode::KVDigest(
+            height.to_be_bytes().to_vec(),
+            [0; 32],
+        ))
+    }
+
+    /// Testnet SH-040: the trunk checkpoint (642131) predates a funding in a
+    /// block the server then compacted. The `RangeFrom` recent proof holds only
+    /// the later block 642139 and no boundary, so only the compacted phase can
+    /// deliver the credit. A genuinely empty recent zone proves no more.
+    #[test]
+    fn should_run_compacted_phase_when_recent_proof_has_no_boundary() {
+        for proof in [recent_proof(&[block_result(642_139)]), recent_proof(&[])] {
+            assert!(matches!(get_last_recent_block_from_proof(&proof), Ok(None)));
+            assert!(needs_compacted_phase(&proof, 642_131));
+        }
+    }
+
+    #[test]
+    fn should_skip_compacted_phase_when_a_boundary_reaches_the_checkpoint() {
+        for height in [642_131, 642_135] {
+            let proof = recent_proof(&[boundary(height), block_result(height + 1)]);
+            assert!(!needs_compacted_phase(&proof, 642_131));
+        }
+    }
+
+    #[test]
+    fn should_run_compacted_phase_when_the_boundary_predates_the_checkpoint() {
+        let proof = recent_proof(&[boundary(642_125), block_result(642_126)]);
+        assert!(needs_compacted_phase(&proof, 642_131));
+    }
+
+    #[test]
+    fn should_run_compacted_phase_when_recent_proof_is_undecodable() {
+        let proof = Proof {
+            grovedb_proof: vec![0xFF, 0xFE, 0xFD, 0xFC],
+            ..Default::default()
+        };
+        assert!(needs_compacted_phase(&proof, 642_131));
     }
 
     #[test]

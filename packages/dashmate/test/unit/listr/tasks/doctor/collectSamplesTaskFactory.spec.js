@@ -2,18 +2,25 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import tls from 'node:tls';
+import zlib from 'zlib';
 import { Listr } from 'listr2';
+import si from 'systeminformation';
 import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigFactory.js';
 import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
+import analyseServiceContainersFactory from '../../../../../src/doctor/analyse/analyseServiceContainersFactory.js';
+import archiveSamples from '../../../../../src/doctor/archiveSamples.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
+import unarchiveSamplesFactory from '../../../../../src/doctor/unarchiveSamplesFactory.js';
+import { getOperatorIdentity } from '../../../../../src/util/maskOperatorIdentity.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
+import RenewalRecord from '../../../../../src/ssl/renewalRecord/RenewalRecord.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 
 const EXTERNAL_IP = '198.51.100.7';
@@ -87,7 +94,12 @@ describe('collectSamplesTaskFactory', () => {
 
     fs.mkdirSync(sslDir, { recursive: true });
     fs.writeFileSync(path.join(sslDir, 'csr.pem'), 'csr', 'utf8');
-    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', 'utf8');
+    // Dashmate writes the key accessible to its owner only, and doctor reports
+    // one that is not - so the fixture has to be what a healthy node has
+    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
     fs.writeFileSync(path.join(sslDir, 'bundle.crt'), 'bundle', 'utf8');
 
     getCertificate = this.sinon.stub();
@@ -342,6 +354,29 @@ describe('collectSamplesTaskFactory', () => {
     expect(samples.getServiceInfo('gateway', 'validationHttpPort')).to.equal('OPEN');
   });
 
+  // The certificate check reads the API key to call ZeroSSL with, and hands it
+  // back with the rest of what it looked at. Doctor never needs the key itself -
+  // whether it is set is already in the check's verdict.
+  it('should not collect the ZeroSSL API key', async () => {
+    const apiKey = 'collectedZeroSslApiKey'.padEnd(32, '7');
+
+    config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', apiKey);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    await collectSamples();
+
+    expect(samples.getServiceInfo('gateway', 'ssl').data).to.include.keys('bundleFilePath');
+    expect(samples.getServiceInfo('gateway', 'ssl').data).to.not.have.property('apiKey');
+    expect(JSON.stringify(samples.getServices())).to.not.contain(apiKey);
+  });
+
   it('should collect metrics as text rather than an unresolved promise', async () => {
     config.set('platform.gateway.metrics.enabled', true);
 
@@ -356,5 +391,463 @@ describe('collectSamplesTaskFactory', () => {
     await collectSamples();
 
     expect(samples.getServiceInfo('gateway', 'metrics')).to.equal('metrics_sample 1');
+  });
+
+  describe('gateway TLS private key permissions', () => {
+    /**
+     * @return {string}
+     */
+    function keyFilePath() {
+      return homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'private.key');
+    }
+
+    beforeEach(() => {
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+    });
+
+    it('should collect the mode of the gateway TLS private key', async () => {
+      fs.chmodSync(keyFilePath(), 0o644);
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.equal(0o644);
+    });
+
+    it('should collect nothing when there is no private key', async () => {
+      fs.rmSync(keyFilePath());
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.be.undefined();
+    });
+
+    // Windows reports a writable file as 0666 whatever its ACL allows, so the mode
+    // bits would make doctor report an exposed key that is not exposed
+    it('should collect nothing on Windows, where file modes are not permissions', async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+
+      fs.chmodSync(keyFilePath(), 0o644);
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+
+      try {
+        await collectSamples();
+      } finally {
+        Object.defineProperty(process, 'platform', platform);
+      }
+
+      expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.be.undefined();
+    });
+  });
+
+  // The report is the artefact an operator sends to support, and the command
+  // tells them it carries no secrets. Containers get their credentials through
+  // the environment, so the inspect sample is where they would end up.
+  describe('container samples in the archive', () => {
+    const SERVICE = { name: 'drive_abci', title: 'Drive ABCI' };
+
+    // Deliberately not a value from the config: the environment has to be
+    // redacted in its own right, not only because the same value is also
+    // scrubbed as a known config secret.
+    const ENVIRONMENT_SECRET = 'environmentOnlyValue7Qx2';
+
+    let archiveRoot;
+    let previousTmpDir;
+    let getServiceList;
+
+    /**
+     * @return {Promise<string>} path to the archive
+     */
+    async function collectAndArchive() {
+      await collectSamples();
+      await archiveSamples(samples, archiveRoot, config);
+
+      const [archiveName] = fs.readdirSync(archiveRoot)
+        .filter((name) => name.endsWith('.tar.gz'));
+
+      return path.join(archiveRoot, archiveName);
+    }
+
+    /**
+     * A tarball stores member contents verbatim, so the decompressed stream
+     * holds every byte of every file in the archive, whatever its name.
+     *
+     * @param {string} archivePath
+     * @return {string}
+     */
+    function readArchivedBytes(archivePath) {
+      return zlib.gunzipSync(fs.readFileSync(archivePath)).toString('utf8');
+    }
+
+    beforeEach(function beforeEach() {
+      archiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-report-test-'));
+
+      // The archive is staged under the system temp directory before it is packed
+      previousTmpDir = process.env.TMPDIR;
+      process.env.TMPDIR = archiveRoot;
+
+      getServiceList = () => [SERVICE];
+
+      this.sinon.stub(si, 'dockerContainerStats').resolves([]);
+
+      collectSamplesTask = collectSamplesTaskFactory(
+        dockerCompose,
+        this.sinon.stub().returns(rpcClient),
+        this.sinon.stub().resolves('127.0.0.1'),
+        this.sinon.stub().returns({ request: this.sinon.stub().resolves({}) }),
+        getServiceList,
+        this.sinon.stub().resolves({}),
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+        this.sinon.stub().resolves({}),
+        checkGatewayCertificateFactory(homeDir),
+        new RenewalRecordRepository(homeDir),
+      );
+
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+    });
+
+    afterEach(() => {
+      if (previousTmpDir === undefined) {
+        delete process.env.TMPDIR;
+      } else {
+        process.env.TMPDIR = previousTmpDir;
+      }
+
+      fs.rmSync(archiveRoot, { recursive: true, force: true });
+    });
+
+    it('should not archive the values of container environment variables', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: {
+          Image: 'dashpay/drive:test',
+          Env: [
+            `CORE_CONSENSUS_JSON_RPC_PASSWORD=${ENVIRONMENT_SECRET}`,
+            'NETWORK=testnet',
+            'PROMETHEUS_BIND_ADDRESS=',
+          ],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain(ENVIRONMENT_SECRET);
+
+      // Every value goes, not only the ones whose name looks sensitive: a
+      // variable added later is redacted without anyone having to list it.
+      expect(archived).to.not.contain('NETWORK=testnet');
+
+      // Which variables a container was started with still tells a container
+      // created before a variable existed apart from one created after.
+      expect(archived).to.contain('"CORE_CONSENSUS_JSON_RPC_PASSWORD=<redacted>"');
+      expect(archived).to.contain('"NETWORK=<redacted>"');
+      expect(archived).to.contain('"PROMETHEUS_BIND_ADDRESS="');
+    });
+
+    it('should keep what the container analyser reads from an archived inspect', async () => {
+      const state = {
+        Status: 'restarting',
+        Running: true,
+        Restarting: true,
+        OOMKilled: false,
+        ExitCode: 137,
+        Error: 'container exited unexpectedly',
+      };
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: {
+          Image: 'dashpay/drive:test',
+          Env: [`CORE_CONSENSUS_JSON_RPC_PASSWORD=${ENVIRONMENT_SECRET}`],
+        },
+        State: state,
+      });
+
+      const restored = await unarchiveSamplesFactory(getServiceList)(await collectAndArchive());
+
+      const inspect = restored.getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.State).to.deep.equal(state);
+      expect(inspect.Config.Image).to.equal('dashpay/drive:test');
+
+      const problems = analyseServiceContainersFactory(getServiceList)(restored)
+        .map((problem) => problem.getDescription());
+
+      expect(problems).to.include(
+        'Service Drive ABCI failed with an error code 137\nand message: container exited unexpectedly.',
+      );
+    });
+
+    // Collected text has the operator's home directory rewritten as it is
+    // taken in. A secret that starts with that directory must already be
+    // masked by then, or what is left of it no longer reads as the secret.
+    it('should mask a secret that holds the home directory before the directory is rewritten', async () => {
+      const { homePath } = getOperatorIdentity();
+      const secret = `${homePath}/pin7`;
+
+      config.set('core.rpc.users.dapi.password', secret);
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: { Image: 'dashpay/dapi:test', Env: [] },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({ out: `auth with ${secret} rejected\n`, err: '' });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('/pin7');
+      expect(archived).to.contain(`auth with ${'*'.repeat(secret.length)} rejected`);
+    });
+
+    // A key passed to Core on its command line is in the config and in the
+    // command the container was started with, and Core may print it as well
+    it('should not archive a key passed to Core on its command line', async () => {
+      const blsKey = '4a'.repeat(32);
+
+      config.set('core.docker.commandArgs', [`-masternodeblsprivkey=${blsKey}`, '-printtoconsole']);
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'dashd',
+        Args: [`-masternodeblsprivkey=${blsKey}`, '-printtoconsole'],
+        Config: {
+          Image: 'dashpay/dashd:test',
+          Env: [],
+          Cmd: ['dashd', `-masternodeblsprivkey=${blsKey}`, '-printtoconsole'],
+          Entrypoint: ['/docker-entrypoint.sh', '--token=entrypointToken7Qx'],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({
+        out: `Command-line arg: masternodeblsprivkey="${blsKey}"\n`,
+        err: '',
+      });
+
+      const archivePath = await collectAndArchive();
+      const archived = readArchivedBytes(archivePath);
+
+      expect(archived).to.not.contain(blsKey);
+
+      const restored = await unarchiveSamplesFactory(getServiceList)(archivePath);
+      const inspect = restored.getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.Path).to.equal('dashd');
+      expect(inspect.Args).to.equal('<redacted>');
+      expect(inspect.Config.Cmd).to.equal('<redacted>');
+      expect(inspect.Config.Entrypoint).to.equal('<redacted>');
+      expect(archived).to.not.contain('entrypointToken7Qx');
+      expect(restored.getDashmateConfig().get('core.docker.commandArgs')).to.deep.equal([
+        `-masternodeblsprivkey=${'*'.repeat(blsKey.length)}`,
+        '-printtoconsole',
+      ]);
+      expect(restored.getServiceInfo(SERVICE.name, 'stdOut')).to.contain('Command-line arg: masternodeblsprivkey="');
+    });
+
+    // An image can bring credentials of its own, which the config does not
+    // know, and a command line has too many ways of carrying one to mask it
+    // argument by argument. No analyser reads it, so it is left out; only the
+    // executable stays.
+    [
+      ['a shell command line', { Cmd: ['sh', '-c', 'exec app --password shellSecret7Qx'] }],
+      ['a value after its option', { Cmd: ['app', '--token', 'separateSecret7Qx'] }],
+      ['a value that starts with a hyphen', { Cmd: ['app', '--token', '-hyphenSecret7Qx'] }],
+      ['a positional value after the script name', {
+        Cmd: ['sh', '-c', 'exec app --password "$1"', 'sh', 'positionalSecret7Qx'],
+      }],
+      ['an entrypoint argument', { Entrypoint: ['/entry.sh', 'entrypointSecret7Qx'] }],
+      ['a health check', {
+        Healthcheck: { Test: ['CMD-SHELL', 'curl -u probe:healthSecret7Qx http://localhost/'], Interval: 1e9 },
+      }],
+    ].forEach(([description, commandConfig]) => {
+      it(`should leave the container command out of the archive, with ${description}`, async () => {
+        const [secret] = JSON.stringify(commandConfig).match(/[A-Za-z]+Secret7Qx/);
+
+        dockerCompose.inspectService.resolves({
+          Id: 'container-id',
+          Path: 'app',
+          Args: ['--token', secret],
+          Config: {
+            Image: 'example/service:test',
+            Env: [],
+            ...commandConfig,
+          },
+          State: { Status: 'running', Restarting: false, ExitCode: 0 },
+        });
+
+        const archivePath = await collectAndArchive();
+
+        expect(readArchivedBytes(archivePath)).to.not.contain(secret);
+
+        const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+          .getServiceInfo(SERVICE.name, 'dockerInspect');
+
+        expect(inspect.Path).to.equal('app');
+        expect(inspect.Args).to.equal('<redacted>');
+        ['Cmd', 'Entrypoint'].filter((field) => field in commandConfig)
+          .forEach((field) => expect(inspect.Config[field]).to.equal('<redacted>'));
+
+        if (commandConfig.Healthcheck) {
+          expect(inspect.Config.Healthcheck.Test).to.equal('<redacted>');
+          expect(inspect.Config.Healthcheck.Interval).to.equal(1e9);
+        }
+      });
+    });
+
+    it('should collect a container whose command has more arguments than a call can take', async () => {
+      const command = Array.from({ length: 200_000 }, (_, index) => `-o${index}=v${index}`);
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: command,
+        Config: { Image: 'example/service:test', Env: [], Cmd: command },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+
+      const inspect = (await unarchiveSamplesFactory(getServiceList)(await collectAndArchive()))
+        .getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.Args).to.equal('<redacted>');
+    });
+
+    // A service can print an option value on its own, apart from the option
+    it('should scrub a log of an option value with spaces in it printed alone', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: ['--token=container token 7Qx'],
+        Config: { Image: 'example/service:test', Env: [], Cmd: ['--token=container token 7Qx'] },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({ out: 'using token container token 7Qx\n', err: '' });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('container token 7Qx');
+      expect(archived).to.contain('using token ');
+    });
+
+    // Docker runs the entrypoint with the command after it, so an option at
+    // the end of one takes its value from the start of the other
+    it('should not archive an option value split between the entrypoint and the command', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: ['--token', 'splitAcrossToken7Qx'],
+        Config: {
+          Image: 'example/service:test',
+          Env: [],
+          Entrypoint: ['app', '--token'],
+          Cmd: ['splitAcrossToken7Qx'],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain('splitAcrossToken7Qx');
+
+      const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.Config.Cmd).to.equal('<redacted>');
+    });
+
+    // A container can print the command it was started with, and the
+    // credentials an image passes itself are not in the config
+    it('should not archive an option value a container prints in its own log', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: ['--token=loggedToken7Qx'],
+        Config: { Image: 'example/service:test', Env: [], Cmd: ['app', '--token=loggedToken7Qx'] },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({ out: 'starting app --token=loggedToken7Qx\n', err: '' });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('loggedToken7Qx');
+      expect(archived).to.contain('starting app --token=');
+    });
+
+    // Doctor decides on the facts of a renewal record - which provider, what
+    // outcome, when - live and when it reads a report back. A secret spelled
+    // like one of them must not change them; the record's free text is
+    // still scrubbed.
+    it('should keep the facts of a renewal record when a secret is spelled like one', async () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      config.set('core.rpc.users.dapi.password', 'letsencrypt');
+
+      new RenewalRecordRepository(homeDir).write(config.getName(), RenewalRecord.fromObject({
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'PORT_80_UNREACHABLE',
+        detail: 'challenge failed with letsencrypt in the way',
+        attemptedAt: new Date().toISOString(),
+      }));
+
+      const archivePath = await collectAndArchive();
+
+      const live = samples.getServiceInfo('gateway', 'certificateRenewal');
+      const restored = (await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'certificateRenewal');
+
+      [live, restored].forEach((sample) => {
+        const record = RenewalRecord.fromObject(sample);
+
+        expect(record.isFailed()).to.be.true();
+        expect(record.appliesTo({ provider: 'letsencrypt' })).to.be.true();
+        expect(sample.detail).to.equal(`challenge failed with ${'*'.repeat('letsencrypt'.length)} in the way`);
+      });
+    });
+
+    // A password can be spelled like a value the config schema requires
+    // elsewhere, such as the environment name. Doctor validates the config copy
+    // when it reads a report back, so the copy must keep that value while the
+    // password itself stays hidden.
+    it('should read a report back when a password equals another config value', async () => {
+      config.set('environment', 'production');
+      config.set('core.rpc.users.dapi.password', 'production');
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: { Image: 'dashpay/drive:test', Env: [] },
+        State: {
+          Restarting: true,
+          ExitCode: 1,
+          Error: 'container exited unexpectedly',
+        },
+      });
+
+      const restored = await unarchiveSamplesFactory(getServiceList)(await collectAndArchive());
+
+      const restoredConfig = restored.getDashmateConfig();
+
+      expect(restoredConfig.get('environment')).to.equal('production');
+      expect(restoredConfig.get('core.rpc.users.dapi.password')).to.equal('*'.repeat('production'.length));
+
+      const problems = analyseServiceContainersFactory(getServiceList)(restored)
+        .map((problem) => problem.getDescription());
+
+      expect(problems).to.include(
+        'Service Drive ABCI failed with an error code 1\nand message: container exited unexpectedly.',
+      );
+      expect(() => analyseConfig(restored)).to.not.throw();
+    });
   });
 });

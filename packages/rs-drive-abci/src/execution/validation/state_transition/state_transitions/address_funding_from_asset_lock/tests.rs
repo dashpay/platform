@@ -21,7 +21,6 @@ mod tests {
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::blockdata::script::ScriptBuf;
-    use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dpp::dashcore::transaction::special_transaction::TransactionPayload;
     use dpp::dashcore::{BlockHash, Network, OutPoint, PrivateKey, Transaction, TxIn, TxOut, Txid};
@@ -134,10 +133,22 @@ mod tests {
         Vec<u8>,
         Transaction,
     ) {
+        create_chain_asset_lock_proof_with_key_and_tx_with_inputs(rng, 1)
+    }
+
+    /// [`create_chain_asset_lock_proof_with_key_and_tx`] whose transaction spends
+    /// `input_count` outputs (vout 0, 1, …) of the same funding transaction.
+    fn create_chain_asset_lock_proof_with_key_and_tx_with_inputs(
+        rng: &mut StdRng,
+        input_count: u32,
+    ) -> (
+        dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
+        Vec<u8>,
+        Transaction,
+    ) {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
         let platform_version = PlatformVersion::latest();
-        let secp = Secp256k1::new();
 
         // Generate the one-time key that will receive the asset lock funds
         let (_, pk) = ECDSA_SECP256K1
@@ -145,19 +156,21 @@ mod tests {
             .unwrap();
 
         let one_time_private_key = PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap();
-        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();
 
-        // Create a fake input (doesn't need to be real for our tests)
+        // Create fake inputs (they don't need to be real for our tests)
         let input_txid =
             Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458")
                 .unwrap();
-        let input = TxIn {
-            previous_output: OutPoint::new(input_txid, 0),
-            script_sig: ScriptBuf::new(),
-            sequence: 0xffffffff,
-            witness: Default::default(),
-        };
+        let inputs = (0..input_count)
+            .map(|vout| TxIn {
+                previous_output: OutPoint::new(input_txid, vout),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Default::default(),
+            })
+            .collect();
 
         // Create the funding output (P2PKH to the one-time key)
         let funding_output = TxOut {
@@ -181,7 +194,7 @@ mod tests {
         let transaction = Transaction {
             version: 3,
             lock_time: 0,
-            input: vec![input],
+            input: inputs,
             output: vec![burn_output],
             special_transaction_payload: Some(payload),
         };
@@ -1185,6 +1198,99 @@ mod tests {
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
+        }
+
+        /// The asset lock's one-time key is checked by recovering the public key, which takes
+        /// any S and either header form. Protocol version 14 accepts the high-S twin of the
+        /// signature and the twin whose header names an uncompressed key, for replay; from
+        /// protocol version 15 a block refuses each unpaid, with the error of a signature that
+        /// does not verify, and leaves the asset lock unused. The signature the key made is
+        /// accepted at both.
+        #[tokio::test]
+        async fn should_refuse_an_asset_lock_signature_twin_from_protocol_version_15() {
+            use crate::execution::validation::state_transition::state_transitions::test_helpers::process_transition_and_commit;
+            use dpp::consensus::signature::SignatureError;
+            use dpp::tests::utils::{high_s_twin, uncompressed_header_twin};
+
+            let latest = PlatformVersion::latest().protocol_version;
+            let twins: [(&str, fn(&[u8]) -> Vec<u8>); 2] = [
+                ("high-S twin", high_s_twin),
+                ("uncompressed header twin", uncompressed_header_twin),
+            ];
+            // (protocol version, the twins submitted before the signature itself). The asset
+            // lock is consumed by the first transition a block accepts, so at 14 each twin gets
+            // its own platform, as does the signature.
+            for (protocol_version, submitted) in [
+                (14, &twins[..0]),
+                (14, &twins[..1]),
+                (14, &twins[1..]),
+                (latest, &twins[..]),
+            ] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("known protocol version");
+                let platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig {
+                        testing_configs: PlatformTestConfig {
+                            disable_instant_lock_signature_verification: true,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .with_initial_protocol_version(protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let signer = TestAddressSigner::new();
+                let mut rng = StdRng::seed_from_u64(567);
+                let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+                let mut outputs = BTreeMap::new();
+                outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+                outputs.insert(create_platform_address(2), None);
+                let signed = create_signed_address_funding_from_asset_lock_transition(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                )
+                .await;
+                let signature = signed.signature().expect("signed").to_vec();
+
+                let mut asset_lock_used = false;
+                for (twin_label, twin) in submitted {
+                    let mut malleated = signed.clone();
+                    malleated.set_signature(twin(&signature).into());
+                    let result =
+                        process_transition_and_commit(&platform, malleated, platform_version);
+                    if protocol_version == 14 {
+                        assert_matches!(
+                            result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                            "protocol version 14 accepts the {twin_label}"
+                        );
+                        asset_lock_used = true;
+                    } else {
+                        assert_matches!(
+                            result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::UnpaidConsensusError(
+                                ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                            )],
+                            "protocol version {protocol_version} refuses the {twin_label}"
+                        );
+                    }
+                }
+                if !asset_lock_used {
+                    // No twin was accepted, so the asset lock is unused and the signature the
+                    // key made still funds.
+                    let result = process_transition_and_commit(&platform, signed, platform_version);
+                    assert_matches!(
+                        result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                        "protocol version {protocol_version} accepts the signature"
+                    );
+                }
+            }
         }
 
         #[tokio::test]
@@ -5493,6 +5599,7 @@ mod tests {
 
     mod chain_asset_lock {
         use super::*;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 
         #[tokio::test]
         async fn test_chain_asset_lock_proof_basic() {
@@ -5574,6 +5681,84 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// A chain proof names only an outpoint and a height, so from protocol 15 the input cap
+        /// that keeps an instant proof's transition small does not hold its transaction: a
+        /// mined asset lock of more than 100 inputs, whose Dash no instant proof can redeem,
+        /// funds an address.
+        #[tokio::test]
+        async fn should_fund_an_address_from_a_chain_asset_lock_over_the_input_cap() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut rng = StdRng::seed_from_u64(701);
+            let (chain_asset_lock_proof, asset_lock_pk, asset_lock_tx) =
+                create_chain_asset_lock_proof_with_key_and_tx_with_inputs(&mut rng, 101);
+
+            // Mined at core height 50, below the proof's chain locked height of 100.
+            let platform =
+                create_platform_with_chain_asset_lock_mock(platform_config, asset_lock_tx, 50);
+            let platform = platform.set_genesis_state_with_activation_info(0, 1);
+            fast_forward_to_block(&platform, 0, 1, 200, 0, false);
+
+            let recipient = create_platform_address(1);
+            let mut outputs = BTreeMap::new();
+            outputs.insert(recipient, None);
+
+            let signer = TestAddressSigner::new();
+            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                chain_asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(),
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            )
+            .await;
+
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let block_info = BlockInfo {
+                time_ms: 0,
+                height: 1,
+                core_height: 200,
+                epoch: Default::default(),
+            };
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            let fee_result = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => fee_result.clone()
+            );
+            // The whole 1 Dash lock is credited, less the transition's fees.
+            assert_eq!(
+                get_address_balance(&platform, recipient, &transaction),
+                dash_to_credits!(1.0) - fee_result.total_base_fee()
             );
         }
 

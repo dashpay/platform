@@ -3,7 +3,9 @@ use crate::consensus::state::document::document_delete_constraint_violated_error
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::methods::{
+    state_generated_paths_left_out, DocumentTypeBasicMethods,
+};
 use crate::data_contract::document_type::property_constraints::{
     data_with_referenced_documents, data_with_stored_properties, DocumentSystemValues,
     PropertyConstraint, SystemChange,
@@ -13,9 +15,13 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef, Index,
-    CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+    CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_BASE58_INDEX_KEY_LENGTH,
+    MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
+use crate::decision_proposal::{
+    decision_proposal_required_fund, is_decision_proposal, DECISION_PROPOSAL_FUND_NAME,
+};
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, TRANSFERRED_AT,
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
@@ -29,13 +35,13 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::{
     required_vote_resolution_fund, ContestedDocumentResourceVotePoll,
 };
-use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use chrono::Utc;
 use itertools::Itertools;
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
 };
+use platform_value::system_bytes::MAX_BASE58_IDENTIFIER_LENGTH;
 use platform_value::{Identifier, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
@@ -373,19 +379,24 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Figures out the prefunded voting balance (v0) for a document in a document type
+    // In place, type only: this v0 (every protocol version) returned the same poll wrapped in
+    // `VotePoll::ContestedDocumentResourceVotePoll`, the only variant it ever built. The poll
+    // and every check made on it are unchanged.
     fn contested_vote_poll_for_document_v0(
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, ProtocolError> {
         self.contested_vote_poll_for_document_properties_v0(document.properties(), platform_version)
     }
 
+    // In place, type only, as for `contested_vote_poll_for_document_v0`: the poll built below is
+    // the one this v0 always built, no longer wrapped in `VotePoll`.
     fn contested_vote_poll_for_document_properties_v0(
         &self,
         document_properties: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, ProtocolError> {
         self.indexes()
             .values()
             .find(|index| {
@@ -409,22 +420,21 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
-                // Identifier values are written one way from protocol version 14, so every
-                // contender of a contest names it with the same poll; before 14 they are taken
-                // as given, as they always were
+                // Every contender of a contest names it with the same poll: from protocol
+                // version 15 every index value is written the one way its property's type keys
+                // it, at protocol version 14 identifier values alone are written one way, and
+                // before 14 the values are taken as given
                 let index_values = index.extract_contested_values(
                     document_properties,
                     self.flattened_properties(),
                     platform_version,
                 )?;
-                Ok(VotePoll::ContestedDocumentResourceVotePoll(
-                    ContestedDocumentResourceVotePoll {
-                        contract_id: self.data_contract_id(),
-                        document_type_name: self.name().clone(),
-                        index_name: index.name.clone(),
-                        index_values,
-                    },
-                ))
+                Ok(ContestedDocumentResourceVotePoll {
+                    contract_id: self.data_contract_id(),
+                    document_type_name: self.name().clone(),
+                    index_name: index.name.clone(),
+                    index_values,
+                })
             })
             .transpose()
     }
@@ -692,12 +702,41 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         Ok(total_size)
     }
 
+    /// Generation 0 with each property sized by
+    /// [`DocumentPropertyType::saturating_max_byte_size`]: a string of 16384
+    /// or more characters without `maxBytes` has a byte bound past `u16::MAX`,
+    /// which generation 0 fails on with an overflow and this generation holds
+    /// at `u16::MAX`. Every other type is sized as generation 0 sizes it, and
+    /// the total saturates as generation 0's does.
+    fn max_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
+        let mut total_size = 0u16;
+
+        for document_property in self.flattened_properties().values() {
+            if let Some(size) = document_property
+                .property_type
+                .saturating_max_byte_size(platform_version)?
+            {
+                total_size = total_size.saturating_add(size);
+            }
+        }
+
+        Ok(total_size)
+    }
+
     /// Figures out the prefunded voting balance (v0) for a document in a document type
     fn prefunded_voting_balance_for_document_v0(
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Option<(String, Credits)> {
+        // A decision proposal (protocol version 15) states the decision proposal fund under its
+        // own type's name; it opens a yes/no poll, not a contest
+        if is_decision_proposal(&self.data_contract_id(), self.name()) {
+            return Some((
+                DECISION_PROPOSAL_FUND_NAME.to_string(),
+                decision_proposal_required_fund(platform_version),
+            ));
+        }
         self.indexes()
             .values()
             .find(|index| {
@@ -738,18 +777,17 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
             "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
+                // A text longer than any identifier's base 58 form is refused as decoding it
+                // refuses it, without decoding it. In place: the same result for every value
                 let bytes = value
-                    .to_identifier_bytes()
-                    .map_err(ProtocolError::ValueError)?;
-                if bytes.len() != DEFAULT_HASH_SIZE {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet(
-                            "expected system value to be 32 bytes long".to_string(),
-                        ),
+                    .to_identifier_bytes_unless_text_longer_than(MAX_BASE58_IDENTIFIER_LENGTH)
+                    .map_err(ProtocolError::ValueError)?
+                    .filter(|bytes| bytes.len() == DEFAULT_HASH_SIZE);
+                bytes.ok_or_else(|| {
+                    ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
+                        "expected system value to be 32 bytes long".to_string(),
                     ))
-                } else {
-                    Ok(bytes)
-                }
+                })
             }
             "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                 Ok(DocumentPropertyType::encode_date_timestamp(
@@ -775,16 +813,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                         DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
                     })?,
                 };
-                let bytes = property_type.encode_value_for_tree_keys(value)?;
-                if bytes.len() > MAX_INDEX_SIZE {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet(
-                            "value must be less than 256 bytes long".to_string(),
-                        ),
-                    ))
-                } else {
-                    Ok(bytes)
-                }
+                index_key(property_type, value)
             }
         }
     }
@@ -849,16 +878,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let Some(typed_array) = typed_array_property(self.flattened_properties(), key) else {
             return self.serialize_value_for_key_v0(key, value);
         };
-        let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
-        if bytes.len() > MAX_INDEX_SIZE {
-            Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet(
-                    "value must be less than 256 bytes long".to_string(),
-                ),
-            ))
-        } else {
-            Ok(bytes)
-        }
+        index_key(&typed_array.item_type, value)
     }
 
     /// Reads a key [`Self::serialize_value_for_key_v1`] wrote, a typed array
@@ -970,7 +990,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// `propertyConstraints` is evaluated against `data` in name order, and the first one
     /// broken is reported ([`Self::first_broken_property_constraint`]); for a write changing
     /// only some fields of a stored document (`system.changed_fields`), only the rules
-    /// reading what it changes. A rule reading the stored version's properties is judged
+    /// reading what it changes; for a client (`system.consensus` false), not the rules
+    /// reading a property generated from state that `data` leaves out
+    /// ([`state_generated_paths_left_out`]). A rule reading the stored version's properties is judged
     /// with them under `$old` ([`DocumentSystemValues::judged_data`]). A type without rules
     /// costs nothing.
     fn validate_property_constraints_v0(
@@ -981,6 +1003,14 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     where
         Self: DocumentTypeV2Getters,
     {
+        // A client does not know a property generated from state that the data leaves out,
+        // as the transition builders leave every one out: a rule reading one is not judged.
+        // Consensus generates them before it judges the write.
+        let unknown = if system.consensus {
+            Vec::new()
+        } else {
+            state_generated_paths_left_out(self.generated_from_fields(), data)
+        };
         // A rule reading a referenced document waits for the values, and no
         // total of it is read before
         let rules = self
@@ -992,6 +1022,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                         .changed_fields
                         .as_ref()
                         .is_none_or(|fields| constraint.reads_changed_fields(fields))
+                    && !unknown
+                        .iter()
+                        .any(|(path, _)| constraint.reads_property_at(path))
             });
         self.first_broken_property_constraint(
             rules,
@@ -1190,3 +1223,29 @@ impl DocumentTypeV0MethodsVersioned for DocumentTypeV2 {}
 impl DocumentTypeV0MethodsVersioned for DocumentType {}
 
 impl DocumentTypeV0MethodsVersioned for DocumentTypeRef<'_> {}
+
+/// The key a property of `property_type` gives `value` in an index, refused when longer than an
+/// index key may be ([`MAX_INDEX_SIZE`]). An identifier written as a base 58 text longer than
+/// [`MAX_BASE58_INDEX_KEY_LENGTH`] decodes to more bytes than that, so it is refused as decoding
+/// it refuses it, without decoding it, which takes time quadratic in the text's length. The
+/// result is the same as decoding it for every value, at every protocol version.
+fn index_key(
+    property_type: &DocumentPropertyType,
+    value: &Value,
+) -> Result<Vec<u8>, ProtocolError> {
+    let key = match (property_type, value) {
+        (
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_),
+            Value::Text(_),
+        ) => value
+            .to_identifier_bytes_unless_text_longer_than(MAX_BASE58_INDEX_KEY_LENGTH)
+            .map_err(ProtocolError::ValueError)?,
+        _ => Some(property_type.encode_value_for_tree_keys(value)?),
+    };
+    key.filter(|key| key.len() <= MAX_INDEX_SIZE)
+        .ok_or_else(|| {
+            ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
+                "value must be less than 256 bytes long".to_string(),
+            ))
+        })
+}

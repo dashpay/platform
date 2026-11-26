@@ -5,7 +5,9 @@
 //! These helpers build the transparent `extra_data` each transition binds into that sighash so the
 //! signing (client/builder) and verifying (consensus) sides commit to identical bytes. The byte
 //! layouts are consensus-critical and versioned via `dpp.methods.shielded_extra_sighash_data`; the
-//! credit pool's outputs-only bundles via `dpp.methods.credit_pool_bundle_binding`.
+//! credit pool's outputs-only bundles via `dpp.methods.credit_pool_bundle_binding`; and what the
+//! token bundle of an identity-less token pool transition binds after its own layout via
+//! `dpp.methods.token_pool_paid_fee_binding`.
 
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
@@ -18,6 +20,7 @@ use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKe
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
+use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -32,6 +35,9 @@ pub const TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE: u8 = 26;
 pub const TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE: u8 = 27;
 /// The state transition type byte the token bundle of a `TokenPurchaseFromShieldedPool` commits to.
 pub const TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE: u8 = 28;
+/// The state transition type byte the bundle of a `PrivateDocumentCreateFromShieldedPool`
+/// commits to.
+pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE: u8 = 29;
 
 /// Domain tag an outputs-only token pool bundle commits to. Unlike the three constants above
 /// these are not `StateTransitionType` bytes — every one of these bundles rides inside a batch
@@ -483,7 +489,8 @@ pub fn document_token_payment_extra_sighash_data_v0(
 
 /// Extra sighash data of the token bundle of a `TokenShieldedTransferWithShieldedFee`: the
 /// state transition type and the token id, so the bundle is pinned to one token pool and one
-/// transition kind.
+/// transition kind. Where the token bundle binds its fee bundle, the fee bundle's commitment
+/// follows (see [`token_pool_paid_fee_binding_extra_sighash_data`]).
 pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data(
     token_id: &[u8; 32],
     platform_version: &PlatformVersion,
@@ -510,7 +517,9 @@ pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(
 
 /// Extra sighash data of the token bundle of a `TokenUnshieldWithShieldedFee`: the state
 /// transition type, the token id, the recipient and the amount, so the bundle cannot be
-/// replayed against another token, recipient or amount.
+/// replayed against another token, recipient or amount. Where the token bundle binds its fee
+/// bundle, the fee bundle's commitment follows (see
+/// [`token_pool_paid_fee_binding_extra_sighash_data`]).
 pub fn token_unshield_with_shielded_fee_extra_sighash_data(
     token_id: &[u8; 32],
     recipient_id: &[u8; 32],
@@ -547,7 +556,9 @@ pub fn token_unshield_with_shielded_fee_extra_sighash_data_v0(
 }
 
 /// Extra sighash data of the token bundle of a `TokenPurchaseFromShieldedPool`: the state
-/// transition type, the token id, the token count and the agreed price.
+/// transition type, the token id, the token count and the agreed price. Where the token bundle
+/// binds its fee bundle, the fee bundle's commitment follows (see
+/// [`token_pool_paid_fee_binding_extra_sighash_data`]).
 pub fn token_purchase_from_shielded_pool_extra_sighash_data(
     token_id: &[u8; 32],
     token_count: u64,
@@ -580,6 +591,59 @@ pub fn token_purchase_from_shielded_pool_extra_sighash_data_v0(
     data.extend_from_slice(token_id);
     data.extend_from_slice(&token_count.to_le_bytes());
     data.extend_from_slice(&total_agreed_price.to_le_bytes());
+    data
+}
+
+/// Builds the transparent `extra_data` bound into a `PrivateDocumentCreateFromShieldedPool`'s
+/// platform sighash: the target contract, the private document type and every entry, so the
+/// bundle pays for these entries of this type and nothing else. Changing any byte of the target
+/// or of any entry, or the entries' number or order, invalidates the bundle.
+///
+/// The signing (SDK builder) and verifying (consensus) sides both call this function.
+pub fn private_document_create_from_shielded_pool_extra_sighash_data(
+    data_contract_id: &[u8; 32],
+    document_type_name: &str,
+    entries: &[BinaryData],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(
+            private_document_create_from_shielded_pool_extra_sighash_data_v0(
+                data_contract_id,
+                document_type_name,
+                entries,
+            ),
+        ),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "private_document_create_from_shielded_pool_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `state transition type (1, = 29) || SHA-256(data_contract_id (32) ||
+/// type name length (4, LE) || type name || entry count (4, LE) || for each entry, in order:
+/// its length (4, LE) || the entry)`, 33 bytes. Every variable-length part carries its length,
+/// so no two targets or entry lists share a preimage. Frozen.
+pub fn private_document_create_from_shielded_pool_extra_sighash_data_v0(
+    data_contract_id: &[u8; 32],
+    document_type_name: &str,
+    entries: &[BinaryData],
+) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(data_contract_id);
+    hasher.update((document_type_name.len() as u32).to_le_bytes());
+    hasher.update(document_type_name.as_bytes());
+    hasher.update((entries.len() as u32).to_le_bytes());
+    for entry in entries {
+        hasher.update((entry.len() as u32).to_le_bytes());
+        hasher.update(entry.as_slice());
+    }
+    let digest: [u8; 32] = hasher.finalize().into();
+    let mut data = Vec::with_capacity(1 + 32);
+    data.push(PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE);
+    data.extend_from_slice(&digest);
     data
 }
 
@@ -618,6 +682,51 @@ pub fn token_pool_fee_bundle_extra_sighash_data_v0(
     data.extend_from_slice(token_id);
     data.extend_from_slice(token_actions_digest);
     data
+}
+
+/// The extra sighash data of the token bundle of a `TokenShieldedTransferWithShieldedFee`,
+/// `TokenUnshieldWithShieldedFee` or `TokenPurchaseFromShieldedPool`, given the layout of its
+/// kind (`token_extra_sighash_data`, from that kind's builder above): the layout alone where the
+/// token bundle binds no fee bundle, followed by `fee_bundle_commitment`, the Orchard bundle
+/// commitment of the transition's fee bundle, from version 0.
+///
+/// The fee bundle binds a digest of the token bundle's actions
+/// ([`token_pool_fee_bundle_extra_sighash_data`]), so with the token bundle binding the fee
+/// bundle's commitment neither bundle can be paired with a bundle of different effects. The
+/// commitment covers the fee bundle's effecting data — its actions without their signatures, its
+/// flags, value balance and anchor — and not its proof or signatures. A builder therefore takes
+/// it from the fee bundle before proving it, signs the token bundle, and only then signs the fee
+/// bundle over the token bundle's signed actions.
+///
+/// Dispatches on `dpp.methods.token_pool_paid_fee_binding`, which the client builders and the
+/// consensus verifier both read.
+pub fn token_pool_paid_fee_binding_extra_sighash_data(
+    token_extra_sighash_data: Vec<u8>,
+    fee_bundle_commitment: &[u8; 32],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.token_pool_paid_fee_binding {
+        None => Ok(token_extra_sighash_data),
+        Some(0) => Ok(token_pool_paid_fee_binding_extra_sighash_data_v0(
+            token_extra_sighash_data,
+            fee_bundle_commitment,
+        )),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_pool_paid_fee_binding_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: the token bundle's own layout followed by the fee bundle's commitment (32).
+/// Frozen.
+pub fn token_pool_paid_fee_binding_extra_sighash_data_v0(
+    mut token_extra_sighash_data: Vec<u8>,
+    fee_bundle_commitment: &[u8; 32],
+) -> Vec<u8> {
+    token_extra_sighash_data.extend_from_slice(fee_bundle_commitment);
+    token_extra_sighash_data
 }
 
 /// Builds the transparent `extra_data` bound into a `TokenShieldedTransfer`'s platform sighash,
@@ -1264,6 +1373,62 @@ mod tests {
     }
 
     #[test]
+    fn should_append_the_fee_bundle_commitment_to_the_token_layouts_from_protocol_version_15() {
+        // Every byte here is consensus: the token bundles of protocol version 14 bind their own
+        // layout alone, those of later versions the fee bundle's commitment after it.
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        let latest = PlatformVersion::latest();
+        let commitment = [0xCC; 32];
+        let layouts = [
+            token_shielded_transfer_with_shielded_fee_extra_sighash_data(&[1u8; 32], latest)
+                .expect("transfer layout"),
+            token_unshield_with_shielded_fee_extra_sighash_data(
+                &[1u8; 32], &[2u8; 32], 300, latest,
+            )
+            .expect("unshield layout"),
+            token_purchase_from_shielded_pool_extra_sighash_data(&[1u8; 32], 5, 900, latest)
+                .expect("purchase layout"),
+        ];
+        for (layout, bound_length) in layouts.into_iter().zip([65, 105, 81]) {
+            assert_eq!(
+                token_pool_paid_fee_binding_extra_sighash_data(layout.clone(), &commitment, v14)
+                    .expect("protocol version 14"),
+                layout,
+                "protocol version 14 binds no fee bundle"
+            );
+            let bound =
+                token_pool_paid_fee_binding_extra_sighash_data(layout.clone(), &commitment, latest)
+                    .expect("latest protocol version");
+            assert_eq!(bound.len(), bound_length);
+            assert_eq!(&bound[..layout.len()], layout.as_slice());
+            assert_eq!(&bound[layout.len()..], &commitment);
+        }
+
+        let transfer = token_pool_paid_fee_binding_extra_sighash_data(
+            token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(&[1u8; 32]),
+            &commitment,
+            latest,
+        )
+        .expect("bound transfer");
+        let mut expected = vec![26u8];
+        expected.extend_from_slice(&[1u8; 32]);
+        expected.extend_from_slice(&[0xCC; 32]);
+        assert_eq!(transfer, expected);
+    }
+
+    #[test]
+    fn should_refuse_an_unknown_fee_binding_version() {
+        // Neither side may guess: a builder that bound one layout while the verifier rebuilt
+        // another would have every honest token pool transition refused.
+        let mut version = PlatformVersion::latest().clone();
+        version.dpp.methods.token_pool_paid_fee_binding = Some(1);
+        assert_matches::assert_matches!(
+            token_pool_paid_fee_binding_extra_sighash_data(vec![26], &[0u8; 32], &version),
+            Err(ProtocolError::UnknownVersionMismatch { received: 1, .. })
+        );
+    }
+
+    #[test]
     fn token_burn_from_pool_layout_is_token_burner_amount() {
         let data = token_burn_from_pool_extra_sighash_data_v0(&[1u8; 32], &[2u8; 32], 300);
         assert_eq!(data.len(), 72);
@@ -1413,6 +1578,86 @@ mod tests {
                 StateTransitionType::try_from(tag).is_err(),
                 "state transition type {tag:#04x} now collides with an outputs-only bundle tag"
             );
+        }
+    }
+
+    mod private_document_create_from_shielded_pool {
+        use super::*;
+        use platform_value::BinaryData;
+
+        fn data(contract: [u8; 32], type_name: &str, entries: &[BinaryData]) -> Vec<u8> {
+            private_document_create_from_shielded_pool_extra_sighash_data(
+                &contract,
+                type_name,
+                entries,
+                PlatformVersion::latest(),
+            )
+            .expect("version 0")
+        }
+
+        #[test]
+        fn should_lead_with_type_29_and_hash_the_length_prefixed_target_and_entries() {
+            let entries = vec![
+                BinaryData::new(vec![1, 2, 3]),
+                BinaryData::new(vec![4, 5, 6]),
+            ];
+            let mut preimage = vec![9u8; 32];
+            preimage.extend_from_slice(&4u32.to_le_bytes());
+            preimage.extend_from_slice(b"note");
+            preimage.extend_from_slice(&2u32.to_le_bytes());
+            for entry in &entries {
+                preimage.extend_from_slice(&3u32.to_le_bytes());
+                preimage.extend_from_slice(entry.as_slice());
+            }
+            let mut expected = vec![PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE];
+            expected.extend_from_slice(&Sha256::digest(&preimage));
+            assert_eq!(data([9; 32], "note", &entries), expected);
+            assert_eq!(expected[0], 29);
+            assert_eq!(expected.len(), 33);
+        }
+
+        #[test]
+        fn should_change_with_the_contract_the_type_an_entry_byte_and_the_entries_order_and_split()
+        {
+            let a = BinaryData::new(vec![1, 2]);
+            let b = BinaryData::new(vec![3, 4]);
+            let base = data([9; 32], "note", &[a.clone(), b.clone()]);
+            assert_ne!(base, data([8; 32], "note", &[a.clone(), b.clone()]));
+            assert_ne!(base, data([9; 32], "notes", &[a.clone(), b.clone()]));
+            assert_ne!(
+                base,
+                data([9; 32], "note", &[a.clone(), BinaryData::new(vec![3, 5])])
+            );
+            assert_ne!(base, data([9; 32], "note", &[b.clone(), a.clone()]));
+            // The same bytes split into a different number of entries.
+            assert_ne!(
+                base,
+                data([9; 32], "note", &[BinaryData::new(vec![1, 2, 3, 4])])
+            );
+            // The type name's length prefix keeps it apart from the entries.
+            assert_ne!(
+                data([9; 32], "ab", &[BinaryData::new(vec![1])]),
+                data([9; 32], "a", &[BinaryData::new(vec![b'b', 1])])
+            );
+        }
+
+        #[test]
+        fn should_not_collide_with_an_outputs_only_bundle_tag() {
+            assert!(
+                StateTransitionType::try_from(PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE)
+                    .is_ok_and(|t| t == StateTransitionType::PrivateDocumentCreateFromShieldedPool)
+            );
+            for tag in [
+                TOKEN_SHIELD_BUNDLE_TAG,
+                TOKEN_MINT_TO_POOL_BUNDLE_TAG,
+                TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
+                TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG,
+                SHIELD_BUNDLE_TAG,
+                SHIELD_FROM_IDENTITY_BUNDLE_TAG,
+                SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+            ] {
+                assert_ne!(tag, PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE);
+            }
         }
     }
 

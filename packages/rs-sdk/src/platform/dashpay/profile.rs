@@ -1,0 +1,906 @@
+//! DashPay profile create, update and fetch
+//!
+//! Implements the DIP-15 `profile` document. Avatar image hashing is the
+//! caller's job: [`ProfileFields`] carries the precomputed SHA-256 `avatarHash`
+//! and dHash `avatarFingerprint`, so the SDK needs no image decoder.
+
+use crate::platform::documents::document_query::DocumentQuery;
+use crate::platform::documents::transitions::{
+    DocumentCreateTransitionBuilder, DocumentReplaceTransitionBuilder,
+};
+use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::waitable::wait_for_document_and_owner_balance_with_metadata;
+use crate::platform::FetchMany;
+use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
+use dpp::data_contract::DataContract;
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION};
+use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
+use dpp::platform_value::{platform_value, Value};
+use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
+use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
+use drive::query::{OrderClause, WhereClause, WhereOperator};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+const PROFILE_DOCUMENT_TYPE: &str = "profile";
+
+/// Most owners one profile query can carry: the Platform `In` clause
+/// cardinality cap, which is also the document-query limit.
+pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
+
+/// The profile fields a caller sets. `None` (or [`PaymentAddressUpdate::Keep`])
+/// leaves the field alone on [`Sdk::update_profile`] and omits it on
+/// [`Sdk::create_profile`].
+///
+/// `avatar_hash` and `avatar_fingerprint` are computed by the caller from the
+/// avatar image bytes. An update that changes `avatar_url` must set both hashes
+/// with it, and an update sets the two hashes together. Only the payment
+/// addresses can be cleared, through [`PaymentAddressUpdate::Remove`]. Address
+/// bytes are sent as given; Platform enforces their length, and decoding them
+/// (a transparent address type, an Orchard address) is the caller's check.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProfileFields {
+    /// Display name (1 to 25 chars per DIP-15)
+    pub display_name: Option<String>,
+    /// Public message, the bio (max 140 chars per DIP-15)
+    pub public_message: Option<String>,
+    /// Avatar URL (HTTPS, max 2048 chars per DIP-15)
+    pub avatar_url: Option<String>,
+    /// SHA-256 hash of the avatar image bytes
+    pub avatar_hash: Option<[u8; 32]>,
+    /// dHash perceptual fingerprint of the avatar image
+    pub avatar_fingerprint: Option<[u8; 8]>,
+    /// `corePaymentAddress`: version byte and HASH160
+    pub core_payment_address: PaymentAddressUpdate,
+    /// `platformPaymentAddress`: version byte and HASH160
+    pub platform_payment_address: PaymentAddressUpdate,
+    /// `shieldedAddress`: raw 43-byte Orchard address
+    pub shielded_address: PaymentAddressUpdate,
+}
+
+/// A change to one profile payment address. The default leaves a published
+/// address alone, so omitting the field never removes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PaymentAddressUpdate {
+    /// Leave the address as it is
+    #[default]
+    Keep,
+    /// Publish these address bytes
+    Set(Vec<u8>),
+    /// Remove the published address
+    Remove,
+}
+
+impl ProfileFields {
+    /// Overlay the fields that are set onto `properties`, leaving the rest as
+    /// they are.
+    fn overlay(self, mut properties: BTreeMap<String, Value>) -> BTreeMap<String, Value> {
+        if let Some(name) = self.display_name {
+            properties.insert("displayName".to_string(), Value::Text(name));
+        }
+        if let Some(message) = self.public_message {
+            properties.insert("publicMessage".to_string(), Value::Text(message));
+        }
+        if let Some(url) = self.avatar_url {
+            properties.insert("avatarUrl".to_string(), Value::Text(url));
+        }
+        if let Some(hash) = self.avatar_hash {
+            properties.insert("avatarHash".to_string(), Value::Bytes32(hash));
+        }
+        if let Some(fingerprint) = self.avatar_fingerprint {
+            properties.insert(
+                "avatarFingerprint".to_string(),
+                Value::Bytes(fingerprint.to_vec()),
+            );
+        }
+        for (field, update) in [
+            ("corePaymentAddress", self.core_payment_address),
+            ("platformPaymentAddress", self.platform_payment_address),
+            ("shieldedAddress", self.shielded_address),
+        ] {
+            match update {
+                PaymentAddressUpdate::Keep => {}
+                PaymentAddressUpdate::Set(bytes) => {
+                    properties.insert(field.to_string(), Value::Bytes(bytes));
+                }
+                PaymentAddressUpdate::Remove => {
+                    properties.remove(field);
+                }
+            }
+        }
+        properties
+    }
+}
+
+impl Sdk {
+    /// Fetch the `profile` documents of `owner_ids` (unique), keyed by owner
+    /// id, in queries of at most 100 owners each. An owner without a profile
+    /// is missing from the result. A duplicated owner is rejected with
+    /// [`Error::Generic`] before any query.
+    ///
+    /// `dashpay_contract` must be the DashPay system data contract.
+    pub async fn get_profiles(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_ids: &[Identifier],
+    ) -> Result<BTreeMap<Identifier, Document>, Error> {
+        self.ensure_dashpay_contract(dashpay_contract)?;
+        ensure_unique_owners(owner_ids)?;
+        let mut profiles = BTreeMap::new();
+        for chunk in owner_ids.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
+            profiles.extend(
+                self.fetch_profile_documents(profiles_query(dashpay_contract, chunk)?)
+                    .await?,
+            );
+        }
+        Ok(profiles)
+    }
+
+    /// Create the profile document of `owner_id` from `fields`.
+    ///
+    /// `signing_key` must be a HIGH or CRITICAL authentication key of the
+    /// owner. Returns the document as confirmed by Platform.
+    pub async fn create_profile<S: Signer<IdentityPublicKey>>(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_id: Identifier,
+        fields: ProfileFields,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<Document, Error> {
+        self.create_profile_with_owner_balance_and_metadata(
+            dashpay_contract,
+            owner_id,
+            fields,
+            signing_key,
+            signer,
+        )
+        .await
+        .map(|(document, _owner_balance, _metadata)| document)
+    }
+
+    /// [`Self::create_profile`] that also returns the owner's credit balance
+    /// after the write, when the proof carries it (from protocol version 14),
+    /// and the proof's verified response metadata, whose height is the block
+    /// the balance is a snapshot at.
+    pub async fn create_profile_with_owner_balance_and_metadata<S: Signer<IdentityPublicKey>>(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_id: Identifier,
+        fields: ProfileFields,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        self.ensure_dashpay_contract(dashpay_contract)?;
+        let properties = sanitized_properties(dashpay_contract, fields.overlay(BTreeMap::new()))?;
+
+        let entropy: [u8; 32] = StdRng::from_os_rng().random();
+        let id = Document::generate_document_id_v0(
+            &dashpay_contract.id(),
+            &owner_id,
+            PROFILE_DOCUMENT_TYPE,
+            entropy.as_slice(),
+        );
+
+        let builder = DocumentCreateTransitionBuilder::new(
+            Arc::clone(dashpay_contract),
+            PROFILE_DOCUMENT_TYPE.to_string(),
+            profile_document(id, owner_id, properties, None),
+            entropy,
+        );
+        let state_transition = builder
+            .sign(self, signing_key, signer, self.version())
+            .await?;
+        self.put_profile_write(state_transition).await
+    }
+
+    /// Update the existing profile document of `owner_id`: read it, overlay the
+    /// `fields` that are set so a partial update keeps the other fields,
+    /// increment the revision and replace it.
+    ///
+    /// The two avatar hashes are set together, and a changed `avatar_url` comes
+    /// with both hashes; otherwise the call fails before anything is signed. An
+    /// unchanged `avatar_url` may be sent without hashes, which keeps the
+    /// existing ones.
+    ///
+    /// `signing_key` must be a HIGH or CRITICAL authentication key of the
+    /// owner. Returns the merged document as confirmed by Platform. Fails if
+    /// the owner has no profile.
+    pub async fn update_profile<S: Signer<IdentityPublicKey>>(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_id: Identifier,
+        fields: ProfileFields,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<Document, Error> {
+        self.update_profile_with_owner_balance_and_metadata(
+            dashpay_contract,
+            owner_id,
+            fields,
+            signing_key,
+            signer,
+        )
+        .await
+        .map(|(document, _owner_balance, _metadata)| document)
+    }
+
+    /// [`Self::update_profile`] that also returns the owner's credit balance
+    /// after the write, when the proof carries it (from protocol version 14),
+    /// and the proof's verified response metadata, whose height is the block
+    /// the balance is a snapshot at.
+    pub async fn update_profile_with_owner_balance_and_metadata<S: Signer<IdentityPublicKey>>(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_id: Identifier,
+        fields: ProfileFields,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        let existing = self
+            .get_profiles(dashpay_contract, &[owner_id])
+            .await?
+            .remove(&owner_id)
+            .ok_or_else(|| {
+                Error::Generic("No existing profile document found to update".to_string())
+            })?;
+
+        let builder = DocumentReplaceTransitionBuilder::new(
+            Arc::clone(dashpay_contract),
+            PROFILE_DOCUMENT_TYPE.to_string(),
+            replacement_document(&existing, fields, dashpay_contract, self.version())?,
+        );
+        let state_transition = builder
+            .sign(self, signing_key, signer, self.version())
+            .await?;
+        self.put_profile_write(state_transition).await
+    }
+
+    /// Broadcast a signed profile write and wait for its proof: the profile
+    /// document it wrote, the owner's balance the proof carries and the
+    /// proof's verified metadata. The DashPay `profile` type keeps a row (it
+    /// is not indexOnly), so the proof must show that this write executed.
+    async fn put_profile_write(
+        &self,
+        state_transition: StateTransition,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        state_transition.broadcast(self, None).await?;
+        wait_for_document_and_owner_balance_with_metadata(self, state_transition, None, true).await
+    }
+
+    async fn fetch_profile_documents(
+        &self,
+        query: DocumentQuery,
+    ) -> Result<BTreeMap<Identifier, Document>, Error> {
+        Ok(Document::fetch_many(self, query)
+            .await?
+            .into_values()
+            .flatten()
+            .map(|document| (document.owner_id(), document))
+            .collect())
+    }
+
+    /// The profile queries and transitions are built against the contract the
+    /// caller passes in, so it must be the DashPay system contract.
+    fn ensure_dashpay_contract(&self, dashpay_contract: &DataContract) -> Result<(), Error> {
+        let expected = self.get_dashpay_contract_id()?;
+        if dashpay_contract.id() != expected {
+            return Err(Error::Generic(format!(
+                "expected the DashPay contract {expected}, got {}",
+                dashpay_contract.id()
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Refuse a duplicated owner, which Platform rejects in an `In` clause.
+fn ensure_unique_owners(owner_ids: &[Identifier]) -> Result<(), Error> {
+    let mut seen = BTreeSet::new();
+    if let Some(duplicate) = owner_ids.iter().find(|id| !seen.insert(**id)) {
+        return Err(Error::Generic(format!(
+            "duplicate profile owner {duplicate} in query"
+        )));
+    }
+    Ok(())
+}
+
+/// The replacement of `existing`: same id and owner, `fields` overlaid on its
+/// properties so a partial update keeps the others, revision incremented.
+///
+/// Refuses two patches the schema cannot see on the merged document, because
+/// the stored avatar fills the gap, and that would leave a hash of a different
+/// image under the avatar: one of the two hashes alone, and a changed
+/// `avatar_url` without both.
+///
+/// Also refuses an update the contract's `minProperties` bound rejects: one
+/// that removes the profile's last property (for example the only payment
+/// address of a profile that has nothing else).
+fn replacement_document(
+    existing: &Document,
+    fields: ProfileFields,
+    dashpay_contract: &DataContract,
+    platform_version: &PlatformVersion,
+) -> Result<Document, Error> {
+    if fields.avatar_hash.is_some() != fields.avatar_fingerprint.is_some() {
+        return Err(Error::Generic(
+            "avatarHash and avatarFingerprint must be set together".to_string(),
+        ));
+    }
+    let url_changed = fields.avatar_url.as_deref().is_some_and(|url| {
+        existing
+            .properties()
+            .get("avatarUrl")
+            .and_then(Value::as_str)
+            != Some(url)
+    });
+    if url_changed && fields.avatar_hash.is_none() {
+        return Err(Error::Generic(
+            "a changed avatarUrl needs its avatarHash and avatarFingerprint".to_string(),
+        ));
+    }
+    let properties = sanitized_properties(
+        dashpay_contract,
+        fields.overlay(existing.properties().clone()),
+    )?;
+    // An update can remove the profile's last property, which the profile
+    // schema may not allow. Whether it does is the contract's to say, so the
+    // verdict comes from dpp's check of the merged properties against the
+    // contract given; only its message is replaced here, before anything is
+    // signed, with what to do instead. Every other verdict is left to
+    // Platform, as before.
+    let validation = dashpay_contract.validate_document_properties(
+        PROFILE_DOCUMENT_TYPE,
+        Value::from(properties.clone()),
+        &DocumentSystemValues::default(),
+        platform_version,
+    )?;
+    if validation.errors.iter().any(is_too_few_properties) {
+        return Err(Error::Generic(
+            "this update would remove the profile's last field, and a profile needs at least \
+             one; set another field in the same update"
+                .to_string(),
+        ));
+    }
+    let revision = existing.revision().unwrap_or(INITIAL_REVISION) + 1;
+    Ok(profile_document(
+        existing.id(),
+        existing.owner_id(),
+        properties,
+        Some(revision),
+    ))
+}
+
+/// Whether `error` is the schema's `minProperties` bound refusing a document
+/// with too few properties.
+fn is_too_few_properties(error: &ConsensusError) -> bool {
+    matches!(
+        error,
+        ConsensusError::BasicError(BasicError::JsonSchemaError(schema_error))
+            if schema_error.keyword() == "minProperties"
+    )
+}
+
+/// Normalize `properties` to the representations the profile schema expects.
+fn sanitized_properties(
+    dashpay_contract: &DataContract,
+    mut properties: BTreeMap<String, Value>,
+) -> Result<BTreeMap<String, Value>, Error> {
+    dashpay_contract
+        .document_type_for_name(PROFILE_DOCUMENT_TYPE)
+        .map_err(|e| Error::Protocol(e.into()))?
+        .sanitize_document_properties(&mut properties);
+    Ok(properties)
+}
+
+fn profile_document(
+    id: Identifier,
+    owner_id: Identifier,
+    properties: BTreeMap<String, Value>,
+    revision: Option<u64>,
+) -> Document {
+    Document::V0(DocumentV0 {
+        id,
+        owner_id,
+        properties,
+        revision,
+        ..Default::default()
+    })
+}
+
+/// Build the `$ownerId In [owner_ids]` profile query.
+///
+/// `In` is a range operator, so DAPI requires a matching `orderBy` on the
+/// range field or it rejects the query with "missing order by for range". The
+/// `$ownerId` index is unique, so ordering does not change the result set
+/// (at most one profile per owner).
+fn profiles_query(
+    dashpay_contract: &Arc<DataContract>,
+    owner_ids: &[Identifier],
+) -> Result<DocumentQuery, Error> {
+    Ok(
+        DocumentQuery::new(Arc::clone(dashpay_contract), PROFILE_DOCUMENT_TYPE)?
+            .with_where(WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(owner_ids.iter().map(|id| platform_value!(id)).collect()),
+            })
+            .with_order_by(OrderClause {
+                field: "$ownerId".to_string(),
+                ascending: true,
+            })
+            .with_limit(MAX_PROFILE_OWNERS_PER_QUERY as u32),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::system_data_contracts::load_system_data_contract;
+
+    fn avatar_fields() -> ProfileFields {
+        ProfileFields {
+            avatar_url: Some("https://x/a.png".into()),
+            avatar_hash: Some([7u8; 32]),
+            avatar_fingerprint: Some([1, 2, 3, 4, 5, 6, 7, 8]),
+            ..Default::default()
+        }
+    }
+
+    fn existing_full() -> BTreeMap<String, Value> {
+        ProfileFields {
+            display_name: Some("Alice".into()),
+            public_message: Some("hello world".into()),
+            ..avatar_fields()
+        }
+        .overlay(BTreeMap::new())
+    }
+
+    fn text<'a>(properties: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
+        properties.get(key).and_then(|v| v.as_str())
+    }
+
+    /// A stored profile whose only property is a shielded payment address.
+    fn address_only_profile() -> Document {
+        profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            BTreeMap::from([("shieldedAddress".to_string(), Value::Bytes(vec![3; 43]))]),
+            Some(1),
+        )
+    }
+
+    fn dashpay_contract() -> DataContract {
+        load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::Dashpay,
+            PlatformVersion::latest(),
+        )
+        .expect("DashPay system contract loads")
+    }
+
+    fn owner(n: usize) -> Identifier {
+        let mut bytes = [0u8; 32];
+        bytes[..8].copy_from_slice(&(n as u64 + 1).to_be_bytes());
+        Identifier::new(bytes)
+    }
+
+    /// A partial update (only `displayName`) yields a replacement of the same
+    /// document with the sibling fields kept and the revision incremented.
+    #[test]
+    fn should_replace_the_same_document_keeping_sibling_fields() {
+        let (id, owner) = (Identifier::new([0xD1; 32]), Identifier::new([0x0E; 32]));
+        let existing = profile_document(id, owner, existing_full(), Some(3));
+        let fields = ProfileFields {
+            display_name: Some("Alice 2".to_string()),
+            ..Default::default()
+        };
+
+        let replacement = replacement_document(
+            &existing,
+            fields,
+            &dashpay_contract(),
+            PlatformVersion::latest(),
+        )
+        .unwrap();
+
+        assert_eq!(replacement.id(), id);
+        assert_eq!(replacement.owner_id(), owner);
+        assert_eq!(replacement.revision(), Some(4));
+        let merged = replacement.properties();
+        assert_eq!(text(merged, "displayName"), Some("Alice 2"));
+        assert_eq!(text(merged, "publicMessage"), Some("hello world"));
+        assert_eq!(text(merged, "avatarUrl"), Some("https://x/a.png"));
+        assert_eq!(merged.get("avatarHash"), Some(&Value::Bytes32([7u8; 32])));
+        assert_eq!(
+            merged.get("avatarFingerprint"),
+            Some(&Value::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8]))
+        );
+    }
+
+    /// Each payment address is kept, replaced or removed on its own, and an
+    /// update that names none of them keeps all three.
+    #[test]
+    fn should_keep_replace_and_remove_payment_addresses_independently() {
+        let (id, owner) = (Identifier::new([0xD2; 32]), Identifier::new([0x0F; 32]));
+        let contract = dashpay_contract();
+        let original = ProfileFields {
+            display_name: Some("Alice".into()),
+            core_payment_address: PaymentAddressUpdate::Set(vec![0; 21]),
+            platform_payment_address: PaymentAddressUpdate::Set(vec![1; 21]),
+            shielded_address: PaymentAddressUpdate::Set(vec![2; 43]),
+            ..Default::default()
+        }
+        .overlay(BTreeMap::new());
+        let existing = profile_document(id, owner, original.clone(), Some(1));
+
+        let renamed = ProfileFields {
+            display_name: Some("Alice II".into()),
+            ..Default::default()
+        };
+        let renamed =
+            replacement_document(&existing, renamed, &contract, PlatformVersion::latest()).unwrap();
+        for field in [
+            "corePaymentAddress",
+            "platformPaymentAddress",
+            "shieldedAddress",
+        ] {
+            assert_eq!(
+                renamed.properties().get(field).map(Value::to_bytes),
+                original.get(field).map(Value::to_bytes),
+                "{field}"
+            );
+        }
+
+        let changed = ProfileFields {
+            shielded_address: PaymentAddressUpdate::Set(vec![3; 43]),
+            core_payment_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        let changed =
+            replacement_document(&renamed, changed, &contract, PlatformVersion::latest()).unwrap();
+        let merged = changed.properties();
+        assert!(!merged.contains_key("corePaymentAddress"));
+        assert_eq!(
+            merged.get("platformPaymentAddress").map(Value::to_bytes),
+            Some(Ok(vec![1; 21]))
+        );
+        assert_eq!(
+            merged.get("shieldedAddress").map(Value::to_bytes),
+            Some(Ok(vec![3; 43]))
+        );
+        assert_eq!(text(merged, "displayName"), Some("Alice II"));
+    }
+
+    /// Removing an address on create just leaves it out.
+    #[test]
+    fn should_omit_a_removed_payment_address_on_create() {
+        let fields = ProfileFields {
+            display_name: Some("Alice".into()),
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        let properties = fields.overlay(BTreeMap::new());
+        assert_eq!(properties.len(), 1);
+        assert_eq!(text(&properties, "displayName"), Some("Alice"));
+    }
+
+    /// A supplied avatar hash and fingerprint replace the existing ones.
+    #[test]
+    fn should_replace_the_avatar_when_supplied() {
+        let replaced = ProfileFields {
+            avatar_hash: Some([9u8; 32]),
+            avatar_fingerprint: Some([9u8; 8]),
+            ..Default::default()
+        }
+        .overlay(existing_full());
+        assert_eq!(replaced.get("avatarHash"), Some(&Value::Bytes32([9u8; 32])));
+        assert_eq!(
+            replaced.get("avatarFingerprint"),
+            Some(&Value::Bytes(vec![9u8; 8]))
+        );
+    }
+
+    /// An update must not replace only one of the two hashes, though the
+    /// stored avatar keeps the merged document complete; replacing the whole
+    /// avatar, an unchanged URL on its own, or only unrelated fields stays
+    /// allowed.
+    #[test]
+    fn should_reject_an_update_with_one_hash() {
+        let existing = profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            existing_full(),
+            Some(3),
+        );
+        let replace = |fields: ProfileFields| {
+            replacement_document(
+                &existing,
+                fields,
+                &dashpay_contract(),
+                PlatformVersion::latest(),
+            )
+        };
+
+        for allowed in [
+            avatar_fields(),
+            ProfileFields {
+                avatar_url: None,
+                ..avatar_fields()
+            },
+            ProfileFields {
+                avatar_hash: None,
+                avatar_fingerprint: None,
+                ..avatar_fields()
+            },
+            ProfileFields {
+                public_message: Some("hi".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(replace(allowed.clone()).is_ok(), "{allowed:?}");
+        }
+        for one_hash in [
+            ProfileFields {
+                avatar_fingerprint: None,
+                ..avatar_fields()
+            },
+            ProfileFields {
+                avatar_hash: Some([9u8; 32]),
+                ..Default::default()
+            },
+        ] {
+            assert!(
+                matches!(replace(one_hash.clone()), Err(Error::Generic(_))),
+                "{one_hash:?}"
+            );
+        }
+    }
+
+    /// A profile holding only a payment address cannot have it removed on
+    /// its own where the contract requires a property: the document would be
+    /// left without one. Removing it while setting another field is fine.
+    /// Checked on both protocol versions whose DashPay profile has payment
+    /// addresses: 14 reports the bound through the JSON Schema validator and
+    /// the latest through the native one.
+    #[test]
+    fn should_refuse_an_update_that_removes_the_last_profile_field() {
+        for platform_version in [
+            PlatformVersion::get(14).expect("protocol version 14"),
+            PlatformVersion::latest(),
+        ] {
+            let contract = load_system_data_contract(
+                dpp::data_contracts::SystemDataContract::Dashpay,
+                platform_version,
+            )
+            .expect("DashPay system contract loads");
+            let existing = address_only_profile();
+            let replace = |fields: ProfileFields| {
+                replacement_document(&existing, fields, &contract, platform_version)
+            };
+
+            let refused = replace(ProfileFields {
+                shielded_address: PaymentAddressUpdate::Remove,
+                ..Default::default()
+            });
+            assert!(
+                matches!(
+                    refused,
+                    Err(Error::Generic(ref message)) if message.contains("last field")
+                ),
+                "protocol version {}: {refused:?}",
+                platform_version.protocol_version
+            );
+
+            let replaced = replace(ProfileFields {
+                display_name: Some("Alice".into()),
+                shielded_address: PaymentAddressUpdate::Remove,
+                ..Default::default()
+            })
+            .expect("another field keeps the profile non-empty");
+            assert_eq!(replaced.properties().len(), 1);
+            assert_eq!(text(replaced.properties(), "displayName"), Some("Alice"));
+        }
+    }
+
+    /// The refusal is the contract's verdict, not the SDK's: under a profile
+    /// schema without the `minProperties` bound, removing the last field
+    /// gives an empty replacement.
+    #[test]
+    fn should_allow_removing_the_last_profile_field_when_the_contract_permits_it() {
+        let platform_version = PlatformVersion::latest();
+        let mut contract = dashpay_contract();
+        let mut schema = contract
+            .document_type_for_name(PROFILE_DOCUMENT_TYPE)
+            .expect("the profile type")
+            .schema()
+            .clone();
+        schema
+            .remove("minProperties")
+            .expect("the profile schema bounds its property count");
+        contract
+            .set_document_schema(
+                PROFILE_DOCUMENT_TYPE,
+                schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("the schema without the bound is valid");
+
+        let replaced = replacement_document(
+            &address_only_profile(),
+            ProfileFields {
+                shielded_address: PaymentAddressUpdate::Remove,
+                ..Default::default()
+            },
+            &contract,
+            platform_version,
+        )
+        .expect("the contract permits an empty profile");
+        assert!(replaced.properties().is_empty());
+    }
+
+    /// A changed avatar URL must not keep the old hashes under it, but the
+    /// unchanged URL the app resends on a text-only edit keeps its hashes.
+    #[test]
+    fn should_require_hashes_only_for_a_changed_avatar_url() {
+        let existing = profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            existing_full(),
+            Some(3),
+        );
+        let replace = |fields: ProfileFields| {
+            replacement_document(
+                &existing,
+                fields,
+                &dashpay_contract(),
+                PlatformVersion::latest(),
+            )
+        };
+        let new_url = Some("https://x/b.png".to_string());
+
+        assert!(matches!(
+            replace(ProfileFields {
+                avatar_url: new_url.clone(),
+                ..Default::default()
+            }),
+            Err(Error::Generic(_))
+        ));
+
+        let unchanged = replace(ProfileFields {
+            display_name: Some("Alice 2".into()),
+            avatar_url: Some("https://x/a.png".into()),
+            ..Default::default()
+        })
+        .expect("an unchanged URL needs no hashes");
+        assert_eq!(
+            unchanged.properties().get("avatarHash"),
+            Some(&Value::Bytes32([7u8; 32]))
+        );
+
+        let changed = replace(ProfileFields {
+            avatar_url: new_url,
+            avatar_hash: Some([9u8; 32]),
+            avatar_fingerprint: Some([9u8; 8]),
+            ..Default::default()
+        })
+        .expect("a changed URL with its hashes");
+        assert_eq!(
+            text(changed.properties(), "avatarUrl"),
+            Some("https://x/b.png")
+        );
+        assert_eq!(
+            changed.properties().get("avatarHash"),
+            Some(&Value::Bytes32([9u8; 32]))
+        );
+    }
+
+    #[test]
+    fn should_reject_duplicated_profile_owners() {
+        assert!(ensure_unique_owners(&[]).is_ok());
+        assert!(ensure_unique_owners(&[owner(0), owner(1)]).is_ok());
+        assert!(matches!(
+            ensure_unique_owners(&[owner(0), owner(1), owner(0)]),
+            Err(Error::Generic(_))
+        ));
+    }
+
+    /// DAPI rejects any query that uses a range where-operator without a
+    /// matching `orderBy` on the range field ("missing order by for range").
+    /// The profile query filters by `$ownerId In [...]`, a range operator, so
+    /// every range clause it builds must carry an `orderBy` on its field.
+    /// Guarded against vacuous truth: the query must actually contain a range
+    /// clause, otherwise the invariant would pass trivially.
+    #[test]
+    fn should_order_the_profile_query_by_every_range_field() {
+        let contract = Arc::new(dashpay_contract());
+
+        let query = profiles_query(&contract, &[owner(0), owner(1)]).unwrap();
+
+        assert!(
+            query.where_clauses.iter().any(|wc| wc.operator.is_range()),
+            "expected a range where-clause (e.g. $ownerId In [...])"
+        );
+        for wc in &query.where_clauses {
+            if wc.operator.is_range() {
+                assert!(
+                    query.order_by_clauses.iter().any(|oc| oc.field == wc.field),
+                    "range clause on `{}` has no matching orderBy; DAPI rejects \
+                     this with \"missing order by for range\"",
+                    wc.field
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "mocks")]
+    mod with_mock_sdk {
+        use super::*;
+        use crate::query_types::Documents;
+        use dpp::data_contract::accessors::v0::DataContractV0Setters;
+
+        /// More than 100 owners are fetched in queries of at most 100 each and
+        /// merged. The mock answers only the three expected chunk queries, so a
+        /// single oversized query would fail.
+        #[tokio::test]
+        async fn should_fetch_profiles_in_chunks_of_at_most_one_hundred_owners() {
+            let contract = Arc::new(dashpay_contract());
+            let owners: Vec<Identifier> = (0..250).map(owner).collect();
+            let mut sdk = Sdk::new_mock();
+
+            for chunk in owners.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
+                let first = chunk[0];
+                let document = profile_document(
+                    Identifier::new([first.to_buffer()[7]; 32]),
+                    first,
+                    existing_full(),
+                    Some(1),
+                );
+                let answer = Documents::from([(document.id(), Some(document))]);
+                sdk.mock()
+                    .expect_fetch_many::<Identifier, Document, _, Documents>(
+                        profiles_query(&contract, chunk).unwrap(),
+                        Some(answer),
+                    )
+                    .await
+                    .expect("chunk expectation");
+            }
+
+            let profiles = sdk.get_profiles(&contract, &owners).await.unwrap();
+
+            assert_eq!(
+                profiles.keys().copied().collect::<Vec<_>>(),
+                vec![owner(0), owner(100), owner(200)]
+            );
+        }
+
+        /// A contract that is not the DashPay system contract is refused before
+        /// any query is made.
+        #[tokio::test]
+        async fn should_reject_a_contract_that_is_not_the_dashpay_contract() {
+            let mut other = dashpay_contract();
+            other.set_id(Identifier::new([0x42; 32]));
+
+            let result = Sdk::new_mock()
+                .get_profiles(&Arc::new(other), &[owner(0)])
+                .await;
+
+            assert!(matches!(result, Err(Error::Generic(_))));
+        }
+    }
+}

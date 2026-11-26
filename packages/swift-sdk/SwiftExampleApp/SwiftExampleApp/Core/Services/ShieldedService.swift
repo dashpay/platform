@@ -71,6 +71,30 @@ class ShieldedService: ObservableObject {
     /// Last error from a shielded operation. Cleared on a successful
     /// pass.
     @Published var lastError: String?
+    /// Set when Rust refused a Clear because a shielded operation is in
+    /// flight. Kept apart from `lastError` because a refused Clear leaves
+    /// sync running, and a sync pass that completes clears `lastError`,
+    /// which would hide the retry instruction before the user reads it.
+    /// Cleared only when the user dismisses it or starts another Clear.
+    @Published var clearRefusalNotice: String?
+    /// Bumped by `clearLocalState` once it has reached the shielded reset.
+    /// Views showing wallet-owned shielded state re-read on a change.
+    @Published private(set) var localStateClearCount: UInt64 = 0
+
+    /// A wallet's identity-shield recovery records changed outside a sync
+    /// (Stop Retrying). Every open recovery list for that wallet re-reads;
+    /// `sequence` makes a repeat for the same wallet a new value.
+    struct RecoveryRecordsChange: Equatable {
+        let walletId: Data
+        let sequence: UInt64
+    }
+
+    @Published private(set) var lastRecoveryRecordsChange: RecoveryRecordsChange?
+
+    func noteRecoveryRecordsChanged(walletId: Data) {
+        let sequence = (lastRecoveryRecordsChange?.sequence ?? 0) &+ 1
+        lastRecoveryRecordsChange = RecoveryRecordsChange(walletId: walletId, sequence: sequence)
+    }
 
     /// Bech32m-encoded Orchard payment address for account 0.
     /// Kept for the existing Receive sheet which is still
@@ -520,9 +544,14 @@ class ShieldedService: ObservableObject {
     /// the published `$shieldedSyncIsSyncing` stays `false` the
     /// whole time on a fast (e.g. empty-tree) sync, so we can't
     /// rely on the subscription alone to flip it back.
-    func manualSync() async {
-        guard !isSyncing else { return }
-        guard let walletManager else { return }
+    ///
+    /// Returns this call's own outcome, so a screen that started the check
+    /// can report it without reading the shared `lastError`, which other
+    /// passes also write.
+    @discardableResult
+    func manualSync() async -> ManualSyncOutcome {
+        guard !isSyncing else { return .alreadyRunning }
+        guard let walletManager else { return .notStarted("No wallet manager is bound.") }
         var startFields: [String: SDKLogValue] = [
             "bound": .boolean(isBound),
             "wallet_count": .integer(Int64(walletManager.wallets.count)),
@@ -548,7 +577,7 @@ class ShieldedService: ObservableObject {
                 let walletId = boundWalletId,
                 let resolver,
                 let network
-            else { return }
+            else { return .notStarted("The shielded wallet is not bound.") }
             let accounts = boundAccounts.isEmpty ? [0] : boundAccounts
             bind(
                 walletManager: walletManager,
@@ -604,7 +633,7 @@ class ShieldedService: ObservableObject {
                 severity: .warning,
                 fields: ["reason": .publicText("no_registered_wallet")]
             )
-            return
+            return .notStarted(lastError ?? "No wallet could be bound to the shielded pool.")
         }
 
         isSyncing = true
@@ -618,10 +647,12 @@ class ShieldedService: ObservableObject {
         // publisher does flip first it simply no-ops there.
         beginSyncTimingIfNeeded()
         defer { isSyncing = false }
+        var outcome = ManualSyncOutcome.requested
         do {
             try await walletManager.syncShieldedNow()
         } catch {
             lastError = "Shielded sync error: \(error.localizedDescription)"
+            outcome = .failed(error.localizedDescription)
             var fields: [String: SDKLogValue] = [:]
             if let walletId = boundWalletId {
                 fields["wallet_reference"] = .reference(walletId)
@@ -658,6 +689,21 @@ class ShieldedService: ObservableObject {
                 error: error
             )
         }
+        return outcome
+    }
+
+    /// Outcome of one `manualSync()` call.
+    enum ManualSyncOutcome: Equatable {
+        /// `syncShieldedNow()` returned normally. That does not show that
+        /// any wallet's scan succeeded: the native call drops the pass
+        /// summary (a per-wallet scan failure still returns OK), and it
+        /// returns OK with nothing done when another pass holds the slot.
+        case requested
+        case failed(String)
+        /// Another pass was already running; this call did nothing.
+        case alreadyRunning
+        /// Nothing was bound, so no pass ran.
+        case notStarted(String)
     }
 
     /// Whether the service has enough stashed state to perform a
@@ -760,6 +806,8 @@ class ShieldedService: ObservableObject {
         // per-network SQLite delete; that step is gone — see
         // doc above for why.)
         let managerForStop = walletManager
+        // A new attempt supersedes an earlier refusal, whatever its outcome.
+        clearRefusalNotice = nil
         SDKLogger.event(
             "shielded_reset_started",
             category: .shielded,
@@ -817,8 +865,17 @@ class ShieldedService: ObservableObject {
         //    every wallet on any wallet-set change or network switch. We
         //    keep the WIPE scope global on purpose (see the class-level
         //    doc below) — this note is about the re-BIND scope.
-        prepareForShieldedRebind()
+        //
+        //    `prepareForShieldedRebind()` runs once Rust has acted on the
+        //    Clear (`afterResetAttempt`), in the same synchronous MainActor
+        //    turn as `clearShielded()`, so no queued event is delivered
+        //    between the two; the only thing `clearShielded()` publishes on
+        //    the way is the progress reset, which the rebind prep repeats.
+        //    A Clear Rust refused because a shielded operation is in flight
+        //    changed nothing there: the wallet is still bound and the loop
+        //    still runs, so the service is left exactly as it was.
         guard let managerForStop else {
+            prepareForShieldedRebind()
             lastError = "Failed to reset shielded state: no wallet manager is bound."
             SDKLogger.event(
                 "shielded_reset_failed",
@@ -833,6 +890,15 @@ class ShieldedService: ObservableObject {
             try Self.executeClearPersistenceSequence(
                 resetRustState: {
                     try managerForStop.clearShielded()
+                },
+                afterResetAttempt: {
+                    prepareForShieldedRebind()
+                    // Clear purges wallet-owned shielded state (recovery
+                    // records, the local balance) without a sync event.
+                    // Signal every attempt Rust acted on, failed ones
+                    // included: the native clear can purge before a later
+                    // error is returned. A refused Clear purged nothing.
+                    localStateClearCount &+= 1
                 },
                 clearHostState: {
                     // Delete every shielded SwiftData row across all
@@ -853,6 +919,19 @@ class ShieldedService: ObservableObject {
             let phase: String
             let underlyingError: Error
             switch error {
+            case .refusedDuringShieldedOperation:
+                // Expected while a payment or wallet setup runs; Rust kept
+                // everything, so this is a refusal to report, not a failure.
+                // `lastError` keeps whatever sync status it had: the Clear
+                // changed nothing.
+                clearRefusalNotice = Self.clearRefusedDuringShieldedOperationMessage
+                SDKLogger.event(
+                    "shielded_reset_refused",
+                    category: .shielded,
+                    severity: .warning,
+                    fields: ["reason": .publicText("shielded_operation_in_progress")]
+                )
+                return
             case .rustReset(let error):
                 phase = "rust_state"
                 underlyingError = error
@@ -876,7 +955,7 @@ class ShieldedService: ObservableObject {
         }
 
         // 3) Finish zeroing the published mirror. The subscriptions
-        //    were cancelled before the reset attempt. Keep the bind credentials
+        //    were cancelled once Rust had reset. Keep the bind credentials
         //    (walletManager / boundWalletId / network / resolver
         //    / boundAccounts) so [`manualSync`] can re-bind on
         //    the next Sync Now tap. Bare [`reset`] would nil
@@ -901,22 +980,41 @@ class ShieldedService: ObservableObject {
     }
 
     enum ClearLocalStateFailure: Error {
+        /// Rust refused the Clear because a shielded operation is in flight.
+        /// Nothing changed there, so nothing changes here either.
+        case refusedDuringShieldedOperation
         case rustReset(Error)
         case hostPersistence(Error)
     }
 
+    /// Shown when Clear is tapped while a shielded operation is in flight.
+    /// KotlinExampleApp shows the same text.
+    static let clearRefusedDuringShieldedOperationMessage =
+        "A shielded payment or wallet setup is in progress. Try Clear again when it finishes."
+
     /// Enforces reset-before-delete ordering for the two persistence halves.
     /// Kept separate from the user-facing operation so tests can exercise
     /// failure ordering without exposing a reset bypass on `clearLocalState`.
+    ///
+    /// `afterResetAttempt` runs once Rust has acted on the Clear, whether the
+    /// reset succeeded or failed, and before the host wipe. It does not run
+    /// when Rust refused the Clear because a shielded operation is in
+    /// flight: Rust changed nothing then, so the host keeps its binding,
+    /// subscriptions and rows.
     static func executeClearPersistenceSequence(
         resetRustState: () throws -> Void,
+        afterResetAttempt: () -> Void,
         clearHostState: () throws -> Void
     ) throws(ClearLocalStateFailure) {
         do {
             try resetRustState()
+        } catch PlatformWalletError.shieldedOperationInProgress(_) {
+            throw ClearLocalStateFailure.refusedDuringShieldedOperation
         } catch {
+            afterResetAttempt()
             throw ClearLocalStateFailure.rustReset(error)
         }
+        afterResetAttempt()
         do {
             try clearHostState()
         } catch {
@@ -924,10 +1022,12 @@ class ShieldedService: ObservableObject {
         }
     }
 
-    /// A clear attempt quiesces Rust before it can report success or failure,
-    /// and a store failure may occur after one reset half has already landed.
-    /// Treat every attempt as requiring a fresh bind while retaining the
-    /// persisted host rows until the whole sequence succeeds.
+    /// A clear attempt Rust acted on quiesced Rust before it could report
+    /// success or failure, and a store failure may occur after one reset half
+    /// has already landed. Treat every such attempt as requiring a fresh bind
+    /// while retaining the persisted host rows until the whole sequence
+    /// succeeds. A Clear Rust refused because an operation is in flight
+    /// quiesced nothing and does not come here.
     private func prepareForShieldedRebind() {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
@@ -1153,7 +1253,7 @@ class ShieldedService: ObservableObject {
     /// store via `SubwalletId`, so multiple wallets cohabiting
     /// the same SQLite file no longer leak notes across each
     /// other. (See `wallet/shielded/store.rs` for the trait.)
-    private static func dbPath(for network: Network) -> String {
+    static func dbPath(for network: Network) -> String {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)
             .first!

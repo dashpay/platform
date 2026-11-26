@@ -181,7 +181,9 @@ pub(super) fn attach_property_constraint_reads(
                 action.set_stored_system_values(values);
             }
         }
-        DocumentTransitionAction::DeleteAction(_)
+        // The bounds gate rejects erases through protocol 14; erases write no document.
+        DocumentTransitionAction::EraseAction(_)
+        | DocumentTransitionAction::DeleteAction(_)
         | DocumentTransitionAction::IndexOnlyDeleteAction(_) => {}
     }
     Ok(())
@@ -323,6 +325,7 @@ fn read_property_constraint_aggregates(
     read_aggregates(
         drive,
         contract,
+        document_type,
         reads,
         Some(VersionData {
             id: written.id,
@@ -381,6 +384,7 @@ pub(crate) fn read_delete_constraint_aggregates(
     read_aggregates(
         drive,
         contract,
+        document_type,
         reads,
         None,
         Some(VersionData {
@@ -399,11 +403,13 @@ pub(crate) fn read_delete_constraint_aggregates(
 /// of `stored` is done (`stored` `None` for a create, `written` `None` for a delete): the total
 /// the count or sum tree keeps now, less what `stored` adds to it, plus what `written` adds. A
 /// filter reads its values from the document the write leaves, `written`, or from `stored` for a
-/// delete. The reads are billed to `execution_context`.
+/// delete. `document_type` is the type declaring the rules. The reads are billed to
+/// `execution_context`.
 #[allow(clippy::too_many_arguments)]
 fn read_aggregates(
     drive: &Drive,
     contract: &DataContract,
+    document_type: DocumentTypeRef,
     reads: BTreeSet<&AggregateRead>,
     written: Option<VersionData>,
     stored: Option<VersionData>,
@@ -427,54 +433,61 @@ fn read_aggregates(
                  contract lacks, which registration refuses",
             )));
         };
-        let total = match read.filter_values(
+        // One total kept in state per set of values the filter's keys take: a single
+        // set, or none when no document can match a value its key cannot hold (the total
+        // is then 0), for every filter a contract of protocol version 14 can declare, so
+        // this loop reads there exactly what it read before; from protocol version 15 a
+        // filter may match a key by any element of an array of the document
+        // (`AggregateBinding::Elements`, which `parse_property_constraints` 0 never
+        // parses), and then one set per distinct element, added up, and none for a list
+        // longer than the array's `maxItems`, which `document_type` holds: the document
+        // is refused when its schema is validated, after this
+        let mut total = 0i128;
+        for filter_values in read.filter_value_sets(
+            document_type,
             counted,
             bound.id,
             bound.data,
             bound.owner_id,
             platform_version,
         )? {
-            // No document can match a value its key cannot hold
-            None => 0,
-            Some(filter_values) => {
-                let kept = drive.fetch_property_constraint_aggregate(
-                    contract.id().to_buffer(),
+            let kept = drive.fetch_property_constraint_aggregate(
+                contract.id().to_buffer(),
+                counted,
+                read,
+                &filter_values,
+                transaction,
+                &mut drive_operations,
+                platform_version,
+            )?;
+            let contribution = |version: Option<VersionData>| match version {
+                Some(version) => read.contribution(
                     counted,
-                    read,
                     &filter_values,
-                    transaction,
-                    &mut drive_operations,
+                    version.data,
+                    version.owner_id,
                     platform_version,
-                )?;
-                let contribution = |version: Option<VersionData>| match version {
-                    Some(version) => read.contribution(
-                        counted,
-                        &filter_values,
-                        version.data,
-                        version.owner_id,
-                        platform_version,
-                    ),
-                    None => Ok(0),
-                };
-                let removed = contribution(stored)?;
-                let added = contribution(written)?;
-                kept.checked_sub(removed)
-                    .and_then(|total| total.checked_add(added))
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "a propertyConstraints or deleteConstraints total overflowed an i128",
-                    )))?
-            }
-        };
+                ),
+                None => Ok(0),
+            };
+            let removed = contribution(stored)?;
+            let added = contribution(written)?;
+            total = kept
+                .checked_sub(removed)
+                .and_then(|kept| kept.checked_add(added))
+                .and_then(|kept| total.checked_add(kept))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "a propertyConstraints or deleteConstraints total overflowed an i128",
+                )))?;
+        }
         aggregates.insert(read.clone(), total);
     }
 
-    let fee = Drive::calculate_fee(
+    let fee = drive.calculate_fee(
         None,
         Some(drive_operations),
         &block_info.epoch,
-        drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
     Ok(aggregates)

@@ -1,4 +1,5 @@
 use advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
+use advanced_structure::v2::DocumentsBatchStateTransitionStructureValidationV2;
 pub(in crate::execution::validation::state_transition::state_transitions) mod action_validation;
 mod advanced_structure;
 mod data_triggers;
@@ -9,15 +10,27 @@ mod transformer;
 // A moderator's document deletion (`contract_user_moderation`) reads the document the way a
 // document's own deletion does, billed the same.
 pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
+// A moderator's field change (protocol version 15) also reads who holds the document's storage.
+pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id_and_storage_flags;
 // Check tx reserves, for a create it does not validate the state of, what the block's
-// `chooseFirst` check may bill it: its two hashes and the competitor scan's budget.
-pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::v0::choose_first_reservation;
+// `chooseFirst` check may bill it: its hashes and the competitor scan's budget.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::choose_first_reservation::choose_first_reservation;
+// And what the block's `refersTo` lookups may bill it: their hashes, their queries and the
+// deletes of the documents they consume.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::reference_lookup_reservation::reference_lookup_reservation;
+// Check tx reserves, for an erase it does not validate the state of, the work its refunds cause
+// for other identities, which the block's state validation bills.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_erase_transition_action::erase_refund_recipient_reservation;
 // Moderator field changes and restores judge the document's `propertyConstraints`, with
 // the totals after the replace or insertion respectively.
 pub(in crate::execution::validation::state_transition) use transformer::v0::property_constraint_aggregates::{
     read_property_constraint_aggregates_for_moderator_change,
     read_property_constraint_aggregates_for_restore,
 };
+
+// A moderator's restore puts a document's summed value back in its type's sums, and is held
+// to the total the type keeps as a create is.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_type_sum_validation::validate_summed_value_within_type_total;
 
 #[cfg(test)]
 mod tests;
@@ -290,7 +303,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
             .batch_state_transition
             .advanced_structure
         {
-            0 | 1 => {
+            version @ 0..=2 => {
                 let identity =
                     identity.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "The identity must be known on advanced structure validation",
@@ -301,36 +314,36 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                         "action must be a documents batch transition action",
                     )));
                 };
-                if platform_version
-                    .drive_abci
-                    .validation_and_processing
-                    .state_transitions
-                    .batch_state_transition
-                    .advanced_structure
-                    == 1
-                {
-                    self.validate_advanced_structure_from_state_v1(
+                match version {
+                    2 => self.validate_advanced_structure_from_state_v2(
                         block_info,
                         network,
                         documents_batch_transition_action,
                         identity,
                         execution_context,
                         platform_version,
-                    )
-                } else {
-                    self.validate_advanced_structure_from_state_v0(
+                    ),
+                    1 => self.validate_advanced_structure_from_state_v1(
                         block_info,
                         network,
                         documents_batch_transition_action,
                         identity,
                         execution_context,
                         platform_version,
-                    )
+                    ),
+                    _ => self.validate_advanced_structure_from_state_v0(
+                        block_info,
+                        network,
+                        documents_batch_transition_action,
+                        identity,
+                        execution_context,
+                        platform_version,
+                    ),
                 }
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: advanced structure from state".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

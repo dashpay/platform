@@ -36,7 +36,9 @@
 
 use std::sync::Arc;
 
-use super::common::{bootstrap_mock_sdk_to_latest, mock_data_contract, mock_document_type};
+use super::common::{
+    bootstrap_mock_sdk_to_latest, mock_countable_document_type, mock_data_contract,
+};
 use dash_sdk::{
     platform::{documents::document_query::DocumentQuery, Fetch},
     Sdk, SdkBuilder,
@@ -64,7 +66,7 @@ async fn count_capable_mock_sdk() -> Sdk {
 async fn test_mock_fetch_document_count_returns_expected() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
@@ -90,7 +92,7 @@ async fn test_mock_fetch_document_count_returns_expected() {
 async fn test_mock_fetch_document_count_zero() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
@@ -115,7 +117,7 @@ async fn test_mock_fetch_document_count_zero() {
 async fn test_mock_fetch_document_count_not_found() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
@@ -145,7 +147,7 @@ async fn test_mock_fetch_document_count_not_found() {
 async fn test_mock_fetch_document_split_counts_with_in_clause() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
@@ -197,7 +199,7 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
 async fn test_mock_fetch_document_split_counts_with_distinct_range() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
@@ -255,7 +257,7 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
 async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
@@ -297,7 +299,7 @@ async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
 async fn test_mock_fetch_document_split_counts_preserves_none_for_absent_in_values() {
     let mut sdk = count_capable_mock_sdk().await;
 
-    let document_type = mock_document_type();
+    let document_type = mock_countable_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")

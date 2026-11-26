@@ -43,6 +43,7 @@ crate that has what the change needs, and no lower.
 | A validation step that reads platform state, block execution, an ABCI handler | `packages/rs-drive-abci/src/execution/` | Handlers under `abci/` stay thin and delegate. |
 | A gRPC query handler | `packages/rs-drive-abci/src/query/<name>/` plus the proto in `packages/dapi-grpc` | Request version dispatch mirrors method version dispatch. |
 | A version number, a limit, a fee rate | `packages/rs-platform-version` | Never a literal in a method body. |
+| Core transaction construction | `dashpay/rust-dashcore/key-wallet` | `packages/rs-dpp` validates Platform rules; `packages/rs-platform-wallet` orchestrates. |
 | Client-side proof composition (`FromProof`, Tenderdash signature check) | `packages/rs-drive-proof-verifier` | Calls into `drive::verify`, never into GroveDB directly. |
 | A client API | `packages/rs-sdk` | Follow the query checklist in `packages/rs-sdk/README.md`. |
 | A JavaScript binding | `packages/wasm-dpp2`, `packages/wasm-sdk` | Mirror the Rust shape; never validate. See `packages/wasm-dpp2/CONVENTIONS.md`. |
@@ -113,6 +114,95 @@ section that lists each edited generation, the protocol versions that select
 it, and the reason consensus cannot change there. Reviewers read that section
 first.
 
+### When a protocol version counts as shipped
+
+A protocol version is shipped once it is released as a stable version or
+activated on testnet or mainnet, whichever comes first. Alpha, beta and RC
+releases alone do not ship it. Until then, the generations that only the
+unreleased protocol version selects, and its version tables, may still be
+changed in place: a prerelease that contains the earlier behaviour is not by
+itself a reason for a new protocol number or a new `vN`. A generation that a
+shipped protocol version also selects is a shipped generation, and the rule
+above decides whether it may be edited in place.
+
+Check the actual release and activation status rather than assuming it.
+Changing an unreleased version in place does not make different development
+binaries compatible with each other.
+
+Why: a prerelease runs only on devnets and test setups that are reset, so
+freezing its behaviour would add protocol numbers and dead generations without
+protecting any chain history. Activation on a public network or a stable
+release is the point where nodes and clients start to depend on it.
+
+### A new input changes the signature, not the method count
+
+When the new generation of a method needs something its callers do not pass
+yet (the block, the signer, a mode), add the parameter to the method and
+update the callers. Do not add a second method beside it (`*_with_lifecycle`,
+`*_with_block`), a second operation variant beside the existing one
+(`DeleteDocumentWithLifecycle` next to `DeleteDocument`), or a wrapper that
+fabricates the missing value on the way in. One method per directory means
+one signature, the one the current generation needs.
+
+The shipped generation keeps its own signature. The dispatcher hands it the
+part of the new input it always had and drops the rest:
+
+```rust
+pub fn delete_document_for_contract_operations(
+    &self,
+    document_id: Identifier,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    block_info: &BlockInfo,          // was `block_time_ms: u64`
+    deleter_id: Option<Identifier>,  // new: whom the lifecycle record credits
+    previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+    estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    match platform_version.drive.methods.document.delete.delete_document_for_contract_operations {
+        // The shipped generation never knew a deleter; it reads the time off
+        // the block exactly as it read `block_time_ms` before.
+        0 => self.delete_document_for_contract_operations_v0(
+            document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+        1 => self.delete_document_for_contract_operations_v1(
+            document_id,
+            contract,
+            document_type,
+            block_info,
+            deleter_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        ),
+        version => Err(Error::Drive(DriveError::UnknownVersionMismatch { .. })),
+    }
+}
+```
+
+Why: a twin method is a second name for the same behaviour with the version
+decision split across two dispatchers, and callers that reach the old name
+silently get the old capability at the new protocol version, or a value
+somebody made up to satisfy the old signature. Changing the signature makes
+the compiler find every caller, and each one then states what it passes.
+
+How: change the dispatcher's signature, re-point the callers, and let
+generation 0 keep receiving what it received before. If a wrapper's new
+generation would only forward the new parameter to the method that has the
+behaviour, it is not a new generation: forward it from the wrapper's existing
+body and leave the wrapper's version slot alone. The one exception is a
+public client-facing API that must stay source-compatible across a release;
+there, the SDK's builder pattern absorbs the new input.
+
 ### Table versions follow protocol-version boundaries, not PRs
 
 Version-table constants (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`,
@@ -122,9 +212,13 @@ version already introduced a new table version, a second feature landing in
 the same protocol version amends that table in place. Adding another table
 version would leave one referenced by no `PLATFORM_V*` at all.
 
-Leaf implementation modules are different: each feature still gets its own new
-`vN` implementation module under the method directory. The rule is about the
-tables.
+Leaf implementation modules follow the same boundary. A feature that changes a
+generation a released protocol version selects gets a new `vN` module under the
+method directory, unless the edit is inert there (see "Shipped generations are
+frozen unless the change cannot modify consensus" above). A generation that
+only the unreleased protocol version selects has never run on a chain, so a
+later feature in the same protocol version edits it in place: a new `vN` there
+would leave the previous one selected by no `PLATFORM_V*`, as with tables.
 
 ### Shared helpers get a versioned method, not a capability flag
 
@@ -173,11 +267,14 @@ already owns a new schedule, amend that schedule instead of creating another
 generation nobody references.
 
 `fee_version_number` is a separate concept from the schedule generation: it
-keys persisted fee history and storage-refund behaviour, and it is stored in
-platform state. Inspect its consumers before changing it. `FEE_VERSION1` and
-`FEE_VERSION2` both carry `fee_version_number: 1` because storage rates did not
-change between them, only a fee group did. See the
-[Fee System Overview](../fees/overview.md).
+keys the fee history saved in platform state. Inspect its consumers before
+changing it. `FEE_VERSION1` and `FEE_VERSION2` both carry
+`fee_version_number: 1` because storage rates did not change between them, only
+a fee group did.
+
+A schedule can change the storage rate without breaking refunds: from protocol
+version 15 a refund is priced at the rate of the protocol version that ran the
+epoch that stored the bytes. See the [Fee System Overview](../fees/overview.md).
 
 ### Consensus code reads the version from state
 
@@ -191,6 +288,17 @@ Serde-based conversions of `DataContract` read a process-wide current version
 set through `PlatformVersionCurrentVersion::set_current`. Tests that build
 platforms at different protocol versions race on it. Prefer the explicit
 `to_value(platform_version)` style API wherever a version is in hand.
+
+### Consensus code reads Core at the chain-locked height
+
+Every validator asks its own Dash Core, so a read is deterministic only when it
+asks about the block's chain-locked core height (`block_info.core_height`),
+never Core's tip, and a Core error is never read as a default such as "not
+active". [Syncing with Dash
+Core](../architecture/component-pipeline.md#syncing-with-dash-core) explains why
+and lists the rules for a new read, and [Core Fork
+Activations](../architecture/core-fork-activations.md) describes the record that
+code depending on a Core fork reads.
 
 ### Dispatcher shape
 
@@ -213,8 +321,7 @@ The observed order in `drive` and `drive-abci` is: `&self`, domain inputs,
 `block_info`, mode flags (`apply`, `stateful`), the estimation map,
 `transaction`, the operations accumulator, `platform_version`. A new parameter
 goes up with the context items, never after `platform_version`. The same holds
-for fields on context structs such as parse contexts. The known exception is
-`previous_fee_versions`, which trails it on fee-returning methods.
+for fields on context structs such as parse contexts.
 
 Why: readers of a few hundred versioned signatures expect the closing
 parameter to be the version. Appending after it breaks that scan.
@@ -243,7 +350,7 @@ chapter walks the stages in order; this table is the placement guide.
 | Pure-data invariants | `rs-dpp` (`validate_basic_structure`, document type and contract self-validation) | The value itself and `PlatformVersion` | `BasicError` |
 | Basic structure | `drive-abci` `<transition>/basic_structure/vN/` | `Network` and `PlatformVersion` only | `BasicError` |
 | Signature and nonces | `drive-abci` processor traits | The signing identity, nonces | `SignatureError`, unpaid rejection |
-| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid |
+| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid, except a failed proof of possession the signer did not sign, refused unpaid (`IdentityUpdate` from protocol version 15) |
 | Advanced structure with state | `drive-abci` `batch/advanced_structure/vN/` and the per-action validators under `batch/action_validation/*/advanced_structure_vN/` (`validate_advanced_structure_from_state`) | The action produced by `transform_into_action`, including the contracts it fetched, plus block, network, and identity context; no further Drive reads in the validator | `ConsensusError`, paid |
 | State | `drive-abci` `<transition>/state/vN/` | Drive through `PlatformRef` and the transaction | `StateError`, paid |
 | Execution | `drive` operations | GroveDB | Internal `Error` only |
@@ -274,6 +381,18 @@ Rules that fall out of the table:
   the transition is invalid. The block loop converts it into an internal-error
   result instead of halting, and `process_proposal` rejects any block that
   contains one.
+- Execution never turns its own failure into a refusal. A write that
+  validation admitted and Drive cannot apply is an internal error, and stays
+  one. Do not catch it, roll the block transaction back to a savepoint and
+  execute the transition again as a paid consensus error: that path needs its
+  own fee rules and its own copy of what a refused transition writes, and it
+  misses what validation covers for free (`check_tx`, a sponsored write). Put
+  the check in state validation, with a registration rule where that is what
+  makes the condition readable before the write, as the bounds on summed
+  properties do for `DocumentSumOverflowError`. The block transaction is
+  rewound to a savepoint in two places only: a genesis re-proposal, and a
+  proposer dropping a transition from the block it builds.
+  `packages/rs-drive-abci/tests/savepoint_uses.rs` pins that list.
 - Validation lives once. `wasm-dpp2`, the SDKs, and the FFI layer never
   duplicate a length, range, or count check that `rs-dpp` enforces, even when
   the duplicate would give a friendlier early error. Two definitions of
@@ -441,7 +560,7 @@ and the [WASM](../wasm/binding-patterns.md) chapters.
 
 ### FFI and mobile SDKs hold no business logic
 
-The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`, `key-wallet-ffi`) and
+The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`) and
 the Swift and Kotlin SDKs do three things: persist Rust-emitted state, load it
 for views, and call a function that already exists in a Rust library. If the
 wrapper is deciding anything (an index, a derivation path, which key, how
@@ -535,6 +654,9 @@ now does.
 3. Return it through `ConsensusValidationResult`; never `Err`.
 4. Test the rejection through `process_raw_state_transitions`, and test that
    the previous protocol version still accepts the input.
+5. If the condition only shows when the write is applied, find what validation
+   can read to refuse it first. Never roll the write back and run the
+   transition again as a refusal.
 
 **Adding GroveDB structure**
 

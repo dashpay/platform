@@ -128,18 +128,61 @@ internal object DashpayNative {
      * SHA-256 hash + perceptual fingerprint. Broadcasts a real document
      * state transition (blocking, network). Returns the resulting
      * profile JSON. ← Swift `createDashPayProfile` / `updateDashPayProfile`.
+     *
+     * Each payment address is an action and its bytes
+     * (`PaymentAddressUpdateFFI`): 0 keeps the published value, 1 sets it
+     * to the bytes, 2 removes it. Bridges
+     * `platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer`.
+     * Named apart from the earlier `createOrUpdateProfile` export so a stale
+     * native library fails to link instead of binding the wrong signature.
      */
     @Suppress("LongParameterList")
-    external fun createOrUpdateProfile(
+    external fun createOrUpdateProfileWithAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         displayName: String?,
         publicMessage: String?,
         avatarUrl: String?,
         avatarBytes: ByteArray?,
+        coreAddressAction: Int,
+        coreAddressBytes: ByteArray?,
+        platformAddressAction: Int,
+        platformAddressBytes: ByteArray?,
+        shieldedAddressAction: Int,
+        shieldedAddressBytes: ByteArray?,
         doCreate: Boolean,
         signerHandle: Long,
     ): String?
+
+    // ── Profile payment addresses ─────────────────────────────────────
+
+    /**
+     * Which payment addresses a profile write may set on the network the
+     * wallet is connected to, as `[core, platform, shielded]`
+     * (`platform_wallet_dashpay_profile_payment_address_support`). Fetches
+     * the network's DashPay contract, so it blocks on the network. Throws on
+     * failure. ← Swift `ManagedPlatformWallet.dashPayPaymentAddressSupport()`.
+     */
+    external fun paymentAddressSupport(walletHandle: Long): BooleanArray?
+
+    /**
+     * The bytes a profile stores for the address [text] of [kind] (a
+     * `DASHPAY_PROFILE_PAYMENT_ADDRESS_*` value) on [network] (an FFINetwork
+     * ordinal), via `dashpay_profile_payment_address_from_string`. Throws
+     * with the wallet's reason for an address of another network or kind, or
+     * text that is not an address.
+     * ← Swift `DashPayProfile.paymentAddressBytes(kind:from:network:)`.
+     */
+    external fun paymentAddressFromString(kind: Int, text: String, network: Int): ByteArray?
+
+    /**
+     * The address string of [network] for the stored [bytes] of a [kind]
+     * address (`dashpay_profile_payment_address_to_string`), or null when the
+     * wallet does not read them as an address of that kind. An unknown
+     * [kind] throws.
+     * ← Swift `DashPayProfile.paymentAddressString(kind:bytes:network:)`.
+     */
+    external fun paymentAddressToString(kind: Int, bytes: ByteArray, network: Int): String?
 
     /**
      * Set owner-private contactInfo (alias / note / displayHidden) for
@@ -263,4 +306,145 @@ internal object DashpayNative {
         signerHandle: Long,
         nowUnix: Long,
     ): IdentityRegistrationNativeResult
+
+    // ── DashPay private contact requests (protocol version 15) ────────
+    //
+    // ← Swift `PrivateContactRequests.swift`
+    // (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+
+    /**
+     * Read DashPay's private contact request store for every identity of
+     * the wallet, at most [maxPages] pages, and ingest what it holds for
+     * them. The store is opened with keys derived inside
+     * [coreSignerHandle] (the manager's `MnemonicResolverHandle`). Ingested
+     * requests reach Room through the persister; no handles cross. Returns
+     * six longs: requests ingested, pages read, entries refused, identities
+     * whose ingest did not reach disk, the store position the pass stopped
+     * at, and 1 when it read to the store's last entry (else 0). Blocking.
+     * ← Swift `ManagedPlatformWallet.syncPrivateContactRequests(maxPages:)`.
+     */
+    external fun syncPrivateContactRequests(
+        walletHandle: Long,
+        coreSignerHandle: Long,
+        maxPages: Int,
+    ): LongArray?
+
+    /**
+     * Send a DashPay private contact request, paid from [account]'s
+     * shielded notes on [walletId]. [resolverHandle] supplies the Orchard
+     * spend authority and the DashPay keys; [signerHandle] is the identity
+     * signer [TokensNative.sendContactRequest] takes. The wallet derives
+     * the Orchard address the request carries, one for this contact alone.
+     * Needs the `shielded` native feature. Returns the created
+     * `ContactRequest` handle (destroy via
+     * [TokensNative.contactRequestDestroy]).
+     * ← Swift `PlatformWalletManager.sendPrivateContactRequest`.
+     */
+    @Suppress("LongParameterList")
+    external fun sendPrivateContactRequest(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        senderIdentityId: ByteArray,
+        recipientIdentityId: ByteArray,
+        accountLabel: String?,
+        autoAcceptProof: ByteArray?,
+        signerHandle: Long,
+    ): Long
+
+    /**
+     * Accept the incoming contact request [requestHandle] with a private
+     * reply, paid from [account]'s shielded notes. Handles as for
+     * [sendPrivateContactRequest], and the wallet derives the Orchard
+     * address the reply carries the same way. Returns the
+     * `EstablishedContact` handle (destroy via
+     * [TokensNative.establishedContactDestroy]).
+     * ← Swift `PlatformWalletManager.acceptPrivateContactRequest`.
+     */
+    @Suppress("LongParameterList")
+    external fun acceptPrivateContactRequest(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        requestHandle: Long,
+        signerHandle: Long,
+    ): Long
+
+    /**
+     * What a managed identity's private contact requests with [contactId]
+     * carry: a JSON object (`receivedPrivately`, `sentPrivately`,
+     * `shieldedAddress` lower hex or null), or null when neither tracked
+     * request between them came or went privately.
+     * ← Swift `ManagedIdentity.privateContact(contactId:)`.
+     */
+    external fun managedIdentityPrivateContact(identityHandle: Long, contactId: ByteArray): String?
+
+    /**
+     * Whether a contact request from [senderId], one of the wallet's
+     * identities, to [recipientId], public or private, is held for a private
+     * one, as a send decides it (`platform_wallet_get_private_pair_held`): a
+     * private request in flight, paid and not yet read back, or kept by the
+     * shielded store's journal. A journal record discharged since is applied
+     * first. An unknown wallet handle throws (NotFound), as does a sender the
+     * wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)`.
+     */
+    external fun privatePairHeld(walletHandle: Long, senderId: ByteArray, recipientId: ByteArray): Boolean
+
+    /**
+     * Whether a public contact request from [senderId], one of the wallet's
+     * identities, to [recipientId] was broadcast and may have been
+     * delivered, with no proof settling its outcome yet
+     * (`platform_wallet_get_public_contact_request_unconfirmed`). While it
+     * stands, the wallet refuses every contact request or acceptance to the
+     * recipient (code 76); a DashPay sync settles it. An unknown wallet
+     * handle throws (NotFound), as does a sender the wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`.
+     */
+    external fun publicContactRequestUnconfirmed(
+        walletHandle: Long,
+        senderId: ByteArray,
+        recipientId: ByteArray,
+    ): Boolean
+
+    /**
+     * What a contact request from [identityId], one of the wallet's
+     * identities, waits for, as the wallet decides it: four flags,
+     * `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment,
+     * privatePaymentsRestoreFailed]`
+     * (`platform_wallet_get_private_contact_readiness`). A journal record
+     * discharged since is applied first. An unknown wallet handle throws
+     * (NotFound), as does an identity the wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.privateContactReadiness(identityId:)`.
+     */
+    external fun privateContactReadiness(walletHandle: Long, identityId: ByteArray): BooleanArray?
+
+    /**
+     * Why the last restoration of the wallet's private payments failed,
+     * while they are not restored for [identityId]
+     * (`platform_wallet_get_private_payments_restore_failure`), or null when
+     * none failed. Throws as [privateContactReadiness] does.
+     * ← Swift `ManagedPlatformWallet.privatePaymentsRestoreFailure(identityId:)`.
+     */
+    external fun privatePaymentsRestoreFailure(walletHandle: Long, identityId: ByteArray): String?
+
+    /**
+     * Accept the incoming contact request [requestHandle] replying the way
+     * it came: privately, paid from [account]'s shielded notes, when it came
+     * privately and no reply exists yet; otherwise with a document, or by
+     * adopting the reply already sent. The wallet decides. Arguments and
+     * result as for [acceptPrivateContactRequest].
+     * ← Swift `PlatformWalletManager.acceptContactRequestReplyingInKind`.
+     */
+    @Suppress("LongParameterList")
+    external fun acceptContactRequestReplyingInKind(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        requestHandle: Long,
+        signerHandle: Long,
+    ): Long
 }

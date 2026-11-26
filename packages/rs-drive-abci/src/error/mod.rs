@@ -2,7 +2,7 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
-use dpp::bls_signatures::BlsError;
+use dpp::bls::BlsError;
 use dpp::dashcore_rpc::Error as CoreRpcError;
 use dpp::data_contract::errors::DataContractError;
 use dpp::platform_value::Error as ValueError;

@@ -32,6 +32,7 @@
 mod document_token_payment;
 mod identity_create_from_shielded_pool;
 mod identity_top_up_from_shielded_pool;
+mod private_document_create_from_shielded_pool;
 mod shield;
 mod shield_from_asset_lock;
 mod shield_from_identity;
@@ -53,6 +54,7 @@ pub use identity_create_from_shielded_pool::{
     build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
 };
 pub use identity_top_up_from_shielded_pool::build_identity_top_up_from_shielded_pool_transition;
+pub use private_document_create_from_shielded_pool::build_private_document_create_from_shielded_pool_transition;
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;
@@ -313,6 +315,28 @@ pub(crate) fn build_spend_bundle_with<P: OrchardProver, F>(
 where
     F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
 {
+    let builder = spend_builder(spends, recipient, output_amount, memo, fvk, anchor)?;
+
+    prove_and_sign_bundle_with(
+        builder,
+        prover,
+        std::slice::from_ref(ask),
+        extra_sighash_data,
+    )
+}
+
+/// The Orchard builder of a spend bundle: `spends` against `anchor`, and one output of
+/// `output_amount` to `recipient` whose `out_ciphertext` is encrypted under `fvk`'s
+/// External-scope OVK, so the spender can recover it. [`build_spend_bundle_with`] proves and
+/// signs what it builds.
+pub(crate) fn spend_builder(
+    spends: Vec<SpendableNote>,
+    recipient: &OrchardAddress,
+    output_amount: u64,
+    memo: [u8; 36],
+    fvk: &FullViewingKey,
+    anchor: Anchor,
+) -> Result<Builder<DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
 
     let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
@@ -334,12 +358,7 @@ where
         )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle_with(
-        builder,
-        prover,
-        std::slice::from_ref(ask),
-        extra_sighash_data,
-    )
+    Ok(builder)
 }
 
 /// Takes a configured Builder, generates the proof, computes the platform

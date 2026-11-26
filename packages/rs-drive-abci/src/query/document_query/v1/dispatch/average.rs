@@ -2,6 +2,7 @@
 
 use super::super::not_yet_implemented;
 use super::super::PrefetchedContract;
+use super::sum::wire_sum;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -83,12 +84,7 @@ impl<C> Platform<C> {
             ))));
 
         // `AverageMode` mirrors `CountMode` 1:1 — map across.
-        let avg_mode = match mode {
-            CountMode::Aggregate => AverageMode::Aggregate,
-            CountMode::GroupByIn => AverageMode::GroupByIn,
-            CountMode::GroupByRange => AverageMode::GroupByRange,
-            CountMode::GroupByCompound => AverageMode::GroupByCompound,
-        };
+        let avg_mode = AverageMode::from(mode);
 
         let drive_request = DocumentAverageRequest {
             contract: contract_ref,
@@ -146,7 +142,10 @@ impl<C> Platform<C> {
                                 break;
                             }
                         }
-                        match total_sum.checked_add(e.sum.unwrap_or(0)) {
+                        match wire_sum(e.sum)
+                            .ok()
+                            .and_then(|sum| total_sum.checked_add(sum))
+                        {
                             Some(s) => total_sum = s,
                             None => {
                                 overflow_axis = Some("sum");
@@ -180,14 +179,21 @@ impl<C> Platform<C> {
                         ),
                     }
                 } else {
+                    let entries = match entries
+                        .into_iter()
+                        .map(into_v1_average_entry)
+                        .collect::<Result<Vec<_>, _>>()
+                    {
+                        Ok(entries) => entries,
+                        Err(e) => {
+                            return Ok(QueryValidationResult::new_with_error(QueryError::Query(e)))
+                        }
+                    };
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
                             variant: Some(result_data::Variant::Averages(AverageResults {
                                 variant: Some(average_results::Variant::Entries(AverageEntries {
-                                    entries: entries
-                                        .into_iter()
-                                        .map(into_v1_average_entry)
-                                        .collect(),
+                                    entries,
                                 })),
                             })),
                         })),
@@ -225,11 +231,11 @@ impl<C> Platform<C> {
 /// divide V by 0 cannot exist. The `unwrap_or(0)` below is therefore
 /// defense-in-depth (same as [`into_v1_entry`] / [`into_v1_sum_entry`]
 /// for individual count / sum entries) rather than load-bearing.
-fn into_v1_average_entry(e: DriveAverageEntry) -> AverageEntry {
-    AverageEntry {
+fn into_v1_average_entry(e: DriveAverageEntry) -> Result<AverageEntry, QuerySyntaxError> {
+    Ok(AverageEntry {
         in_key: e.in_key,
         key: e.key,
         count: e.count.unwrap_or(0),
-        sum: e.sum.unwrap_or(0),
-    }
+        sum: wire_sum(e.sum)?,
+    })
 }

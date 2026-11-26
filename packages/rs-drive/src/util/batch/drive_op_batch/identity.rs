@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
@@ -12,9 +13,7 @@ use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 /// Operations on Identities
 #[allow(clippy::large_enum_variant)]
@@ -135,9 +134,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

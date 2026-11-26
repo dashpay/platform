@@ -91,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for pkg in build-essential cmake curl gh jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
+          for pkg in build-essential cmake curl gh jq libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
             dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
           done
           test -x "$HOME/.cargo/bin/rustup"
@@ -158,7 +158,7 @@ jobs:
 
       # No previous job's Git configuration, hooks or build state exists here.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Always an explicit refs/tags/<tag> (validated above) — never the
           # raw dispatch input — so the released AAR is built from the tag's
@@ -189,7 +189,7 @@ jobs:
           test -x "$ANDROID_SDK_ROOT/ndk/28.1.13356709/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
@@ -266,7 +266,7 @@ jobs:
           ./build_android.sh --abi all --profile release --verify
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           cache-disabled: true
 
@@ -286,7 +286,7 @@ jobs:
       # Release attachment runs on a fresh hosted runner so release-write
       # credentials never reach the disposable build runner.
       - name: Upload release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kotlin-sdk-release-assets
           path: |
@@ -299,7 +299,7 @@ jobs:
       # re-stages the SAME .so (same commit, same tag) without repeating the
       # multi-hour cargo/NDK build.
       - name: Upload native libraries for the deploy job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kotlin-sdk-jnilibs
           path: packages/kotlin-sdk/sdk/src/main/jniLibs
@@ -319,7 +319,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: kotlin-sdk-release-assets
           path: release-assets
@@ -456,7 +456,7 @@ jobs:
 
       - name: Checkout repository
         if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Pin to the exact SHA the build job resolved, NOT the tag ref: a
           # tag is mutable, and checking out the SHA guarantees the staged
@@ -466,14 +466,14 @@ jobs:
 
       - name: Set up JDK 17
         if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
         if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
           # No Rust/cargo here — the native libraries are downloaded below.
           # The NDK is still needed because AGP strips the packaged .so at
@@ -485,14 +485,14 @@ jobs:
 
       - name: Restore native libraries from the build job
         if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: kotlin-sdk-jnilibs
           path: packages/kotlin-sdk/sdk/src/main/jniLibs
 
       - name: Setup Gradle
         if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           cache-disabled: true
 

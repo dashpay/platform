@@ -35,5 +35,6 @@ pub const DOCUMENT_VERSIONS_V4: DPPDocumentVersions = DPPDocumentVersions {
         try_into_asset_unlock_base_transaction_info: 1,
         generate_document_id: 1,
         get_raw_array_elements_for_document_type: Some(0), // new: the element keys an index on a typed array writes
+        id_and_revision_from_bytes: None,
     },
 };

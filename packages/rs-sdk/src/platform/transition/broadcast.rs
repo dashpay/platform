@@ -1,8 +1,8 @@
-use super::broadcast_request::BroadcastRequestForStateTransition;
+use super::broadcast_request::{checked_broadcast_request, BroadcastRequestForStateTransition};
 use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
+use crate::platform::ProtocolRequirement;
 use crate::sync::retry;
-use crate::sync::retry_with_additional_error;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::BroadcastStateTransitionResponse;
@@ -11,8 +11,6 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse,
 };
 use dash_context_provider::ContextProviderError;
-use dpp::consensus::signature::SignatureError;
-use dpp::consensus::ConsensusError;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -23,18 +21,132 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
-use dpp::ProtocolError;
+use dpp::version::feature_initial_protocol_versions::{
+    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+};
+use dpp::version::PlatformVersion;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
 use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
-use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use rs_dapi_client::{
+    DapiRequest, DapiRequestExecutor, ExecutionError, InnerInto, IntoInner, RequestSettings,
+};
 use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
+
+#[cfg(test)]
+pub(super) mod retry_tests;
+
+/// The gRPC method a state transition is sent with.
+pub(crate) const BROADCAST_STATE_TRANSITION_METHOD: &str = "broadcast_state_transition";
+
+/// What a private document create from the shielded pool (type 29) needs: every node serves
+/// it from protocol version 15.
+pub(crate) fn private_document_create_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("private document create from shielded pool transitions"),
+    }
+}
+
+/// What a shield from an identity's balance (type 21) needs: every node serves it from
+/// protocol version 14. Wallets check it before they prove or save the transition
+/// ([`Sdk::ensure_protocol_requirement`]); the broadcast checks it again.
+pub fn shield_from_identity_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("shield from identity transitions"),
+    }
+}
+
+/// What a top-up of an identity from the shielded pool (type 22) needs: every node serves
+/// it from protocol version 14. Wallets check it before they reserve notes or prove the
+/// transition ([`Sdk::ensure_protocol_requirement`]); the broadcast checks it again.
+pub fn identity_top_up_from_shielded_pool_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("identity top up from shielded pool transitions"),
+    }
+}
+
+/// What a token purchase paid from the shielded credit pool (type 28) needs: every node serves
+/// it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_purchase_from_shielded_pool_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token purchase from shielded pool transitions"),
+    }
+}
+
+/// What a token shielded transfer paid from the shielded credit pool (type 26) needs: every node
+/// serves it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_shielded_transfer_with_shielded_fee_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token shielded transfer transitions"),
+    }
+}
+
+/// What a token unshield paid from the shielded credit pool (type 27) needs: every node serves
+/// it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_unshield_with_shielded_fee_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token unshield transitions"),
+    }
+}
+
+/// The protocol version `transition`'s kind needs before every node serves it, for a kind
+/// newer than every node may run: nodes of an older release reject it, which the client would
+/// take for the transition's own rejection. The broadcast gate applies it; a caller that keeps
+/// saved transitions to send again checks it first with [`Sdk::ensure_protocol_requirement`],
+/// so a local refusal does not count as a send.
+///
+/// This lists only the kinds the SDK's broadcast gate checks. `None` means no broadcast
+/// preflight is registered for the kind, not that every node accepts it: Drive-ABCI keeps its
+/// own activation checks (for example `IdentityKeyLimitsUpdate` below protocol version 14).
+pub fn transition_protocol_requirement(
+    transition: &StateTransition,
+) -> Option<ProtocolRequirement> {
+    match transition {
+        StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+            Some(private_document_create_requirement())
+        }
+        StateTransition::ShieldFromIdentity(_) => Some(shield_from_identity_requirement()),
+        StateTransition::IdentityTopUpFromShieldedPool(_) => {
+            Some(identity_top_up_from_shielded_pool_requirement())
+        }
+        StateTransition::TokenPurchaseFromShieldedPool(_) => {
+            Some(token_purchase_from_shielded_pool_requirement())
+        }
+        StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+            Some(token_shielded_transfer_with_shielded_fee_requirement())
+        }
+        StateTransition::TokenUnshieldWithShieldedFee(_) => {
+            Some(token_unshield_with_shielded_fee_requirement())
+        }
+        _ => None,
+    }
+}
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -122,52 +234,34 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        trace!(
-            state_transition = %self.name(),
-            transaction_id = %self
-                .transaction_id()
-                .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string()),
-            "broadcast: start"
-        );
+        // A kind the network may not serve yet is sent only once a verified answer shows it
+        // does; otherwise it is refused here with `ProtocolVersionNotActive`.
+        sdk.ensure_network_serves(
+            transition_protocol_requirement(self),
+            settings.map(|settings| settings.request_settings),
+        )
+        .await?;
 
-        let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
-            None => sdk.dapi_client_settings,
-        };
-
-        let execute = |request: BroadcastStateTransitionRequest, request_settings| async move {
-            trace!("broadcast: executing request");
-            let result = request
-                .execute(sdk, request_settings)
-                .await
-                .map_err(|e| e.inner_into());
-
-            match &result {
-                Ok(_) => trace!("broadcast: request succeeded"),
-                Err(e) => warn!(error = ?e, "broadcast: request failed"),
-            }
-            result
-        };
-
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
-        trace!("broadcast: starting retry mechanism");
-        let result = broadcast_with_retries(self, sdk.address_list(), retry_settings, execute)
-            .await
-            .into_inner()
-            .map(|_| ());
-
-        match &result {
-            Ok(_) => trace!("broadcast: completed successfully"),
-            Err(e) => {
-                warn!(error = ?e, "broadcast: failed after retries");
-                if let Some(owner_id) = self.owner_id() {
-                    sdk.refresh_identity_nonce(&owner_id).await;
-                }
+        let request_settings = settings.map_or(sdk.dapi_client_settings, |settings| {
+            sdk.dapi_client_settings
+                .override_by(settings.request_settings)
+        });
+        let result = broadcast_with_retries(
+            self,
+            sdk.address_list(),
+            request_settings,
+            |request, settings| async move { sdk.execute(request, settings).await.inner_into() },
+            sdk.version(),
+        )
+        .await;
+        if result.is_err() {
+            if let Some(owner) = self.owner_id() {
+                sdk.refresh_identity_nonce(&owner).await;
             }
         }
-        result
+        finish_broadcast(result)
     }
+
     async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
@@ -207,9 +301,7 @@ impl BroadcastStateTransition for StateTransition {
         settings: Option<PutSettings>,
     ) -> Result<(T, ResponseMetadata), Error> {
         let (outcome, metadata) = self.wait_for_outcome_with_metadata(sdk, settings).await?;
-        // An execution-proved outcome carries a strictly stronger guarantee
-        // than the requested snapshot, so both tags are accepted here.
-        convert_proof_result::<T>(outcome.into_result()).map(|converted| (converted, metadata))
+        convert_proof_result::<T>(accept_affected_state(outcome)).map(|c| (c, metadata))
     }
 
     async fn broadcast_and_wait_for_affected_state<
@@ -232,10 +324,11 @@ impl BroadcastStateTransition for StateTransition {
         settings: Option<PutSettings>,
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait_for_affected_state: start");
-        self.broadcast(sdk, settings).await?;
-        let result = self
-            .wait_for_affected_state_with_metadata::<T>(sdk, settings)
-            .await;
+        let result = wait_after_broadcast(
+            self.broadcast(sdk, settings).await,
+            self.wait_for_affected_state_with_metadata::<T>(sdk, settings),
+        )
+        .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait_for_affected_state: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait_for_affected_state: failed"),
@@ -260,11 +353,11 @@ impl BroadcastStateTransition for StateTransition {
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
         trace!("broadcast_and_wait: step 1 - broadcasting");
-        self.broadcast(sdk, settings).await?;
-        trace!("broadcast_and_wait: step 2 - waiting for response");
-        let result = self
-            .wait_for_response_with_metadata::<T>(sdk, settings)
-            .await;
+        let result = wait_after_broadcast(
+            self.broadcast(sdk, settings).await,
+            self.wait_for_response_with_metadata::<T>(sdk, settings),
+        )
+        .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),
@@ -273,14 +366,59 @@ impl BroadcastStateTransition for StateTransition {
     }
 }
 
+/// Preserve attempt history before projecting the execution envelope.
+fn finish_broadcast(
+    result: ExecutionResult<BroadcastStateTransitionResponse, Error>,
+) -> Result<(), Error> {
+    result.map(|_| ()).map_err(|error| {
+        if error.is_possibly_accepted() {
+            error.inner.into_unconfirmed()
+        } else {
+            error.inner
+        }
+    })
+}
+
+/// Check the SAME signed transition after possible submission. No replacement is built here.
+pub(crate) async fn wait_after_broadcast<T>(
+    broadcast: Result<(), Error>,
+    wait: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    if let Err(error) = broadcast {
+        if !broadcast_may_have_been_accepted(&error) {
+            return Err(error);
+        }
+        // A later node's reported refusal cannot erase an earlier possible delivery.
+        // Its error metadata does not prove that the signed bytes were never accepted.
+        debug!(
+            ?error,
+            "checking the original submission after an uncertain acknowledgement"
+        );
+    }
+    // Result-stream errors are decoded before proof/signature verification. Even a typed
+    // consensus cause does not authenticate failure of the original submission.
+    wait.await.map_err(Error::into_unconfirmed)
+}
+
+fn broadcast_may_have_been_accepted(error: &Error) -> bool {
+    match error {
+        Error::StateTransitionResultUnconfirmed(_)
+        | Error::AlreadyExists(_)
+        | Error::TimeoutReached(..) => true,
+        Error::NoAvailableAddressesToRetry(inner) => broadcast_may_have_been_accepted(inner),
+        _ => false,
+    }
+}
+
 /// DPNS registration has two separate creates. Fail over each signed create,
 /// never restart the registration (which would generate a new preorder salt).
-/// This applies only to the immediate CheckTx rejection, not wait outcomes.
+/// Communication retries retain the same bytes; concrete Drive refusals are terminal.
 async fn broadcast_with_retries<Fut, Execute>(
     transition: &StateTransition,
     addresses: &AddressList,
     mut settings: RequestSettings,
     mut execute: Execute,
+    platform_version: &PlatformVersion,
 ) -> ExecutionResult<BroadcastStateTransitionResponse, Error>
 where
     Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
@@ -298,13 +436,14 @@ where
                 .min(DPNS_REGISTRATION_BROADCAST_RETRIES),
         );
     }
-    let request = transition
-        .broadcast_request_for_state_transition()
-        .map_err(|inner| ExecutionError {
+    let request = checked_broadcast_request(transition, platform_version).map_err(|inner| {
+        ExecutionError {
+            possibly_accepted: false,
             inner,
             address: None,
             retries: 0,
-        })?;
+        }
+    })?;
     // Same DPP helper and signed serialization as StateTransition::transaction_id().
     let dpns_transaction_id =
         dpns_stage.map(|_| hex::encode(hash_single(&request.state_transition)));
@@ -350,10 +489,7 @@ where
             result
         }
     };
-    retry_with_additional_error(addresses, settings, factory, |error| {
-        is_dpns_registration && is_missing_transition_owner(transition, error)
-    })
-    .await
+    retry(addresses, settings, factory).await
 }
 
 fn dpns_registration_document_type(transition: &StateTransition) -> Option<&str> {
@@ -377,16 +513,6 @@ fn dpns_registration_document_type(transition: &StateTransition) -> Option<&str>
     }
 }
 
-fn is_missing_transition_owner(transition: &StateTransition, error: &Error) -> bool {
-    let Error::Protocol(ProtocolError::ConsensusError(consensus)) = error else {
-        return false;
-    };
-    matches!(consensus.as_ref(),
-        ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(missing))
-            if Some(missing.identity_id()) == transition.owner_id()
-    )
-}
-
 /// Reject snapshot outcomes for the strict wait APIs with a typed error.
 pub fn require_execution_proved(
     outcome: StateTransitionProofOutcome,
@@ -401,6 +527,12 @@ pub fn require_execution_proved(
             ),
         )),
     }
+}
+
+/// Accept either tag for the affected-state wait APIs: an execution-proved
+/// outcome carries a strictly stronger guarantee than the snapshot requested.
+fn accept_affected_state(outcome: StateTransitionProofOutcome) -> StateTransitionProofResult {
+    outcome.into_result()
 }
 
 /// Convert the verified inner result into the caller's expected type.
@@ -458,6 +590,7 @@ impl WaitForOutcome for StateTransition {
             let request = self
                 .wait_for_state_transition_result_request()
                 .map_err(|e| ExecutionError {
+                    possibly_accepted: false,
                     inner: e,
                     address: None,
                     retries: 0,
@@ -494,6 +627,7 @@ impl WaitForOutcome for StateTransition {
             }
 
             let context_provider = sdk.context_provider().ok_or(ExecutionError {
+                possibly_accepted: false,
                 inner: Error::from(ContextProviderError::Config(
                     "Context provider not initialized".to_string(),
                 )),
@@ -577,21 +711,135 @@ impl WaitForOutcome for StateTransition {
 }
 
 #[cfg(test)]
+mod address_nonce_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use dapi_grpc::tonic::Status;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::IdentityNotFoundError;
+    use dpp::consensus::ConsensusError;
     use dpp::prelude::Identifier;
     use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use dpp::state_transition::batch_transition::document_replace_transition::DocumentReplaceTransitionV0;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
     use rs_dapi_client::ExecutionResponse;
     use std::future::ready;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn should_wait_for_verified_result_after_ambiguous_broadcast() {
+        let errors = [
+            Error::AlreadyExists("tx already exists in cache".into()),
+            Error::TimeoutReached(Duration::from_secs(10), "lost acknowledgement".into()),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::deadline_exceeded("relay timed out"),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::AlreadyExists("cached".into()))),
+        ];
+        for error in errors {
+            let result =
+                wait_after_broadcast(Err(error.into_unconfirmed()), async { Ok(42) }).await;
+            assert_eq!(result.expect("verified wait result"), 42);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_wait_after_dapi_confirmation_timeout_including_retry_wrappers() {
+        let timeout = || {
+            TransportError::Grpc(Status::resource_exhausted(
+                "broadcasting state transition is timed out",
+            ))
+        };
+        for error in [
+            Error::DapiClientError(DapiClientError::Transport(timeout())),
+            Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                timeout(),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::Transport(timeout()),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(timeout())),
+            ))),
+        ] {
+            assert_eq!(
+                wait_after_broadcast(Err(error.into_unconfirmed()), async { Ok(42) })
+                    .await
+                    .unwrap(),
+                42
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_wait_after_other_resource_exhausted_refusals() {
+        for message in [
+            "mempool is full",
+            "tenderdash is not responding: too many requests",
+            "rate limited",
+        ] {
+            let error = Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(TransportError::Grpc(
+                    Status::resource_exhausted(message),
+                ))),
+            )));
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definite capacity refusal must not poll the result wait")
+            })
+            .await;
+            assert_eq!(result.unwrap_err().to_string(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_never_substitute_cache_hit_for_a_valid_proof() {
+        for wait_error in [
+            Error::InvalidProvedResponse("bad signature".into()),
+            Error::ExecutionNotProved("affected-state snapshot only".into()),
+            Error::TimeoutReached(Duration::from_secs(10), "no verified result".into()),
+        ] {
+            let expected = format!("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {wait_error}");
+            let result: Result<(), Error> = wait_after_broadcast(
+                Err(Error::AlreadyExists("tx already exists in cache".into())),
+                async { Err(wait_error) },
+            )
+            .await;
+            assert_eq!(
+                result.expect_err("proof is still mandatory").to_string(),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_poll_result_wait_after_definite_broadcast_rejection() {
+        for error in [
+            missing_owner(owner_id()),
+            Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::invalid_argument("invalid transition"),
+            ))),
+        ] {
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definitive rejection must not poll the wait future")
+            })
+            .await;
+            assert_eq!(
+                result.expect_err("original rejection").to_string(),
+                expected
+            );
+        }
+    }
 
     fn owner_id() -> Identifier {
         Identifier::from([1; 32])
@@ -634,153 +882,52 @@ mod tests {
             .expect("valid addresses")
     }
 
-    #[test_case::test_case("preorder")]
-    #[test_case::test_case("domain")]
+    /// A transition over `max_state_transition_size` is refused with the
+    /// typed size error before any node is asked, instead of DAPI's untyped
+    /// refusal.
     #[tokio::test]
-    async fn should_retry_identical_dpns_bytes_on_another_node(document_type: &str) {
-        let transition = document_create(SystemDataContract::DPNS.id(), document_type);
-        let expected_request = transition.broadcast_request_for_state_transition().unwrap();
-        let addresses = addresses();
-        let mut requests = Vec::new();
-        let mut used_addresses = Vec::new();
+    async fn should_refuse_an_oversized_transition_before_dispatch() {
+        let max_size = PlatformVersion::latest()
+            .system_limits
+            .max_state_transition_size as usize;
+        let mut transition = document_create(Identifier::from([5; 32]), "note");
+        assert!(transition.set_signature(vec![4; max_size].into()));
+        let mut dispatched = 0;
 
-        broadcast_with_retries(
+        let outcome = broadcast_with_retries(
             &transition,
-            &addresses,
+            &addresses(),
             RequestSettings::default(),
-            |request, _| {
-                let address = addresses.get_live_addresses().into_iter().next().unwrap();
-                requests.push(request);
-                used_addresses.push(address.clone());
-                ready(if requests.len() == 1 {
-                    Err(ExecutionError {
-                        inner: missing_owner(owner_id()),
-                        address: Some(address),
-                        retries: 0,
-                    })
-                } else {
-                    Ok(ExecutionResponse {
-                        inner: BroadcastStateTransitionResponse {},
-                        address,
-                        retries: 0,
-                    })
-                })
-            },
-        )
-        .await
-        .expect("second node accepts the same signed transition");
-
-        assert_eq!(requests, vec![expected_request.clone(), expected_request]);
-        assert_ne!(used_addresses[0], used_addresses[1]);
-        assert!(addresses.is_banned(&used_addresses[0]));
-        let bans = addresses.ban_info();
-        let rejected = bans
-            .iter()
-            .find(|info| info.uri == used_addresses[0].to_string())
-            .unwrap();
-        assert_eq!(rejected.ban_count, 1);
-        let remaining = rejected.banned_until.unwrap() - chrono::Utc::now();
-        assert!(remaining <= chrono::Duration::seconds(2));
-    }
-
-    #[tokio::test]
-    async fn should_keep_repeated_missing_owner_exclusions_short_and_flat() {
-        let transition = document_create(SystemDataContract::DPNS.id(), "preorder");
-        let addresses = addresses();
-        for round in 0..2 {
-            let _ = broadcast_with_retries(
-                &transition,
-                &addresses,
-                RequestSettings::default(),
-                |_, _| {
-                    let address = addresses.get_live_addresses().into_iter().next().unwrap();
-                    ready(Err(ExecutionError {
-                        inner: missing_owner(owner_id()),
-                        address: Some(address),
-                        retries: 0,
-                    }))
-                },
-            )
-            .await;
-            for ban in addresses.ban_info().iter().filter(|ban| ban.banned) {
-                assert_eq!(
-                    ban.ban_count, 1,
-                    "rejections must not climb the health ladder"
-                );
-                assert!(
-                    ban.banned_until.unwrap() - chrono::Utc::now() <= chrono::Duration::seconds(2)
-                );
-            }
-            if round == 0 {
-                // Bans expire by the wall clock, which a CI runner can step
-                // back against the monotonic clock behind tokio's sleep, so
-                // a fixed sleep races the expiry. Poll instead: the deadline
-                // is far above the 2-second exclusion and far below the 60s
-                // first rung of the health ladder.
-                tokio::time::timeout(Duration::from_secs(10), async {
-                    while addresses.get_live_addresses().len() < addresses.len() {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
-                })
-                .await
-                .expect("every short exclusion expires");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn should_retry_only_domain_after_successful_preorder() {
-        let preorder = document_create(SystemDataContract::DPNS.id(), "preorder");
-        let domain = document_create(SystemDataContract::DPNS.id(), "domain");
-        let preorder_request = preorder.broadcast_request_for_state_transition().unwrap();
-        let domain_request = domain.broadcast_request_for_state_transition().unwrap();
-        let addresses = addresses();
-        let mut requests = Vec::new();
-        let mut execute = |request, _| {
-            let address = addresses.get_live_addresses().into_iter().next().unwrap();
-            requests.push(request);
-            ready(if requests.len() == 2 {
-                Err(ExecutionError {
-                    inner: missing_owner(owner_id()),
-                    address: Some(address),
-                    retries: 0,
-                })
-            } else {
-                Ok(ExecutionResponse {
+            |_, _| {
+                dispatched += 1;
+                ready(Ok(ExecutionResponse {
                     inner: BroadcastStateTransitionResponse {},
-                    address,
+                    address: "http://127.0.0.1:3001".parse().unwrap(),
                     retries: 0,
-                })
-            })
-        };
-
-        // The two registration stages use separate signed creates. Failure in
-        // the second broadcast must not replay the already accepted first one.
-        broadcast_with_retries(
-            &preorder,
-            &addresses,
-            RequestSettings::default(),
-            &mut execute,
+                }))
+            },
+            PlatformVersion::latest(),
         )
-        .await
-        .expect("preorder is accepted on its first attempt");
-        broadcast_with_retries(
-            &domain,
-            &addresses,
-            RequestSettings::default(),
-            &mut execute,
-        )
-        .await
-        .expect("only the rejected domain is retried");
+        .await;
+        assert!(!outcome.as_ref().unwrap_err().is_possibly_accepted());
+        let error = finish_broadcast(outcome).expect_err("an oversized transition is refused");
 
-        assert_eq!(
-            requests,
-            vec![preorder_request, domain_request.clone(), domain_request]
+        assert_eq!(dispatched, 0, "nothing is sent");
+        assert!(
+            matches!(
+                &error,
+                Error::Protocol(ProtocolError::ConsensusError(e)) if matches!(
+                    e.as_ref(),
+                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
+                )
+            ),
+            "unexpected error: {:?}",
+            error
         );
     }
 
     #[tokio::test]
-    async fn should_not_classify_timeouts_as_missing_owner_or_override_zero_retries() {
+    async fn should_preserve_timeouts_without_overriding_zero_retries() {
         let transition = document_create(SystemDataContract::DPNS.id(), "domain");
         let timeouts = [
             Error::TimeoutReached(Duration::from_secs(10), "broadcast timed out".to_string()),
@@ -789,7 +936,7 @@ mod tests {
             ))),
         ];
         for timeout in timeouts {
-            assert!(!is_missing_transition_owner(&transition, &timeout));
+            let expected = timeout.to_string();
             let addresses = addresses();
             let mut timeout = Some(timeout);
             let mut attempts = 0;
@@ -803,16 +950,18 @@ mod tests {
                 |_, _| {
                     attempts += 1;
                     ready(Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: timeout.take().expect("zero retries permits only one send"),
                         address: addresses.get_live_addresses().into_iter().next(),
                         retries: 0,
                     }))
                 },
+                PlatformVersion::latest(),
             )
             .await
             .expect_err("ambiguous timeout is returned under the existing retry budget");
             assert_eq!(attempts, 1);
-            assert!(!is_missing_transition_owner(&transition, &error.inner));
+            assert_eq!(error.inner.to_string(), expected);
         }
     }
 
@@ -836,18 +985,20 @@ mod tests {
                 attempts += 1;
                 assert_eq!(settings.retries, Some(expected - attempts));
                 ready(Err(ExecutionError {
-                    inner: missing_owner(owner_id()),
+                    possibly_accepted: true,
+                    inner: Error::TimeoutReached(Duration::from_secs(1), "lost".into()),
                     address: addresses.get_live_addresses().into_iter().next(),
                     retries: 0,
                 }))
             },
+            PlatformVersion::latest(),
         )
         .await
-        .expect_err("all nodes reject the owner");
+        .expect_err("all attempts lose their response");
         assert_eq!(attempts, expected);
         assert_eq!(error.retries, expected);
-        assert!(is_missing_transition_owner(&transition, &error.inner));
-        assert_eq!(addresses.get_live_addresses().len(), 4 - (expected - 1));
+        assert!(error.is_possibly_accepted());
+        assert_eq!(addresses.get_live_addresses().len(), 4 - expected);
     }
 
     #[tokio::test]
@@ -863,11 +1014,13 @@ mod tests {
                 attempts += 1;
                 assert_eq!(settings.retries, Some(2));
                 ready(Err(ExecutionError {
-                    inner: missing_owner(owner_id()),
+                    possibly_accepted: true,
+                    inner: Error::TimeoutReached(Duration::from_secs(1), "lost response".into()),
                     address: addresses.get_live_addresses().into_iter().next(),
                     retries: 2,
                 }))
             },
+            PlatformVersion::latest(),
         )
         .await
         .expect_err("lower layer already consumed all three sends");
@@ -879,7 +1032,10 @@ mod tests {
     #[test_case::test_case(true, false)]
     #[test_case::test_case(true, true)]
     #[tokio::test]
-    async fn should_stop_when_rejected_node_cannot_be_avoided(ban: bool, known_address: bool) {
+    async fn should_stop_on_concrete_rejection_regardless_of_node_failover_settings(
+        ban: bool,
+        known_address: bool,
+    ) {
         let transition = document_create(SystemDataContract::DPNS.id(), "domain");
         let addresses: AddressList = "http://127.0.0.1:3001".parse().unwrap();
         let address = addresses.get_live_addresses()[0].clone();
@@ -894,16 +1050,21 @@ mod tests {
             |_, _| {
                 attempts += 1;
                 ready(Err(ExecutionError {
+                    possibly_accepted: false,
                     inner: missing_owner(owner_id()),
                     address: known_address.then(|| address.clone()),
                     retries: 0,
                 }))
             },
+            PlatformVersion::latest(),
         )
         .await
-        .expect_err("cannot fail over safely");
+        .expect_err("concrete refusal ends sending");
         assert_eq!(attempts, 1);
-        assert!(is_missing_transition_owner(&transition, &error.inner));
+        assert_eq!(
+            error.inner.to_string(),
+            missing_owner(owner_id()).to_string()
+        );
         assert_eq!(addresses.get_live_addresses().len(), 1);
     }
 
@@ -948,6 +1109,7 @@ mod tests {
                 |_, _| {
                     attempts += 1;
                     ready(Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: error
                             .take()
                             .expect("unrelated rejection must not be retried"),
@@ -955,6 +1117,7 @@ mod tests {
                         retries: 0,
                     }))
                 },
+                PlatformVersion::latest(),
             )
             .await
             .expect_err("rejection is returned unchanged");
@@ -1001,5 +1164,31 @@ mod tests {
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
         require_execution_proved(StateTransitionProofOutcome::execution_proved(proved))
             .expect("execution-proved outcomes must pass the strict wait");
+    }
+
+    /// The outcome an erase produces, run through both gates. A transition
+    /// family the classifier reports as affected state cannot use the strict
+    /// wait: its own valid proof would come back as an error.
+    #[test]
+    fn should_accept_affected_state_while_the_strict_wait_refuses_it() {
+        use std::collections::BTreeMap;
+
+        let erased = || {
+            StateTransitionProofResult::VerifiedDocuments(BTreeMap::from([(
+                Identifier::from([9u8; 32]),
+                None,
+            )]))
+        };
+
+        let err = require_execution_proved(StateTransitionProofOutcome::affected_state(erased()))
+            .expect_err("the strict wait must refuse an erase's own outcome");
+        assert!(matches!(err, Error::ExecutionNotProved(_)));
+
+        let result = accept_affected_state(StateTransitionProofOutcome::affected_state(erased()));
+        let StateTransitionProofResult::VerifiedDocuments(documents) = result else {
+            panic!("the affected-state wait must return the document observation");
+        };
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents.get(&Identifier::from([9u8; 32])), Some(&None));
     }
 }

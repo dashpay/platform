@@ -154,7 +154,7 @@ fn should_union_full_and_partial_pages_preserving_existing_items_and_note_state(
                 assert!(batch.len() <= 2048);
                 batches.set(batches.get() + 1);
                 drive.grove_apply_batch(
-                    GroveDbOpBatch { operations: batch },
+                    GroveDbOpBatch::from_operations(batch),
                     false,
                     Some(&tx),
                     &pv.drive,
@@ -362,7 +362,7 @@ fn should_drop_partial_writes_on_failure_and_retry_to_the_same_root() {
                 }
                 batches += 1;
                 drive.grove_apply_batch(
-                    GroveDbOpBatch { operations: batch },
+                    GroveDbOpBatch::from_operations(batch),
                     false,
                     Some(&tx),
                     &pv.drive,
@@ -422,7 +422,7 @@ fn should_abort_a_corrupt_later_page_after_a_nonempty_batch() {
             |batch| {
                 batches.set(batches.get() + 1);
                 drive.grove_apply_batch(
-                    GroveDbOpBatch { operations: batch },
+                    GroveDbOpBatch::from_operations(batch),
                     false,
                     Some(&tx),
                     &pv.drive,

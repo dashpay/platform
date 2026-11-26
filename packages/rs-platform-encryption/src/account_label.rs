@@ -30,7 +30,7 @@ const ACCOUNT_LABEL_MAX_BYTES: usize = 63;
 fn fit_account_label(label: &str) -> String {
     // Floor: pad short labels to ≥16 chars.
     let deficit = ACCOUNT_LABEL_MIN_CHARS.saturating_sub(label.chars().count());
-    let padded = if deficit == 0 {
+    let mut padded = if deficit == 0 {
         label.to_string()
     } else {
         let mut s = String::with_capacity(label.len() + deficit);
@@ -42,14 +42,8 @@ fn fit_account_label(label: &str) -> String {
     // Ceiling: truncate long labels to ≤63 bytes on a char boundary. (Padding
     // only ever reaches 16 chars ≤ 63 bytes, so truncation only fires on a
     // genuinely long input, and the truncated prefix is still ≥16 bytes.)
-    if padded.len() <= ACCOUNT_LABEL_MAX_BYTES {
-        return padded;
-    }
-    let mut end = ACCOUNT_LABEL_MAX_BYTES;
-    while !padded.is_char_boundary(end) {
-        end -= 1;
-    }
-    padded[..end].to_string()
+    padded.truncate(padded.floor_char_boundary(ACCOUNT_LABEL_MAX_BYTES));
+    padded
 }
 
 /// Encrypt an account label for DashPay (DIP-15)
@@ -113,16 +107,15 @@ pub fn decrypt_account_label(
 mod tests {
     use super::*;
     use crate::ecdh::derive_shared_key_ecdh;
+    use secp256k1::generate_keypair;
     use secp256k1::rand::rngs::StdRng;
     use secp256k1::rand::{RngCore, SeedableRng};
-    use secp256k1::Secp256k1;
 
     #[test]
     fn test_account_label_encryption() {
         let mut rng = StdRng::seed_from_u64(4);
-        let secp = Secp256k1::new();
-        let (secret1, _public1) = secp.generate_keypair(&mut rng);
-        let (_secret2, public2) = secp.generate_keypair(&mut rng);
+        let (secret1, _public1) = generate_keypair(&mut rng);
+        let (_secret2, public2) = generate_keypair(&mut rng);
 
         // Derive shared key
         let shared_key = derive_shared_key_ecdh(&secret1, &public2);

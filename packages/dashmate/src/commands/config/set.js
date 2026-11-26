@@ -2,6 +2,7 @@ import { Args } from '@oclif/core';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import Config from '../../config/Config.js';
 import InvalidOptionPathError from '../../config/errors/InvalidOptionPathError.js';
+import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
 export default class ConfigSetCommand extends ConfigBaseCommand {
   static description = `Set config option
@@ -69,7 +70,13 @@ Sets a configuration option in the default config
     const configName = config.getName();
 
     configFileRepository.update((freshConfigFile) => {
-      freshConfigFile.getConfig(configName).set(optionPath, value);
+      const freshConfig = freshConfigFile.getConfig(configName);
+
+      freshConfig.set(optionPath, value);
+
+      // Enabling platform on a fullnode, or leaving masternode mode, needs a
+      // node identity saved before the service files are rendered.
+      ensureTenderdashNodeKey(freshConfig);
     }, {
       // Rendered after saving and inside the lock, so two commands changing the
       // same config cannot save in one order and render in the other.

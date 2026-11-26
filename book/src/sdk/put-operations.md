@@ -252,7 +252,11 @@ where `put_to_platform_and_wait_for_response_with_owner_balance` accepts an
 affected-state snapshot for any document type. For a DPNS registration,
 `Sdk::register_dpns_name_with_owner_balance_and_metadata` returns the
 registration result with the balance and metadata of the domain's proof, the
-registration's last write. A wait that asks for no proof
+registration's last write. For a DashPay profile,
+`Sdk::create_profile_with_owner_balance_and_metadata` and
+`Sdk::update_profile_with_owner_balance_and_metadata` return the confirmed
+profile document with the balance and metadata of its proof, which must show
+the write executed. A wait that asks for no proof
 but sets `request_user_balance` gets the owner's balance back unverified, as
 the response's `success_with_owner_balance` result, read from a Drive state at
 or past the block that executed the write; that works for any transition with

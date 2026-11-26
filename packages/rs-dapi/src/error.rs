@@ -166,6 +166,11 @@ impl DapiError {
         }
     }
 
+    /// Whether Tenderdash answered that this node does not hold the requested height.
+    pub fn is_missing_tenderdash_height(&self) -> bool {
+        matches!(self, DapiError::TenderdashClientError(status) if status.is_missing_height())
+    }
+
     /// Construct a `DapiError` from a raw Tenderdash JSON status response.
     pub fn from_tenderdash_error(value: Value) -> Self {
         DapiError::TenderdashClientError(TenderdashStatus::from(value))
@@ -839,7 +844,6 @@ impl From<dashcore_rpc::Error> for DapiError {
             dashcore_rpc::Error::Json(e) => DapiError::InvalidData(e.to_string()),
             dashcore_rpc::Error::Io(e) => DapiError::Io(e),
             dashcore_rpc::Error::InvalidAmount(e) => DapiError::InvalidData(e.to_string()),
-            dashcore_rpc::Error::Secp256k1(e) => DapiError::InvalidData(e.to_string()),
             dashcore_rpc::Error::InvalidCookieFile => {
                 DapiError::Unavailable("invalid cookie file".to_string())
             }

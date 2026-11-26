@@ -83,6 +83,11 @@ use crate::consensus::state::document::referenced_document_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use crate::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
+use crate::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
+use crate::consensus::state::document::document_sum_overflow_error::DocumentSumOverflowError;
+use crate::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -123,6 +128,8 @@ use crate::consensus::state::voting::masternode_voted_too_many_times::Masternode
 use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use crate::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
+use crate::consensus::state::decision_proposal::DecisionProposalEndDateOutOfRangeError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -745,6 +752,37 @@ pub enum StateError {
     // `chooseFirst` groups by (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
+
+    // Yes/no vote polls (protocol version 15).
+    #[error(transparent)]
+    YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
+
+    // Decision proposals (protocol version 15): an end date outside the window the block
+    // creating the proposal allows.
+    #[error(transparent)]
+    DecisionProposalEndDateOutOfRangeError(DecisionProposalEndDateOutOfRangeError),
+
+    // A document reference names a private document type (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypePrivateError(ReferencedDocumentTypePrivateError),
+
+    // A `PrivateDocumentCreateFromShieldedPool` (protocol version 15) names a type that is not
+    // private, or carries entries that do not take the type's `entrySize`.
+    #[error(transparent)]
+    DocumentTypeNotPrivateError(DocumentTypeNotPrivateError),
+
+    #[error(transparent)]
+    PrivateDocumentEntrySizeMismatchError(PrivateDocumentEntrySizeMismatchError),
+
+    // A document reference naming its target through the referring document points at a
+    // document type that does not meet its `documentTypeRequirements` (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypeRequirementNotMetError(ReferencedDocumentTypeRequirementNotMetError),
+
+    // A document create or replace would take its type's total of the summed property past what
+    // the type's sums hold (protocol version 15).
+    #[error(transparent)]
+    DocumentSumOverflowError(DocumentSumOverflowError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -756,6 +794,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block::block_info::BlockInfo;
     use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
@@ -772,6 +811,7 @@ mod tests {
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use crate::voting::vote_polls::VotePoll;
     use platform_value::Identifier;
@@ -1673,6 +1713,79 @@ mod tests {
                 )
             )),
             175
+        );
+        // Yes/no vote polls (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::YesNoVotePollNotAvailableForVotingError(
+                YesNoVotePollNotAvailableForVotingError::new(
+                    identity_id,
+                    Some(YesNoVotePollStatus::Started(BlockInfo::default()))
+                )
+            )),
+            176
+        );
+        // Decision proposals (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::DecisionProposalEndDateOutOfRangeError(
+                DecisionProposalEndDateOutOfRangeError::new(identity_id, 1, 2, 3)
+            )),
+            177
+        );
+        // A document reference to a private document type (protocol version 15): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypePrivateError(
+                ReferencedDocumentTypePrivateError::new(
+                    identity_id,
+                    "privateContactRequest".to_string(),
+                    "request".to_string(),
+                )
+            )),
+            178
+        );
+        // A `PrivateDocumentCreateFromShieldedPool`'s target (protocol version 15): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotPrivateError(
+                DocumentTypeNotPrivateError::new(identity_id, "contactRequest".to_string())
+            )),
+            179
+        );
+        assert_eq!(
+            discriminant_of(StateError::PrivateDocumentEntrySizeMismatchError(
+                PrivateDocumentEntrySizeMismatchError::new(
+                    identity_id,
+                    "privateContactRequest".to_string(),
+                    585,
+                    584,
+                )
+            )),
+            180
+        );
+        // A dynamic document reference's unmet `documentTypeRequirements` (protocol version
+        // 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeRequirementNotMetError(
+                ReferencedDocumentTypeRequirementNotMetError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "descriptionId".to_string(),
+                )
+            )),
+            181
+        );
+        // A document write past its type's total of the summed property (protocol version 15):
+        // the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentSumOverflowError(
+                DocumentSumOverflowError::new(
+                    identity_id,
+                    "tip".to_string(),
+                    "amount".to_string(),
+                    i64::MAX,
+                )
+            )),
+            182
         );
     }
 }

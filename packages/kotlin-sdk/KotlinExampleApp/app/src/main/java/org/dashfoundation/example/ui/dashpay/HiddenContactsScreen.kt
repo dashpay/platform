@@ -28,6 +28,7 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
@@ -53,7 +54,7 @@ fun HiddenContactsScreen(ownerIdentityIdHex: String, navController: NavHostContr
 
     val identity by remember(ownerBytes) {
         container.database.identityDao().observeByIdentityId(ownerBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) { walletId?.let { manager?.wallet(forWalletId = it) } }
 

@@ -11,6 +11,9 @@
 //! - **Idempotent.** Applying the same changeset N times produces the
 //!   same state as applying it once. Callers may re-run apply on
 //!   startup or after a partial write without additional bookkeeping.
+//! - **Monotonic asset-lock recovery.** A stale snapshot cannot erase an
+//!   operation UUID or regress a consumed tombstone. A conflicting UUID
+//!   cannot rebind the existing operation.
 //! - **No re-emission.** `apply_changeset` returns `Result<(), _>`, not
 //!   a new changeset. Mutation bookkeeping that internally produces
 //!   changesets (e.g. `update_balance`) discards them.
@@ -46,7 +49,7 @@
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::PlatformWalletChangeSet;
-use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Errors returned by [`PlatformWalletInfo::apply_changeset`] and the
@@ -231,6 +234,9 @@ impl PlatformWalletInfo {
                 established,
                 ignored,
                 unignored,
+                private_contact_requests_positions,
+                private_shielded_addresses,
+                removed_private_shielded_addresses,
             } = contact_cs;
 
             for (key, entry) in sent_requests {
@@ -300,6 +306,23 @@ impl PlatformWalletInfo {
                     managed.apply_unignored_sender(&sender_id);
                 }
             }
+            // The private contact request scan state: each owner's read
+            // position, and its contacts' shielded addresses, removals last.
+            for (owner_id, position) in private_contact_requests_positions {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_private_contact_requests_position(position);
+                }
+            }
+            for ((owner_id, contact_id), address) in private_shielded_addresses {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_private_shielded_address(contact_id, address);
+                }
+            }
+            for (owner_id, contact_id) in removed_private_shielded_addresses {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_removed_private_shielded_address(&contact_id);
+                }
+            }
         }
 
         // 3b. DashPay profile/payment overlays. Applied AFTER identities
@@ -356,10 +379,26 @@ impl PlatformWalletInfo {
         //    Replaying the persisted tombstone therefore preserves the
         //    same classification after a restart.
         if let Some(al_cs) = asset_locks {
-            for (out_point, entry) in al_cs.asset_locks {
+            for (out_point, mut entry) in al_cs.asset_locks {
+                if let Some(existing) = self.tracked_asset_locks.get_mut(&out_point) {
+                    if !entry.preserve_recovery_metadata(
+                        existing.operation_id,
+                        existing.shielded_recipient,
+                    ) {
+                        continue;
+                    }
+                    if existing.status == AssetLockStatus::DrainCompleted
+                        || (existing.status.is_consumed() && !entry.status.is_consumed())
+                    {
+                        existing.operation_id = entry.operation_id;
+                        existing.shielded_recipient = entry.shielded_recipient;
+                        continue;
+                    }
+                }
                 self.tracked_asset_locks.insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: entry.operation_id,
                         out_point: entry.out_point,
                         transaction: entry.transaction,
                         account_index: entry.account_index,
@@ -368,10 +407,20 @@ impl PlatformWalletInfo {
                         amount: entry.amount_duffs,
                         status: entry.status,
                         proof: entry.proof,
+                        shielded_recipient: entry.shielded_recipient,
                     },
                 );
             }
             for out_point in al_cs.removed {
+                // Match changeset folding and durable stores: a stale removal
+                // cannot erase the terminal operation-recovery tombstone.
+                if self
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .is_some_and(|entry| entry.status.is_consumed())
+                {
+                    continue;
+                }
                 self.tracked_asset_locks.remove(&out_point);
             }
         }
@@ -445,6 +494,7 @@ mod tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
@@ -725,6 +775,8 @@ mod tests {
         al_cs.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -770,13 +822,199 @@ mod tests {
             AssetLockStatus::Consumed
         );
 
-        // An explicit removal tombstone still removes it.
+        // A stale removal cannot discard the terminal recovery tombstone.
         let mut al_cs = AssetLockChangeSet::default();
         al_cs.removed.insert(out_point);
         let mut cs = PlatformWalletChangeSet::default();
         cs.asset_locks = Some(al_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
-        assert!(!info.tracked_asset_locks.contains_key(&out_point));
+        assert_eq!(
+            info.tracked_asset_locks[&out_point].status,
+            AssetLockStatus::Consumed
+        );
+    }
+
+    fn recovery_asset_lock(
+        status: AssetLockStatus,
+        operation_id: Option<[u8; 16]>,
+    ) -> AssetLockEntry {
+        AssetLockEntry {
+            operation_id,
+            out_point: OutPoint::default(),
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 5_000,
+            status,
+            proof: None,
+            shielded_recipient: None,
+        }
+    }
+
+    fn apply_recovery_asset_lock(
+        info: &mut PlatformWalletInfo,
+        wallet: &mut Wallet,
+        entry: AssetLockEntry,
+    ) {
+        let mut locks = AssetLockChangeSet::default();
+        locks.asset_locks.insert(entry.out_point, entry);
+        info.apply_changeset(
+            wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(locks),
+                ..Default::default()
+            },
+        )
+        .expect("apply asset-lock snapshot");
+    }
+
+    #[test]
+    fn should_preserve_asset_lock_recovery_metadata_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let operation_id = Some([42; 16]);
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Broadcast, operation_id),
+        );
+
+        // A stale snapshot without the UUID keeps the association.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        let newest = recovery_asset_lock(AssetLockStatus::ChainLocked, operation_id);
+        apply_recovery_asset_lock(&mut info, &mut wallet, newest.clone());
+        apply_recovery_asset_lock(&mut info, &mut wallet, newest);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::ChainLocked);
+    }
+
+    #[test]
+    fn should_preserve_the_shielded_recipient_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let recipient = [0x81u8; crate::changeset::SHIELDED_RECIPIENT_SIZE];
+        let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
+        recorded.shielded_recipient = Some(recipient);
+        apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
+
+        // A stale snapshot without the recipient keeps it.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.shielded_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        // A snapshot naming another recipient is dropped whole.
+        let mut redirected = recovery_asset_lock(AssetLockStatus::ChainLocked, None);
+        redirected.shielded_recipient = Some([0x82; crate::changeset::SHIELDED_RECIPIENT_SIZE]);
+        apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.shielded_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+    }
+
+    #[test]
+    fn should_keep_consumed_asset_locks_terminal_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let operation_id = Some([42; 16]);
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Consumed, operation_id),
+        );
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Broadcast, None),
+        );
+        let mut removed = AssetLockChangeSet::default();
+        removed.removed.insert(OutPoint::default());
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removed),
+                ..Default::default()
+            },
+        )
+        .expect("apply stale removal");
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::Consumed);
+    }
+
+    #[test]
+    fn should_preserve_proven_drain_completion_over_generic_consumption_and_removal() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        for status in [
+            AssetLockStatus::Consumed,
+            AssetLockStatus::DrainCompleted,
+            AssetLockStatus::Consumed,
+            AssetLockStatus::Broadcast,
+        ] {
+            apply_recovery_asset_lock(
+                &mut info,
+                &mut wallet,
+                recovery_asset_lock(status.clone(), Some([42; 16])),
+            );
+            if status == AssetLockStatus::DrainCompleted {
+                assert_eq!(
+                    info.tracked_asset_locks[&OutPoint::default()].status,
+                    status
+                );
+            }
+        }
+        let mut removed = AssetLockChangeSet::default();
+        removed.removed.insert(OutPoint::default());
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            info.tracked_asset_locks[&OutPoint::default()].status,
+            AssetLockStatus::DrainCompleted
+        );
+    }
+
+    #[test]
+    fn should_ignore_conflicting_asset_lock_operation_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let original = recovery_asset_lock(AssetLockStatus::Broadcast, Some([42; 16]));
+        apply_recovery_asset_lock(&mut info, &mut wallet, original.clone());
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Consumed, Some([43; 16])),
+        );
+        assert_eq!(
+            AssetLockEntry::from(&info.tracked_asset_locks[&OutPoint::default()]),
+            original
+        );
     }
 
     /// Token-balance changesets are accepted by `apply_changeset` for
@@ -1465,6 +1703,9 @@ mod tests {
             avatar_hash: Some([0xaa; 32]),
             avatar_fingerprint: Some([0xbb; 8]),
             public_message: Some("hello world".into()),
+            core_payment_address: Some(vec![0x00; 21]),
+            platform_payment_address: Some(vec![0x01; 21]),
+            shielded_address: Some(vec![0x02; 43]),
         };
 
         // Mutate A (persists internally via noop persister).

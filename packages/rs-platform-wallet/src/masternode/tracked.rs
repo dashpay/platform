@@ -30,7 +30,6 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dash_sdk::platform::Fetch;
-use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
 use dashcore::{Address as DashAddress, Network};

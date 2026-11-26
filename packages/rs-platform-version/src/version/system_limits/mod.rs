@@ -2,9 +2,24 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
+    /// Maximum retained revisions removed by one erase, read by
+    /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
+    pub max_document_revisions_erased_per_transition: Option<u16>,
+    /// Most allowed values a document's `enum` violation lists in its parameters and its
+    /// message, the first the schema writes; the others are counted, not listed. Read by the
+    /// native document validator (`validation_schema` 0, which `validate_document` 2 of
+    /// protocol version 15 runs). `None` in the earlier tables, whose document validation
+    /// never reaches it.
+    pub max_enum_violation_listed_values: Option<u16>,
+    /// Most bytes the JSON of the allowed values a document's `enum` violation lists takes
+    /// together; listing stops before the first value that would go past it, or that is an
+    /// array or an object. Read with `max_enum_violation_listed_values`, and `None` where it
+    /// is.
+    pub max_enum_violation_listed_bytes: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,
     /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
@@ -22,6 +37,77 @@ pub struct SystemLimits {
     /// document type parser generation 3 (protocol version 14), the only generation that
     /// parses typed arrays, and never reached before.
     pub max_typed_array_items: u16,
+    /// Maximum bytes of an index property name: 255, the longest key GroveDB stores. Read by
+    /// the native schema check of registration (`check_document_type_schema` 1, protocol
+    /// version 15), which refuses a longer name; the document meta-schema checked before it
+    /// admitted 256 characters. Never reached before protocol version 15.
+    pub max_index_property_name_bytes: u16,
+    /// Most patterns the document schemas and `$defs` of one contract may hold: every string
+    /// under a `pattern` key, and every `regexPattern` of a contested index's `fieldMatches`,
+    /// one in `$defs` counted once for each document type.
+    /// Each is compiled when the contract is parsed and again for the validator its documents
+    /// are checked with, so this, `max_schema_pattern_compiled_size` and the pattern length and
+    /// case-folding bounds below bound the work compiling one contract's patterns takes every
+    /// node. Read by `DataContract::validate_schema_patterns`
+    /// 0, which contract registration and update run under full validation from protocol
+    /// version 15 and never before; `check_tx` holds a contract to the same bound at every
+    /// protocol version, as mempool policy where consensus has no such rule.
+    pub max_contract_schema_patterns: u16,
+    /// The `regex` size limit, in bytes, every such pattern must compile within. Read with
+    /// `max_contract_schema_patterns`.
+    pub max_schema_pattern_compiled_size: u32,
+    /// Most bytes one such pattern may take as written. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_schema_pattern_bytes: u16,
+    /// Most bytes the patterns of one contract may take together as written, one in `$defs`
+    /// counted once for each document type, as the schema check reads every definition for
+    /// each type it checks. Compiling a pattern takes time in proportion to its length as well
+    /// as to its compiled size, so this bounds the time compiling a contract's patterns takes.
+    /// Read with `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_contract_schema_pattern_bytes: u32,
+    /// Most code points translating one such pattern may case-fold, as
+    /// `validate_schema_patterns` 0 estimates them from the pattern's syntax (an estimate, not
+    /// an exact count: the walk it bounds stays within a small multiple of it): under
+    /// case-insensitive matching the `regex` crate walks every code point of a class before it
+    /// compiles the pattern, a walk the compiled size does not reflect. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_schema_pattern_case_folded_code_points: u32,
+    /// Maximum bytes of a contract stored compiled (format version 2, its document types
+    /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
+    /// `None` in the earlier tables, which store no contract compiled. The format transitions
+    /// carry is capped by `max_serialized_size`, but compiling turns a contract into more
+    /// bytes than its schemas take. Contract registration and update refuse a contract over
+    /// it, and a token configuration update one it would take over it
+    /// (`DataContractCompiledMaxSizeExceededError`); Drive refuses to store one, and proof
+    /// verification refuses a compiled contract over it.
+    pub max_compiled_contract_size: Option<u32>,
+    /// Most bytes an entry of a private document type may take (`private.entrySize`, protocol
+    /// version 15): 4096 from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no
+    /// private document type. Read by `parse_private_document` 0 of parser generation 3
+    /// (`apply_private_document`) under full validation: registration refuses a larger
+    /// `entrySize`; a contract read back from state passed it. Drive stores each entry with a 16-byte header of its own, which
+    /// this does not count.
+    pub max_private_document_entry_size: Option<u32>,
+    /// The bytes a compacted chunk of a private document store is kept near (protocol version
+    /// 15): 1 MiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// document type. Read with the two chunk power bounds below by Drive's
+    /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
+    /// type's store; the chunk power it picks is committed into the store, so a store keeps the
+    /// rule of the protocol version that created it.
+    pub private_document_store_target_chunk_bytes: Option<u32>,
+    /// The smallest chunk power a private document store takes, whatever its entry size: 4 from
+    /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    pub private_document_store_min_chunk_power: Option<u8>,
+    /// The largest chunk power a private document store takes, whatever its entry size: 11 from
+    /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    /// At most 15: a page of a store reads up to a whole chunk, and a page reads at most
+    /// u16::MAX entries (Drive's `should_keep_a_whole_chunk_within_one_page`).
+    pub private_document_store_max_chunk_power: Option<u8>,
+    /// Most entries one `PrivateDocumentCreateFromShieldedPool` transition may append to a
+    /// private document type's store (protocol version 15): 16 from `SYSTEM_LIMITS_V5`, `None`
+    /// in the earlier tables, which refuse the transition before validating it. Read by the
+    /// transition's basic structure 0.
+    pub max_private_document_entries_per_transition: Option<u16>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one
@@ -49,6 +135,31 @@ pub struct SystemLimits {
     /// it. Read by document type parser generation 3 (protocol version 14) and never reached
     /// before.
     pub max_reference_expression_depth: u16,
+    /// Maximum number of slots the `documentTypeRequirements` of a `refersTo` naming its
+    /// target through the referring document (`"$self.<property>"`) may declare (it holds
+    /// at least one). Every write that checks such a reference looks for properties of the
+    /// referenced document type to fill them with, a search that stays small only while
+    /// the slots are few. Refused on every parse. Read by `apply_property_reference` 1
+    /// (protocol version 15), the only version that parses such a reference, and never
+    /// reached before.
+    pub max_document_type_requirement_slots: u16,
+    /// Maximum number of conditions the `when` of one `documentTypeRequirements` slot may be
+    /// made of, `anyOf`, `allOf`, `not`, `ifThen` and `ifThenElse` counted with the
+    /// comparisons under them, and each string an `in` or a `notIn` lists counted too. Every write that checks the reference judges the condition
+    /// against each property of the referenced document type that could fill the slot. It
+    /// also bounds how deep conditions nest, which a decoder holds to
+    /// `MAX_SLOT_CONDITION_DECODE_DEPTH` (a test keeps this limit within it). Refused on
+    /// every parse. Read by `apply_property_reference` 1 (protocol version 15), the only
+    /// version that parses such a reference, and never reached before.
+    pub max_document_type_requirement_condition_nodes: u16,
+    /// Maximum number of characters of a string the `when` of a `documentTypeRequirements`
+    /// slot is written with: a `{ "const": ... }` and each string an `in` or a `notIn`
+    /// lists. They are compared with property names and property paths, which are no
+    /// longer. With `max_document_type_requirement_condition_nodes`, which counts each
+    /// listed string, it bounds what one `when` adds to a stored contract. Refused on
+    /// every parse and by the native schema check. Read by `apply_property_reference` 1
+    /// and `check_document_type_schema` 1 (protocol version 15) only.
+    pub max_document_type_requirement_condition_text_length: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
     /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one
@@ -205,7 +316,10 @@ pub struct SystemLimits {
     /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
     /// withdrawal whose whole amount is below the threshold of its output script is marked
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
-    /// method version 2). `None` for the protocol versions that predate the rule.
+    /// method version 2). From protocol version 15 a withdrawal whose whole amount is below
+    /// that threshold also keeps asset unlock payload version 1 when it is pooled
+    /// (`build_untied_withdrawal_transactions_from_documents` method version 1), so FAILED only
+    /// ever ends a version 1 withdrawal. `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
     /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
     /// `None` preserves the behavior of protocol versions that predate this limit.
@@ -239,6 +353,35 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// The largest fixed minimum voting power a yes/no vote poll may require, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power: u32,
+    /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
+    /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
+    /// The longest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: four weeks, the longest election window a contract may declare. Read by
+    /// `Drive::open_yes_no_vote_poll` (protocol version 15).
+    pub max_yes_no_vote_poll_duration_ms: u64,
+    /// The shortest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: one week, so masternode operators have time to see a poll before it
+    /// closes. Read by `YesNoVotePoll::end_date_window` (protocol version 15), which the
+    /// decision proposal create validation and the poll opener share.
+    pub min_yes_no_vote_poll_duration_ms: u64,
+    /// The smallest pass threshold a yes/no vote poll may set, in percent: a poll passes when
+    /// yes is more than `supermajority_numerator / supermajority_denominator` of yes plus no,
+    /// and that fraction may not be below this. 50 is a simple majority, so a poll cannot pass
+    /// with fewer yes than no. Read by `YesNoVotePoll::validate_parameters` (protocol version
+    /// 15).
+    pub min_yes_no_vote_poll_supermajority_percent: u8,
+    /// The voting power a regular masternode's yes/no vote carries, and what it adds to the
+    /// masternode list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_masternode_vote_strength: u8,
+    /// The voting power an evonode's yes/no vote carries, and what it adds to the masternode
+    /// list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_evonode_vote_strength: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never
@@ -402,6 +545,33 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The largest magnitude a summed property may admit on a document type that keeps no
+    /// total a write can be checked against, enforced when a contract is registered or updated
+    /// (full validation only, like `max_contested_summed_value_magnitude`): unless the
+    /// property's schema declares a `maximum` of at most this and a `minimum` of at least its
+    /// negation, it must declare a `minimum` of at least 0 and the type must keep the total of
+    /// the property over all its documents (`documentsSummable` or `documentsAverageable`).
+    /// With every value this small, a sum of fewer than 2^36 documents stays in `i64`. With
+    /// values that are never negative, no sum of the type exceeds the type's total times the
+    /// entries one document adds to an index, so state validation holds every sum in `i64` by
+    /// reading that one total before a create or a replace. Read by the document type parser
+    /// from generation 3 on and by the document create and replace state validation of
+    /// protocol version 15.
+    ///
+    /// `None` preserves the behavior of protocol versions that do not read it.
+    pub max_summed_value_magnitude_without_type_total: Option<u64>,
+    /// The largest magnitude a summed property may declare for its document type to keep its
+    /// sums in 64 bits. A type whose summed property declares a `maximum` of at most this and a
+    /// `minimum` of at least its negation keeps every sum in the trees with an `i64` total,
+    /// where a sum of fewer than 2^36 documents cannot leave the range. Any other summed
+    /// property, one that declares no bound included, has its type keep every sum in the trees
+    /// with an `i128` total, which no number of `i64` values can leave. Read by the document
+    /// type parser from generation 3 on, which records the outcome on the type
+    /// (`DocumentTypeV2Getters::uses_big_sums`) and on its index levels
+    /// (`IndexLevelTypeInfo::big_sums`).
+    ///
+    /// `None` keeps every sum in 64 bits, as the protocol versions that do not read it do.
+    pub max_summed_value_magnitude_in_64_bit_sums: Option<u64>,
     /// The highest `maxItems` a typed array may declare when an index keys the document by
     /// its elements, enforced when a contract is registered or updated (full validation only,
     /// like `max_typed_array_items`). Each distinct element is one index entry, so this is the
@@ -453,6 +623,22 @@ pub struct SystemLimits {
     ///
     /// `None` in the tables of protocol versions that never run the rewrite.
     pub max_rekey_batch_moves: Option<u32>,
+    /// How many GroveDB operations the move of retained document histories to the composite-key
+    /// layout on the first block of protocol version 15
+    /// (`Drive::migrate_document_history_storage`) gathers before it applies them, across
+    /// documents, types and contracts: one batch per document would propagate to the root once
+    /// per document. A document's operations are never split, so a batch holds at most one
+    /// document's operations more. Part of what that block writes, since the batch boundaries
+    /// shape the Merk trees the documents' keys are deleted from and inserted into.
+    ///
+    /// It also bounds the block's stack: a batch deletes the keys of up to about a sixth of
+    /// this many documents from a type's primary-key tree, and Merk's batch delete recurses
+    /// about once per key it removes from a tree. 500 operations stay under 512 KiB of stack
+    /// for a type of 32,000 documents; 10,000 need more than 2 MiB.
+    ///
+    /// `None` in the tables of protocol versions before 15, which never run the migration; every
+    /// table from protocol version 15 on sets it.
+    pub max_history_migration_batch_operations: Option<u32>,
 }
 
 #[cfg(test)]
@@ -510,10 +696,11 @@ mod tests {
     fn mock_platform_versions_carry_the_same_documents_batch_cap() {
         use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
         use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
         use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
 
-        let versions =
-            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        let versions = PLATFORM_TEST_VERSIONS
+            .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
         assert!(
             !versions.is_empty(),
             "the mock version registry is empty; this test would assert nothing"

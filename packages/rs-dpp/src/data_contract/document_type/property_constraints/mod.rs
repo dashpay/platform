@@ -80,7 +80,10 @@
 //! integer property over them, from the count and sum trees their indexes keep
 //! (`{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }`), as the total will
 //! be once the write is done. A filter may match by the document's own id
-//! (`{ "countOf": ["vote", { "pollId": "$id" }] }`, the votes pointing at it).
+//! (`{ "countOf": ["vote", { "pollId": "$id" }] }`, the votes pointing at it),
+//! or, from protocol version 15, by any element of a typed array of the
+//! document (`{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }`, the
+//! banned tags among the document's own).
 //! Consensus reads them before judging the rules
 //! ([`DocumentSystemValues::aggregates`]), and a total missing there is an
 //! error; a client, which reads none, does not judge a rule reading one.
@@ -119,8 +122,8 @@ use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision, TimestampMillis};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
-use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
+use platform_version::version::PlatformVersion;
 use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -699,7 +702,9 @@ pub struct DocumentSystemValues {
     /// the code building the write, which the judging reports as an error
     /// rather than skip the rule ([`PropertyConstraint::unread_aggregate`],
     /// [`PropertyConstraint::unread_stored_version`]). `false` for a client,
-    /// which skips a rule reading what it does not know.
+    /// which skips a rule reading what it does not know, a property generated
+    /// from state that the document leaves out among them
+    /// (`DocumentTypeBasicMethods::validate_property_constraints`).
     pub consensus: bool,
     /// Whether the data the rules are judged against holds, under
     /// [`REFERENCED_DOCUMENT_KEY`], the values they read of the documents the
@@ -1039,7 +1044,8 @@ pub enum AggregateKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AggregateBinding {
     /// The document's property at the dotted `path`; `kind` is how it
-    /// compares, `None` for an integer.
+    /// compares, `None` for an integer. `EqualityKind::Bytes`, a byte array,
+    /// only under `parse_property_constraints` 1 (protocol version 15).
     Property {
         path: String,
         kind: Option<EqualityKind>,
@@ -1056,6 +1062,17 @@ pub enum AggregateBinding {
     /// `{ "const": ... }`: a string, or a base58 identifier where the key is
     /// an identifier.
     Constant(String),
+    /// `{ "in": path }`: any element of the document's typed array at the
+    /// dotted `path`, so that the total is over the documents whose key is one
+    /// of the list's distinct elements, and 0 for a list the document leaves
+    /// out or empties. `kind` is how an element compares, `None` for an
+    /// integer. Only under `parse_property_constraints` 1 (protocol version
+    /// 15), at most once in a filter, and never in a total of the declaring
+    /// type's own documents.
+    Elements {
+        path: String,
+        kind: Option<EqualityKind>,
+    },
 }
 
 /// A `countOf` or `sumOf` operand: the documents of the type
@@ -1100,6 +1117,16 @@ impl AggregateRead {
             .values()
             .any(|binding| *binding == AggregateBinding::Owner)
             || (self.of_own_type && self.filter.contains_key(OWNER_ID))
+    }
+
+    /// The typed array a key of the filter is matched by any element of
+    /// ([`AggregateBinding::Elements`]), by its dotted path: the read then
+    /// takes one total from state per distinct element of the list.
+    pub fn elements_path(&self) -> Option<&str> {
+        self.filter.values().find_map(|binding| match binding {
+            AggregateBinding::Elements { path, .. } => Some(path.as_str()),
+            _ => None,
+        })
     }
 
     /// The filter's keys when the total is over the type declaring the rule:
@@ -1364,15 +1391,34 @@ impl ConstraintExpression {
             // The properties of the document being written its filter reads
             ConstraintExpression::Aggregate(read) => {
                 for binding in read.filter.values() {
-                    if let AggregateBinding::Property { path, kind } = binding {
-                        let read = match kind {
-                            // Never bytes: the parse reads a byte array as an
-                            // integer here, which the parsed type refuses
-                            None | Some(EqualityKind::Bytes) => PropertyRead::Value,
-                            Some(EqualityKind::Text) => PropertyRead::Text,
-                            Some(EqualityKind::Identifier) => PropertyRead::Identifier,
-                        };
-                        visit(path, read)?;
+                    match binding {
+                        AggregateBinding::Property { path, kind } => {
+                            let read = match kind {
+                                None => PropertyRead::Value,
+                                Some(EqualityKind::Text) => PropertyRead::Text,
+                                Some(EqualityKind::Identifier) => PropertyRead::Identifier,
+                                // Only from `parse_property_constraints` 1: before it the
+                                // parse reads a byte array here as an integer, which the
+                                // parsed type refuses
+                                Some(EqualityKind::Bytes) => PropertyRead::Bytes { extent: 0 },
+                            };
+                            visit(path, read)?;
+                        }
+                        // Only from `parse_property_constraints` 1. A typed array of
+                        // byte arrays compares as nothing does, so its kind is `None`
+                        // and it is refused as an array without integer elements
+                        AggregateBinding::Elements { path, kind } => {
+                            let elements = match kind {
+                                Some(EqualityKind::Text) => ElementKind::Text,
+                                Some(EqualityKind::Identifier) => ElementKind::Identifier,
+                                None | Some(EqualityKind::Bytes) => ElementKind::Integer,
+                            };
+                            visit(path, PropertyRead::Elements(elements))?;
+                        }
+                        AggregateBinding::Owner
+                        | AggregateBinding::Id
+                        | AggregateBinding::Integer(_)
+                        | AggregateBinding::Constant(_) => {}
                     }
                 }
             }
@@ -2190,6 +2236,13 @@ impl PropertyConstraint {
             .collect()
     }
 
+    /// Whether the rule reads the property at the dotted `path` of the
+    /// document it judges (not through `$old.`, which reads the stored
+    /// version), the walk stopping at the first such read.
+    pub fn reads_property_at(&self, path: &str) -> bool {
+        self.reads_property(&|read| read == path)
+    }
+
     /// Whether the rule reads a value of a document one of the type's
     /// references points at (`{ "referenced": [...] }`), the walk stopping at
     /// the first such read rather than collecting every one.
@@ -2935,12 +2988,79 @@ impl PropertyConstraint {
     }
 }
 
+/// How a property of the document, of equality kind `kind` (as the parse's `property_kind`
+/// says), compares as the value a `countOf` or `sumOf` filter binds to a key. Versioned on
+/// `parse_property_constraints`: before 1 (and where no rule parses) a byte array matches no
+/// key and is read as an integer, which the parsed document type refuses; from 1 (protocol
+/// version 15) it is the byte array it is, which a byte array key of the counted type takes.
+fn aggregate_binding_kind(
+    kind: Option<EqualityKind>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<EqualityKind>, String> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None | Some(0) => Ok(kind.filter(|kind| *kind != EqualityKind::Bytes)),
+        Some(1) => Ok(kind),
+        Some(version) => Err(format!(
+            "is parsed under parse_property_constraints version {version}, which is not \
+             supported"
+        )),
+    }
+}
+
+/// Whether a `countOf` or `sumOf` filter may match a key by any element of a typed array of
+/// the document, `{ "in": path }` ([`AggregateBinding::Elements`]). Versioned on
+/// `parse_property_constraints`: from 1 (protocol version 15) only. Before it the object is
+/// no value a filter takes, and is refused as any other is.
+fn aggregate_elements_parsed(context: &ParseContext) -> Result<bool, String> {
+    match context
+        .platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None | Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        Some(version) => Err(format!(
+            "is parsed under parse_property_constraints version {version}, which is not \
+             supported"
+        )),
+    }
+}
+
+/// The refusal of a value no `countOf` or `sumOf` filter takes at `key`, naming what one
+/// takes under the `parse_property_constraints` version parsing it.
+fn aggregate_binding_error(at: &str, key: &str, context: &ParseContext) -> Result<String, String> {
+    Ok(if aggregate_elements_parsed(context)? {
+        format!(
+            "at {at}.{key} must be a property path of the document, $ownerId, $id, an integer, \
+             a {{ \"const\": ... }} string or base58 identifier, or {{ \"in\": path }} naming a \
+             typed array of the document"
+        )
+    } else {
+        format!(
+            "at {at}.{key} must be a property path of the document, $ownerId, $id, an integer \
+             or a {{ \"const\": ... }} string or base58 identifier"
+        )
+    })
+}
+
 /// What the parse of one document type's rules knows of the type: its name,
 /// which tells an aggregate of the type's own documents from one of another
-/// type's, and `property_kind` ([`parse_property_constraints`]).
+/// type's, and `property_kind` ([`parse_property_constraints`]); and the
+/// platform version, whose `parse_property_constraints` selects the grammar's
+/// versioned parts ([`aggregate_binding_kind`]).
 struct ParseContext<'a> {
     document_type_name: &'a str,
     property_kind: &'a dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &'a PlatformVersion,
 }
 
 impl ParseContext<'_> {
@@ -2996,12 +3116,14 @@ pub fn parse_property_constraints(
     schema: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     parse_named_rules(
         schema,
         property_names::PROPERTY_CONSTRAINTS,
         document_type_name,
         property_kind,
+        platform_version,
     )
 }
 
@@ -3017,12 +3139,14 @@ pub fn parse_delete_constraints(
     schema: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     parse_named_rules(
         schema,
         property_names::DELETE_CONSTRAINTS,
         document_type_name,
         property_kind,
+        platform_version,
     )
 }
 
@@ -3033,6 +3157,7 @@ fn parse_named_rules(
     keyword: &str,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
@@ -3061,6 +3186,7 @@ fn parse_named_rules(
     let context = ParseContext {
         document_type_name,
         property_kind,
+        platform_version,
     };
     let mut constraints = BTreeMap::new();
     for (name, rule) in rules {
@@ -3092,10 +3218,12 @@ pub fn parse_property_constraint_condition(
     condition: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<PropertyConstraint, String> {
     let context = ParseContext {
         document_type_name,
         property_kind,
+        platform_version,
     };
     parse_condition(condition, &mut String::new(), 0, &context)
 }
@@ -3753,7 +3881,7 @@ fn identifier_constant(value: &Value, at: &str) -> Result<Identifier, String> {
     let Some(text) = value.as_text() else {
         return Err(format!("at {at} must be an identifier, written base58"));
     };
-    Identifier::from_string(text, Encoding::Base58).map_err(|_| {
+    Identifier::from_base58_text(text).ok_or_else(|| {
         format!("at {at} holds \"{text}\", which is not a base58 identifier of 32 bytes")
     })
 }
@@ -4300,10 +4428,11 @@ fn parse_aggregate(
                          $ownerId and $id"
                     ))
                 }
-                // A byte array matches no key: it reads as an integer, which the
-                // parsed document type refuses
                 Value::Text(path) => AggregateBinding::Property {
-                    kind: (context.property_kind)(path).filter(|kind| *kind != EqualityKind::Bytes),
+                    kind: aggregate_binding_kind(
+                        (context.property_kind)(path),
+                        context.platform_version,
+                    )?,
                     path: path.clone(),
                 },
                 binding if is_number(binding) => {
@@ -4313,13 +4442,28 @@ fn parse_aggregate(
                     Some((CONST, Value::Text(constant))) => {
                         AggregateBinding::Constant(constant.clone())
                     }
-                    _ => {
-                        return Err(format!(
-                            "at {at}.{key} must be a property path of the document, $ownerId, \
-                             $id, an integer or a {{ \"const\": ... }} string or base58 \
-                             identifier"
-                        ))
+                    Some((IN, Value::Text(path))) if aggregate_elements_parsed(context)? => {
+                        if path.is_empty() || path.starts_with('$') {
+                            return Err(format!(
+                                "at {at}.{key} takes any element of \"{path}\", but an \"in\" \
+                                 names a typed array property of the document being written"
+                            ));
+                        }
+                        if bindings
+                            .values()
+                            .any(|bound| matches!(bound, AggregateBinding::Elements { .. }))
+                        {
+                            return Err(format!(
+                                "at {at} matches two keys by the elements of an array, but a \
+                                 total takes one \"in\""
+                            ));
+                        }
+                        AggregateBinding::Elements {
+                            kind: (context.property_kind)(path),
+                            path: path.clone(),
+                        }
                     }
+                    _ => return Err(aggregate_binding_error(at, key, context)?),
                 },
             };
             if bindings.insert(key.to_string(), binding).is_some() {

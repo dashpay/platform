@@ -23,6 +23,7 @@ struct DocumentWithPriceView: View {
             HStack {
                 TextField("Enter document ID", text: $documentId)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .machineTextEntry()
                     .modifier(DocumentIdChangeHandler(documentId: $documentId) {
                         handleDocumentIdChange($0)
                     })

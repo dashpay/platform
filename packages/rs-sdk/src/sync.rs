@@ -54,6 +54,7 @@ impl From<AsyncError> for crate::Error {
 /// async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error> {
 /// // do something
 ///     Err(ExecutionError {
+///         possibly_accepted: false,
 ///         inner: Error::StaleNode(StaleNodeError::Height{
 ///             expected_height: 10,
 ///             received_height: 3,
@@ -128,6 +129,7 @@ where
 {
     let max_retries = settings.retries.unwrap_or_default();
     let mut total_retries: usize = 0;
+    let mut possibly_accepted = false;
     let mut current_settings = settings;
 
     // Store the last meaningful error (not "no available addresses")
@@ -141,7 +143,11 @@ where
     let mut every_attempt_spared = true;
 
     loop {
-        let result = future_factory_fn(current_settings).await;
+        let mut result = future_factory_fn(current_settings).await;
+        if let Err(error) = &mut result {
+            possibly_accepted |= error.possibly_accepted;
+            error.possibly_accepted = possibly_accepted;
+        }
 
         // Ban or unban the address based on the result. A retryable failure that does not
         // show the node at fault moves the request off the node without banning it, as
@@ -182,6 +188,7 @@ where
                             Error::NoAvailableAddressesToRetry(Box::new(prev_error.inner))
                         };
                         return Err(rs_dapi_client::ExecutionError {
+                            possibly_accepted,
                             inner,
                             retries: total_retries,
                             address: prev_error.address,
@@ -191,7 +198,9 @@ where
                     return Err(error);
                 }
 
-                every_attempt_spared &= error.inner.spares_responder();
+                // An attempt whose lower layer failed on other nodes first, and may have
+                // banned them, did not fail only on answers that spare their node.
+                every_attempt_spared &= error.inner.spares_responder() && error.retries == 0;
 
                 // Count requests sent in this attempt
                 let requests_sent = error.retries + 1;
@@ -303,6 +312,7 @@ mod test {
         counter.fetch_add(1 + retries, Ordering::Relaxed);
 
         Err(ExecutionError {
+            possibly_accepted: false,
             inner: Error::StaleNode(StaleNodeError::Height {
                 expected_height: 100,
                 received_height: 50,
@@ -359,6 +369,7 @@ mod test {
             async move {
                 if count == 0 {
                     Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::StaleNode(StaleNodeError::Height {
                             expected_height: 100,
                             received_height: 50,
@@ -369,6 +380,7 @@ mod test {
                     })
                 } else {
                     Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
@@ -421,6 +433,7 @@ mod test {
             async move {
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(if count == 0 {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::StaleNode(StaleNodeError::ProtocolVersion {
                             expected_protocol_version: 14,
                             received_protocol_version: 13,
@@ -430,6 +443,7 @@ mod test {
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
@@ -447,6 +461,90 @@ mod test {
         assert!(!address_list.is_banned(&node), "the node is not banned");
     }
 
+    /// On a network proven to run a protocol version newer than this build knows, answers the
+    /// build cannot verify leave their nodes unbanned, and a request whose every attempt ends
+    /// so reads as a configuration error that names the update, not as a failed proof.
+    #[tokio::test]
+    async fn should_report_unverifiable_answers_of_a_newer_network_as_a_configuration_error() {
+        let mut address_list = AddressList::default();
+        let nodes: Vec<rs_dapi_client::Address> = (1..=3)
+            .map(|port| format!("http://localhost:{port}").parse().unwrap())
+            .collect();
+        for node in &nodes {
+            address_list.add(node.clone());
+        }
+        let settings = RequestSettings {
+            retries: Some(2),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        };
+        let call_count = AtomicUsize::new(0);
+        let closure = |_settings: RequestSettings| {
+            let node = nodes[call_count.fetch_add(1, Ordering::Relaxed)].clone();
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
+                    inner: newer_network_answer(),
+                    retries: 0,
+                    address: Some(node),
+                })
+            }
+        };
+
+        let error = retry(&address_list, settings, closure)
+            .await
+            .expect_err("no answer can be verified");
+
+        assert!(
+            matches!(&error.inner, Error::Config(reason) if reason.contains("update the SDK")),
+            "{:?}",
+            error.inner
+        );
+        assert_eq!(call_count.load(Ordering::Relaxed), 3);
+        for node in &nodes {
+            assert!(!address_list.is_banned(node), "{node} is not banned");
+        }
+    }
+
+    /// A node spared the ban still leaves the request's rotation: with one node in use and
+    /// one standing by, the retry asks the other node, and neither is banned.
+    #[tokio::test]
+    async fn should_ask_another_node_after_an_answer_that_spares_its_node() {
+        let mut address_list = AddressList::default().with_active_set_size(1);
+        for port in 1..=2 {
+            address_list.add(format!("http://localhost:{port}").parse().unwrap());
+        }
+        let settings = RequestSettings {
+            retries: Some(1),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        };
+        let asked = std::sync::Mutex::new(Vec::new());
+        let closure = |_settings: RequestSettings| {
+            let node = address_list.get_live_address().expect("a live node");
+            asked.lock().expect("asked lock").push(node.clone());
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
+                    inner: newer_network_answer(),
+                    retries: 0,
+                    address: Some(node),
+                })
+            }
+        };
+
+        retry(&address_list, settings, closure)
+            .await
+            .expect_err("no answer can be read");
+
+        let asked = asked.into_inner().expect("asked lock");
+        assert_eq!(asked.len(), 2);
+        assert_ne!(asked[0], asked[1], "the retry asks the other node");
+        for node in &asked {
+            assert!(!address_list.is_banned(node), "{node} is not banned");
+        }
+    }
+
     /// A request that also failed in other ways does not end as a configuration error: only
     /// a request whose every attempt was answered at an older protocol version does.
     #[tokio::test]
@@ -461,6 +559,7 @@ mod test {
             let count = call_count.fetch_add(1, Ordering::Relaxed);
             async move {
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
                     inner: if count == 0 {
                         Error::StaleNode(StaleNodeError::Height {
                             expected_height: 100,
@@ -494,6 +593,49 @@ mod test {
         assert_eq!(call_count.load(Ordering::Relaxed), 2);
     }
 
+    fn newer_network_answer() -> Error {
+        Error::StaleNode(StaleNodeError::NewerProtocolVersion {
+            supported_protocol_version: 15,
+            network_protocol_version: 16,
+            error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                error: "unexpected variant".to_string(),
+            }),
+        })
+    }
+
+    /// An attempt whose lower layer first failed on other nodes, and may have banned them,
+    /// did not fail only on answers that spare their node: the request then ends with its
+    /// last error as it is, not as a configuration error.
+    #[tokio::test]
+    async fn should_report_a_spared_answer_as_is_when_its_attempt_failed_on_other_nodes_first() {
+        for spared in [newer_network_answer, protocol_version_answer] {
+            let address_list = AddressList::default();
+            let settings = RequestSettings {
+                retries: Some(1),
+                ..Default::default()
+            };
+            let closure = |_settings: RequestSettings| async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
+                    inner: spared(),
+                    // One transport failure on another node before this answer.
+                    retries: 1,
+                    address: Some("http://localhost:2".parse().unwrap()),
+                })
+            };
+
+            let error = retry(&address_list, settings, closure)
+                .await
+                .expect_err("no attempt succeeds");
+
+            assert!(
+                matches!(error.inner, Error::StaleNode(_)),
+                "{:?}",
+                error.inner
+            );
+        }
+    }
+
     fn protocol_version_answer() -> Error {
         Error::StaleNode(StaleNodeError::ProtocolVersion {
             expected_protocol_version: 14,
@@ -522,6 +664,7 @@ mod test {
                         .expect("address")
                 });
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
                     inner,
                     retries: 0,
                     address,
@@ -582,6 +725,7 @@ mod test {
 
     fn quorum_source_unavailable(address: &rs_dapi_client::Address) -> ExecutionError<Error> {
         ExecutionError {
+            possibly_accepted: false,
             inner: Error::ContextProviderError(
                 dash_context_provider::ContextProviderError::QuorumSourceUnavailable(
                     "quorum service unreachable".to_string(),
@@ -722,6 +866,7 @@ mod test {
 
         let closure = move |_settings: RequestSettings| async move {
             Err(ExecutionError {
+                possibly_accepted: false,
                 inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
                 retries: 0,
                 address: None,
@@ -739,5 +884,57 @@ mod test {
             "should return 'no available addresses' when there's no previous meaningful error, got: {:?}",
             error.inner
         );
+    }
+}
+
+#[cfg(test)]
+mod submission_history_tests {
+    use super::*;
+    use rs_dapi_client::ExecutionError;
+    use std::future::ready;
+
+    #[tokio::test]
+    async fn should_accumulate_delivery_across_outer_retries_and_final_reconstruction() {
+        for exhaust_addresses in [false, true] {
+            let addresses: AddressList = "http://127.0.0.1:3011,http://127.0.0.1:3012"
+                .parse()
+                .unwrap();
+            let mut calls = 0;
+            let result: ExecutionResult<(), Error> = retry(
+                &addresses,
+                RequestSettings {
+                    retries: Some(2),
+                    ..Default::default()
+                },
+                |_| {
+                    calls += 1;
+                    ready(Err(ExecutionError {
+                        possibly_accepted: calls == 1,
+                        inner: if calls == 1 {
+                            Error::TimeoutReached(Duration::from_millis(1), "lost response".into())
+                        } else if exhaust_addresses {
+                            Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                        } else {
+                            Error::AlreadyExists("state transition already in chain".into())
+                        },
+                        address: addresses.get_live_addresses().first().cloned(),
+                        retries: 0,
+                    }))
+                },
+            )
+            .await;
+            let error = result.unwrap_err();
+            assert!(error.is_possibly_accepted());
+            assert_eq!(calls, 2);
+            assert!(
+                !error.inner.is_state_transition_result_unconfirmed(),
+                "retry loop must retain unwrapped cause"
+            );
+            assert!(error.inner.to_string().contains(if exhaust_addresses {
+                "lost response"
+            } else {
+                "already in chain"
+            }));
+        }
     }
 }

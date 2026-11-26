@@ -1,10 +1,13 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "12.0.1",
+  "version": "12.1.0",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
   "types": "src/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:web": "webpack --stats-error-details",
     "lint": "eslint .",
@@ -46,7 +49,7 @@
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.22.0",
+    "@dashevo/dashcore-lib": "~0.26.1",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "cbor": "^8.0.0",

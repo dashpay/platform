@@ -1,9 +1,8 @@
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
@@ -83,12 +82,14 @@ impl DriveDocumentQuery<'_> {
                 let document = maybe_element
                     .map(|element| {
                         let document_bytes = element.into_item_bytes().map_err(Error::from)?;
-                        Document::from_bytes(
+                        Document::from_bytes_bounded(
                             document_bytes.as_slice(),
                             self.document_type,
                             platform_version,
                         )
-                        .map_err(Error::from)
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(root_hash, error.into())
+                        })
                     })
                     .transpose()?;
                 Ok((root_hash, document))
@@ -121,7 +122,8 @@ mod tests {
     #[test]
     fn should_prove_and_verify_start_at_document_in_proof() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        // Protocol 14 is the last version whose verify table selects v0.
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("expected to load DPNS contract");
@@ -163,7 +165,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 

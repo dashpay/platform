@@ -202,9 +202,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config)
             .map_err(|e| PlatformSerializationError(
                 format!("unable to serialize DataContract: {}", e)
@@ -235,7 +233,7 @@ The rules, enforced by consensus (`DataContractInvalidRequiredFieldsUpdateError`
 - The annotation must name **exactly the new contract version** — requiredness can be neither pre-scheduled for a future version nor backdated.
 - Only **brand-new properties** can become required. Promoting an existing (optional) property is still rejected, as is removing anything from `required` or touching an existing `requiredSince` annotation.
 - On contract **creation**, `requiredSince` may only be `1`.
-- Annotations sit on **top-level properties** listed in `required`; nested properties cannot carry them.
+- Annotations sit on **top-level properties** listed in `required`. From protocol version 15 they may also sit on an object's member listed in its object's `required` (see [requiredSince](../contract-keywords/required-since.md#members-of-an-object)).
 
 What happens to data:
 

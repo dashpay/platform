@@ -55,7 +55,8 @@ struct DiagnosticsView: View {
         static let testPrefundedSpecializedBalanceId = "AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT"
 
         // Contested resources test data
-        static let testContestedIndexValues = ["dash", "alice"]
+        // Normalized label: Platform indexes "alice" as "a11ce".
+        static let testContestedIndexValues = ["dash", "a11ce"]
     }
 
     var body: some View {
@@ -280,11 +281,8 @@ struct DiagnosticsView: View {
                         documentTypeName: "domain",
                         dataContractId: TestData.dpnsContractId,
                         indexName: "parentNameAndLabel",
-                        resultType: "documents",
-                        allowIncludeLockedAndAbstainingVoteTally: false,
-                        startAtValue: nil,
+                        startIndexValues: [DPNSVotePoll.parentDomain],
                         limit: 5,
-                        offset: 0,
                         orderAscending: true
                     )
                 }),
@@ -295,11 +293,9 @@ struct DiagnosticsView: View {
                         documentTypeName: "domain",
                         indexName: "parentNameAndLabel",
                         indexValues: TestData.testContestedIndexValues,
-                        resultType: "contenders",
+                        resultType: "documents_and_vote_tally",
                         allowIncludeLockedAndAbstainingVoteTally: false,
-                        startAtIdentifierInfo: nil,
-                        count: 5,
-                        orderAscending: true
+                        count: 5
                     )
                 }),
 
@@ -310,7 +306,6 @@ struct DiagnosticsView: View {
                         indexName: "parentNameAndLabel",
                         indexValues: TestData.testContestedIndexValues,
                         contestantId: TestData.testIdentityId,
-                        startAtIdentifierInfo: nil,
                         count: 5,
                         orderAscending: true
                     )
@@ -621,6 +616,8 @@ struct DiagnosticsView: View {
                 return "Not Implemented: \(msg)"
             case .internalError(let msg):
                 return "Internal Error: \(msg)"
+            case .stateTransitionResultUnconfirmed:
+                return sdkError.localizedDescription
             case .consensusRejection(let consensus, let msg):
                 return "Rejected by Platform (code \(consensus.code)): \(msg)"
             case .unknown(let msg):

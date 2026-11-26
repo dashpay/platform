@@ -2,7 +2,7 @@
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{run_on_big_stack_thread, runtime};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
@@ -78,6 +78,33 @@ mod timeout_probe {
     pub(super) fn take() -> Vec<Option<Duration>> {
         RECORDED.with(|recorded| recorded.borrow_mut().drain(..).collect())
     }
+
+    /// Append records taken on another thread, keeping their order.
+    pub(super) fn extend(records: Vec<Option<Duration>>) {
+        RECORDED.with(|recorded| recorded.borrow_mut().extend(records));
+    }
+}
+
+/// [`run_on_big_stack_thread`] for the `resume_asset_lock` polls below.
+///
+/// Under `cfg(test)` it also carries the timeout probe's records back to
+/// the calling thread: they are thread-local, `forwarded` runs on the big
+/// stack, and the tests read them on the thread that called the exported
+/// entry point.
+fn resume_on_big_stack<T: Send>(f: impl FnOnce() -> T + Send) -> std::io::Result<T> {
+    #[cfg(test)]
+    {
+        let (value, recorded) = run_on_big_stack_thread(|| {
+            let value = f();
+            (value, timeout_probe::take())
+        })?;
+        timeout_probe::extend(recorded);
+        Ok(value)
+    }
+    #[cfg(not(test))]
+    {
+        run_on_big_stack_thread(f)
+    }
 }
 
 /// Pass-through that records the bound under `cfg(test)`.
@@ -112,7 +139,6 @@ fn forwarded(timeout: Option<Duration>) -> Option<Duration> {
 /// with a fallible return. Don't relax the signature without
 /// hardening the body.
 fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
-    use dashcore::hashes::Hash;
     let txid_bytes = unsafe { *txid };
     dashcore::OutPoint {
         txid: dashcore::Txid::from_slice(&txid_bytes).expect("txid is 32 bytes"),
@@ -161,10 +187,12 @@ fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
 /// spending the same outpoint may confirm the instant afterwards, and
 /// from then on no proof for this transaction can arrive. The wait
 /// cannot see that happen — it wakes on lock events and re-reads the
-/// tracked funding transaction only — so an unbounded wait is a
-/// `Notify` loop with no terminating event, which under the
-/// `runtime().block_on(...)` below pins the calling host thread
-/// permanently rather than merely delaying an answer.
+/// tracked funding transaction, and looks up where it was mined when the
+/// record cannot prove it — so an unbounded wait is a
+/// `Notify` loop with no terminating event, which pins the calling
+/// host thread permanently rather than merely delaying an answer: the
+/// caller blocks until the big-stack thread polling the resume below
+/// returns.
 ///
 /// Expiry is non-destructive: the tracked row keeps its status, so a
 /// proof arriving afterwards is returned by the very next resume
@@ -200,9 +228,22 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     let timeout = resume_timeout(timeout_secs);
 
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        // Big-stack polling, NOT bare `runtime().block_on`, for the same
+        // reason as `asset_lock_manager_catch_up_blocking` below.
+        resume_on_big_stack(|| {
+            runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        })
     });
-    let result = unwrap_option_or_return!(option);
+    let spawned = unwrap_option_or_return!(option);
+    let result = match spawned {
+        Ok(result) => result,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("failed to spawn big-stack thread for asset-lock resume: {e}"),
+            );
+        }
+    };
     let (proof, path) = unwrap_result_or_return!(result);
     let bytes = unwrap_result_or_return!(dpp::bincode::encode_to_vec(
         &proof,
@@ -230,8 +271,9 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 ///
 /// Returns `ok` on a successful proof resolution, an error on
 /// timeout / wait failure. The Swift caller is expected to schedule
-/// this on a background queue — `runtime().block_on(...)` parks the
-/// calling thread for the duration of the wait.
+/// this on a background queue: the calling thread blocks for the
+/// duration of the wait while the resume is polled on a big-stack
+/// thread.
 ///
 /// # Timeouts
 ///
@@ -275,9 +317,19 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     );
 
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        // Big-stack polling, NOT bare `runtime().block_on`: hosts call this
+        // from dispatch/concurrency threads with ~512 KB of stack, and an
+        // unoptimized build of the `resume_asset_lock` poll chain needs
+        // ~600 KB (a release build ~120 KB), a SIGBUS in the stack guard on
+        // every launch that finds a Built/Broadcast lock. Same remedy as the
+        // Sync Now entry points. `run_on_big_stack_thread` rather than
+        // `block_on_worker` because the future borrows `manager` and
+        // `out_point`, so it is not `'static`.
+        resume_on_big_stack(|| {
+            runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        })
     });
-    let result = match option {
+    let spawned = match option {
         Some(r) => r,
         None => {
             tracing::warn!(
@@ -287,6 +339,20 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidHandle,
                 "Manager handle invalid".to_string(),
+            );
+        }
+    };
+    let result = match spawned {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "asset_lock_manager_catch_up_blocking: failed to spawn big-stack thread"
+            );
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("failed to spawn big-stack thread for asset-lock catch-up: {e}"),
             );
         }
     };
@@ -316,8 +382,14 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 // intact rather than flattening the day it ships.
                 // Flattening either to ErrorWalletOperation would leave
                 // the host with a spinner it can never resolve.
-                conflict @ (PlatformWalletError::AssetLockInputConflict { .. }
-                | PlatformWalletError::AssetLockInputContested { .. }) => conflict.into(),
+                //
+                // The input-cap refusal (60) crosses typed for the same
+                // reason: a lock over the cap is never re-sent, so every
+                // catch-up of it ends here, and only the code tells the
+                // host why this row will not complete.
+                typed @ (PlatformWalletError::AssetLockInputConflict { .. }
+                | PlatformWalletError::AssetLockInputContested { .. }
+                | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
                 other => PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!("{}", other),
@@ -399,7 +471,10 @@ mod tests {
     use crate::error::PlatformWalletFFIResultCode;
     use crate::handle::{Handle, ASSET_LOCK_MANAGER_STORAGE};
     use crate::runtime::runtime;
+    use dashcore::{OutPoint, Transaction, TxIn, Txid};
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::test_support::{test_platform_wallet_manager, NoopTestPersister};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
     use platform_wallet::PlatformWalletManager;
     use std::os::raw::c_char;
     use std::sync::Arc;
@@ -437,9 +512,9 @@ mod tests {
     /// Drive [`asset_lock_manager_resume`] against a live manager and report
     /// the bound it forwarded alongside its result code.
     ///
-    /// Called from the plain test thread: the entry point does its own
-    /// `runtime().block_on(...)`, exactly as the host thread does, and nesting
-    /// that inside an outer `block_on` would abort.
+    /// Called from the plain test thread: the exported entry point blocks
+    /// synchronously while `resume_asset_lock` is polled on the scoped
+    /// big-stack thread. Do not invoke it from an outer `block_on`.
     fn resume_extern_with(
         handle: Handle,
         timeout_secs: u64,
@@ -528,9 +603,9 @@ mod tests {
         assert_eq!(
             code,
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "the catch-up maps every resume failure but a double-spend verdict \
-             to this one code, so this proves the resume ran rather than the \
-             handle lookup missing"
+            "the catch-up maps every resume failure it does not pass through \
+             typed to this one code, so this proves the resume ran rather than \
+             the handle lookup missing"
         );
         assert_eq!(
             recorded,
@@ -540,6 +615,68 @@ mod tests {
         );
         let bound = recorded[0].expect("a non-zero request is bounded");
         let _deadline = std::time::Instant::now() + bound;
+
+        ASSET_LOCK_MANAGER_STORAGE.remove(handle);
+    }
+
+    /// The launch catch-up must hand the host the typed input-cap refusal,
+    /// not the generic code every other resume failure flattens to: the
+    /// row is never re-sent, so this code is all the host learns about it.
+    /// The row is tracked the way a restored one is, over a transaction
+    /// with one input more than the cap. It carries no asset-lock payload:
+    /// the resume asks only DPP's input check, which reads the input count
+    /// and nothing else.
+    #[test]
+    fn should_keep_the_input_cap_refusal_typed_through_the_exported_catch_up() {
+        let (manager, handle) = live_manager_handle();
+        let asset_locks = runtime().block_on(async {
+            let wallet_id = manager.wallet_ids().await[0];
+            let wallet = manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("the manager just registered this wallet");
+            Arc::clone(wallet.asset_locks())
+        });
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: (0..101)
+                .map(|vout| TxIn {
+                    previous_output: OutPoint::new(Txid::from_byte_array([9u8; 32]), vout),
+                    ..TxIn::default()
+                })
+                .collect(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        asset_locks.recover_asset_lock_blocking(
+            transaction,
+            1_000_000,
+            0,
+            AssetLockFundingType::IdentityRegistration,
+            0,
+            out_point,
+            None,
+        );
+
+        let result = unsafe {
+            asset_lock_manager_catch_up_blocking(
+                handle,
+                &out_point.txid.to_byte_array(),
+                out_point.vout,
+                1,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+        );
+        let tracked = asset_locks.list_tracked_locks_blocking();
+        assert_eq!(tracked.len(), 1, "the refused row stays tracked");
+        assert_eq!(tracked[0].out_point, out_point);
+        assert_eq!(tracked[0].status, AssetLockStatus::Broadcast);
 
         ASSET_LOCK_MANAGER_STORAGE.remove(handle);
     }

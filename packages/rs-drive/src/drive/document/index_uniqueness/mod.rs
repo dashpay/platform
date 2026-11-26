@@ -120,6 +120,7 @@ mod tests {
             storage_flags: None,
             cost: Default::default(),
             fee: None,
+            parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
         });
         let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
             id: document_id,
@@ -149,6 +150,7 @@ mod tests {
             moderated: false,
             consumed_documents: Vec::new(),
             derived_index_values: None,
+            decision_proposal: None,
         })
     }
 
@@ -249,7 +251,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert existing preorder");
 
@@ -326,7 +327,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert existing preorder");
 
@@ -494,7 +494,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert existing preorder");
 
@@ -894,7 +893,6 @@ mod unique_time_range_index_tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("add document");
         document_id
@@ -1305,7 +1303,6 @@ mod unique_integer_range_index_tests {
                 true,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("add document");
         document.id()

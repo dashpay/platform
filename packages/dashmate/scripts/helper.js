@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { asValue } from 'awilix';
 import graceful from 'node-graceful';
+import semver from 'semver';
 import createDIContainer from '../src/createDIContainer.js';
 import scheduleRenewCertificate from '../src/helper/scheduleRenewCertificate.js';
 import watchCertificateConfig from '../src/helper/watchCertificateConfig.js';
@@ -106,6 +107,23 @@ async function removeOrphanedSslContainers(docker) {
 
   const provider = config.get('platform.gateway.ssl.provider');
   const isEnabled = config.get('platform.gateway.ssl.enabled');
+
+  // A host or Docker restart brings this container back with the image it was
+  // created from, which can be older than the CLI that has since saved the
+  // config. Renewal refuses to save over that, so say so now rather than
+  // only when a certificate is due.
+  const recordedFormatVersion = configFile.getConfigFormatVersion();
+  const ownFormatVersion = container.resolve('configFormatVersion');
+
+  if (isEnabled && (provider === 'zerossl' || provider === 'letsencrypt')
+    && semver.valid(recordedFormatVersion) !== null
+    && semver.gt(recordedFormatVersion, ownFormatVersion)) {
+    // eslint-disable-next-line no-console
+    console.warn('Certificate renewal will fail: the config was updated by a newer dashmate'
+      + ` (config format ${recordedFormatVersion}; this helper writes config format`
+      + ` ${ownFormatVersion}). This helper runs the version of dashmate that started the node,`
+      + ' and refuses to save over a newer config until the node runs the newer version.');
+  }
 
   if (isEnabled && (provider === 'zerossl' || provider === 'letsencrypt')) {
     // Clear any ephemeral SSL container left orphaned (bound to port 80) by a

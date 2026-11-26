@@ -9,7 +9,6 @@ mod token_selling_tests {
     use super::*;
 
     use dpp::{
-        dashcore::secp256k1::hashes::hex::{Case, DisplayHex},
         prelude::{DataContract, Identity, IdentityPublicKey},
         tokens::token_pricing_schedule::TokenPricingSchedule,
     };
@@ -32,7 +31,10 @@ mod token_selling_tests {
             // reads the total supply even though the token sets no max supply. 12_820 credits
             // less in fees: the documents expirations tree joins `Misc` beside the token
             // supplies tree the purchase rewrites, reshaping the `Misc` Merk
-            699_868_049_840,
+            // PROTOCOL_VERSION_15: 48_640 credits less in fees: the decision proposals
+            // contract adds one sibling to the genesis contracts tree, which reshapes the tree
+            // so the token contract's node is billed fewer bytes to reach
+            699_868_098_480,
         )
         .await;
     }
@@ -640,7 +642,7 @@ mod token_selling_tests {
                 expected_price,
                 format!(
                     "price in proof mismatch for token {}",
-                    token_id.to_hex_string(Case::Lower)
+                    hex::encode(token_id)
                 )
                 .as_str(),
             );
@@ -650,11 +652,7 @@ mod token_selling_tests {
                 fetched_prices.clone(),
                 token_id,
                 expected_price,
-                format!(
-                    "fetched price mismatch for token {}",
-                    token_id.to_hex_string(Case::Lower)
-                )
-                .as_str(),
+                format!("fetched price mismatch for token {}", hex::encode(token_id)).as_str(),
             );
         }
     }

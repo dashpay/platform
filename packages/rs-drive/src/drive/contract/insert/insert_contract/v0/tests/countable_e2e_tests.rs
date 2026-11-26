@@ -260,7 +260,6 @@ fn count_tree_count_grows_and_shrinks_with_document_inserts_and_deletes() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -283,7 +282,6 @@ fn count_tree_count_grows_and_shrinks_with_document_inserts_and_deletes() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete document");
 
@@ -337,7 +335,6 @@ fn provable_count_tree_count_grows_with_document_inserts() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -392,7 +389,6 @@ fn range_countable_primary_key_tree_supports_trunk_proof() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -473,7 +469,6 @@ fn count_tree_contract_supports_document_fetch() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert document");
 
@@ -590,7 +585,6 @@ fn document_insert_into_count_tree_produces_positive_fees() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert document into count tree");
 

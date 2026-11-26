@@ -43,19 +43,22 @@ use crate::data_contract::document_type::property_names::moderator_abilities::{
     DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CREATION_RESTRICTION_MODE,
+    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CAN_BE_ERASED, CREATION_RESTRICTION_MODE,
     DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
     KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
     RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::document_type::{property_names, DocumentType};
+use crate::data_contract::document_type::{PrivateDocumentConfig, PRIVATE_DOCUMENT_TYPE_KEYWORDS};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -71,6 +74,7 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
+use std::num::NonZeroU32;
 
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
@@ -80,6 +84,8 @@ use crate::tokens::token_amount_on_contract_token::{
 };
 use indexmap::IndexMap;
 
+#[cfg(feature = "validation")]
+use super::native_schema;
 use super::{insert_values, insert_values_nested};
 
 #[cfg(feature = "validation")]
@@ -201,7 +207,9 @@ pub(super) fn no_ranked_index_structure_check(
 /// is exactly what a build without generation 3 does not need, so it can be
 /// removed as a block. See the `RANKED` markers through this module for the
 /// matching call sites.
+#[derive(Clone, Copy)]
 pub(super) struct ParserGeneration {
+    pub admit_lifecycle: bool,
     // ---- present in every generation ----
     /// The `document_type_schema` table value to select the document
     /// meta-schema with. Read by the *driver*, not down here.
@@ -683,8 +691,8 @@ pub(super) fn parse_document_type_core(
 
 /// Everything `full_validation` asks of the schema before anything is parsed
 /// out of it: the document type's name, the enriched schema's depth (and the
-/// fee for its size), and the schema itself against this generation's document
-/// meta-schema — which also primes the document validator.
+/// fee for its size), and the schema itself, as `check_document_type_schema`
+/// checks it.
 #[cfg(feature = "validation")]
 fn validate_document_type_schema(
     ctx: &CoreParseContext<'_>,
@@ -702,15 +710,203 @@ fn validate_document_type_schema(
         ctx.platform_version,
     )?;
 
-    validate_against_meta_schema_and_compile(
-        root_schema,
-        ctx.generation.document_type_schema_version,
-        ctx.generation.meta_schema_method_name,
-        json_schema_validator,
-        ctx.platform_version,
-    )?;
+    check_document_type_schema(ctx, root_schema, json_schema_validator)
+}
 
-    Ok(())
+/// The first rule of full validation under `check_document_type_schema` 1 (protocol version
+/// 15), run by the parser on the `schema` of the type `name` and the contract's `schema_defs`
+/// as sent, before it expands their property type shorthands: no object of either names a
+/// key twice ([`native_schema::refuse_a_repeated_doctype_key`]). Version 0 refuses nothing.
+///
+/// The walk reads up to the whole schema and `$defs`, whatever their references say, and
+/// sets `read` to the number of values it read, refused or not, for the parser to bill when
+/// it is refused before it records the schema's size
+/// ([`validate_schema_depth_and_account_for_size`]). Version 0 walks nothing and leaves
+/// `read` as it is.
+#[cfg(feature = "validation")]
+pub(super) fn refuse_a_repeated_doctype_key(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    read: &mut Option<u64>,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => {
+            let mut values_read = 0;
+            let walked = native_schema::refuse_a_repeated_doctype_key(
+                schema,
+                schema_defs,
+                name,
+                &mut values_read,
+            );
+            *read = Some(values_read);
+            walked
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
+/// A rule of full validation under `check_document_type_schema` 1 (protocol version 15): the
+/// contested `index` of the type `name` must be decided by its index values
+/// ([`Index::contest_is_decided_by_index_values`]), or a document outside the contest could
+/// take the values of a document in it and leave the contest's award no unique index entry to
+/// take. Version 0 refuses nothing, so a contract registered earlier keeps such a contest; the
+/// document create's state validation guards it from protocol version 15.
+#[cfg(feature = "validation")]
+fn refuse_a_contest_not_decided_by_index_values(
+    index: &Index,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => {
+            if index.contest_is_decided_by_index_values(flattened_document_properties) {
+                Ok(())
+            } else {
+                Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "the contest of index \"{}\" on document type \"{name}\" must be decided \
+                         by the index values: every `fieldMatches` field must be a property of \
+                         the index, and a match on a string that may be empty must judge \"\" \
+                         and \"\\0\" alike, which share one index key",
+                        index.name
+                    )),
+                ))
+            }
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
+/// A rule of full validation under `check_document_type_schema` 1 (protocol version 15): the
+/// contested `index` of the type `name` must be keyed by top-level properties of the document
+/// ([`Index::contest_is_keyed_by_top_level_properties`]), or no contested create could open or
+/// join its contest. Version 0 refuses nothing, so a contract registered earlier keeps such an
+/// index.
+#[cfg(feature = "validation")]
+fn refuse_a_contest_keyed_by_a_nested_or_system_property(
+    index: &Index,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => {
+            if index.contest_is_keyed_by_top_level_properties() {
+                Ok(())
+            } else {
+                Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "the contest of index \"{}\" on document type \"{name}\" must be keyed \
+                         by top-level properties of the document: a property path or a system \
+                         property (starting with `$`) can not key a contest",
+                        index.name
+                    )),
+                ))
+            }
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
+/// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
+/// the enriched schema against the document meta-schema through the `jsonschema` crate and
+/// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
+/// rules of document meta-schema v3, once [`refuse_a_repeated_doctype_key`] has run on it
+/// as sent.
+#[cfg(feature = "validation")]
+fn check_document_type_schema(
+    ctx: &CoreParseContext<'_>,
+    root_schema: &Value,
+    json_schema_validator: &StatelessJsonSchemaLazyValidator,
+) -> Result<(), ProtocolError> {
+    match ctx
+        .platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => validate_against_meta_schema_and_compile(
+            root_schema,
+            ctx.generation.document_type_schema_version,
+            ctx.generation.meta_schema_method_name,
+            json_schema_validator,
+            ctx.platform_version,
+        ),
+        1 => native_schema::check_document_type_schema(root_schema, ctx.platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
+/// Under full validation, the requirement `check_document_type_schema` 1 (protocol version
+/// 15) adds once a document type is parsed: the type, whose expanded schema is `schema`, with
+/// the contract's expanded `$defs`, must have a typed validation schema, which its documents
+/// are checked against natively. Version 0 requires nothing. Run last, so that a schema the
+/// parser refuses is refused with the parser's error. Returns the native validator version 1
+/// built, for the type to keep.
+#[cfg(feature = "validation")]
+pub(super) fn require_validation_schema(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<DocumentSchemaValidator>, ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(None),
+        1 => {
+            native_schema::check_validation_schema(schema, schema_defs, platform_version).map(Some)
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::require_validation_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
 }
 
 /// The document-type level switches, read straight off the schema map.
@@ -949,7 +1145,11 @@ fn parse_indices(
                     // produced — which is what `TryFrom<&[(Value, Value)]> for
                     // Index` does, so without generation 3 this whole call
                     // collapses back to `.as_slice().try_into()`.
-                    let mut index: Index = Index::try_from_value_map(
+                    // A contested index's `resolution` is read as the platform version's
+                    // tables say (`ContestedIndexResolution::try_from_schema_value`): that
+                    // is a method version, not a property of the generation, since
+                    // protocol version 14 parses generation 3 and version 15 parses generation 4.
+                    let mut index: Index = Index::try_from_value_map_for_platform_version(
                         index_value
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
@@ -970,8 +1170,8 @@ fn parse_indices(
                                 .admit_range_countable_implies_countable,
                             no_locking_resolution: ctx.generation.admit_index_no_locking_resolution,
                         },
-                    )
-                    .map_err(consensus_or_protocol_data_contract_error)?;
+                        ctx.platform_version,
+                    )?;
 
                     // INTEGER RANGE: the index grammar cannot see property
                     // types, so the source's key encoding is resolved here,
@@ -1376,6 +1576,21 @@ fn parse_indices(
                             &index,
                             flags,
                             flattened_document_properties,
+                        )?;
+
+                        // A contest decided by more than its index values (protocol version 15)
+                        refuse_a_contest_not_decided_by_index_values(
+                            &index,
+                            flattened_document_properties,
+                            ctx.name,
+                            ctx.platform_version,
+                        )?;
+
+                        // A contest keyed by a nested or system property (protocol version 15)
+                        refuse_a_contest_keyed_by_a_nested_or_system_property(
+                            &index,
+                            ctx.name,
+                            ctx.platform_version,
                         )?;
 
                         if ctx.generation.admit_indexed_arrays {
@@ -3239,7 +3454,8 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
+/// included), `chooseFirst` function param and key id property, and every property a
+/// reference naming its target through the referring document reads it from, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -3266,6 +3482,13 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             } = leaf
             {
                 read.insert(top_level_property(key_id_property));
+            }
+            // A reference naming its target through the referring document reads where it
+            // points there: the contract id, the document type name, and every property a
+            // slot takes its property name from. A change to one of them outside a replace
+            // would leave the stored reference pointing at something nobody checked
+            if let Some(dynamic) = leaf.as_dynamic_document_reference() {
+                read.extend(dynamic.target_properties().map(top_level_property));
             }
             let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;
@@ -3405,6 +3628,297 @@ pub(super) fn apply_documents_ttl(
 
     document_type.documents_ttl_seconds = Some(seconds);
     Ok(())
+}
+
+/// Whether a document type schema declares the doctype-level `private` keyword, versioned on
+/// `parse_private_document`. `None`, every protocol version before 15, reads nothing and
+/// answers `false`, as those versions parsed before the keyword existed: their registration
+/// refuses the key from protocol version 12 on (meta-schemas v1 to v3 close the doctype
+/// level), and no stored contract carries it (the protocol version 12 migration stripped every
+/// doctype-level key meta-schema v1 does not declare from the contracts admitted under
+/// meta-schema v0). 0 holds a schema declaring it to the doctype-level keywords a private type
+/// may declare ([`PRIVATE_DOCUMENT_TYPE_KEYWORDS`]).
+///
+/// Run on every parse before any stage reads a doctype-level keyword, so that a keyword a
+/// private type may not declare is refused as such, whatever its value, and on the schema as
+/// sent, where a key may repeat: a private type's schema may name no key twice. The parse
+/// reads the first entry of a repeated key, where the native schema check and JSON readers
+/// keep the last, so the type the chain parsed could differ from the one its schema shows (a
+/// field it refuses, a flag it reads otherwise). The declaration's shape is read after the
+/// core parse ([`parse_private_document_keyword`]).
+pub(super) fn declares_private_document(
+    schema: &Value,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<bool, ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_private_document
+    {
+        None => Ok(false),
+        Some(0) => declares_private_document_v0(schema, name),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::parse_private_document".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+fn declares_private_document_v0(schema: &Value, name: &str) -> Result<bool, ProtocolError> {
+    // A schema that is not an object carries no keyword: the core parser refuses it
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(false);
+    };
+    if !schema_map
+        .iter()
+        .any(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
+    {
+        return Ok(false);
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!("private document type \"{name}\" {message}"),
+        ))
+    };
+    let mut declared = BTreeSet::new();
+    for keyword in schema_map.iter().filter_map(|(key, _)| key.as_text()) {
+        if !declared.insert(keyword) {
+            return Err(structure_error(format!(
+                "declares `{keyword}` more than once: a reader keeping its first entry and one \
+                 keeping its last would see different types"
+            )));
+        }
+        if !PRIVATE_DOCUMENT_TYPE_KEYWORDS.contains(&keyword) {
+            return Err(structure_error(format!(
+                "declares `{keyword}`: the chain never reads a private entry, so it could keep \
+                 no promise about one; a private type declares only {}",
+                PRIVATE_DOCUMENT_TYPE_KEYWORDS.join(", "),
+            )));
+        }
+    }
+    Ok(true)
+}
+
+/// Reads the `private` declaration (`{ "entrySize": n }`, an integer from 1 that fits a u32,
+/// and no other key) off the schema of a type [`declares_private_document`] found declaring
+/// it, once, after the core parse. Under full validation the core parse runs the native schema
+/// check first, which refuses a declaration that is not an object, lacks `entrySize`, holds
+/// another key or an `entrySize` out of range, with the error the meta-schema would have
+/// given. The shape is still enforced here, on every parse, and here alone for what that
+/// check admits and a u32 read refuses: an `entrySize` written as a float (`704.0`), or
+/// repeated inside the declaration.
+pub(super) fn parse_private_document_keyword(
+    schema: &Value,
+    name: &str,
+) -> Result<Option<PrivateDocumentConfig>, ProtocolError> {
+    // A schema that is not an object carries no keyword: the core parser refused it already
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+    let Some(declaration) = schema_map
+        .iter()
+        .find(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
+        .map(|(_, declaration)| declaration)
+    else {
+        return Ok(None);
+    };
+    // `null` included: a declaration is an object
+    let malformed = || {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!(
+                "document type \"{name}\" declares `{}`, which must be an object holding only \
+                 `{}`, the bytes each entry takes, an integer from 1",
+                property_names::PRIVATE,
+                property_names::ENTRY_SIZE,
+            ),
+        ))
+    };
+    let Ok(declaration) = declaration.to_map() else {
+        return Err(malformed());
+    };
+    if declaration.len() != 1 {
+        return Err(malformed());
+    }
+    let entry_size =
+        Value::inner_optional_integer_value::<u32>(declaration, property_names::ENTRY_SIZE)
+            .map_err(|_| malformed())?;
+    match entry_size.and_then(NonZeroU32::new) {
+        Some(entry_size) => Ok(Some(PrivateDocumentConfig::new(entry_size))),
+        None => Err(malformed()),
+    }
+}
+
+/// Records the `private` keyword on a generation-3 type, holding it to what a private type
+/// may declare beyond its keywords, which [`declares_private_document`] held it to before the
+/// core parse. A private type's documents are fixed-size encrypted entries an anonymous
+/// shielded transition appends: nobody owns, replaces or deletes one, and the chain never reads
+/// inside one, so it could keep no promise a document type makes about its documents. On every
+/// parse, as `ttl` does, it refuses:
+///
+/// * documents the type, or the contract's defaults where the type says nothing, leaves
+///   mutable, deletable (by their owner or by a consume) or keeping history;
+/// * a system field (`$ownerId`, `$createdAt`, ...) named in `properties`, `required` or
+///   `dependentRequired`: an entry has none;
+/// * a property, at any depth, declaring what the chain would check on each document it
+///   writes: a `refersTo`, `distinctFrom`, `generatedFrom`, `encryptedFor` or `requiredSince`;
+/// * a type the contract's elected moderators moderate: a ban, suspension or warning bars an
+///   identity from writing, and nobody writes a private entry as an identity.
+///
+/// Under full validation (registration) it also holds `entrySize` to
+/// `max_private_document_entry_size`; a contract read back from state passed it.
+pub(super) fn apply_private_document(
+    document_type: &mut DocumentTypeV2,
+    private_document: Option<PrivateDocumentConfig>,
+    deleted_only_when_consumed: bool,
+    data_contract_config: &DataContractConfig,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(private_document) = private_document else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!("private document type \"{name}\" {message}"),
+        ))
+    };
+
+    // The names `dependentRequired` makes depend on each other (the key is declared once at
+    // most: `declares_private_document` refused a repeated one)
+    let mut dependent_required_fields: Vec<&str> = Vec::new();
+    let dependent_required = document_type
+        .schema
+        .to_map()
+        .ok()
+        .and_then(|schema_map| {
+            Value::get_optional_from_map(schema_map, property_names::DEPENDENT_REQUIRED)
+        })
+        .and_then(Value::as_map);
+    for (field, dependents) in dependent_required.into_iter().flatten() {
+        dependent_required_fields.extend(field.as_text());
+        dependent_required_fields.extend(
+            dependents
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_text),
+        );
+    }
+
+    if document_type.documents_mutable {
+        return Err(structure_error(format!(
+            "would have mutable documents: nobody replaces a private entry, so set `{}: false` \
+             (the contract's default applies where the type says nothing)",
+            property_names::DOCUMENTS_MUTABLE,
+        )));
+    }
+    // `"onlyWhenConsumed"` is recorded on the type only after this runs
+    // (`apply_deleted_only_when_consumed`): the driver passes what it read before the core parse
+    if document_type.documents_can_be_deleted || deleted_only_when_consumed {
+        return Err(structure_error(format!(
+            "would have deletable documents: nobody deletes a private entry, so set `{}: false` \
+             (the contract's default applies where the type says nothing)",
+            property_names::CAN_BE_DELETED,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "would keep the history of its documents: a private entry never changes, so set \
+             `{}: false` (the contract's default applies where the type says nothing)",
+            property_names::DOCUMENTS_KEEP_HISTORY,
+        )));
+    }
+
+    let system_field = document_type
+        .properties
+        .keys()
+        .map(String::as_str)
+        .chain(document_type.required_fields.iter().map(String::as_str))
+        .chain(dependent_required_fields)
+        .find(|field| field.starts_with('$'));
+    if let Some(system_field) = system_field {
+        return Err(structure_error(format!(
+            "names the system field `{system_field}`: a private entry has no owner, revision or \
+             time of its own, only the bytes a client appends"
+        )));
+    }
+
+    if let Some((holder, _)) = DocumentTypeRef::V2(document_type)
+        .reference_declarations()
+        .next()
+    {
+        return Err(structure_error(format!(
+            "declares {}: the chain never reads a private entry, so it could check no reference \
+             one makes",
+            holder.describe(),
+        )));
+    }
+    if let Some((path, declared)) = first_property_checked_on_write(&document_type.properties, "") {
+        return Err(structure_error(format!(
+            "declares `{declared}` on property \"{path}\": the chain never reads a private \
+             entry, so it could check nothing `{declared}` says about one"
+        )));
+    }
+
+    if data_contract_config
+        .moderation()
+        .and_then(|moderation| moderation.moderators.elected())
+        .is_some_and(|elected| elected.moderates_document_type(name))
+    {
+        return Err(structure_error(
+            "is moderated by the contract's elected moderators: a ban, suspension or warning \
+             bars an identity from writing, and nobody writes a private entry as an identity"
+                .to_string(),
+        ));
+    }
+
+    if full_validation {
+        private_document.ensure_entry_size_within_limit(name, platform_version)?;
+    }
+
+    document_type.private_document = Some(private_document);
+    Ok(())
+}
+
+/// The first property of `properties`, at any depth, objects included, that declares what the
+/// chain would check on each document it writes, with its dotted path (below `prefix`) and the
+/// keyword: a `distinctFrom`, `generatedFrom`, `encryptedFor` or `requiredSince`.
+fn first_property_checked_on_write(
+    properties: &IndexMap<String, DocumentProperty>,
+    prefix: &str,
+) -> Option<(String, &'static str)> {
+    for (name, property) in properties {
+        let path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        let declared = if property.distinct_from.is_some() {
+            Some(property_names::DISTINCT_FROM)
+        } else if property.generated_from.is_some() {
+            Some(property_names::GENERATED_FROM)
+        } else if property.encrypted_for.is_some() {
+            Some(property_names::ENCRYPTED_FOR)
+        } else if property.required_since.is_some() {
+            Some(property_names::REQUIRED_SINCE)
+        } else {
+            None
+        };
+        if let Some(declared) = declared {
+            return Some((path, declared));
+        }
+        if let DocumentPropertyType::Object(members) = &property.property_type {
+            if let Some(found) = first_property_checked_on_write(members, &path) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 /// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`, read before the
@@ -3990,11 +4504,13 @@ fn parse_replace_condition(
     let property_kind =
         |path: &str| super::property_equality_kind(&document_type.flattened_properties, path);
     let condition =
-        parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
-            consensus_or_protocol_data_contract_error(condition_error(format!(
-                "{subject} {message}"
-            )))
-        })?;
+        parse_property_constraint_condition(when, name, &property_kind, platform_version).map_err(
+            |message| {
+                consensus_or_protocol_data_contract_error(condition_error(format!(
+                    "{subject} {message}"
+                )))
+            },
+        )?;
     super::validate_property_constraint_reads(
         document_type,
         schema_defs,
@@ -5282,4 +5798,104 @@ fn unrequired_ancestor(property_name: &str, required_fields: &BTreeSet<String>) 
         ancestor.push_str(segment);
     }
     None
+}
+
+pub(super) fn parse_can_be_erased_keyword(schema: &Value) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, CAN_BE_ERASED)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Write the `canBeErased` flag onto the parsed document type after checking
+/// the two settings it depends on.
+///
+/// Erase purges the retained revisions of a document that has already been
+/// deleted, so a type that keeps no history has nothing to purge and a type
+/// whose documents can never be deleted can never reach the state erase acts
+/// on. Both are rejected rather than silently ignored: a document type whose
+/// declared behavior and reachable behavior disagree is a contract-authoring
+/// error, not a default.
+///
+/// Runs regardless of `full_validation`, like [`apply_index_only`]: the flag
+/// governs an irreversible operation, so a stored contract must never come
+/// back out of the parser with the flag set on a type that cannot support it.
+pub(super) fn apply_can_be_erased(
+    document_type: &mut DocumentTypeV2,
+    can_be_erased: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !can_be_erased {
+        return Ok(());
+    }
+
+    // A consensus error, not a bare data-contract error: only the consensus
+    // variant becomes a paid rejection with a nonce bump when a signed contract
+    // create or update carries the combination. The bare variant would escape as
+    // an internal execution error and cost the submitter nothing.
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if !document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeErased: true` but does not keep history: erase \
+             removes retained revisions, and a type without history has none",
+            name,
+        )));
+    }
+    if !document_type.documents_can_be_deleted {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeErased: true` but `canBeDeleted: false`: erase \
+             applies to deleted documents only, so its documents could never be erased",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_erased = true;
+    Ok(())
+}
+
+/// Reject a keep-history document type that carries a contested index.
+///
+/// A contested resource is awarded by block processing, outside state
+/// transition validation, at an id derived from the winner rather than from
+/// the contested values. On a keep-history type that award can land on an id
+/// whose retained history already exists, which the storage guard turns into a
+/// deterministic block failure on every validator. Making the combination safe
+/// needs changes to the contested machinery itself, so until then the two are
+/// kept apart at contract registration.
+pub(super) fn reject_contested_keep_history(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !document_type.documents_keep_history {
+        return Ok(());
+    }
+    if let Some((index_name, _)) = document_type
+        .indices
+        .iter()
+        .find(|(_, index)| index.contested_index.is_some())
+    {
+        // Consensus error for the same reason as `apply_can_be_erased`: a
+        // signed contract carrying this combination must be a paid rejection.
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets `documentsKeepHistory: true` and declares the \
+                 contested index \"{}\": a contested resource is awarded outside transition \
+                 validation and cannot be combined with retained history",
+                name, index_name,
+            )),
+        ));
+    }
+    Ok(())
 }

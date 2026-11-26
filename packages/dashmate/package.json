@@ -1,7 +1,8 @@
 {
   "name": "dashmate",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "description": "Distribution package for Dash node installation",
+  "author": "Dash Core Group <contact@dash.org>",
   "scripts": {
     "lint": "eslint .",
     "postpack": "rm -f oclif.manifest.json",
@@ -48,7 +49,7 @@
     }
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "license": "MIT",
   "bugs": {
@@ -58,7 +59,7 @@
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.22.0",
+    "@dashevo/dashcore-lib": "~0.26.1",
     "@dashevo/dashd-rpc": "^19.1.0",
     "@dashevo/docker-compose": "^0.24.4",
     "@dashevo/wallet-lib": "workspace:*",

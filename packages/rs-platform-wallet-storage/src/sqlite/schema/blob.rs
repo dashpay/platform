@@ -1,6 +1,9 @@
 //! BLOB-column codec helpers: thin `bincode::serde` wrappers so every
 //! `_blob` column uses one encoding path. Schema evolution is gated by the
-//! refinery migration version — no per-blob revision tag.
+//! refinery migration version — no per-blob revision tag, except the
+//! `entry_format` / `profile_format` row stamps V021 added for the two
+//! blobs that embed the widened `DashPayProfile` record (see
+//! `identity_profile_encoding`).
 //!
 //! [`encode_outpoint`] / [`decode_outpoint`] encode `dashcore::OutPoint`
 //! the same way for the `outpoint` PK columns. The key is variable-width,
@@ -216,7 +219,6 @@ mod tests {
 
     #[test]
     fn outpoint_roundtrip() {
-        use dashcore::hashes::Hash;
         let op = dashcore::OutPoint {
             txid: dashcore::Txid::from_byte_array([7u8; 32]),
             vout: 9,
@@ -235,7 +237,6 @@ mod tests {
     /// so the key length is not fixed but decoding recovers the value.
     #[test]
     fn outpoint_roundtrip_large_vout() {
-        use dashcore::hashes::Hash;
         let op = dashcore::OutPoint {
             txid: dashcore::Txid::from_byte_array([0xABu8; 32]),
             vout: u32::MAX,
@@ -262,7 +263,6 @@ mod tests {
     /// in the encoding must fail here rather than backfill the wrong bytes.
     #[test]
     fn encode_outpoint_txid_occupies_bytes_two_to_thirty_three() {
-        use dashcore::hashes::Hash;
         let txid_bytes = [0x5Au8; 32];
         let op = dashcore::OutPoint::new(dashcore::Txid::from_byte_array(txid_bytes), 3);
         let encoded = encode_outpoint(&op).unwrap();

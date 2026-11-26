@@ -1,12 +1,11 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash};
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator::v0::NewValidatorIfMasternodeInState;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 pub use dpp::core_types::validator_set::v0::*;
 use dpp::dashcore_rpc::json::QuorumInfoResult;
@@ -58,8 +57,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
                 format!(
                     "updating validator set doesn't match threshold public key ours: {} theirs: {}",
-                    hex::encode(self.threshold_public_key.0.to_compressed()),
-                    hex::encode(rhs.threshold_public_key.0.to_compressed())
+                    hex::encode(self.threshold_public_key.to_bytes()),
+                    hex::encode(rhs.threshold_public_key.to_bytes())
                 ),
             )));
         }
@@ -97,7 +96,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
 
                                 Some(Ok(abci::ValidatorUpdate {
                                     pub_key: (*public_key).map(|public_key| crypto::PublicKey {
-                                        sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
+                                        sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                                     }),
                                     power: 100,
                                     pro_tx_hash: pro_tx_hash.as_byte_array().to_vec(),
@@ -123,7 +122,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
 
                                 Some(Ok(abci::ValidatorUpdate {
                                     pub_key: (*public_key).map(|public_key| crypto::PublicKey {
-                                        sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
+                                        sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                                     }),
                                     power: 100,
                                     pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),
@@ -139,9 +138,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
         Ok(ValidatorSetUpdate {
             validator_updates,
             threshold_public_key: Some(crypto::PublicKey {
-                sum: Some(Bls12381(
-                    self.threshold_public_key.0.to_compressed().to_vec(),
-                )),
+                sum: Some(Bls12381(self.threshold_public_key.to_bytes().to_vec())),
             }),
             quorum_hash: self.quorum_hash.to_byte_array().to_vec(),
         })
@@ -174,7 +171,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                     let node_address = validator_node_address(node_id, node_ip, *platform_p2p_port);
                     Some(abci::ValidatorUpdate {
                         pub_key: public_key.as_ref().map(|public_key| crypto::PublicKey {
-                            sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
+                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),
@@ -183,7 +180,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
-                sum: Some(Bls12381(threshold_public_key.0.to_compressed().to_vec())),
+                sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
             quorum_hash: quorum_hash.to_byte_array().to_vec(),
         }
@@ -217,7 +214,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
 
                     Some(abci::ValidatorUpdate {
                         pub_key: public_key.map(|public_key| crypto::PublicKey {
-                            sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
+                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),
@@ -226,7 +223,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
-                sum: Some(Bls12381(threshold_public_key.0.to_compressed().to_vec())),
+                sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
             quorum_hash: quorum_hash.to_byte_array().to_vec(),
         }
@@ -315,7 +312,7 @@ fn validator_node_address(node_id: &PubkeyHash, node_ip: &str, platform_p2p_port
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls::SecretKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
     use rand::rngs::StdRng;
@@ -323,7 +320,7 @@ mod tests {
 
     fn make_validator(pro_tx_hash: ProTxHash, is_banned: bool) -> ValidatorV0 {
         let mut rng = StdRng::seed_from_u64(1);
-        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
+        let public_key = Some(SecretKey::random(&mut rng).public_key());
         ValidatorV0 {
             pro_tx_hash,
             public_key,
@@ -343,7 +340,7 @@ mod tests {
         members: BTreeMap<ProTxHash, ValidatorV0>,
     ) -> ValidatorSetV0 {
         let mut rng = StdRng::seed_from_u64(threshold_seed);
-        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let threshold_public_key = SecretKey::random(&mut rng).public_key();
         ValidatorSetV0 {
             quorum_hash: QuorumHash::from_slice(&[quorum_hash_seed; 32]).unwrap(),
             quorum_index: Some(1),

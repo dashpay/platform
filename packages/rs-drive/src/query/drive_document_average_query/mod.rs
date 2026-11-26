@@ -26,8 +26,13 @@
 //! [`crate::query::drive_document_count_and_sum_query`] for the
 //! no-prove perf / atomicity contract.
 
+use crate::query::CountMode;
+
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
+// The request-only plan of a proved average, shared by the server's
+// dispatcher and the SDK's verifier.
+pub mod proof_plan;
 
 #[cfg(feature = "server")]
 use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
@@ -62,6 +67,19 @@ pub enum AverageMode {
     GroupByCompound,
 }
 
+/// The routing ([`crate::query::aggregate_routing`]) decides one SQL-shape
+/// mode for counts, sums and averages; an average reads it as its own.
+impl From<CountMode> for AverageMode {
+    fn from(mode: CountMode) -> Self {
+        match mode {
+            CountMode::Aggregate => AverageMode::Aggregate,
+            CountMode::GroupByIn => AverageMode::GroupByIn,
+            CountMode::GroupByRange => AverageMode::GroupByRange,
+            CountMode::GroupByCompound => AverageMode::GroupByCompound,
+        }
+    }
+}
+
 /// A single per-key average entry. Carries BOTH count and sum so the
 /// client can divide; the server intentionally doesn't pre-divide
 /// (see the module docstring).
@@ -92,7 +110,11 @@ pub struct AverageEntry {
     pub count: Option<u64>,
     /// Aggregated `sum_property` value for this key. `Some(n)` for
     /// matched keys; `None` for keys proven absent.
-    pub sum: Option<i64>,
+    ///
+    /// 128 bits wide, as [`SumEntry::sum`] is, and for the same reason.
+    ///
+    /// [`SumEntry::sum`]: crate::query::drive_document_sum_query::SumEntry::sum
+    pub sum: Option<i128>,
 }
 
 /// Server-side request input for the average dispatcher. Mirrors
@@ -146,11 +168,10 @@ pub struct DocumentAverageRequest<'a> {
     ///   rather than clamped, so a tuned operator default or an
     ///   over-max request can't byte-differ the
     ///   `SizedQuery::limit` the SDK reconstructs for merk-root
-    ///   verification. See the
-    ///   [`drive_dispatcher`]'s `RangeDistinctProof` /
-    ///   `RangeAggregateCarrierProof` arms for the
-    ///   validate-don't-clamp policy, mirrored from count's
-    ///   prove-path arms.
+    ///   verification. See
+    ///   [`DriveDocumentSumQuery::average_proof_plan`](crate::query::drive_document_sum_query::DriveDocumentSumQuery::average_proof_plan)
+    ///   for the validate-don't-clamp policy, mirrored from count's
+    ///   proof plan.
     pub limit: Option<u32>,
     /// Whether to return a `Proof(Vec<u8>)` instead of materializing
     /// the (count, sum) pairs server-side.

@@ -7,16 +7,40 @@
 //! - **Mainnet**: Uses `https://quorums.mainnet.networks.dash.org/`
 //! - **Testnet**: Uses `https://quorums.testnet.networks.dash.org/`
 //! - **Devnet**: Uses `https://quorums.<devnet_name>.networks.dash.org/`
+//!
+//! ## Verified quorum keys
+//!
+//! [`VerifiedHttpContextProvider`] is an opt-in alternative for mainnet and
+//! testnet that trusts no HTTP endpoint: it proves every Platform quorum key
+//! from a checkpoint with Core's DIP 175 proofs, and treats the quorum
+//! service as an untrusted relay. It lives in this crate because it serves
+//! the same applications, talks to the same quorum service and shares the
+//! system-contract and HTTP plumbing; the name of the crate predates it.
 
 pub mod error;
+mod known_contracts;
+pub mod local;
+mod proof_fetches;
+mod proof_transport;
 pub mod provider;
 mod quorum_refresh;
+mod system_contracts;
 pub mod types;
+pub mod verified_provider;
 
 pub use error::TrustedContextProviderError;
+pub use local::LocalContextResolver;
 pub use provider::TrustedHttpContextProvider;
+pub use verified_provider::{
+    Continuation, StartingPoint, VerifiedContextProviderError, VerifiedHttpContextProvider,
+    VerifiedProviderOptions, DEFAULT_QUORUM_KEY_CACHE_SIZE,
+};
 
 use dpp::dashcore::Network;
+
+/// Longest devnet name [`get_quorum_base_url`] accepts: the name is one DNS
+/// label of the quorum hostname, and a label holds at most 63 bytes.
+pub const MAX_DEVNET_NAME_LENGTH: usize = 63;
 
 /// Get the base URL for quorum endpoints based on the network
 pub fn get_quorum_base_url(
@@ -28,15 +52,19 @@ pub fn get_quorum_base_url(
         Network::Testnet => Ok("https://quorums.testnet.networks.dash.org".to_string()),
         Network::Devnet => {
             if let Some(name) = devnet_name {
-                // Validate devnet name format: must be alphanumeric with hyphens allowed
+                // Validate devnet name format: ASCII letters, digits and hyphens.
+                // Unicode letters are refused: URL and IDNA parsers fold some
+                // of them (fullwidth Latin) to ASCII, which would let a name
+                // pass the reserved check below and still reach, say, the
+                // mainnet quorum host.
                 if name.is_empty() {
                     return Err(TrustedContextProviderError::InvalidDevnetName(
                         "Devnet name cannot be empty".to_string(),
                     ));
                 }
-                if !name.chars().all(|c| c.is_alphanumeric() || c == '-') {
+                if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
                     return Err(TrustedContextProviderError::InvalidDevnetName(
-                        "Devnet name must contain only alphanumeric characters and hyphens"
+                        "Devnet name must contain only ASCII letters, digits and hyphens"
                             .to_string(),
                     ));
                 }
@@ -44,6 +72,12 @@ pub fn get_quorum_base_url(
                     return Err(TrustedContextProviderError::InvalidDevnetName(
                         "Devnet name cannot start or end with a hyphen".to_string(),
                     ));
+                }
+                // The name is one DNS label of the quorum hostname.
+                if name.len() > MAX_DEVNET_NAME_LENGTH {
+                    return Err(TrustedContextProviderError::InvalidDevnetName(format!(
+                        "Devnet name cannot be longer than {MAX_DEVNET_NAME_LENGTH} characters"
+                    )));
                 }
                 // Reserved names that would alias the production / non-devnet quorum
                 // hostnames (e.g. "mainnet" => https://quorums.mainnet.networks.dash.org).
@@ -69,5 +103,46 @@ pub fn get_quorum_base_url(
         Network::Regtest => Err(TrustedContextProviderError::UnsupportedNetwork(
             "Regtest network is not supported by trusted context provider".to_string(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod quorum_base_url_tests {
+    use super::*;
+
+    #[test]
+    fn should_refuse_a_devnet_name_that_folds_to_a_reserved_name() {
+        // Fullwidth "mainnet": alphanumeric in Unicode, and IDNA maps it to
+        // "mainnet", so it must not pass as a devnet name.
+        let fullwidth_mainnet = "\u{FF4D}\u{FF41}\u{FF49}\u{FF4E}\u{FF4E}\u{FF45}\u{FF54}";
+        for name in [fullwidth_mainnet, "d\u{E9}vnet", "palmat\u{FF55}m"] {
+            assert!(
+                matches!(
+                    get_quorum_base_url(Network::Devnet, Some(name)),
+                    Err(TrustedContextProviderError::InvalidDevnetName(_))
+                ),
+                "{name:?} must be refused"
+            );
+        }
+        assert_eq!(
+            get_quorum_base_url(Network::Devnet, Some("palmatum-2"))
+                .ok()
+                .as_deref(),
+            Some("https://quorums.palmatum-2.networks.dash.org")
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_devnet_name_longer_than_a_dns_label() {
+        let longest = "a".repeat(MAX_DEVNET_NAME_LENGTH);
+        assert_eq!(
+            get_quorum_base_url(Network::Devnet, Some(&longest)).ok(),
+            Some(format!("https://quorums.{longest}.networks.dash.org"))
+        );
+        let too_long = "a".repeat(MAX_DEVNET_NAME_LENGTH + 1);
+        assert!(matches!(
+            get_quorum_base_url(Network::Devnet, Some(&too_long)),
+            Err(TrustedContextProviderError::InvalidDevnetName(_))
+        ));
     }
 }

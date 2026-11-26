@@ -322,7 +322,8 @@ mod tests {
     fn create_transition_with_required_since(
         required_since: u32,
     ) -> (DataContractCreateTransition, &'static PlatformVersion) {
-        let platform_version = PlatformVersion::latest();
+        // Generation 2 is the generation protocol version 14 selects
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let identity_nonce = IdentityNonce::default();
 
         let data_contract =
@@ -335,6 +336,7 @@ mod tests {
 
         data_contract_for_serialization
             .document_schemas_mut()
+            .expect("expected a transport format's schemas")
             .insert(
                 "note".to_string(),
                 platform_value!({
@@ -473,6 +475,7 @@ mod tests {
             .expect("failed to convert data contract");
         serialized
             .document_schemas_mut()
+            .expect("expected a transport format's schemas")
             .get_mut("niceDocument")
             .expect("expected the niceDocument schema")
             .insert("actionFees".to_string(), action_fees)
@@ -492,7 +495,8 @@ mod tests {
     // moderation has none: the credits could never be claimed.
     #[test]
     fn should_reject_a_moderators_action_fee_on_a_contract_without_moderation() {
-        let platform_version = PlatformVersion::latest();
+        // Generation 2 is the generation protocol version 14 selects
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let transition = create_transition_with_action_fees(
             platform_value!({"create": {"owner": 5_u64, "moderators": 10_u64}}),
             false,
@@ -513,7 +517,8 @@ mod tests {
 
     #[test]
     fn should_accept_action_fees_the_contract_can_pay_out() {
-        let platform_version = PlatformVersion::latest();
+        // Generation 2 is the generation protocol version 14 selects
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         // An owner fee needs no moderation, and a moderators fee is fine once it is declared.
         for (action_fees, moderated) in [
             (platform_value!({"create": {"owner": 5_u64}}), false),
@@ -533,7 +538,8 @@ mod tests {
 
     #[test]
     fn should_reject_a_pre_programmed_release_totalling_over_the_limit() {
-        let platform_version = PlatformVersion::latest();
+        // Generation 2 is the generation protocol version 14 selects
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let over_limit_releases: [&[TokenAmount]; 2] = [
             &[i64::MAX as TokenAmount + 1],
             &[i64::MAX as TokenAmount, 1],
@@ -561,7 +567,8 @@ mod tests {
 
     #[test]
     fn should_accept_a_pre_programmed_release_totalling_the_limit() {
-        let platform_version = PlatformVersion::latest();
+        // Generation 2 is the generation protocol version 14 selects
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let transition = create_transition_with_pre_programmed_releases(
             &[&[i64::MAX as TokenAmount - 1, 1]],

@@ -17,9 +17,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.example.services.shielded.asWalletDrainWallet
 import org.dashfoundation.example.state.AppState
 import org.dashfoundation.example.state.AppUiState
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.hexToBytes
 
 private val Context.preferencesStore by preferencesDataStore(name = "example_prefs")
 
@@ -125,6 +127,43 @@ class AppContainer(private val context: Context) {
         )
 
     /**
+     * In-flight shields from an identity's balance (type 21), top-ups of
+     * an identity from the shielded pool (type 22) and shielded tips to a
+     * DashPay username, held past the screen
+     * that started them so a rotation or tab switch cannot start a second
+     * payment while the first is proving.
+     */
+    val shieldedIdentityPaymentCoordinator =
+        org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator(
+            applicationScope,
+        )
+
+    /**
+     * In-flight creates of private document entries (type 29) and the requests that may have
+     * gone through, held past the screen that started them so going back or a rotation cannot
+     * lose a create's outcome or start the same create again.
+     */
+    val privateDocumentEntryCreateCoordinator =
+        org.dashfoundation.example.services.shielded.PrivateDocumentEntryCreateCoordinator(
+            applicationScope,
+        )
+
+    /**
+     * Core to shielded "Max" transfers: the stored operation ids and what
+     * Rust last reported for each. Port of the `WalletDrainCoordinator` iOS
+     * hosts on `PlatformWalletManager`. App-scoped so a transfer survives
+     * its screen, and reads the SDK database's `wallet_drain_operations`
+     * table, so a stored id survives the process.
+     */
+    val walletDrainCoordinator =
+        org.dashfoundation.example.services.shielded.WalletDrainCoordinator(
+            store = org.dashfoundation.example.services.shielded.RoomWalletDrainOperationStore(
+                database.walletDrainOperationDao(),
+            ),
+            fundingCoordinator = shieldedFundCoordinator,
+        )
+
+    /**
      * Ephemeral pricing / purchase-eligibility for the state-transition
      * catalog — port of `TransitionState.swift`. App-scoped (the Swift
      * `@StateObject` lives on the app) so it survives category ↔ detail
@@ -153,6 +192,18 @@ class AppContainer(private val context: Context) {
             network = sdk.network,
             loadWallets = {
                 val activatedManager = walletManagerStore.activate(sdk.network, sdk)
+                // The manager now serves the SDK its SPV quorum keys.
+                appState.refreshQuorumSource()
+                // Open the shielded store before any wallet is loaded or
+                // created: this app's persister keeps the private contact
+                // request scan state, so Rust holds every wallet published
+                // while no store is configured (code 72) until its private
+                // payment journal is read, and a later bind may never come (no
+                // mnemonic, declined biometric). With the store open first,
+                // each wallet's journal is read as it is published, and the
+                // binds' own calls on the same path are no-ops. A failure is
+                // recorded and retried; the wallets stay held meanwhile.
+                configureShieldedStore(activatedManager)
                 activatedManager.loadPersistedWallets()
                 org.dashfoundation.example.ui.dashpay.DashPayWalletLoad(
                     value = activatedManager,
@@ -166,6 +217,12 @@ class AppContainer(private val context: Context) {
             },
         )
         platformBalanceSyncService.configure(manager)
+
+        // Ask Rust what became of every Max transfer stored before the last
+        // process ended (← the launch reconcile in `SwiftExampleAppApp.swift`).
+        // Its own coroutine: each read loads the wallet list from the store,
+        // and activation must not wait on that.
+        applicationScope.launch { reconcileWalletDrains(manager) }
 
         // Bind the wallet-scoped services against the deterministic first
         // wallet now, and re-bind whenever the wallet set changes (create /
@@ -189,6 +246,11 @@ class AppContainer(private val context: Context) {
         spvOverlayJob?.cancel()
         spvOverlayJob = applicationScope.launch {
             publisher.progress.collect { p ->
+                // In Auto the SDK's quorum source follows SPV readiness
+                // (← QuorumSourceRefresh in SwiftExampleAppApp.swift). Its
+                // own coroutine: the read can wait on the SPV client, and the
+                // overlay must not.
+                applicationScope.launch { appState.refreshQuorumSource() }
                 syncOverlayState.publish(
                     org.dashfoundation.example.state.SpvProgress(
                         phaseTitle = p.phaseTitle,
@@ -201,12 +263,81 @@ class AppContainer(private val context: Context) {
     }
 
     /**
+     * Read the status of every stored Max transfer of [manager]'s network
+     * whose wallet is loaded. Sends nothing.
+     */
+    private suspend fun reconcileWalletDrains(
+        manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
+    ) {
+        if (!shieldedService.isAvailable) return
+        try {
+            walletDrainCoordinator.refreshFromStore()
+            walletDrainCoordinator.reconcile(
+                network = manager.network,
+                walletIds = manager.wallets.value.keys.map { it.hexToBytes() },
+                wallet = manager.asWalletDrainWallet(),
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to reconcile saved Max transfers", e)
+        }
+    }
+
+    private val _shieldedStoreFailure = MutableStateFlow<String?>(null)
+
+    /**
+     * Why opening the active network's shielded store failed, until a later
+     * attempt succeeds. The DashPay screens show it while the wallet's private
+     * payments wait for that store, and retry it ([configureShieldedStoreAgain]).
+     * ← Swift `WalletManagerStore.shieldedStoreFailures`.
+     */
+    val shieldedStoreFailure: StateFlow<String?> = _shieldedStoreFailure.asStateFlow()
+
+    /**
+     * Open [manager]'s network's shielded store, recording why it failed, or
+     * clearing that once it opens. A repeat on the same path does not wait
+     * on the store.
+     */
+    private suspend fun configureShieldedStore(manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager) {
+        if (!shieldedService.isAvailable) return
+        try {
+            manager.configureShielded(shieldedDbPath(manager.network))
+            _shieldedStoreFailure.value = null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _shieldedStoreFailure.value = e.message ?: e.toString()
+            android.util.Log.w(TAG, "Failed to configure the shielded store", e)
+        }
+    }
+
+    /**
+     * Open the active network's shielded store again and return why it
+     * failed, or null once it is open. On a store already open this asks the
+     * wallet to retry restoring every wallet whose private payments are still
+     * held, a restoration that failed after the store opened included; it
+     * never waits on a busy store (a busy store defers the restoration to a
+     * task).
+     * ← Swift `WalletManagerStore.configureShieldedAgain(_:)`.
+     */
+    suspend fun configureShieldedStoreAgain(): String? {
+        val manager = walletManagerStore.activeManager.value ?: return _shieldedStoreFailure.value
+        configureShieldedStore(manager)
+        return _shieldedStoreFailure.value
+    }
+
+    /**
      * Wallet-scoped rebind — drive the manager-wide sync loops from the
      * deterministic first wallet (← iOS `rebindWalletScopedServices` in
      * SwiftExampleAppApp.swift). Idempotent: `configureShielded` /
      * `bindShielded` and the start-if-not-running guards make repeated calls
      * (on every wallet-set change) safe.
      */
+    /** The per-network commitment-tree store, as iOS `ShieldedService.dbPath(for:)` names it. */
+    private fun shieldedDbPath(network: org.dashfoundation.dashsdk.Network): String =
+        java.io.File(context.filesDir, "shielded_tree_${network.networkName}.sqlite").absolutePath
+
     private suspend fun rebindWalletScopedServices(
         manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
     ) {
@@ -243,10 +374,7 @@ class AppContainer(private val context: Context) {
                 // and doesn't throw. dbPath mirrors iOS's
                 // `ShieldedService.dbPath(for:)` naming
                 // (`shielded_tree_<networkName>.sqlite`), rooted in filesDir.
-                val shieldedDbPath = java.io.File(
-                    context.filesDir,
-                    "shielded_tree_${manager.network.networkName}.sqlite",
-                ).absolutePath
+                val shieldedDbPath = shieldedDbPath(manager.network)
                 shieldedService.bind(
                     manager = manager,
                     walletId = wallet.walletId,
@@ -328,6 +456,7 @@ class AppContainer(private val context: Context) {
             appState.initializeSdk()
             loadKnownContractsIntoSdk()
             backfillOncePerIdentityDistributions()
+            rederiveTokenRules()
             activateManager()
             _bootstrapState.value = BootstrapState.Ready
         } catch (e: Exception) {
@@ -356,8 +485,30 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * Pre-load every locally-stored data contract into the SDK's trusted
-     * context provider — port of `AppState.loadKnownContractsIntoSDK`. This
+     * Repair token rows whose rule columns no longer match their stored
+     * contract, such as rows written before the rules parser read rs-dpp's
+     * `$type` action-taker maps (every rule stored as "NoOne", so Mint, Burn,
+     * Freeze and the other rule-gated actions show as locked). Runs on every
+     * launch rather than once, so rows an older build writes again after a
+     * downgrade are repaired too; unchanged rows are not written
+     * (`TokenMaterializer.rederiveRules`). Best-effort and non-fatal.
+     */
+    private suspend fun rederiveTokenRules() {
+        try {
+            val contracts = database.dataContractDao().observeWithTokens().first()
+            val rewritten = org.dashfoundation.example.services.tokens.TokenMaterializer
+                .rederiveRules(contracts, database.tokenDao())
+            if (rewritten > 0) {
+                android.util.Log.i(TAG, "Re-derived the rules of $rewritten token rows")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to re-derive token rules", e)
+        }
+    }
+
+    /**
+     * Pre-load every locally-stored data contract into the SDK's context
+     * provider — port of `AppState.loadKnownContractsIntoSDK`. This
      * lets proof verification resolve those contracts without a network
      * fetch. Best-effort and non-fatal: any failure is logged, never thrown,
      * so it can't stall or fail bootstrap (mirrors iOS, where the load is
@@ -365,14 +516,14 @@ class AppContainer(private val context: Context) {
      *
      * Only contracts with a non-null [DataContractEntity.binarySerialization]
      * are loaded — that field holds the versioned binary serialization the
-     * trusted provider deserializes; the JSON `serializedContract` is the
-     * wrong shape. Ids are base58-encoded to match what the native
+     * native `addKnownContracts` deserializes; the JSON `serializedContract`
+     * is the wrong shape. Ids are base58-encoded to match what
      * `addKnownContracts` splits from its CSV.
      */
     private suspend fun loadKnownContractsIntoSdk() {
         val sdk = appState.sdk.value ?: return
         try {
-            // Scope to the SDK's own network: the trusted-context cache is
+            // Scope to the SDK's own network: the provider's contract cache is
             // keyed only by contract id, so seeding a network-locked SDK with
             // another network's contract could resolve the wrong/stale schema
             // (same network-scoping rule as onLoadWalletList).

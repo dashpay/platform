@@ -159,7 +159,6 @@ pub(crate) mod test_support {
     //! locator and update-service tests build lists the same way.
     use super::{EntryMasternodeType, MasternodeListEntry, MasternodeListSummary};
     use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::hashes::Hash;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
     use dashcore::{PlatformNodeId, ProTxHash, PubkeyHash};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -234,7 +233,6 @@ mod tests {
     use super::test_support::{evonode, ip, masternode};
     use super::*;
     use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::hashes::Hash;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
     use dashcore::{BlockHash, PlatformNodeId, ProTxHash, PubkeyHash};
     use std::net::{Ipv4Addr, SocketAddrV4};
@@ -259,8 +257,10 @@ mod tests {
             },
         };
         let list = MasternodeList::build(
-            [(pro_tx, entry.into())].into_iter().collect(),
-            Default::default(),
+            [(pro_tx, std::sync::Arc::new(entry.into()))]
+                .into_iter()
+                .collect::<dashcore::sml::masternode_list::MasternodeMap>(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )

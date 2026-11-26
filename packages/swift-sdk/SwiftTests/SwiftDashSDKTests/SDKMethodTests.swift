@@ -9,18 +9,6 @@ import XCTest
 /// SwiftDashSDKIntegrationTests/Platform/TestnetIdentityFetchTests.swift.
 final class SDKMethodTests: XCTestCase {
 
-  /// A directory of rs-sdk's recorded offline vectors
-  /// (packages/rs-sdk/tests/vectors/<name>).
-  private static func rsSdkVectors(_ name: String) -> String {
-    URL(fileURLWithPath: #filePath)
-      .deletingLastPathComponent()  // SwiftDashSDKTests
-      .deletingLastPathComponent()  // SwiftTests
-      .deletingLastPathComponent()  // swift-sdk
-      .deletingLastPathComponent()  // packages
-      .appendingPathComponent("rs-sdk/tests/vectors/\(name)", isDirectory: true)
-      .path
-  }
-
   func testSDKMethodsAvailability() {
     print("=== Testing SDK Methods Availability ===")
 
@@ -104,7 +92,7 @@ final class SDKMethodTests: XCTestCase {
   /// and the identity is decoded into the Swift result.
   @MainActor
   func testSimpleIdentityFetch() async throws {
-    let vectors = Self.rsSdkVectors("test_identity_read_v1")
+    let vectors = rsSdkVectors("test_identity_read_v1")
     guard FileManager.default.fileExists(atPath: vectors) else {
       XCTFail("missing rs-sdk offline vectors at \(vectors)")
       return
@@ -128,7 +116,7 @@ final class SDKMethodTests: XCTestCase {
   /// the recorded quorum key, and the keys are decoded into the Swift result.
   @MainActor
   func testIdentityKeysFetch() async throws {
-    let vectors = Self.rsSdkVectors("test_identity_public_keys_all_read")
+    let vectors = rsSdkVectors("test_identity_public_keys_all_read")
     guard FileManager.default.fileExists(atPath: vectors) else {
       XCTFail("missing rs-sdk offline vectors at \(vectors)")
       return

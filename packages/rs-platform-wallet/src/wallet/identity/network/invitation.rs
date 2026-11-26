@@ -15,92 +15,30 @@
 
 use std::collections::BTreeMap;
 
-use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{InstantLock, OutPoint, PrivateKey, Transaction};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use dpp::identity::v0::IdentityV0;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::changeset::{
     InvitationChangeSet, InvitationEntry, InvitationStatus, PersistenceCapabilities,
+    PlatformWalletChangeSet,
 };
 
-use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
-use crate::wallet::asset_lock::orchestration::submit_with_cl_height_retry;
-use crate::wallet::identity::crypto::{
-    encode_invitation_uri, voucher_output_index, wif_network_matches,
+pub use dash_sdk::platform::dashpay::{
+    InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
 };
-use crate::wallet::identity::crypto::{InviterInfo, ParsedInvitation};
+
+use crate::error::PlatformWalletError;
+use crate::wallet::identity::crypto::{encode_invitation_uri, InviterInfo, ParsedInvitation};
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
+use crate::wallet::persister::NotDurable;
 
 use super::*;
-
-/// Hard cap on the amount an invitation can lock (0.26 DASH). The voucher is a
-/// bearer credential, so the blast radius of a leaked link is bounded here in
-/// Rust — not just in the UI. Sized for onboarding at BOTH username tiers: the
-/// invitee spends the voucher on identity creation **plus** a DPNS name — a
-/// normal name (~0.03 DASH, the legacy `DASH_PAY_FEE`) or a contested/premium
-/// name (~0.25 DASH, `DASH_PAY_FEE_CONTESTED`), with the 0.01 margin covering
-/// the create/claim fees. The earlier 0.05 value deferred the contested tier
-/// "until contested-name-via-invite claim exists" — the claim path is
-/// amount-agnostic and contested-invite claims are verified working, and the
-/// Android wallet has funded contested invitations at 0.25 since 2024, so the
-/// deferral is over. (The pre-merge 0.01 iteration was below even a usable
-/// non-contested invitation and rejected its own onboarding default.)
-pub const MAX_INVITATION_DUFFS: u64 = 26_000_000;
-
-/// Floor on the amount an invitation can lock (0.003 DASH). A voucher funds a
-/// Platform identity operation, and creating an identity — which is what the
-/// invitee's claim does, and what a register-target reclaim does — requires the
-/// asset lock to carry at least the identity-registration minimum (~0.00228 DASH
-/// in credits on the current network; the state transition is rejected with
-/// `IdentityAssetLockTransactionOutPointNotEnoughBalanceError` below it). A
-/// voucher under this floor produces an invitation that can be neither claimed
-/// nor reclaimed, so reject it at creation. Set above the bare floor to leave the
-/// new identity a small usable starting balance; tune if the floor changes.
-pub const MIN_INVITATION_DUFFS: u64 = 300_000;
-
-/// Default TTL (24h) for an invitation's advisory expiry. The FFI sets
-/// `expiry_unix = now + MAX_INVITATION_TTL_SECS`. The expiry is **advisory** — a
-/// leaked-link finder holds the voucher key and ignores it — so it bounds only
-/// the honest UI (don't submit an about-to-go-stale IS proof) and the reclaim
-/// signal, NOT a leaked-link window. The real leak bound is `MAX_INVITATION_DUFFS`.
-pub const MAX_INVITATION_TTL_SECS: u32 = 24 * 60 * 60;
-
-/// Claim-by-fetch bound: how many times to look up the funding tx (each attempt
-/// tries both byte orders) before giving up. InstantSend/ChainLock finality does
-/// not guarantee the invitee's DAPI node has indexed the tx yet, so a freshly
-/// shared invitation can miss purely from propagation lag; retrying bounds that.
-const CLAIM_FETCH_MAX_ATTEMPTS: u32 = 5;
-
-/// Fixed backoff between claim-by-fetch attempts (matches the identity-create
-/// fetch-retry cadence elsewhere in the wallet). 5 attempts × 3s ≈ 12s of
-/// tolerance for propagation delay before surfacing a "not found" error.
-const CLAIM_FETCH_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
-
-/// RAII scrub for the voucher `PrivateKey` copy used on the claim path.
-/// `dashcore::PrivateKey` wraps a `secp256k1::SecretKey` that has no
-/// Drop-zeroize, so the imported bearer scalar would otherwise linger in memory
-/// after `claim_invitation` returns on every exit path (success or error).
-/// Wiping it here mirrors the create path's explicit scrub of the exported
-/// scalar — the voucher key is treated as bearer money end to end.
-struct WipingPrivateKey(PrivateKey);
-
-impl Drop for WipingPrivateKey {
-    fn drop(&mut self) {
-        self.0.inner.non_secure_erase();
-    }
-}
 
 /// A freshly-created invitation: the shareable link plus the bookkeeping the
 /// inviter tracks to reclaim an unclaimed voucher.
@@ -128,37 +66,6 @@ impl std::fmt::Debug for Invitation {
     }
 }
 
-/// Pre-flight the caller-supplied identity keys map: id=0 must be a MASTER-level
-/// AUTHENTICATION key (it signs the IdentityCreate transition). Mirrors
-/// `register_identity_with_funding`.
-fn preflight_keys_map(
-    keys_map: &BTreeMap<u32, IdentityPublicKey>,
-) -> Result<(), PlatformWalletError> {
-    if keys_map.is_empty() {
-        return Err(PlatformWalletError::InvalidIdentityData(
-            "keys_map must contain at least one identity public key".to_string(),
-        ));
-    }
-    match keys_map.get(&0) {
-        Some(k)
-            if k.security_level() == SecurityLevel::MASTER
-                && k.purpose() == Purpose::AUTHENTICATION => {}
-        Some(_) => {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "keys_map[0] must be a MASTER-level AUTHENTICATION key \
-                 (required to sign the IdentityCreate transition)"
-                    .to_string(),
-            ))
-        }
-        None => {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "keys_map must include key id=0 with MASTER security level".to_string(),
-            ))
-        }
-    }
-    Ok(())
-}
-
 /// Extract the u32 funding index from an invitation funding path's tail.
 ///
 /// The invitation funding address is drawn from the account's address pool, so
@@ -177,21 +84,57 @@ fn funding_index_from_path(path: &DerivationPath) -> Option<u32> {
     }
 }
 
-/// Byte-reverse a txid hex string. Old iOS invitation links carry the funding
-/// txid in little-endian internal order; DAPI keys `getTransaction` by the
-/// big-endian display id, so the claim retries with the id reversed on a miss
-/// (mirrors Android's `Sha256Hash.wrap(id).reversedBytes` retry).
-fn reverse_txid_hex(txid_hex: &str) -> Result<String, PlatformWalletError> {
-    let mut bytes = hex::decode(txid_hex).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "invitation funding txid is not valid hex: {e}"
-        ))
-    })?;
-    bytes.reverse();
-    Ok(hex::encode(bytes))
-}
-
 impl IdentityWallet {
+    /// Record the inviter-side row of a voucher that is already funded, and
+    /// answer `Ok` only once it is on disk.
+    ///
+    /// A flush that succeeded is not trusted by itself
+    /// (`WalletPersister::store_durably`): another flush of the wallet's
+    /// records may have taken the record and failed for good, dropping it,
+    /// and the link handed out afterwards would then be for a voucher no
+    /// restart could list or reclaim. The voucher is funded by now, so a
+    /// record another flush dropped, or still holds or put back, is stored
+    /// once more rather than given up: the row is keyed by outpoint, so
+    /// storing it again changes nothing where the first one did land, and
+    /// the flush that follows writes what was put back. Only when that
+    /// fails too is the failure reported, as a store or flush that failed
+    /// is.
+    ///
+    /// A store or flush of this call's own that the backend failed is not
+    /// tried again, as it never was here. There the outcome is known: a
+    /// flush that failed transiently kept the record buffered for a later
+    /// one to write, and any other failure is the backend refusing or
+    /// dropping what it was given, which its contract says not to retry
+    /// (`PlatformWalletPersistence::flush`). That outcome is this call's
+    /// flush's to tell only when no other flush could have taken the
+    /// record, and `store_durably` answers with its own flush's failure
+    /// only then: a flush that failed while another held the record, which
+    /// may drop it later with nothing left buffered, is one of the two
+    /// answers stored again. Those are the ones that leave it unknown
+    /// whether a record this call stored is on disk or still buffered, and
+    /// the second store is what settles that.
+    fn record_funded_invitation(&self, entry: InvitationEntry) -> Result<(), PlatformWalletError> {
+        let mut inv_cs = InvitationChangeSet::default();
+        inv_cs.invitations.insert(entry.out_point, entry);
+        let record = || PlatformWalletChangeSet {
+            invitations: Some(inv_cs.clone()),
+            ..Default::default()
+        };
+        let recorded = match self.persister.store_durably(record()) {
+            Err(NotDurable::Lost | NotDurable::OtherFlushUnsettled) => {
+                self.persister.store_durably(record())
+            }
+            recorded => recorded,
+        };
+        recorded.map_err(|e| {
+            PlatformWalletError::AssetLockTransaction(format!(
+                "the invitation voucher is funded but its record could not be \
+                 persisted (it would be missing from Sent invitations and \
+                 unreclaimable): {e}"
+            ))
+        })
+    }
+
     /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
     /// DIP-13 invitation path and return a shareable `dashpay://invite` link.
     ///
@@ -307,32 +250,15 @@ impl IdentityWallet {
         // for the invitation account), warn-skip: an untrackable row can't be
         // reclaimed either way.
         if let Some(funding_index) = funding_index_from_path(&path) {
-            let mut inv_cs = InvitationChangeSet::default();
-            inv_cs.invitations.insert(
+            self.record_funded_invitation(InvitationEntry {
                 out_point,
-                InvitationEntry {
-                    out_point,
-                    funding_index,
-                    amount_duffs,
-                    expiry_unix,
-                    created_at_secs,
-                    has_inviter: inviter.is_some(),
-                    status: InvitationStatus::Created,
-                },
-            );
-            self.persister
-                .store(crate::changeset::PlatformWalletChangeSet {
-                    invitations: Some(inv_cs),
-                    ..Default::default()
-                })
-                .and_then(|_| self.persister.flush())
-                .map_err(|e| {
-                    PlatformWalletError::AssetLockTransaction(format!(
-                        "the invitation voucher is funded but its record could not be \
-                         persisted (it would be missing from Sent invitations and \
-                         unreclaimable): {e}"
-                    ))
-                })?;
+                funding_index,
+                amount_duffs,
+                expiry_unix,
+                created_at_secs,
+                has_inviter: inviter.is_some(),
+                status: InvitationStatus::Created,
+            })?;
         } else {
             tracing::warn!(
                 "invitation funding path has no u32 index tail; \
@@ -388,92 +314,38 @@ impl IdentityWallet {
     }
 
     /// The identity id this invitation WOULD create, without claiming it.
-    ///
-    /// Platform derives a created identity's id from the asset-lock outpoint,
-    /// so the id is knowable before the claim. The claim is otherwise the only
-    /// way to learn a voucher is spent, which is why a used invitation surfaces
-    /// as a raw "asset lock … already completely used" after the invitee has
-    /// picked a username and entered their PIN.
-    ///
-    /// # Detects claims, not consumption — the signal is ONE-WAY
-    ///
-    /// An identity existing under the returned id means the voucher was
-    /// **definitely** claimed. Its absence does **not** mean the voucher is
-    /// usable.
-    ///
-    /// The lock can also be consumed by `IdentityTopUp` — the reclaim path
-    /// behind `platform_wallet_topup_identity_with_existing_asset_lock_signer`
-    /// with `consume_invitation_voucher: true` — which credits an EXISTING
-    /// identity rather than creating the derived one. Afterwards no identity
-    /// exists at this id, yet a claim still fails deterministically because the
-    /// asset-lock output is already spent.
-    ///
-    /// Platform exposes no client query for spent asset locks (drive tracks
-    /// them under `SpentAssetLockTransactions`, but no DAPI endpoint surfaces
-    /// it), so consumption cannot be checked from here. Callers must therefore
-    /// treat this as a fast-fail for the common case only: reject the
-    /// invitation when an identity exists, and otherwise proceed WITHOUT
-    /// concluding the voucher is usable. It narrows when the late failure
-    /// happens; it does not remove it.
-    ///
-    /// Costs one funding-tx fetch: the outpoint is not in the link (the credit
-    /// output is selected by pk↔script match, not by index), so the tx has to
-    /// be refetched exactly as the claim does. Same wrong-network fail-fast as
-    /// [`Self::claim_invitation`], so a testnet link on mainnet reports the
-    /// network mismatch rather than a confusing fetch miss.
+    /// Forwards to [`dash_sdk::Sdk::invitation_prospective_identity_id`]; see
+    /// there for the one-way caveat (an identity at the id proves a claim, its
+    /// absence does not prove the voucher is unspent).
     pub async fn invitation_prospective_identity_id(
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<Identifier, PlatformWalletError> {
-        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "invitation is for the {:?} network but this wallet is on {:?}",
-                invitation.voucher_key_network, self.sdk.network
-            )));
-        }
-        let proof = self.reconstruct_asset_lock_proof(invitation).await?;
-        // The reconstruction now carries an optional ChainLock fallback for
-        // the claim path; the prospective id is always derived from the
-        // PRIMARY proof (both proofs cover the same credit output, so the
-        // id is identical either way).
-        proof.primary.create_identifier().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "invitation asset lock proof yielded no identity id: {e}"
-            ))
-        })
+        Ok(self
+            .sdk
+            .invitation_prospective_identity_id(invitation)
+            .await?)
+    }
+
+    /// What an invitation is worth and whether it was already claimed.
+    /// Forwards to [`dash_sdk::Sdk::invitation_claim_status`].
+    pub async fn invitation_claim_status(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<InvitationClaimStatus, PlatformWalletError> {
+        Ok(self.sdk.invitation_claim_status(invitation).await?)
     }
 
     /// Claim a DashPay invitation: register a NEW identity for the invitee,
-    /// funded by the imported voucher.
+    /// funded by the imported voucher, then record it in this wallet.
     ///
-    /// The link carries only the voucher key + funding txid (+ optional islock),
-    /// not the funding proof — so this **refetches** the funding transaction
-    /// from Core and reconstructs the asset-lock proof, mirroring the legacy
-    /// Android claim (`TopUpRepository.obtainAssetLockTransaction`):
-    /// 1. Fetch the tx by `funding_txid`; retry byte-reversed on a miss (old iOS
-    ///    links are little-endian).
-    /// 2. Fail-fast that the fetched tx is really the funding tx, and (if an
-    ///    islock is present) that the islock locks it.
-    /// 3. Select the funded credit output by pk↔script match (not index 0).
-    /// 4. Build an `InstantAssetLockProof` when an islock is present (the fast
-    ///    path), else a `ChainAssetLockProof` once the funding tx is chain-locked.
-    ///
-    /// The IS proof is the *fast* path only: a voucher islock is signed at
-    /// creation, so by the time the invitee claims (minutes-to-hours later, and on
-    /// testnet possibly across a platform-4.1 quorum rotation) Drive may reject the
-    /// islock as stale with `InvalidInstantAssetLockProofSignatureError` — its own
-    /// message asks to "try chain asset lock proof instead". When the funding tx is
-    /// already chain-locked (the usual case by claim time), this resubmits a
-    /// `ChainAssetLockProof` over the SAME credit output, mirroring the IS→CL
-    /// fallback the register/top-up paths use. If the tx is not yet chain-locked no
-    /// fallback is possible and the claim surfaces a retry signal.
-    ///
-    /// The invitee's own identity keys (`keys_map`, derived from the invitee's
-    /// seed) are signed by `identity_signer`; the asset-lock's outer
-    /// state-transition signature is produced from the **imported voucher key**
-    /// (`invitation.voucher_key`) via the SDK's in-process raw-key path. The
-    /// invitee owns neither the lock's inputs nor its tracking, so this bypasses
-    /// the wallet's `AssetLockFunding` machinery entirely.
+    /// The claim itself — refetching the funding transaction, rebuilding the
+    /// asset-lock proof, the IS → ChainLock fallback (a stale islock, a claim
+    /// too large with the IS proof, or a funding transaction over the input
+    /// cap) and adopting an earlier claim that
+    /// already landed — is
+    /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
+    /// keys to the wallet's identity manager at `identity_index`.
     ///
     /// The contact-bootstrap is a separate step: on success the UI asks the
     /// invitee whether to establish contact with the sender and, if so, calls
@@ -489,74 +361,9 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        preflight_keys_map(&keys_map)?;
-
-        // Reject a wrong-network link before any network work: a testnet WIF is a
-        // valid key on the wrong chain, so it would otherwise surface as a
-        // confusing funding-tx fetch miss rather than a clear "wrong network".
-        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "invitation is for the {:?} network but this wallet is on {:?}",
-                invitation.voucher_key_network, self.sdk.network
-            )));
-        }
-
-        // Reconstruct the funding asset-lock proof by refetching the tx. Consensus
-        // enforces pk↔output, islock↔tx, and identity_id↔outpoint, so the local
-        // guards below are for fast-fail + correct-index selection, not theft
-        // prevention (a crafted link at worst yields a failed claim).
-        //
-        // `primary` is submitted first: an InstantSend proof when the link carried
-        // an islock (the fast path), or a ChainLock proof when it did not.
-        // `chain_fallback` is a ChainLock proof over the SAME credit output,
-        // populated only when `primary` is InstantSend AND the funding tx is
-        // already chain-locked — the stale-islock recovery below resubmits it.
-        let ReconstructedProof {
-            primary,
-            chain_fallback,
-        } = self.reconstruct_asset_lock_proof(&invitation).await?;
-
-        // The voucher key signs the asset lock's outer ST signature (ECDSA over
-        // the credit-output pubkey hash). Convert to the SDK's `PrivateKey`,
-        // scrubbed on every exit path by the `WipingPrivateKey` guard.
-        let network = self.sdk.network;
-        let voucher_priv = WipingPrivateKey(PrivateKey::new(invitation.voucher_key, network));
-
-        // Build the placeholder identity ONCE so both the primary attempt and the
-        // IS→CL fallback submit the same key set without a `keys_map` clone.
-        let placeholder = Identity::V0(IdentityV0 {
-            id: Identifier::default(),
-            public_keys: keys_map,
-            balance: 0,
-            revision: 0,
-        });
-
-        // Submit through the stale-islock fallback seam: the primary proof
-        // first and — only on Platform's stale-islock rejection — the ChainLock
-        // fallback over the SAME credit output (or `AssetLockNotChainLocked`
-        // when none could be built). Each submission is wrapped in the shared
-        // CL-height-too-low retry (Platform's observed Core tip briefly behind
-        // the proof's chain-locked height — the same transient the
-        // register/top-up paths absorb; harmless for an IS proof, which never
-        // triggers it). This mirrors `register_identity_with_funding`'s IS→CL
-        // fallback, except the CL proof was rebuilt from the refetched tx: the
-        // invitee tracks no asset lock of its own, so there is no
-        // `upgrade_to_chain_lock_proof` to call.
-        let sdk = &self.sdk;
-        let placeholder = &placeholder;
-        let voucher_priv = &voucher_priv;
-        let identity =
-            submit_claim_with_stale_islock_fallback(primary, chain_fallback, move |proof| {
-                submit_with_cl_height_retry(settings, move |s| {
-                    placeholder.put_to_platform_and_wait_for_response_with_private_key(
-                        sdk,
-                        proof.clone(),
-                        &voucher_priv.0,
-                        identity_signer,
-                        s,
-                    )
-                })
-            })
+        let identity = self
+            .sdk
+            .claim_invitation(invitation, keys_map, identity_signer, settings)
             .await?;
 
         // Best-effort local bookkeeping — Platform has already accepted the
@@ -622,264 +429,6 @@ impl IdentityWallet {
 
         Ok(identity)
     }
-
-    /// Refetch the funding transaction and rebuild its asset-lock proof.
-    ///
-    /// Mirrors Android `TopUpRepository.obtainAssetLockTransaction`: fetch by
-    /// txid (retry byte-reversed on a miss), verify the fetched tx is the funding
-    /// tx, select the voucher's credit output, and assemble an InstantSend proof
-    /// (when the link carried an islock) or a ChainLock proof (islock absent /
-    /// `"null"` — a chainlock-confirmed invite).
-    ///
-    /// Returns a [`ReconstructedProof`]: the `primary` proof to submit plus an
-    /// optional `chain_fallback` ChainLock proof used by the caller's stale-islock
-    /// recovery (populated only when the primary is InstantSend and the funding tx
-    /// is already chain-locked).
-    async fn reconstruct_asset_lock_proof(
-        &self,
-        invitation: &ParsedInvitation,
-    ) -> Result<ReconstructedProof, PlatformWalletError> {
-        let sdk = &self.sdk;
-        let fetched = fetch_funding_tx_with_retry(
-            &invitation.funding_txid,
-            |txid| async move {
-                sdk.get_transaction(&txid)
-                    .await
-                    .map_err(PlatformWalletError::Sdk)
-            },
-            || tokio::time::sleep(CLAIM_FETCH_RETRY_DELAY),
-        )
-        .await?
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "invitation funding transaction not found (tried both byte orders across \
-                 repeated attempts); it may not have propagated to the queried DAPI node yet — \
-                 retry shortly"
-                    .to_string(),
-            )
-        })?;
-        assemble_asset_lock_proof(
-            fetched.transaction,
-            fetched.is_chain_locked,
-            fetched.height,
-            invitation,
-        )
-    }
-}
-
-/// Fetch the claim's funding transaction with the bounded propagation retry —
-/// the injectable orchestration seam of `reconstruct_asset_lock_proof` (tests
-/// script `fetch`/`delay`; production passes `Sdk::get_transaction` and a
-/// `tokio::time::sleep`).
-///
-/// Two independent concerns are layered here:
-///   1. Byte order — old iOS links carry the txid little-endian, so a
-///      canonical miss is retried byte-reversed **within the same attempt**
-///      (a compatibility fallback, not a temporal retry). A transport error is
-///      NOT masked as a miss — it propagates immediately (it is not a "not
-///      indexed yet" signal, so retrying it would only hide it).
-///   2. Propagation lag — InstantSend/ChainLock finality does not guarantee
-///      the queried DAPI node has indexed the tx yet, so a fresh invitation
-///      can miss on both byte orders purely from propagation delay. Retry up
-///      to [`CLAIM_FETCH_MAX_ATTEMPTS`] attempts with one `delay` between
-///      attempts — and none after the last (the caller surfaces the miss
-///      immediately).
-///
-/// Returns `Ok(None)` only after every attempt missed on both byte orders.
-async fn fetch_funding_tx_with_retry<T, F, FFut, D, DFut>(
-    funding_txid: &str,
-    mut fetch: F,
-    mut delay: D,
-) -> Result<Option<T>, PlatformWalletError>
-where
-    F: FnMut(String) -> FFut,
-    FFut: std::future::Future<Output = Result<Option<T>, PlatformWalletError>>,
-    D: FnMut() -> DFut,
-    DFut: std::future::Future<Output = ()>,
-{
-    for attempt in 0..CLAIM_FETCH_MAX_ATTEMPTS {
-        if let Some(tx) = fetch(funding_txid.to_string()).await? {
-            return Ok(Some(tx));
-        }
-        // Reversed lookup is computed lazily on a canonical miss, so a hit
-        // never depends on the txid being reversible hex.
-        let reversed = reverse_txid_hex(funding_txid)?;
-        if let Some(tx) = fetch(reversed).await? {
-            return Ok(Some(tx));
-        }
-        if attempt + 1 < CLAIM_FETCH_MAX_ATTEMPTS {
-            delay().await;
-        }
-    }
-    Ok(None)
-}
-
-/// Submit the claim's reconstructed proof with the stale-islock → ChainLock
-/// fallback — the injectable orchestration seam of the claim submission (tests
-/// script `submit`; production passes the placeholder-identity put wrapped in
-/// `submit_with_cl_height_retry`).
-///
-/// `primary` is submitted first. Exactly ONE recovery is attempted, and only
-/// for the one rejection that indicts the proof kind rather than the claim:
-/// `is_instant_lock_proof_invalid` (Platform rejected a stale islock — its
-/// signing quorum rotated out, or it is no longer "recent"; Platform's own
-/// message asks us to "try chain asset lock proof instead"). On that rejection
-/// the ChainLock `chain_fallback` over the SAME credit output is submitted —
-/// or, when the funding tx was not yet chain-locked so no fallback could be
-/// built, `AssetLockNotChainLocked` surfaces a clear retry signal instead of
-/// the raw consensus error. Every other error — from the primary or from the
-/// fallback itself — propagates as [`PlatformWalletError::Sdk`] with no
-/// further submission.
-async fn submit_claim_with_stale_islock_fallback<T, F, Fut>(
-    primary: AssetLockProof,
-    chain_fallback: Option<AssetLockProof>,
-    mut submit: F,
-) -> Result<T, PlatformWalletError>
-where
-    F: FnMut(AssetLockProof) -> Fut,
-    Fut: std::future::Future<Output = Result<T, dash_sdk::Error>>,
-{
-    match submit(primary).await {
-        Ok(created) => Ok(created),
-        Err(e) if is_instant_lock_proof_invalid(&e) => {
-            let Some(chain_proof) = chain_fallback else {
-                return Err(PlatformWalletError::AssetLockNotChainLocked(
-                    "invitation islock proof was rejected by Platform (stale — quorum \
-                     rotated or no longer recent) and the funding transaction is not yet \
-                     chain-locked, so no ChainLock fallback is possible; retry once the \
-                     funding block is chain-locked"
-                        .to_string(),
-                ));
-            };
-            tracing::warn!(
-                "invitation IS-lock proof rejected by Platform on claim; retrying with a \
-                 ChainLock proof over the same funding outpoint"
-            );
-            submit(chain_proof).await.map_err(PlatformWalletError::Sdk)
-        }
-        Err(e) => Err(PlatformWalletError::Sdk(e)),
-    }
-}
-
-/// The claim's reconstructed funding proof, plus an optional ChainLock fallback.
-///
-/// `primary` is submitted first: an [`AssetLockProof::Instant`] when the link
-/// carried an islock (the fast path), or an [`AssetLockProof::Chain`] when it did
-/// not. `chain_fallback` is a ChainLock proof over the SAME credit output,
-/// populated ONLY when `primary` is InstantSend AND the funding tx is already
-/// chain-locked — [`IdentityWallet::claim_invitation`]'s stale-islock recovery
-/// resubmits it if Platform rejects the primary IS proof with
-/// `InvalidInstantAssetLockProofSignatureError`. It is `None` when the primary is
-/// already a ChainLock proof (nothing to fall back to) or when the funding tx is
-/// not yet chain-locked (no ChainLock proof can be built — the claim must be
-/// retried once the block confirms).
-#[derive(Debug)]
-struct ReconstructedProof {
-    primary: AssetLockProof,
-    chain_fallback: Option<AssetLockProof>,
-}
-
-/// Assemble the asset-lock proof from an already-fetched funding transaction — the
-/// pure, testable core of the claim reconstruction (the fetch/retry lives in
-/// `reconstruct_asset_lock_proof`). Validates the tx is the funding tx (either byte
-/// order), selects the voucher's credit output, and builds an InstantSend proof
-/// (link carried an islock) or a ChainLock proof (islock absent), requiring
-/// chain-lock finality for the latter.
-///
-/// When an islock is present AND the funding tx is already chain-locked, the
-/// returned [`ReconstructedProof`] also carries a `chain_fallback` ChainLock proof
-/// over the same credit output, so the caller can recover from a stale islock that
-/// Platform rejects without refetching the tx.
-fn assemble_asset_lock_proof(
-    transaction: Transaction,
-    is_chain_locked: bool,
-    height: u32,
-    invitation: &ParsedInvitation,
-) -> Result<ReconstructedProof, PlatformWalletError> {
-    // Fail-fast: the fetched tx must actually be the funding tx (either byte
-    // order). DAPI returns whatever tx matches the id we asked for, so this
-    // guards a backend that answers with an unrelated tx.
-    let fetched_txid = transaction.txid().to_string();
-    let reversed_txid = reverse_txid_hex(&invitation.funding_txid).ok();
-    if fetched_txid != invitation.funding_txid
-        && reversed_txid.as_deref() != Some(fetched_txid.as_str())
-    {
-        return Err(PlatformWalletError::InvalidIdentityData(
-            "fetched transaction id does not match the invitation funding txid".to_string(),
-        ));
-    }
-
-    // Select the funded credit output the voucher key controls (not index 0
-    // — a legacy invite's credit output need not be first).
-    let output_index = voucher_output_index(&transaction, &invitation.voucher_key)?;
-
-    // A ChainLock proof over the selected credit output. Buildable only once the
-    // funding block is chain-locked; `height` is the tx's mined height (the
-    // `ChainAssetLockProof`'s `core_chain_locked_height`). Reused both as the
-    // primary for an islock-less invite and as the stale-islock fallback.
-    let chain_lock_proof = |txid| -> AssetLockProof {
-        let out_point = OutPoint::new(txid, output_index);
-        let out_point_bytes: [u8; 36] = out_point.into();
-        AssetLockProof::Chain(ChainAssetLockProof::new(height, out_point_bytes))
-    };
-
-    match &invitation.islock_hex {
-        Some(islock_hex) => {
-            let islock_bytes = hex::decode(islock_hex).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "invitation islock is not valid hex: {e}"
-                ))
-            })?;
-            // The hex is not self-describing; the modern deterministic islock
-            // (ISDLOCK) carries its version byte, which is exactly what the
-            // consensus decoder reads first.
-            let instant_lock = InstantLock::consensus_decode(&mut islock_bytes.as_slice())
-                .map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "invitation islock could not be decoded: {e}"
-                    ))
-                })?;
-            if instant_lock.txid != transaction.txid() {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "invitation islock does not lock the funding transaction".to_string(),
-                ));
-            }
-            // Fast path: submit the InstantSend proof. If the islock is stale
-            // (quorum rotated / no longer "recent") Platform rejects it, and the
-            // claim falls back to `chain_fallback` — available only when the
-            // funding tx is already chain-locked (the usual case by claim time,
-            // since the voucher was funded minutes-to-hours earlier). Computed
-            // from `&transaction` BEFORE it is moved into the IS proof below.
-            let chain_fallback = is_chain_locked.then(|| chain_lock_proof(transaction.txid()));
-            let primary = AssetLockProof::Instant(InstantAssetLockProof::new(
-                instant_lock,
-                transaction,
-                output_index,
-            ));
-            Ok(ReconstructedProof {
-                primary,
-                chain_fallback,
-            })
-        }
-        None => {
-            // ChainLock invite: the proof references the outpoint + a chain-locked
-            // core height. Require the funding tx to be chain-locked so the proof
-            // proves finality; the inviter/invitee retries once the block is
-            // chain-locked otherwise. There is no separate fallback — this IS the
-            // ChainLock proof.
-            if !is_chain_locked {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "chainlock invitation funding transaction is not yet chain-locked; \
-                     retry once it confirms"
-                        .to_string(),
-                ));
-            }
-            Ok(ReconstructedProof {
-                primary: chain_lock_proof(transaction.txid()),
-                chain_fallback: None,
-            })
-        }
-    }
 }
 
 #[cfg(test)]
@@ -929,557 +478,6 @@ mod tests {
         assert_eq!(funding_index_from_path(&path), None);
     }
 
-    // --- assemble_asset_lock_proof: the claim-time proof reconstruction guards ---
-
-    use crate::wallet::identity::crypto::invitation::{voucher_credit_script, ParsedInvitation};
-    use dpp::dashcore::consensus::Encodable;
-    use dpp::dashcore::secp256k1::SecretKey;
-    use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-    use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-    use dpp::dashcore::{Network, TxOut};
-
-    fn voucher_secret() -> SecretKey {
-        SecretKey::from_slice(&[0x11u8; 32]).unwrap()
-    }
-
-    /// An asset-lock tx whose single credit output pays the voucher key.
-    fn funding_tx(key: &SecretKey) -> Transaction {
-        let payload = AssetLockPayload {
-            version: 1,
-            credit_outputs: vec![TxOut {
-                value: 100_000,
-                script_pubkey: voucher_credit_script(key),
-            }],
-        };
-        Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
-        }
-    }
-
-    fn parsed(
-        key: SecretKey,
-        funding_txid: String,
-        islock_hex: Option<String>,
-    ) -> ParsedInvitation {
-        ParsedInvitation {
-            voucher_key: key,
-            voucher_key_network: Network::Testnet,
-            funding_txid,
-            islock_hex,
-            inviter: None,
-        }
-    }
-
-    /// A backend answering with an unrelated tx (id matches neither byte order) is
-    /// rejected before any proof is built.
-    #[test]
-    fn assemble_rejects_txid_mismatch() {
-        let key = voucher_secret();
-        let tx = funding_tx(&key);
-        let inv = parsed(key, "00".repeat(32), None);
-        let err = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap_err();
-        assert!(format!("{err}").contains("does not match"));
-    }
-
-    /// A ChainLock invite (no islock) whose funding tx is not yet chain-locked is
-    /// rejected — the proof must prove finality.
-    #[test]
-    fn assemble_chainlock_requires_chain_lock() {
-        let key = voucher_secret();
-        let tx = funding_tx(&key);
-        let txid = tx.txid().to_string();
-        let inv = parsed(key, txid, None);
-        let err = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap_err();
-        assert!(format!("{err}").contains("not yet chain-locked"));
-    }
-
-    /// A chain-locked ChainLock invite (no islock) assembles a ChainLock proof at
-    /// the tx's voucher output, with no separate fallback (the primary IS the CL
-    /// proof).
-    #[test]
-    fn assemble_chainlock_ok_when_locked() {
-        let key = voucher_secret();
-        let tx = funding_tx(&key);
-        let txid = tx.txid().to_string();
-        let inv = parsed(key, txid, None);
-        let reconstructed = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
-        assert!(matches!(reconstructed.primary, AssetLockProof::Chain(_)));
-        assert!(
-            reconstructed.chain_fallback.is_none(),
-            "an islock-less chainlock invite has no separate fallback"
-        );
-    }
-
-    /// An islock that locks the funding tx, with the tx already chain-locked,
-    /// yields an InstantSend primary (fast path) PLUS a ChainLock fallback over the
-    /// same credit output — the stale-islock recovery the claim path submits if
-    /// Platform rejects the IS proof with `InvalidInstantAssetLockProofSignatureError`.
-    #[test]
-    fn assemble_islock_present_and_chainlocked_carries_chain_fallback() {
-        let key = voucher_secret();
-        let tx = funding_tx(&key);
-        let txid = tx.txid().to_string();
-        let mut islock = InstantLock::default();
-        islock.txid = tx.txid();
-        let mut islock_bytes = Vec::new();
-        islock.consensus_encode(&mut islock_bytes).unwrap();
-        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
-        let reconstructed = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
-        assert!(
-            matches!(reconstructed.primary, AssetLockProof::Instant(_)),
-            "the islock fast path must be tried first"
-        );
-        assert!(
-            matches!(reconstructed.chain_fallback, Some(AssetLockProof::Chain(_))),
-            "a chain-locked funding tx must carry a ChainLock fallback for stale-islock recovery"
-        );
-    }
-
-    /// An islock that locks the funding tx, but the tx NOT yet chain-locked, yields
-    /// the IS primary with NO fallback: if that islock is later rejected there is
-    /// no ChainLock proof to fall back to, and the claim must be retried once the
-    /// block confirms.
-    #[test]
-    fn assemble_islock_present_not_chainlocked_has_no_fallback() {
-        let key = voucher_secret();
-        let tx = funding_tx(&key);
-        let txid = tx.txid().to_string();
-        let mut islock = InstantLock::default();
-        islock.txid = tx.txid();
-        let mut islock_bytes = Vec::new();
-        islock.consensus_encode(&mut islock_bytes).unwrap();
-        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
-        let reconstructed = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap();
-        assert!(matches!(reconstructed.primary, AssetLockProof::Instant(_)));
-        assert!(
-            reconstructed.chain_fallback.is_none(),
-            "an un-chain-locked funding tx cannot produce a ChainLock fallback"
-        );
-    }
-
-    /// The prospective identity id is derived from the *selected* credit
-    /// output's outpoint. Selection itself is pinned next to
-    /// `voucher_output_index`; what matters here is that the id follows it — a
-    /// voucher sitting behind a decoy must not yield the index-0 id, or the
-    /// "has this invitation been used?" check answers about a stranger's
-    /// identity and reports a perfectly good voucher as spent.
-    #[test]
-    fn prospective_id_follows_the_selected_credit_output() {
-        let key = voucher_secret();
-        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
-        let payload = AssetLockPayload {
-            version: 1,
-            credit_outputs: vec![
-                TxOut {
-                    value: 100_000,
-                    script_pubkey: voucher_credit_script(&decoy),
-                },
-                TxOut {
-                    value: 100_000,
-                    script_pubkey: voucher_credit_script(&key),
-                },
-            ],
-        };
-        let tx = Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
-        };
-        let txid = tx.txid();
-        let inv = parsed(key, txid.to_string(), None);
-
-        let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
-        let id = proof.primary.create_identifier().unwrap();
-
-        let from_index_0 =
-            ChainAssetLockProof::new(100, OutPoint::new(txid, 0).into()).create_identifier();
-        let from_index_1 =
-            ChainAssetLockProof::new(100, OutPoint::new(txid, 1).into()).create_identifier();
-
-        assert_ne!(id, from_index_0, "id must not come from credit output 0");
-        assert_eq!(id, from_index_1);
-    }
-
-    /// The prospective id is a pure function of the asset-lock OUTPOINT, so it
-    /// carries no information about whether that lock has been consumed.
-    ///
-    /// This is why the claimed-check is one-way. A voucher claimed normally
-    /// creates the identity at this id, and the check sees it. A voucher
-    /// RECLAIMED into an existing identity — `IdentityTopUp` via
-    /// `platform_wallet_topup_identity_with_existing_asset_lock_signer` with
-    /// `consume_invitation_voucher: true` — spends the very same outpoint but
-    /// creates nothing here, so the check still finds no identity while a claim
-    /// would fail deterministically.
-    ///
-    /// Pinned as an executable fact because the id derivation is what a reader
-    /// would otherwise assume encodes "spent": it does not, and Platform
-    /// exposes no client query for spent asset locks to fill the gap.
-    #[test]
-    fn prospective_id_is_outpoint_derived_and_says_nothing_about_consumption() {
-        let key = voucher_secret();
-        let payload = AssetLockPayload {
-            version: 1,
-            credit_outputs: vec![TxOut {
-                value: 100_000,
-                script_pubkey: voucher_credit_script(&key),
-            }],
-        };
-        let tx = Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
-        };
-        let txid = tx.txid();
-        let inv = parsed(key, txid.to_string(), None);
-
-        let id = assemble_asset_lock_proof(tx, true, 100, &inv)
-            .unwrap()
-            .primary
-            .create_identifier()
-            .unwrap();
-
-        // Nothing but (txid, vout) feeds it — the same value a reclaim would
-        // leave behind untouched.
-        let from_outpoint =
-            ChainAssetLockProof::new(100, OutPoint::new(txid, 0).into()).create_identifier();
-        assert_eq!(
-            id, from_outpoint,
-            "the id must be derivable from the outpoint alone, which is exactly \
-             why its absence cannot prove the lock is unspent"
-        );
-    }
-
-    /// An islock that locks a DIFFERENT tx than the funding tx is rejected (the
-    /// txid-binding guard), so a link can't pair a valid islock with a foreign tx.
-    #[test]
-    fn assemble_rejects_islock_for_wrong_tx() {
-        let key = voucher_secret();
-        let tx = funding_tx(&key);
-        let txid = tx.txid().to_string();
-        // A default islock carries a zeroed txid, which won't equal the funding tx.
-        let mut islock_bytes = Vec::new();
-        InstantLock::default()
-            .consensus_encode(&mut islock_bytes)
-            .unwrap();
-        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
-        let err = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap_err();
-        assert!(format!("{err}").contains("does not lock the funding transaction"));
-    }
-
-    // --- fetch_funding_tx_with_retry: the claim propagation-retry seam ---
-
-    mod fetch_retry {
-        use std::collections::VecDeque;
-        use std::sync::atomic::{AtomicU32, Ordering};
-        use std::sync::{Arc, Mutex};
-
-        use super::super::{
-            fetch_funding_tx_with_retry, reverse_txid_hex, CLAIM_FETCH_MAX_ATTEMPTS,
-        };
-        use crate::PlatformWalletError;
-
-        /// A canonical 64-hex txid whose byte-reversed form differs from it.
-        fn canonical_txid() -> String {
-            format!("{}{}", "11".repeat(31), "22")
-        }
-
-        /// Scripted fetch: pops the next result per call and records the txid
-        /// each call asked for; plus a counter-only delay.
-        #[allow(clippy::type_complexity)]
-        fn harness(
-            script: Vec<Result<Option<u32>, PlatformWalletError>>,
-        ) -> (
-            Arc<Mutex<VecDeque<Result<Option<u32>, PlatformWalletError>>>>,
-            Arc<Mutex<Vec<String>>>,
-            Arc<AtomicU32>,
-        ) {
-            (
-                Arc::new(Mutex::new(script.into_iter().collect())),
-                Arc::new(Mutex::new(Vec::new())),
-                Arc::new(AtomicU32::new(0)),
-            )
-        }
-
-        async fn run(
-            script: Vec<Result<Option<u32>, PlatformWalletError>>,
-        ) -> (Result<Option<u32>, PlatformWalletError>, Vec<String>, u32) {
-            let canonical = canonical_txid();
-            let (queue, calls, delays) = harness(script);
-            let (queue_f, calls_f, delays_f) =
-                (Arc::clone(&queue), Arc::clone(&calls), Arc::clone(&delays));
-            let result = fetch_funding_tx_with_retry(
-                &canonical,
-                move |txid| {
-                    let queue = Arc::clone(&queue_f);
-                    let calls = Arc::clone(&calls_f);
-                    async move {
-                        calls.lock().expect("calls").push(txid);
-                        queue
-                            .lock()
-                            .expect("script")
-                            .pop_front()
-                            .expect("script exhausted — the loop fetched more than scripted")
-                    }
-                },
-                move || {
-                    let delays = Arc::clone(&delays_f);
-                    async move {
-                        delays.fetch_add(1, Ordering::SeqCst);
-                    }
-                },
-            )
-            .await;
-            let recorded = calls.lock().expect("calls").clone();
-            (result, recorded, delays.load(Ordering::SeqCst))
-        }
-
-        /// A first-call canonical hit returns immediately: one lookup, no
-        /// reversed fallback, no delay.
-        #[tokio::test]
-        async fn canonical_hit_returns_immediately() {
-            let (result, calls, delays) = run(vec![Ok(Some(7))]).await;
-            assert_eq!(result.expect("no error"), Some(7));
-            assert_eq!(calls, vec![canonical_txid()]);
-            assert_eq!(delays, 0);
-        }
-
-        /// A canonical miss falls back to the byte-reversed lookup WITHIN the
-        /// same attempt (the legacy-iOS little-endian compatibility path) — no
-        /// delay is spent on the byte-order fallback.
-        #[tokio::test]
-        async fn reversed_hit_within_same_attempt_no_delay() {
-            let (result, calls, delays) = run(vec![Ok(None), Ok(Some(9))]).await;
-            assert_eq!(result.expect("no error"), Some(9));
-            assert_eq!(
-                calls,
-                vec![
-                    canonical_txid(),
-                    reverse_txid_hex(&canonical_txid()).expect("reversible")
-                ]
-            );
-            assert_eq!(delays, 0);
-        }
-
-        /// A hit on a later attempt (propagation lag) succeeds after exactly
-        /// one delay per fully-missed attempt.
-        #[tokio::test]
-        async fn hit_after_missed_attempts_counts_one_delay_per_miss() {
-            // Attempts 1 and 2 miss on both orders; attempt 3 hits canonically.
-            let (result, calls, delays) =
-                run(vec![Ok(None), Ok(None), Ok(None), Ok(None), Ok(Some(3))]).await;
-            assert_eq!(result.expect("no error"), Some(3));
-            assert_eq!(calls.len(), 5);
-            assert_eq!(delays, 2);
-        }
-
-        /// Exhausting every attempt returns Ok(None) — a miss, not an error —
-        /// after 2 lookups per attempt, with NO delay after the final attempt.
-        #[tokio::test]
-        async fn exhausts_attempts_without_trailing_delay() {
-            let script = (0..CLAIM_FETCH_MAX_ATTEMPTS * 2)
-                .map(|_| Ok(None))
-                .collect();
-            let (result, calls, delays) = run(script).await;
-            assert_eq!(result.expect("misses are not errors"), None);
-            assert_eq!(calls.len(), (CLAIM_FETCH_MAX_ATTEMPTS * 2) as usize);
-            assert_eq!(delays, CLAIM_FETCH_MAX_ATTEMPTS - 1);
-        }
-
-        /// A transport error is NOT masked as a miss: it propagates
-        /// immediately, with no further lookups and no extra delay.
-        #[tokio::test]
-        async fn transport_error_propagates_immediately() {
-            // Attempt 1 misses both orders (1 delay); attempt 2's canonical
-            // lookup errors.
-            let (result, calls, delays) = run(vec![
-                Ok(None),
-                Ok(None),
-                Err(PlatformWalletError::InvalidIdentityData(
-                    "simulated transport failure".to_string(),
-                )),
-            ])
-            .await;
-            assert!(
-                matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
-                "transport error must propagate, got {result:?}"
-            );
-            assert_eq!(calls.len(), 3, "no lookup may follow the error");
-            assert_eq!(delays, 1);
-        }
-    }
-
-    // --- submit_claim_with_stale_islock_fallback: the claim submission seam ---
-
-    mod claim_submission {
-        use std::collections::VecDeque;
-        use std::sync::{Arc, Mutex};
-
-        use super::super::submit_claim_with_stale_islock_fallback;
-        use super::{funding_tx, voucher_secret};
-        use crate::PlatformWalletError;
-        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
-        use dpp::dashcore::InstantLock;
-        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-        use dpp::prelude::AssetLockProof;
-
-        /// The one rejection the seam recovers from: Platform's stale-islock
-        /// consensus error, in the `Protocol(ConsensusError)` shape
-        /// `is_instant_lock_proof_invalid` matches.
-        fn stale_islock_rejection() -> dash_sdk::Error {
-            dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
-                InvalidInstantAssetLockProofSignatureError::new().into(),
-            )))
-        }
-
-        /// Any error the seam must NOT treat as a stale islock.
-        fn unrelated_sdk_error() -> dash_sdk::Error {
-            dash_sdk::Error::Config("simulated unrelated rejection".to_string())
-        }
-
-        /// An InstantSend primary — the variant is what the assertions key on,
-        /// so a scripted submission log reads as primary-vs-fallback directly.
-        fn instant_primary() -> AssetLockProof {
-            AssetLockProof::Instant(InstantAssetLockProof::new(
-                InstantLock::default(),
-                funding_tx(&voucher_secret()),
-                0,
-            ))
-        }
-
-        fn chain_fallback_proof() -> AssetLockProof {
-            AssetLockProof::Chain(ChainAssetLockProof::new(100, [0u8; 36]))
-        }
-
-        /// Drive the seam with a scripted submit: each call records the proof
-        /// it was handed and pops the next scripted result.
-        async fn run(
-            chain_fallback: Option<AssetLockProof>,
-            script: Vec<Result<u32, dash_sdk::Error>>,
-        ) -> (Result<u32, PlatformWalletError>, Vec<AssetLockProof>) {
-            let queue: Arc<Mutex<VecDeque<Result<u32, dash_sdk::Error>>>> =
-                Arc::new(Mutex::new(script.into_iter().collect()));
-            let submitted: Arc<Mutex<Vec<AssetLockProof>>> = Arc::new(Mutex::new(Vec::new()));
-            let (queue_f, submitted_f) = (Arc::clone(&queue), Arc::clone(&submitted));
-            let result = submit_claim_with_stale_islock_fallback(
-                instant_primary(),
-                chain_fallback,
-                move |proof| {
-                    let queue = Arc::clone(&queue_f);
-                    let submitted = Arc::clone(&submitted_f);
-                    async move {
-                        submitted.lock().expect("submitted").push(proof);
-                        queue
-                            .lock()
-                            .expect("script")
-                            .pop_front()
-                            .expect("script exhausted — the seam submitted more than scripted")
-                    }
-                },
-            )
-            .await;
-            let recorded = submitted.lock().expect("submitted").clone();
-            (result, recorded)
-        }
-
-        /// A successful primary submission returns immediately: one submission,
-        /// and the ChainLock fallback is never touched even though it exists.
-        #[tokio::test]
-        async fn primary_success_never_submits_fallback() {
-            let (result, submitted) = run(Some(chain_fallback_proof()), vec![Ok(7)]).await;
-            assert_eq!(result.expect("primary success"), 7);
-            assert_eq!(submitted.len(), 1, "exactly one submission");
-            assert!(
-                matches!(submitted[0], AssetLockProof::Instant(_)),
-                "the IS primary must be what was submitted"
-            );
-        }
-
-        /// A stale-islock rejection of the primary resubmits the ChainLock
-        /// fallback over the same outpoint, and the fallback's success is the
-        /// claim's success.
-        #[tokio::test]
-        async fn stale_islock_resubmits_chain_fallback() {
-            let (result, submitted) = run(
-                Some(chain_fallback_proof()),
-                vec![Err(stale_islock_rejection()), Ok(9)],
-            )
-            .await;
-            assert_eq!(result.expect("fallback success"), 9);
-            assert_eq!(submitted.len(), 2, "primary then fallback");
-            assert!(
-                matches!(submitted[0], AssetLockProof::Instant(_)),
-                "the IS primary must be tried first"
-            );
-            assert!(
-                matches!(submitted[1], AssetLockProof::Chain(_)),
-                "the resubmission must carry the ChainLock fallback"
-            );
-        }
-
-        /// A stale-islock rejection with NO fallback (funding tx not yet
-        /// chain-locked) surfaces `AssetLockNotChainLocked` — the clear retry
-        /// signal — after exactly one submission.
-        #[tokio::test]
-        async fn stale_islock_without_fallback_surfaces_retry_signal() {
-            let (result, submitted) = run(None, vec![Err(stale_islock_rejection())]).await;
-            assert!(
-                matches!(result, Err(PlatformWalletError::AssetLockNotChainLocked(_))),
-                "expected the not-chain-locked retry signal, got {result:?}"
-            );
-            assert_eq!(
-                submitted.len(),
-                1,
-                "no second submission is possible without a fallback"
-            );
-        }
-
-        /// An unrelated SDK error propagates unchanged after one submission:
-        /// the fallback exists but must NOT be tried for it.
-        #[tokio::test]
-        async fn unrelated_error_propagates_without_second_submission() {
-            let (result, submitted) = run(
-                Some(chain_fallback_proof()),
-                vec![Err(unrelated_sdk_error())],
-            )
-            .await;
-            assert!(
-                matches!(result, Err(PlatformWalletError::Sdk(_))),
-                "the unrelated error must propagate as Sdk, got {result:?}"
-            );
-            assert_eq!(
-                submitted.len(),
-                1,
-                "an unrelated error must not trigger the fallback"
-            );
-        }
-
-        /// The recovery is attempted exactly once: a fallback rejection — even
-        /// one wearing the stale-islock shape again — propagates rather than
-        /// looping.
-        #[tokio::test]
-        async fn fallback_rejection_is_not_recovered_again() {
-            let (result, submitted) = run(
-                Some(chain_fallback_proof()),
-                vec![Err(stale_islock_rejection()), Err(stale_islock_rejection())],
-            )
-            .await;
-            assert!(
-                matches!(result, Err(PlatformWalletError::Sdk(_))),
-                "the fallback's own rejection must propagate as Sdk, got {result:?}"
-            );
-            assert_eq!(submitted.len(), 2, "no third submission may follow");
-        }
-    }
-
     // --- create_invitation: the durable-persistence precondition ---
 
     mod durability_gate {
@@ -1519,8 +517,8 @@ mod tests {
                 _sighash: [u8; 32],
             ) -> Result<
                 (
-                    dashcore::secp256k1::ecdsa::Signature,
-                    dashcore::secp256k1::PublicKey,
+                    dashcore::crypto::ecdsa::EcdsaSignature,
+                    dashcore::crypto::ecdsa::EcdsaPublicKey,
                 ),
                 Self::Error,
             > {
@@ -1530,7 +528,7 @@ mod tests {
             async fn public_key(
                 &self,
                 _path: &key_wallet::DerivationPath,
-            ) -> Result<key_wallet::bip32::PublicKey, Self::Error> {
+            ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, Self::Error> {
                 unreachable!("the durability gate must fire before any key derivation")
             }
         }
@@ -1573,7 +571,7 @@ mod tests {
                 .expect("wallet creation");
             let iw = wallet.identity();
 
-            let crypto_provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+            let crypto_provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
             let err = iw
                 .create_invitation(
                     1_000_000,
@@ -1594,6 +592,430 @@ mod tests {
             assert!(
                 format!("{err}").contains("persistence capabilities"),
                 "the error must explain the missing capability contract, got: {err}"
+            );
+        }
+    }
+
+    // --- create_invitation: the funded voucher's record ---
+
+    mod funded_record {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc, Mutex};
+        use std::time::Duration;
+
+        use dashcore::{OutPoint, Txid};
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::Network;
+
+        use crate::changeset::{
+            ClientStartState, InvitationEntry, InvitationStatus, PersistenceError,
+            PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
+        };
+        use crate::events::{EventHandler, PlatformEventHandler};
+        use crate::wallet::persister::WalletPersister;
+        use crate::wallet::platform_wallet::WalletId;
+        use crate::{PlatformWallet, PlatformWalletError};
+
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+
+        struct NoopEventHandler;
+        impl EventHandler for NoopEventHandler {}
+        impl PlatformEventHandler for NoopEventHandler {}
+
+        /// A backend that buffers what is stored until a flush writes it to
+        /// `durable`; a flush that fails for good drops the buffer, and one
+        /// that fails transiently keeps it.
+        #[derive(Default)]
+        struct BufferingPersistence {
+            buffered: Mutex<Vec<PlatformWalletChangeSet>>,
+            durable: Mutex<Vec<PlatformWalletChangeSet>>,
+            /// One handle per flush still to be overtaken: a flush through
+            /// the handle, as one from another thread would, takes what was
+            /// buffered before such a flush writes, and fails; the overtaken
+            /// flush then succeeds over nothing.
+            overtaken_by: Mutex<Vec<WalletPersister>>,
+            /// Whether the overtaking flush fails transiently, putting back
+            /// what it took once the overtaken one is done, or for good,
+            /// dropping it.
+            overtaking_puts_back: AtomicBool,
+            /// While set, a flush is the overtaking one, and fails.
+            overtaking: AtomicBool,
+        }
+
+        /// The outpoints of the invitation records in `durable`, in order.
+        fn invitations_in(durable: &Mutex<Vec<PlatformWalletChangeSet>>) -> Vec<OutPoint> {
+            durable
+                .lock()
+                .expect("durable")
+                .iter()
+                .filter_map(|changeset| changeset.invitations.as_ref())
+                .flat_map(|invitations| invitations.invitations.keys().copied())
+                .collect()
+        }
+
+        impl BufferingPersistence {
+            /// The outpoints of the invitation records on disk, in order.
+            fn durable_invitations(&self) -> Vec<OutPoint> {
+                invitations_in(&self.durable)
+            }
+        }
+
+        impl PlatformWalletPersistence for BufferingPersistence {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.buffered.lock().expect("buffered").push(changeset);
+                Ok(())
+            }
+
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                let puts_back = self.overtaking_puts_back.load(Ordering::SeqCst);
+                if self.overtaking.load(Ordering::SeqCst) {
+                    return Err(if puts_back {
+                        PersistenceError::backend_with_kind(
+                            PersistenceErrorKind::Transient,
+                            "the disk is busy",
+                        )
+                    } else {
+                        PersistenceError::backend("the database is corrupt")
+                    });
+                }
+                // Taken in its own statement: the flush below comes back here.
+                let overtaking = self.overtaken_by.lock().expect("overtaken").pop();
+                if let Some(persister) = overtaking {
+                    // The other flush holds what was buffered while this one
+                    // runs, over nothing.
+                    let taken = std::mem::take(&mut *self.buffered.lock().expect("buffered"));
+                    self.overtaking.store(true, Ordering::SeqCst);
+                    let overtook = persister.flush();
+                    self.overtaking.store(false, Ordering::SeqCst);
+                    assert!(overtook.is_err_and(|error| error.is_transient() == puts_back));
+                    if puts_back {
+                        self.buffered.lock().expect("buffered").extend(taken);
+                    }
+                    return Ok(());
+                }
+                let flushed = std::mem::take(&mut *self.buffered.lock().expect("buffered"));
+                self.durable.lock().expect("durable").extend(flushed);
+                Ok(())
+            }
+
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        /// A backend that buffers what is stored until a flush writes it to
+        /// `durable`, and that one flush, made from another thread, holds:
+        /// the flush made once `next_flush_holds` is set takes the first
+        /// record stored after it began, before that store returns, and
+        /// stays inside the backend until released, when it fails for good
+        /// and drops what it took. A flush made meanwhile finds the backend
+        /// busy and fails transiently, leaving what is buffered where it is.
+        struct HeldByAnotherFlush {
+            buffered: Mutex<Vec<PlatformWalletChangeSet>>,
+            durable: Mutex<Vec<PlatformWalletChangeSet>>,
+            next_flush_holds: AtomicBool,
+            /// While set, the flush that holds is inside the backend.
+            holding: AtomicBool,
+            /// Whether that flush has been handed a record.
+            handed_over: AtomicBool,
+            entered: Mutex<mpsc::Sender<()>>,
+            stored: (Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>),
+            taken: (Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>),
+            release: Mutex<mpsc::Receiver<()>>,
+        }
+
+        impl HeldByAnotherFlush {
+            /// A new one, with what tells that the holding flush is inside
+            /// the backend, and what releases it.
+            fn new() -> (Arc<Self>, mpsc::Receiver<()>, mpsc::Sender<()>) {
+                let (entered, has_entered) = mpsc::channel();
+                let (stored, is_stored) = mpsc::channel();
+                let (taken, is_taken) = mpsc::channel();
+                let (release, released) = mpsc::channel();
+                let backend = Arc::new(Self {
+                    buffered: Mutex::default(),
+                    durable: Mutex::default(),
+                    next_flush_holds: AtomicBool::new(false),
+                    holding: AtomicBool::new(false),
+                    handed_over: AtomicBool::new(false),
+                    entered: Mutex::new(entered),
+                    stored: (Mutex::new(stored), Mutex::new(is_stored)),
+                    taken: (Mutex::new(taken), Mutex::new(is_taken)),
+                    release: Mutex::new(released),
+                });
+                (backend, has_entered, release)
+            }
+        }
+
+        impl PlatformWalletPersistence for HeldByAnotherFlush {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.buffered.lock().expect("buffered").push(changeset);
+                if self.holding.load(Ordering::SeqCst)
+                    && !self.handed_over.swap(true, Ordering::SeqCst)
+                {
+                    // The other flush takes the record before a flush of
+                    // the storing call can.
+                    self.stored
+                        .0
+                        .lock()
+                        .expect("stored")
+                        .send(())
+                        .expect("the other flush waits");
+                    self.taken
+                        .1
+                        .lock()
+                        .expect("taken")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("the other flush took the record");
+                }
+                Ok(())
+            }
+
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.next_flush_holds.swap(false, Ordering::SeqCst) {
+                    self.holding.store(true, Ordering::SeqCst);
+                    self.entered
+                        .lock()
+                        .expect("entered")
+                        .send(())
+                        .expect("the test waits");
+                    self.stored
+                        .1
+                        .lock()
+                        .expect("stored")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("a record is stored");
+                    let taken = std::mem::take(&mut *self.buffered.lock().expect("buffered"));
+                    self.taken
+                        .0
+                        .lock()
+                        .expect("taken")
+                        .send(())
+                        .expect("the store waits");
+                    self.release
+                        .lock()
+                        .expect("release")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("released");
+                    // Failed for good: what it took is gone.
+                    drop(taken);
+                    self.holding.store(false, Ordering::SeqCst);
+                    return Err(PersistenceError::backend("the database is corrupt"));
+                }
+                if self.holding.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    ));
+                }
+                let flushed = std::mem::take(&mut *self.buffered.lock().expect("buffered"));
+                self.durable.lock().expect("durable").extend(flushed);
+                Ok(())
+            }
+
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        async fn wallet_on<P>(persistence: Arc<P>) -> Arc<PlatformWallet>
+        where
+            P: PlatformWalletPersistence + 'static,
+        {
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+            let manager = Arc::new(crate::PlatformWalletManager::new(sdk, persistence, handler));
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+                .expect("valid mnemonic")
+                .to_seed("");
+            manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &seed,
+                    WalletAccountCreationOptions::None,
+                    Some(0),
+                )
+                .await
+                .expect("wallet creation")
+        }
+
+        fn funded_voucher() -> InvitationEntry {
+            InvitationEntry {
+                out_point: OutPoint::new(Txid::from_byte_array([7; 32]), 0),
+                funding_index: 0,
+                amount_duffs: 1_000_000,
+                expiry_unix: 1,
+                created_at_secs: 1,
+                has_inviter: false,
+                status: InvitationStatus::Created,
+            }
+        }
+
+        /// A funded voucher's record is not taken as recorded on the strength
+        /// of a flush that succeeded over nothing, another flush of the
+        /// wallet's records having taken it first and failed for good: it is
+        /// stored once more, and is on disk when the call answers.
+        #[tokio::test]
+        async fn should_record_a_funded_invitation_again_when_another_flush_dropped_its_record() {
+            let persistence = Arc::new(BufferingPersistence::default());
+            let wallet = wallet_on(Arc::clone(&persistence)).await;
+            let iw = wallet.identity();
+            let voucher = funded_voucher();
+            persistence
+                .overtaken_by
+                .lock()
+                .expect("overtaken")
+                .push(iw.persister.clone());
+
+            iw.record_funded_invitation(voucher.clone())
+                .expect("stored once more, and durable");
+
+            assert!(
+                persistence
+                    .overtaken_by
+                    .lock()
+                    .expect("overtaken")
+                    .is_empty(),
+                "a flush was overtaken"
+            );
+            assert_eq!(
+                persistence.durable_invitations(),
+                vec![voucher.out_point],
+                "the record is on disk"
+            );
+        }
+
+        /// A funded voucher's record is not taken as recorded while another
+        /// flush of the wallet's records holds it, a flush that then fails
+        /// transiently and puts it back: the record is stored once more, and
+        /// the flush that follows writes it.
+        #[tokio::test]
+        async fn should_record_a_funded_invitation_another_flush_took_and_put_back() {
+            let persistence = Arc::new(BufferingPersistence::default());
+            let wallet = wallet_on(Arc::clone(&persistence)).await;
+            let iw = wallet.identity();
+            let voucher = funded_voucher();
+            persistence
+                .overtaking_puts_back
+                .store(true, Ordering::SeqCst);
+            persistence
+                .overtaken_by
+                .lock()
+                .expect("overtaken")
+                .push(iw.persister.clone());
+
+            iw.record_funded_invitation(voucher.clone())
+                .expect("stored once more, and durable");
+
+            assert!(
+                persistence
+                    .overtaken_by
+                    .lock()
+                    .expect("overtaken")
+                    .is_empty(),
+                "a flush was overtaken"
+            );
+            let on_disk = persistence.durable_invitations();
+            assert!(
+                !on_disk.is_empty()
+                    && on_disk
+                        .iter()
+                        .all(|out_point| *out_point == voucher.out_point),
+                "the record is on disk: {on_disk:?}"
+            );
+        }
+
+        /// When the record stored once more is dropped by another flush as
+        /// well, the voucher is reported funded and unrecorded, as a flush
+        /// that failed reports it, and no link follows: it is not reported
+        /// recorded while on no disk.
+        #[tokio::test]
+        async fn should_report_a_funded_invitation_unrecorded_when_another_flush_dropped_it_twice()
+        {
+            let persistence = Arc::new(BufferingPersistence::default());
+            let wallet = wallet_on(Arc::clone(&persistence)).await;
+            let iw = wallet.identity();
+            persistence
+                .overtaken_by
+                .lock()
+                .expect("overtaken")
+                .extend([iw.persister.clone(), iw.persister.clone()]);
+
+            let unrecorded = iw.record_funded_invitation(funded_voucher());
+
+            assert!(
+                matches!(&unrecorded, Err(PlatformWalletError::AssetLockTransaction(message))
+                    if message.contains("funded but its record could not be persisted")),
+                "{unrecorded:?}"
+            );
+            assert!(
+                persistence
+                    .overtaken_by
+                    .lock()
+                    .expect("overtaken")
+                    .is_empty(),
+                "both flushes were overtaken"
+            );
+            assert!(persistence.durable_invitations().is_empty(), "on no disk");
+        }
+
+        /// A funded voucher's record is stored once more when the call's own
+        /// flush fails transiently while another flush of the wallet's
+        /// records holds the record: that failure says nothing of a record
+        /// the flush never took, and the other flush then fails for good and
+        /// drops it. The voucher is reported unrecorded, no flush having
+        /// written it yet, and the record stored once more is buffered
+        /// still: the next flush writes it.
+        #[tokio::test]
+        async fn should_record_a_funded_invitation_again_when_its_flush_failed_while_another_held_it(
+        ) {
+            let (persistence, has_entered, release) = HeldByAnotherFlush::new();
+            let wallet = wallet_on(Arc::clone(&persistence)).await;
+            let iw = wallet.identity();
+            let voucher = funded_voucher();
+            persistence.next_flush_holds.store(true, Ordering::SeqCst);
+            let other = {
+                let persister = iw.persister.clone();
+                std::thread::spawn(move || persister.flush())
+            };
+            has_entered
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the other flush is inside the backend");
+
+            let unrecorded = iw.record_funded_invitation(voucher.clone());
+
+            release.send(()).expect("the other flush waits");
+            let other = other.join().expect("the other flush returns");
+            assert!(
+                other.is_err_and(|error| !error.is_transient()),
+                "the other flush dropped what it took"
+            );
+            assert!(
+                matches!(&unrecorded, Err(PlatformWalletError::AssetLockTransaction(message))
+                    if message.contains("funded but its record could not be persisted")),
+                "{unrecorded:?}"
+            );
+            assert!(
+                invitations_in(&persistence.durable).is_empty(),
+                "no flush wrote the record yet"
+            );
+
+            iw.persister.flush().expect("the next flush");
+
+            assert_eq!(
+                invitations_in(&persistence.durable),
+                vec![voucher.out_point],
+                "the record stored once more is on disk"
             );
         }
     }

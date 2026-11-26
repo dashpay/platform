@@ -690,13 +690,292 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v15 -> v16 creates the two private contact request scan state tables
+     * empty (the first sync reads the store from its start) and leaves the
+     * existing rows alone; rows written afterwards keep every column,
+     * a full-width position included.
+     */
+    @Test
+    fun migrate15To16AddsPrivateContactScanStateTables() {
+        helper.createDatabase(dbName, 15).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 2309809, 0, 0, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 16, true, DashDatabase.MIGRATION_15_16)
+
+        db.query("SELECT COUNT(*) FROM private_contact_requests_positions").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        db.query("SELECT syncedHeight FROM wallets WHERE walletId = x'01'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(2_309_809, c.getInt(0))
+        }
+        db.execSQL(
+            "INSERT INTO private_contact_requests_positions (walletId, identityId, position, " +
+                "keyFingerprint) VALUES (x'01', x'0A', -1, x'03')",
+        )
+        db.execSQL(
+            "INSERT INTO private_shielded_addresses (walletId, ownerId, contactId, address) " +
+                "VALUES (x'01', x'0A', x'0B', x'09')",
+        )
+        db.query(
+            "SELECT position, keyFingerprint, privatePaymentsUnresolved FROM private_contact_requests_positions",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("the u64 bit pattern survives", -1L, c.getLong(0))
+            assertTrue(byteArrayOf(3).contentEquals(c.getBlob(1)))
+            assertEquals("the unresolved marker defaults to clear", 0, c.getInt(2))
+        }
+        db.query("SELECT address FROM private_shielded_addresses WHERE contactId = x'0B'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(9).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
+    /**
+     * v16 -> v17 (Core to shielded "Max"): the nullable
+     * `asset_locks.operationId` column with its unique
+     * `(walletId, operationId)` index, and the `wallet_drain_operations`
+     * table. A lock stored before the migration keeps every column and has
+     * no operation id; afterwards an id is stored once per wallet, and
+     * locks without one are not constrained by the index.
+     */
+    @Test
+    fun migrate16To17AddsAssetLockOperationIdsAndWalletDrainOperations() {
+        helper.createDatabase(dbName, 16).apply {
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                    "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, createdAt, updatedAt) " +
+                    "VALUES ('aa:0', x'01', x'0102', 5, 0, 0, 100000, 1, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 17, true, DashDatabase.MIGRATION_16_17)
+
+        db.query(
+            "SELECT amountDuffs, statusRaw, operationId FROM asset_locks WHERE outPointHex = 'aa:0'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(100_000L, c.getLong(0))
+            assertEquals(1, c.getInt(1))
+            assertTrue("no lock built before the migration belongs to a drain", c.isNull(2))
+        }
+        db.query("SELECT COUNT(*) FROM wallet_drain_operations").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+
+        // A second lock without an id: NULLs are distinct in the unique index.
+        db.execSQL(
+            "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, createdAt, updatedAt) " +
+                "VALUES ('bb:0', x'01', x'0102', 5, 0, 0, 1, 0, 0, 0)",
+        )
+        db.execSQL("UPDATE asset_locks SET operationId = x'0A' WHERE outPointHex = 'aa:0'")
+        var refused = false
+        try {
+            db.execSQL("UPDATE asset_locks SET operationId = x'0A' WHERE outPointHex = 'bb:0'")
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            refused = true
+        }
+        assertTrue("one lock per operation id within a wallet", refused)
+        // Another wallet may carry the same bytes.
+        db.execSQL(
+            "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, operationId, createdAt, updatedAt) " +
+                "VALUES ('cc:0', x'02', x'0102', 5, 0, 0, 1, 0, x'0A', 0, 0)",
+        )
+
+        db.execSQL(
+            "INSERT INTO wallet_drain_operations (operationId, walletId, networkRaw, " +
+                "fundingAccountIndex, recipientRaw43, createdAtMillis) " +
+                "VALUES (x'0A', x'01', 1, 0, x'09', 1700000000000)",
+        )
+        db.query(
+            "SELECT walletId, networkRaw, fundingAccountIndex, recipientRaw43, createdAtMillis " +
+                "FROM wallet_drain_operations WHERE operationId = x'0A'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(1).contentEquals(c.getBlob(0)))
+            assertEquals(1, c.getInt(1))
+            assertEquals(0, c.getInt(2))
+            assertTrue(byteArrayOf(9).contentEquals(c.getBlob(3)))
+            assertEquals(1_700_000_000_000L, c.getLong(4))
+        }
+        db.close()
+    }
+
+    /**
+     * v17 -> v18 (masternode voting key check): the three nullable
+     * `identities.votingKeyCheck*` columns. A masternode identity stored
+     * before the migration keeps its voting key identifier and has nothing
+     * recorded, so its key is checked when it is picked to vote.
+     */
+    @Test
+    fun migrate17To18AddsTheVotingKeyCheckColumns() {
+        helper.createDatabase(dbName, 17).apply {
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "votingPrivateKeyIdentifier, createdAt, lastUpdated, networkRaw, identityIndex) " +
+                    "VALUES (x'04', 0, 0, 1, 'Masternode', 'mnvoting.x', 0, 0, 1, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 18, true, DashDatabase.MIGRATION_17_18)
+
+        db.query(
+            "SELECT votingPrivateKeyIdentifier, votingKeyCheckRaw, votingKeyCheckMessage, " +
+                "votingKeyCheckAddress, votingKeyCheckRevision FROM identities WHERE identityId = x'04'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("mnvoting.x", c.getString(0))
+            assertTrue("nothing is recorded before the migration", c.isNull(1))
+            assertTrue(c.isNull(2))
+            assertTrue(c.isNull(3))
+            assertTrue("no check is counted before the migration", c.isNull(4))
+        }
+        db.close()
+    }
+
+    /**
+     * v18 -> v19 (shared masternodes): the nullable
+     * `identities.masternodeProTxHash` column. A masternode row stored before
+     * the migration keeps its voting key and records no pro_tx_hash, so its
+     * votes keep naming its id reversed.
+     */
+    @Test
+    fun migrate18To19AddsTheMasternodeProTxHashColumn() {
+        helper.createDatabase(dbName, 18).apply {
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "votingPrivateKeyIdentifier, votingKeyCheckRaw, createdAt, lastUpdated, " +
+                    "networkRaw, identityIndex) " +
+                    "VALUES (x'04', 0, 0, 1, 'Masternode', 'mnvoting.x', 'valid', 0, 0, 1, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 19, true, DashDatabase.MIGRATION_18_19)
+
+        db.query(
+            "SELECT votingPrivateKeyIdentifier, votingKeyCheckRaw, masternodeProTxHash, " +
+                "masternodeRoleRaw FROM identities WHERE identityId = x'04'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("mnvoting.x", c.getString(0))
+            assertEquals("valid", c.getString(1))
+            assertTrue("no pro_tx_hash is recorded before the migration", c.isNull(2))
+            assertTrue("no role is recorded before the migration", c.isNull(3))
+        }
+        db.close()
+    }
+
+    /**
+     * v19 -> v20 (shielded asset-lock recipients): the nullable
+     * `asset_locks.shieldedRecipientRaw43` column. A shielded lock stored
+     * before the migration keeps its operation id and records no recipient,
+     * so a resume of it names the recipient, as before.
+     */
+    @Test
+    fun migrate19To20AddsTheAssetLockShieldedRecipientColumn() {
+        helper.createDatabase(dbName, 19).apply {
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                    "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, operationId, " +
+                    "createdAt, updatedAt) " +
+                    "VALUES ('aa:0', x'01', x'0102', 5, 0, 0, 100000, 1, x'0A', 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 20, true, DashDatabase.MIGRATION_19_20)
+
+        db.query(
+            "SELECT amountDuffs, operationId, shieldedRecipientRaw43 FROM asset_locks " +
+                "WHERE outPointHex = 'aa:0'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(100_000L, c.getLong(0))
+            assertTrue(byteArrayOf(0x0A).contentEquals(c.getBlob(1)))
+            assertTrue("no recipient is recorded before the migration", c.isNull(2))
+        }
+        db.execSQL(
+            "UPDATE asset_locks SET shieldedRecipientRaw43 = x'09' WHERE outPointHex = 'aa:0'",
+        )
+        db.query("SELECT shieldedRecipientRaw43 FROM asset_locks WHERE outPointHex = 'aa:0'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(9).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
+    /**
+     * v20 -> v21 (DashPay profile payment addresses): the own and the cached
+     * contact profile tables gain three nullable address columns. A profile
+     * stored before the migration keeps every column and publishes no
+     * address until the next profile sync rewrites it; a recently checked
+     * contact profile has its `checkedAtMs` cleared so that sync fetches it.
+     */
+    @Test
+    fun migrate20To21AddsProfilePaymentAddressColumns() {
+        helper.createDatabase(dbName, 20).apply {
+            execSQL(
+                "INSERT INTO identities (identityId, networkRaw, balance, revision, identityIndex, " +
+                    "isLocal, identityType, createdAt, lastUpdated) " +
+                    "VALUES (x'01', 1, 0, 0, 0, 1, 'user', 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO dashpay_profiles (networkRaw, identityId, displayName, createdAt, lastUpdated) " +
+                    "VALUES (1, x'01', 'Alice', 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO dashpay_contact_profiles (networkRaw, ownerIdentityId, contactIdentityId, " +
+                    "displayName, checkedAtMs, createdAt, lastUpdated) " +
+                    "VALUES (1, x'01', x'02', 'Bob', 1700000000000, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 21, true, DashDatabase.MIGRATION_20_21)
+
+        for ((table, name) in listOf("dashpay_profiles" to "Alice", "dashpay_contact_profiles" to "Bob")) {
+            db.query(
+                "SELECT displayName, corePaymentAddress, platformPaymentAddress, shieldedAddress FROM $table",
+            ).use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(name, c.getString(0))
+                assertTrue("$table: no address before the next sync", c.isNull(1) && c.isNull(2) && c.isNull(3))
+            }
+        }
+        db.query("SELECT checkedAtMs FROM dashpay_contact_profiles").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("the next sync fetches the contact profile again", 0L, c.getLong(0))
+        }
+        db.execSQL("UPDATE dashpay_contact_profiles SET shieldedAddress = x'0303'")
+        db.query("SELECT shieldedAddress FROM dashpay_contact_profiles").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(3, 3).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            21,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -709,16 +988,22 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
+            DashDatabase.MIGRATION_17_18,
+            DashDatabase.MIGRATION_18_19,
+            DashDatabase.MIGRATION_19_20,
+            DashDatabase.MIGRATION_20_21,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v15 schema. */
+    /** The full chain from v1 must also land on a valid v21 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            21,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -734,6 +1019,12 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
+            DashDatabase.MIGRATION_17_18,
+            DashDatabase.MIGRATION_18_19,
+            DashDatabase.MIGRATION_19_20,
+            DashDatabase.MIGRATION_20_21,
         ).close()
     }
 }

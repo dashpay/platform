@@ -22,3 +22,5 @@ mod set_price;
 mod transfer;
 mod unfreeze;
 mod update_config;
+
+pub use update_config::TokenConfigUpdateOutcome;

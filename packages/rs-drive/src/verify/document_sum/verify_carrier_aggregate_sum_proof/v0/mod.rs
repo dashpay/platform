@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::verify::RootHash;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -10,7 +11,7 @@ impl DriveDocumentSumQuery<'_> {
     /// Rebuilds the same `PathQuery` the prover used via
     /// [`Self::carrier_aggregate_sum_path_query`] and feeds it through
     /// [`grovedb::GroveDb::verify_aggregate_sum_query_per_key`]. The
-    /// merk-level carrier composition emits one aggregate `i64` per
+    /// merk-level carrier composition emits one aggregate sum per
     /// resolved outer In key (each independently cryptographically
     /// committed via `node_hash_with_sum` — sum analog of count's
     /// `node_hash_with_count` from
@@ -22,10 +23,11 @@ impl DriveDocumentSumQuery<'_> {
     /// would break the merk-root recomputation. Both sides share
     /// [`Self::carrier_aggregate_sum_path_query`] for that reason.
     ///
-    /// The `Vec<(Vec<u8>, i64)>` payload is the grovedb-native
+    /// The `Vec<(Vec<u8>, i128)>` payload is the grovedb-native
     /// per-key carrier shape (one serialized In-key + its aggregate
-    /// `i64`); naming it via a `type` alias would only rebrand the
-    /// same nested tuple without making the call site clearer.
+    /// sum, widened to 128 bits for a type that keeps 64-bit sums);
+    /// naming it via a `type` alias would only rebrand the same
+    /// nested tuple without making the call site clearer.
     #[inline(always)]
     #[allow(clippy::type_complexity)]
     pub(super) fn verify_carrier_aggregate_sum_proof_v0(
@@ -34,15 +36,37 @@ impl DriveDocumentSumQuery<'_> {
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, i64)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, i128)>), Error> {
         let path_query =
             self.carrier_aggregate_sum_path_query(limit, left_to_right, platform_version)?;
+        // A type that keeps its sums in 128 bits is verified through the verifier that
+        // returns one: the 64-bit one refuses its trees. No type keeps them so before
+        // protocol version 15 (`DocumentTypeV2Getters::uses_big_sums`), so earlier
+        // versions verify as they did. Both branches return the sum at 128 bits. Edited in
+        // place in this shipped generation: it returned the sum at 64 bits and refused a
+        // wider one; a verifier runs on the client and decides nothing in a block, and every
+        // sum it verified before is returned as the same number.
+        if self.document_type.uses_big_sums() {
+            let (root_hash, entries) = GroveDb::verify_aggregate_big_sum_query_per_key(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            return Ok((root_hash, entries));
+        }
         let (root_hash, entries) = GroveDb::verify_aggregate_sum_query_per_key(
             proof,
             &path_query,
             &platform_version.drive.grove_version,
         )
         .map_err(|e| Error::GroveDB(Box::new(e)))?;
-        Ok((root_hash, entries))
+        Ok((
+            root_hash,
+            entries
+                .into_iter()
+                .map(|(key, sum)| (key, i128::from(sum)))
+                .collect(),
+        ))
     }
 }

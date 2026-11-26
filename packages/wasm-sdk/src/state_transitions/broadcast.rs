@@ -15,7 +15,6 @@ use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::{
     require_execution_proved, BroadcastStateTransition, WaitForOutcome,
 };
-use dash_sdk::platform::ContextProvider;
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::state_transitions::proof_result::{
@@ -71,7 +70,7 @@ impl WasmSdk {
     /// Whether the context provider can already supply this contract, either
     /// from its cache or from a definition compiled into the SDK.
     fn can_resolve_contract(&self, contract_id: Identifier) -> bool {
-        self.trusted_context()
+        self.quorum_context()
             .and_then(|context| {
                 context
                     // `WasmSdk::version` is the exported protocol number; the
@@ -89,7 +88,7 @@ impl WasmSdk {
         &self,
         state_transition: &StateTransition,
     ) -> Result<(), WasmSdkError> {
-        if let Some(context) = self.trusted_context() {
+        if let Some(context) = self.quorum_context() {
             if let Err(error) = context.refresh_quorums().await {
                 tracing::warn!(
                     error = %error,
@@ -329,9 +328,10 @@ fn with_owner_balance(
 
 #[cfg(test)]
 mod tests {
-    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dash_sdk::dpp::bls::SecretKey;
     use super::*;
     use crate::context_provider::WasmTrustedContext;
+    use dash_sdk::platform::ContextProvider;
     use crate::sdk::WasmSdkBuilder;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
@@ -370,9 +370,10 @@ mod tests {
     }
 
     fn rotated_quorum_key() -> [u8; 48] {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(b"rotated-quorum-fixture").public_key();
-        let bytes: Vec<u8> = (&key).into();
-        bytes.try_into().expect("BLS public key is 48 bytes")
+        SecretKey::from_ikm(b"rotated-quorum-fixture-keying-material")
+            .expect("at least 32 bytes of keying material")
+            .public_key()
+            .to_bytes()
     }
 
     fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {

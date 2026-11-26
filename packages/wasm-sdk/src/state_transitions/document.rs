@@ -13,7 +13,9 @@ use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
-use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
+use dash_sdk::platform::documents::transitions::{
+    DocumentDeleteTransitionBuilder, DocumentEraseTransitionBuilder,
+};
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -375,7 +377,22 @@ export interface DocumentReplaceOptions {
   /**
    * The document with updated data.
    * Must have the same ID as the existing document.
-   * Revision should be set to current revision + 1.
+   *
+   * Its `revision` must be the revision this replace writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   * A document still at revision 1 is sent as a create instead: the create
+   * derives a new document ID, so it can succeed and leave the original
+   * unchanged.
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * document.properties = { ...document.properties, name: 'New name' };
+   * await sdk.documentReplace({ document, identityKey, signer });
    */
   document: Document;
 
@@ -427,6 +444,9 @@ impl WasmSdk {
     /// 2. Validates the new document data against the document type schema
     /// 3. Creates and signs the document replace transition
     /// 4. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this replace writes. A fetched document carries the stored one.
     ///
     /// @param options - Replace options including document, identity key, and signer
     /// @returns Promise that resolves when the document is replaced
@@ -499,6 +519,9 @@ export interface DocumentDeleteOptions {
    *
    * // Using individual fields
    * { document: { id: "...", ownerId: "...", dataContractId: "...", documentTypeName: "note" }, ... }
+   *
+   * Unlike replace, transfer, purchase and setPrice, a delete carries no
+   * revision: pass the document as fetched, without increasing it.
    */
   document: Document | {
     id: IdentifierLike;
@@ -702,6 +725,157 @@ fn delete_transition_builder(
 }
 
 // ============================================================================
+// Document Erase
+// ============================================================================
+
+/// TypeScript interface for document erase options
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_ERASE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for erasing the retained revisions of an already deleted document.
+ */
+export interface DocumentEraseOptions {
+  /**
+   * The document to erase, or the identifiers that name it. The document is
+   * already invisible to ordinary reads, so its identifiers are all that is
+   * needed.
+   */
+  document: Document | {
+    id: IdentifierLike;
+    ownerId: IdentifierLike;
+    dataContractId: IdentifierLike;
+    documentTypeName: string;
+  };
+
+  /**
+   * The identity submitting and paying for this erase. It is the identity the
+   * key and signer below belong to, and its contract nonce is consumed.
+   * Defaults to the document's owner, which is who the first erase must come
+   * from; the erases after it may come from any identity, which then names
+   * itself here.
+   */
+  identityId?: IdentifierLike;
+
+  /**
+   * The identity public key to use for signing the transition.
+   * The first erase must be signed by the document's owner; any identity may
+   * sign the ones after it.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentEraseOptions")]
+    pub type DocumentEraseOptionsJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Erase a chunk of the retained revisions of an already deleted document.
+    ///
+    /// A document with more retained revisions than one transition may remove
+    /// needs several calls. The first must come from the document's owner and
+    /// commits the document to erasure; any identity may make the ones after
+    /// it. Read the document's history to see how much is left.
+    ///
+    /// @param options - Erase options including the document identifiers, identity key, and signer
+    /// @returns Promise that resolves after an affected-state proof authenticates
+    /// that the document is absent by id. This does not prove that this erase
+    /// executed or was accepted; query document history to observe the lifecycle
+    /// and remaining revisions.
+    #[wasm_bindgen(js_name = "documentErase")]
+    pub async fn document_erase(
+        &self,
+        options: DocumentEraseOptionsJs,
+    ) -> Result<(), WasmSdkError> {
+        let document_js = js_sys::Reflect::get(&options, &JsValue::from_str("document"))
+            .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
+
+        if document_js.is_undefined() || document_js.is_null() {
+            return Err(WasmSdkError::invalid_argument("document is required"));
+        }
+
+        // The transition carries only the base, so the values of a Document
+        // instance are not needed and a plain object of identifiers works for
+        // every document type.
+        let (document_id, owner_id, contract_id, document_type_name): (
+            Identifier,
+            Identifier,
+            Identifier,
+            String,
+        ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
+            let doc: DocumentWasm = document_js
+                .to_wasm::<DocumentWasm>("Document")
+                .map(|boxed| (*boxed).clone())?;
+            let doc_inner: Document = doc.clone().into();
+            (
+                doc.id().into(),
+                doc_inner.owner_id(),
+                doc.data_contract_id().into(),
+                doc.document_type_name(),
+            )
+        } else {
+            (
+                IdentifierWasm::try_from_options(&document_js, "id")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
+                try_from_options_with(&document_js, "documentTypeName", |v| {
+                    try_to_string(v, "documentTypeName")
+                })?,
+            )
+        };
+
+        // The builder's owner is the identity that submits and pays; only the
+        // first erase has to be the document's owner, so a continuation names
+        // its own identity here and keeps the document owner as metadata.
+        let submitter_id: Identifier =
+            match try_from_options_optional::<IdentifierWasm>(&options, "identityId")? {
+                Some(identity_id) => identity_id.into(),
+                None => owner_id,
+            };
+
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        let builder = DocumentEraseTransitionBuilder::new(
+            Arc::new(data_contract),
+            document_type_name,
+            document_id,
+            submitter_id,
+        );
+        let builder = if let Some(s) = settings {
+            builder.with_settings(s)
+        } else {
+            builder
+        };
+
+        self.inner_sdk()
+            .document_erase(builder, &identity_key, &signer)
+            .await?;
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Document Transfer
 // ============================================================================
 
@@ -715,6 +889,18 @@ export interface DocumentTransferOptions {
   /**
    * The document to transfer.
    * Must include id, ownerId, dataContractId, documentTypeName, and revision.
+   *
+   * Its `revision` must be the revision this transfer writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentTransfer({ document, recipientId, identityKey, signer });
    */
   document: Document;
 
@@ -770,6 +956,9 @@ impl WasmSdk {
     /// 1. Fetches the data contract from Platform
     /// 2. Creates and signs the document transfer transition
     /// 3. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this transfer writes. A fetched document carries the stored one.
     ///
     /// @param options - Transfer options including document, recipient, and signer
     /// @returns Promise that resolves when the document is transferred
@@ -848,6 +1037,18 @@ export interface DocumentPurchaseOptions {
   /**
    * The document to purchase.
    * Must include id, ownerId, dataContractId, documentTypeName, and revision.
+   *
+   * Its `revision` must be the revision this purchase writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentPurchase({ document, buyerId, price, identityKey, signer });
    */
   document: Document;
 
@@ -909,6 +1110,9 @@ impl WasmSdk {
     /// 1. Fetches the data contract from Platform
     /// 2. Creates and signs the document purchase transition
     /// 3. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this purchase writes. A fetched document carries the stored one.
     ///
     /// @param options - Purchase options including document, buyer ID, price, and signer
     /// @returns Promise that resolves when the purchase is complete
@@ -982,12 +1186,25 @@ export interface DocumentSetPriceOptions {
   /**
    * The document to set a price on.
    * Must include id, ownerId, dataContractId, documentTypeName, and revision.
+   *
+   * Its `revision` must be the revision this price update writes: the stored
+   * revision + 1. The SDK sends the revision as given and does not increase
+   * it, so increase it yourself: a document fetched from Platform carries the
+   * stored revision. Passing the stored revision is refused with
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   *
+   * @example
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentSetPrice({ document, price: 5000000n, identityKey, signer });
    */
   document: Document;
 
   /**
    * The price in credits.
-   * Set to 0 to remove the price and make the document not for sale.
+   * A price of 0 does not take the document off sale: it stays listed, and
+   * anyone may buy it for 0 credits.
    */
   price: bigint;
 
@@ -1038,6 +1255,9 @@ impl WasmSdk {
     /// 1. Fetches the data contract from Platform
     /// 2. Creates and signs the price update transition
     /// 3. Broadcasts and waits for confirmation
+    ///
+    /// The document's revision is sent as given: pass the stored revision + 1,
+    /// the revision this price update writes. A fetched document carries the stored one.
     ///
     /// @param options - Set price options including document, price, and signer
     /// @returns Promise that resolves when the price is set
