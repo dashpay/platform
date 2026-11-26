@@ -14,6 +14,7 @@ import archiveSamples from '../../../../../src/doctor/archiveSamples.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import unarchiveSamplesFactory from '../../../../../src/doctor/unarchiveSamplesFactory.js';
+import { getOperatorIdentity } from '../../../../../src/util/maskOperatorIdentity.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
@@ -587,6 +588,28 @@ describe('collectSamplesTaskFactory', () => {
       expect(problems).to.include(
         'Service Drive ABCI failed with an error code 137\nand message: container exited unexpectedly.',
       );
+    });
+
+    // Collected text has the operator's home directory rewritten as it is
+    // taken in. A secret that starts with that directory must already be
+    // masked by then, or what is left of it no longer reads as the secret.
+    it('should mask a secret that holds the home directory before the directory is rewritten', async () => {
+      const { homePath } = getOperatorIdentity();
+      const secret = `${homePath}/pin7`;
+
+      config.set('core.rpc.users.dapi.password', secret);
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: { Image: 'dashpay/dapi:test', Env: [] },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({ out: `auth with ${secret} rejected\n`, err: '' });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('/pin7');
+      expect(archived).to.contain(`auth with ${'*'.repeat(secret.length)} rejected`);
     });
 
     // A key passed to Core on its command line is in the config and in the

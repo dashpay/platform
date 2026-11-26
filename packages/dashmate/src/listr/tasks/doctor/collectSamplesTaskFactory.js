@@ -4,6 +4,7 @@ import path from 'path';
 import process from 'process';
 import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
+import createSecretScrubber from '../../../doctor/createSecretScrubber.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
@@ -46,19 +47,24 @@ async function fetchTextOrError(url) {
  */
 /**
  * @param {Object} data - mutated in place
+ * @param {function(string): string} scrub - masks the config's secrets
  */
-function obfuscateOperatorName(data) {
+function obfuscateOperatorName(data, scrub) {
   const identity = getOperatorIdentity();
 
-  obfuscateObjectRecursive(data, (_field, value) => maskOperatorIdentity(value, identity));
+  obfuscateObjectRecursive(data, (_field, value) => maskOperatorIdentity(
+    typeof value === 'string' ? scrub(value) : value,
+    identity,
+  ));
 }
 
 /**
  * @param {string|undefined} text
+ * @param {function(string): string} scrub - masks the config's secrets
  * @return {string|undefined}
  */
-function hideOperatorNameIn(text) {
-  return maskOperatorIdentity(text, getOperatorIdentity());
+function hideOperatorNameIn(text, scrub) {
+  return maskOperatorIdentity(typeof text === 'string' ? scrub(text) : text, getOperatorIdentity());
 }
 
 const REDACTED_VALUE = '<redacted>';
@@ -170,6 +176,10 @@ export default function collectSamplesTaskFactory(
    * @return {Listr}
    */
   function collectSamplesTask(config) {
+    // Secrets are taken out of collected text before the operator's identity
+    // is masked in it, which could otherwise rewrite part of a secret
+    const scrub = createSecretScrubber(config);
+
     return new Listr(
       [
         {
@@ -245,7 +255,7 @@ export default function collectSamplesTaskFactory(
                         Certificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateOperatorName(data);
+                      obfuscateOperatorName(data, scrub);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -263,7 +273,7 @@ export default function collectSamplesTaskFactory(
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateOperatorName(data);
+                      obfuscateOperatorName(data, scrub);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -289,7 +299,7 @@ export default function collectSamplesTaskFactory(
                         privateFilePath,
                       };
 
-                      obfuscateOperatorName(data);
+                      obfuscateOperatorName(data, scrub);
 
                       if (!fs.existsSync(chainFilePath) || !fs.existsSync(privateFilePath)) {
                         ctx.samples.setServiceInfo('gateway', 'ssl', {
@@ -358,7 +368,7 @@ export default function collectSamplesTaskFactory(
                   // hands to whoever is helping them, so the path stays - it is
                   // what makes the problem actionable - and the name in it does
                   // not.
-                  obfuscateOperatorName(installed);
+                  obfuscateOperatorName(installed, scrub);
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },
@@ -389,7 +399,7 @@ export default function collectSamplesTaskFactory(
                   // Same treatment as the certificate above: the path is what
                   // makes a problem actionable and stays, the operator's name
                   // in it does not.
-                  obfuscateOperatorName(sample);
+                  obfuscateOperatorName(sample, scrub);
 
                   ctx.samples.setServiceInfo('gateway', 'certificateRenewal', sample);
                 },
@@ -625,18 +635,18 @@ export default function collectSamplesTaskFactory(
 
                 if (logs?.out) {
                   // Hide username & external ip from logs
-                  logs.out = hideOperatorNameIn(logs.out);
+                  logs.out = hideOperatorNameIn(logs.out, scrub);
                 }
 
                 if (logs?.err) {
-                  logs.err = hideOperatorNameIn(logs.err);
+                  logs.err = hideOperatorNameIn(logs.err, scrub);
                 }
 
                 redactContainerEnvironment(inspect);
                 redactContainerCommand(inspect);
 
                 // Hide username & external ip from inspect
-                obfuscateOperatorName(inspect);
+                obfuscateOperatorName(inspect, scrub);
 
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);
