@@ -504,6 +504,24 @@ describe('validateZeroSslCertificateFactory', () => {
         expect(result.data.csr).to.be.undefined();
       });
 
+      // Node cannot turn a file of about 512 MiB into a string. Such a file
+      // is left as it is, as one this process cannot read.
+      it('should leave a request too large to read as text as it is', async function it() {
+        fs.writeFileSync(csrFilePath, request);
+        this.sinon.stub(fs, 'readFileSync').callThrough()
+          .withArgs(this.sinon.match.number)
+          .returns({
+            toString: () => {
+              throw new RangeError('Cannot create a string longer than 0x1fffffe8 characters');
+            },
+          });
+
+        const result = await validateZeroSslCertificate(config, expirationDays);
+
+        expect(result.data.isCsrFilePresent).to.be.true();
+        expect(result.data.csr).to.be.undefined();
+      });
+
       // ZeroSSL gets the bytes on disk, so they are what has to be a request
       // and carry the signature.
       describe('as PKCS #10 lays it out', () => {

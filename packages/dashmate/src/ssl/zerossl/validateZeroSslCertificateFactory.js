@@ -127,18 +127,19 @@ function readCertificateRequest(csrFilePath, privateKeyFilePath) {
     return unusable;
   }
 
-  let file;
+  let text;
   try {
-    file = readRegularFile(csrFilePath);
+    const file = readRegularFile(csrFilePath);
+
+    if (file === null) {
+      return leftAsIs;
+    }
+
+    // Node cannot turn a file of about 512 MiB into a string
+    text = file.content.toString('latin1');
   } catch {
     return leftAsIs;
   }
-
-  if (file === null) {
-    return leftAsIs;
-  }
-
-  const text = file.content.toString('latin1');
 
   if (containsPrivateKey(text)) {
     return unusable;
