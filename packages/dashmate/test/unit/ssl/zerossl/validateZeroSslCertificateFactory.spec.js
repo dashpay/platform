@@ -590,6 +590,28 @@ describe('validateZeroSslCertificateFactory', () => {
         });
       });
 
+      // OpenSSL signs requests with these when asked, and Node checks them.
+      [
+        ['RSA', 'SHA3-256', '2.16.840.1.101.3.4.3.14', 'sha3-256', Buffer.alloc(0)],
+        ['RSA', 'SHA-512/256', '1.2.840.113549.1.1.16', 'sha512-256', Buffer.from('0500', 'hex')],
+        ['EC', 'SHA3-256', '2.16.840.1.101.3.4.3.10', 'sha3-256', Buffer.alloc(0)],
+      ].forEach(([keyType, hashName, oid, hash, parameters]) => {
+        it(`should count a request for an ${keyType} key signed with ${hashName}`, async () => {
+          const keyPem = keyType === 'RSA'
+            ? pair.keyPem
+            : crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+              .privateKey.export({ type: 'sec1', format: 'pem' });
+          fs.writeFileSync(path.join(sslConfigDir, 'private.key'), keyPem);
+          fs.writeFileSync(csrFilePath, createCertificateRequest(keyPem, {
+            algorithm: { oid, hash, parameters },
+          }));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.true();
+        });
+      });
+
       // ZeroSSL issues for EC keys as well as RSA ones, and a pair placed by
       // hand renews like one Dashmate made.
       describe('for an EC key', () => {
