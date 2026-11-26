@@ -113,7 +113,10 @@ impl Mockable for crate::tonic::Status {
         let mut binary_metadata = Vec::new();
         for entry in self.metadata().iter() {
             if let KeyAndValueRef::Binary(key, value) = entry {
-                binary_metadata.push((key.to_string(), value.to_bytes().ok()?.to_vec()));
+                let Ok(bytes) = value.to_bytes() else {
+                    continue;
+                };
+                binary_metadata.push((key.to_string(), bytes.to_vec()));
             }
         }
         let mockable = MockableStatus {
@@ -153,7 +156,9 @@ impl<T: Mockable> Mockable for Streaming<T> {}
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::Mockable;
-    use tonic::{metadata::MetadataValue, Code, Status};
+    use tonic::codegen::http::{HeaderMap, HeaderValue};
+    use tonic::metadata::{MetadataMap, MetadataValue};
+    use tonic::{Code, Status};
 
     #[test]
     fn should_preserve_binary_status_metadata_in_mock_recordings() {
@@ -177,6 +182,25 @@ mod tests {
             values,
             vec![b"\x00\xff\x80".as_slice(), b"second value".as_slice()]
         );
+    }
+
+    #[test]
+    fn should_skip_malformed_binary_metadata_in_mock_recordings() {
+        let mut headers = HeaderMap::new();
+        headers.insert("malformed-bin", HeaderValue::from_static("!"));
+        let mut status = Status::with_metadata(
+            Code::InvalidArgument,
+            "consensus rejection",
+            MetadataMap::from_headers(headers),
+        );
+        let valid = MetadataValue::from_bytes(b"valid value");
+        status.metadata_mut().insert_bin("valid-bin", valid.clone());
+
+        let restored = Status::mock_deserialize(&status.mock_serialize().unwrap()).unwrap();
+        assert_eq!(restored.code(), status.code());
+        assert_eq!(restored.message(), status.message());
+        assert!(restored.metadata().get_bin("malformed-bin").is_none());
+        assert_eq!(restored.metadata().get_bin("valid-bin"), Some(&valid));
     }
 
     #[test]

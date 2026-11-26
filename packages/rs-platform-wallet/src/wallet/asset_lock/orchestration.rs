@@ -805,7 +805,7 @@ fn validate_existing_asset_lock_role(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -940,9 +940,30 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
-    struct ReconciliationPersistence {
+    pub(crate) struct ReconciliationPersistence {
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
-        flushed: Mutex<bool>,
+        pub(crate) flushed: Mutex<bool>,
+    }
+
+    impl ReconciliationPersistence {
+        pub(crate) fn assert_recovered_asset_lock(
+            &self,
+            lock: &TrackedAssetLock,
+            proof: AssetLockProof,
+        ) {
+            assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+            assert_eq!(lock.proof, Some(proof));
+            let stored = self.stored.lock().unwrap();
+            let entry = &stored
+                .last()
+                .unwrap()
+                .asset_locks
+                .as_ref()
+                .unwrap()
+                .asset_locks[&lock.out_point];
+            assert_eq!(entry.status, AssetLockStatus::RecoveredFromChain);
+            assert!(*self.flushed.lock().unwrap());
+        }
     }
 
     impl PlatformWalletPersistence for ReconciliationPersistence {
@@ -998,18 +1019,7 @@ mod tests {
                 .get_wallet_info(&ctx.wallet_id)
                 .unwrap()
                 .tracked_asset_locks[&ctx.out_point];
-            assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
-            assert_eq!(lock.proof, Some(proof));
-            let stored = persistence.stored.lock().unwrap();
-            let entry = &stored
-                .last()
-                .unwrap()
-                .asset_locks
-                .as_ref()
-                .unwrap()
-                .asset_locks[&ctx.out_point];
-            assert_eq!(entry.status, AssetLockStatus::RecoveredFromChain);
-            assert!(*persistence.flushed.lock().unwrap());
+            persistence.assert_recovered_asset_lock(lock, proof);
         }
     }
 

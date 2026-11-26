@@ -66,9 +66,10 @@ use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
@@ -447,14 +448,27 @@ impl IdentityWallet {
                 },
             )
             .await?;
+        self.finish_top_up(
+            identity_id,
+            submit_result,
+            &proof_out_point,
+            &effective_proof,
+            tracked_out_point,
+        )
+        .await
+    }
+
+    async fn finish_top_up(
+        &self,
+        identity_id: &Identifier,
+        submit_result: Result<(u64, ResponseMetadata), dash_sdk::Error>,
+        proof_out_point: &OutPoint,
+        effective_proof: &AssetLockProof,
+        tracked_out_point: Option<OutPoint>,
+    ) -> Result<u64, PlatformWalletError> {
         let (mut new_balance, metadata) = self
             .asset_locks
-            .reconcile_identity_top_up_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                None,
-            )
+            .reconcile_identity_top_up_result(submit_result, proof_out_point, effective_proof, None)
             .await?;
 
         // Step 4 (best-effort): persist the new balance + clean up the
@@ -531,9 +545,12 @@ mod tests {
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::error::is_instant_lock_timeout;
+    use crate::test_support::test_platform_wallet_manager_with;
+    use crate::wallet::asset_lock::orchestration::tests::ReconciliationPersistence;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
     use crate::wallet::platform_wallet::WalletId;
     use dashcore::{Transaction, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use std::sync::{Arc, Mutex};
 
     /// Refuses every changeset that carries an identity and records the rest.
@@ -558,6 +575,64 @@ mod tests {
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
             Ok(ClientStartState::default())
         }
+    }
+
+    #[tokio::test]
+    async fn should_reconcile_duplicate_identity_top_up_after_submission() {
+        let persistence = Arc::new(ReconciliationPersistence::default());
+        let (manager, wallet_id) = test_platform_wallet_manager_with(persistence.clone()).await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let wallet = wallet.identity();
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        let proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point,
+        });
+        let lock = TrackedAssetLock {
+            operation_id: None,
+            out_point,
+            transaction,
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityTopUp,
+            identity_index: 0,
+            amount: 10_000,
+            status: AssetLockStatus::ChainLocked,
+            proof: Some(proof.clone()),
+            shielded_recipient: None,
+        };
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).unwrap();
+            info.tracked_asset_locks.insert(out_point, lock);
+        }
+        *persistence.flushed.lock().unwrap() = false;
+
+        let error = wallet
+            .finish_top_up(
+                &Identifier::default(),
+                Err(dash_sdk::Error::AlreadyExists(
+                    "state transition already in chain".into(),
+                )),
+                &out_point,
+                &proof,
+                Some(out_point),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == out_point),
+            "{error:?}"
+        );
+        let wm = wallet.wallet_manager.read().await;
+        let lock = &wm.get_wallet_info(&wallet_id).unwrap().tracked_asset_locks[&out_point];
+        persistence.assert_recovered_asset_lock(lock, proof);
     }
 
     /// Platform accepted the registration, so the lock is spent. A store
