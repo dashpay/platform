@@ -352,6 +352,29 @@ describe('collectSamplesTaskFactory', () => {
     expect(samples.getServiceInfo('gateway', 'validationHttpPort')).to.equal('OPEN');
   });
 
+  // The certificate check reads the API key to call ZeroSSL with, and hands it
+  // back with the rest of what it looked at. Doctor never needs the key itself -
+  // whether it is set is already in the check's verdict.
+  it('should not collect the ZeroSSL API key', async () => {
+    const apiKey = 'collectedZeroSslApiKey'.padEnd(32, '7');
+
+    config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', apiKey);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    await collectSamples();
+
+    expect(samples.getServiceInfo('gateway', 'ssl').data).to.include.keys('bundleFilePath');
+    expect(samples.getServiceInfo('gateway', 'ssl').data).to.not.have.property('apiKey');
+    expect(JSON.stringify(samples.getServices())).to.not.contain(apiKey);
+  });
+
   it('should collect metrics as text rather than an unresolved promise', async () => {
     config.set('platform.gateway.metrics.enabled', true);
 

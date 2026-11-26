@@ -244,6 +244,11 @@ export default function collectSamplesTaskFactory(
                         Certificate.EXPIRATION_LIMIT_DAYS,
                       );
 
+                      // The check hands back the key it called ZeroSSL with.
+                      // Whether one is set is already in its verdict, and the
+                      // key itself has no place in a report.
+                      delete data.apiKey;
+
                       obfuscateOperatorName(data);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
