@@ -66,8 +66,7 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::shielded::balance_emitter::spawn_balance_emitter;
 #[cfg(feature = "shielded")]
 use crate::wallet::shielded::{
-    NetworkShieldedCoordinator, ShieldedBalanceUpdate, ShieldedClearAdmission,
-    ShieldedCoordinatorSlot,
+    NetworkShieldedCoordinator, ShieldedBalanceUpdate, ShieldedCoordinatorSlot,
 };
 use crate::wallet::PlatformWallet;
 
@@ -1263,6 +1262,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// must therefore not wait for a shielded operation of its own: the pass
     /// would wait for the handler, the handler for the Clear, and the Clear
     /// for the pass, until the drain budget ends it with `ShutdownIncomplete`.
+    ///
+    /// # A host that is busy for now
+    ///
+    /// Once the pass has drained and before anything is reset, the Clear
+    /// reads the host, to keep the identity accounts its viewing key rows
+    /// record. A read the host reports as retryable fails the Clear with
+    /// [`PlatformWalletError::PersisterLoad`] and nothing reset. The sync
+    /// loop was stopped for the drain by then and is not started again here:
+    /// a stop the host asked for meanwhile must stand. A host that puts off
+    /// its retry starts sync itself.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Fail closed before anything is stopped or reset: the host half of
@@ -1287,25 +1296,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .as_deref()
             .map(NetworkShieldedCoordinator::try_admit_clear)
             .transpose()?;
-        // A Clear that fails on a host busy for now changes nothing, and
-        // must leave the sync loop as it found it: the quiesce below stops
-        // it, so it is started again then.
-        let was_syncing = self.shielded_sync_manager.is_running();
-        let cleared = self.clear_shielded_admitted(admission).await;
-        if was_syncing && matches!(cleared, Err(PlatformWalletError::PersisterLoad(_))) {
-            Arc::clone(&self.shielded_sync_manager).start();
-        }
-        cleared
-    }
-
-    /// [`Self::clear_shielded`] once the Clear is admitted: the quiesce and
-    /// the wipe, under the clearing latch, which is released when this
-    /// returns.
-    #[cfg(feature = "shielded")]
-    async fn clear_shielded_admitted(
-        &self,
-        admission: Option<ShieldedClearAdmission<'_>>,
-    ) -> Result<(), PlatformWalletError> {
         // Hold the registry's per-key clearing latch across the WHOLE
         // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
         // (and any registry (re)start) is a no-op, so no fresh pass can

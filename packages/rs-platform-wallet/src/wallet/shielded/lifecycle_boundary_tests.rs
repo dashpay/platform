@@ -1074,11 +1074,11 @@ async fn should_refuse_a_clear_and_keep_the_sync_loop_while_an_operation_is_admi
 }
 
 /// A Clear whose host is busy for now fails with nothing reset and the host
-/// not asked to wipe, and leaves the sync loop running: the manager starts
-/// it again after the quiesce that stopped it. The same Clear goes through
-/// on a retry.
+/// not asked to wipe. It had stopped the sync loop to drain it before it
+/// read the host, and does not start it again: a stop a host asked for
+/// meanwhile stands. The same Clear goes through on a retry.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_fail_a_clear_and_keep_the_sync_loop_while_the_host_is_busy() {
+async fn should_fail_a_clear_with_nothing_reset_while_the_host_is_busy() {
     let dir = tempfile::tempdir().unwrap();
     let host = BoundaryHost::new();
     let (manager, _wallet, coordinator) = configured(&host, &dir).await;
@@ -1098,8 +1098,8 @@ async fn should_fail_a_clear_and_keep_the_sync_loop_while_the_host_is_busy() {
         "{busy:?}"
     );
     assert!(
-        manager.shielded_sync().is_running(),
-        "a Clear that failed on a busy host leaves the sync loop running"
+        !manager.shielded_sync().is_running(),
+        "the loop the Clear stopped is the host's to start again"
     );
     assert_eq!(host.wipe_count(), 0);
     assert_eq!(coordinator.clear_epoch().await, epoch);
@@ -1112,6 +1112,41 @@ async fn should_fail_a_clear_and_keep_the_sync_loop_while_the_host_is_busy() {
     manager.clear_shielded().await.expect("the retry");
     assert_eq!(host.wipe_count(), 1);
     assert!(!manager.shielded_sync().is_running());
+}
+
+/// A Clear drains the sync pass, within its budget, before it reads the
+/// host: a pass committing to the host holds it, and a read made first
+/// would wait for that commit with no deadline. With a pass that does not
+/// drain, the Clear ends with `ShutdownIncomplete` and has not read the
+/// host; once the pass is gone, the next Clear reaches the read.
+#[tokio::test(start_paused = true)]
+async fn should_drain_the_sync_pass_before_a_clear_reads_the_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, _wallet, _coordinator) = configured(&host, &dir).await;
+    host.clear_events();
+    host.busy_load.store(true, Ordering::SeqCst);
+
+    assert!(manager.shielded_sync().wedge_sync_slot_for_test());
+    let undrained = manager.clear_shielded().await;
+    assert!(
+        matches!(undrained, Err(PlatformWalletError::ShutdownIncomplete(_))),
+        "{undrained:?}"
+    );
+    assert!(
+        host.events().is_empty(),
+        "the host is not read while a pass has not drained: {:?}",
+        host.events()
+    );
+
+    manager.shielded_sync().release_sync_slot_for_test();
+    let busy = manager.clear_shielded().await;
+    assert!(
+        matches!(&busy, Err(PlatformWalletError::PersisterLoad(e)) if e.is_transient()),
+        "the drained Clear reaches the read, still armed to fail: {busy:?}"
+    );
+    assert_eq!(host.events(), vec!["load"]);
+    assert_eq!(host.wipe_count(), 0);
 }
 
 /// A funding's confirmed activity row, as the recorder builds it.

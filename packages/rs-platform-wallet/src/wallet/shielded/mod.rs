@@ -95,7 +95,6 @@ pub use balance::{
 };
 pub(crate) use contact_address::ContactShieldedAddresses;
 pub use coordinator::NetworkShieldedCoordinator;
-pub(crate) use coordinator::ShieldedClearAdmission;
 
 /// The manager's slot for its network's [`NetworkShieldedCoordinator`]:
 /// `None` until `PlatformWalletManager::configure_shielded` installs one.
