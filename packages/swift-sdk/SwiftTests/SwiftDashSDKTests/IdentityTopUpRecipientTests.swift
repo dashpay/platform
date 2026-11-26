@@ -23,40 +23,36 @@ final class IdentityTopUpRecipientTests: XCTestCase {
 
     // MARK: - Code 89
 
-    func testShouldMapCode81ToAssetLockRecipientUnknown() {
+    func testShouldMapCode89ToAssetLockRecipientUnknown() {
         XCTAssertEqual(PlatformWalletResultCode.errorAssetLockRecipientUnknown.rawValue, 89)
         XCTAssertEqual(
             PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN),
             .errorAssetLockRecipientUnknown)
-        let ffi = PlatformWalletFFIResult(
-            code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN,
-            message: strdup("no recorded recipient"))
-        XCTAssertThrowsError(try ffi.check()) { error in
-            guard case PlatformWalletError.assetLockRecipientUnknown(let detail) = error else {
-                return XCTFail("expected assetLockRecipientUnknown, got \(error)")
-            }
-            XCTAssertEqual(detail, "no recorded recipient")
-            XCTAssertEqual(error.localizedDescription, "no recorded recipient")
+        // Through the Swift seam: a `strdup` message would hand a libc
+        // allocation to Rust's `CString` deallocator.
+        let error = PlatformWalletError(code: .errorAssetLockRecipientUnknown, message: "no recorded recipient")
+        guard case .assetLockRecipientUnknown(let detail) = error else {
+            return XCTFail("expected assetLockRecipientUnknown, got \(error)")
         }
+        XCTAssertEqual(detail, "no recorded recipient")
+        XCTAssertEqual(error.localizedDescription, "no recorded recipient")
     }
 
     // MARK: - Code 90
 
-    func testShouldMapCode82ToAssetLockConsumptionUnknown() {
+    func testShouldMapCode90ToAssetLockConsumptionUnknown() {
         XCTAssertEqual(PlatformWalletResultCode.errorAssetLockConsumptionUnknown.rawValue, 90)
         XCTAssertEqual(
             PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN),
             .errorAssetLockConsumptionUnknown)
-        let ffi = PlatformWalletFFIResult(
-            code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN,
-            message: strdup("may already be used"))
-        XCTAssertThrowsError(try ffi.check()) { error in
-            guard case PlatformWalletError.assetLockConsumptionUnknown(let detail) = error else {
-                return XCTFail("expected assetLockConsumptionUnknown, got \(error)")
-            }
-            XCTAssertEqual(detail, "may already be used")
-            XCTAssertEqual(error.localizedDescription, "may already be used")
+        // Through the Swift seam: a `strdup` message would hand a libc
+        // allocation to Rust's `CString` deallocator.
+        let error = PlatformWalletError(code: .errorAssetLockConsumptionUnknown, message: "may already be used")
+        guard case .assetLockConsumptionUnknown(let detail) = error else {
+            return XCTFail("expected assetLockConsumptionUnknown, got \(error)")
         }
+        XCTAssertEqual(detail, "may already be used")
+        XCTAssertEqual(error.localizedDescription, "may already be used")
     }
 
     // MARK: - Built outpoint
@@ -81,6 +77,33 @@ final class IdentityTopUpRecipientTests: XCTestCase {
         XCTAssertEqual(built.txid, txid)
         XCTAssertEqual(built.vout, 3)
         XCTAssertEqual(built, AssetLockBuiltOutPoint(rawBytes: txid + Data([3, 0, 0, 0])))
+    }
+
+    /// A failed top-up that built a lock reports its outpoint exactly once,
+    /// before the error reaches the caller: the outpoint is what the caller
+    /// resumes.
+    func testShouldDeliverTheBuiltOutPointOnceBeforeTheError() throws {
+        let built = try XCTUnwrap(AssetLockBuiltOutPoint(rawBytes: txid + Data([2, 0, 0, 0])))
+        let reported = Reported()
+        XCTAssertThrowsError(
+            try ManagedPlatformWallet.deliverTopUpOutcome(
+                Result<UInt64, Error>.failure(PlatformWalletError.walletOperation("submit failed")),
+                built: built,
+                to: { value in
+                    XCTAssertTrue(reported.all.isEmpty, "reported once")
+                    reported.append(value)
+                })
+        ) { error in
+            XCTAssertEqual(reported.all, [built], "reported before the error is thrown")
+            guard case PlatformWalletError.walletOperation = error else {
+                return XCTFail("expected walletOperation, got \(error)")
+            }
+        }
+        XCTAssertEqual(
+            try ManagedPlatformWallet.deliverTopUpOutcome(
+                Result<UInt64, Error>.success(7), built: nil, to: { reported.append($0) }),
+            7)
+        XCTAssertEqual(reported.all, [built], "nothing reported when nothing was built")
     }
 
     // MARK: - Wrappers

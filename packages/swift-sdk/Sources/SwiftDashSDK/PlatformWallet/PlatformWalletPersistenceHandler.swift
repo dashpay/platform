@@ -185,6 +185,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// atomically.
     private var inChangeset = false
 
+    /// Each asset lock's status as stored before the open round first wrote
+    /// its row, keyed by `outPointHex`. The identity-recipient sidecar judges
+    /// a conflicting recipient against this, not against the status the same
+    /// round staged: a consumed snapshot must not turn a live row's conflict
+    /// into a stale value it drops, as the SQLite store checks the row as it
+    /// was before the update.
+    private var assetLockStatusBeforeRound: [String: Int] = [:]
+
     /// In-memory index over the rows the open changeset round has
     /// inserted into `backgroundContext` but not yet saved, keyed by the
     /// same columns the hot-path fetches filter on.
@@ -565,7 +573,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     if let incoming = entry.identityRecipient {
                         guard incoming.count == 32 else { throw AssetLockPersistenceError.malformedRecord }
                         if let existing = existingRecord, let stored = existing.identityRecipient,
-                           stored != incoming, !Self.isTerminalAssetLockStatus(existing.statusRaw) {
+                           stored != incoming,
+                           !Self.isTerminalAssetLockStatus(
+                               assetLockStatusBeforeRound[outPointHex] ?? existing.statusRaw) {
                             throw AssetLockPersistenceError.conflictingIdentityRecipient
                         }
                     }
@@ -574,6 +584,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     continue
                 }
                 if let existing = existingRecord {
+                    if inChangeset, assetLockStatusBeforeRound[outPointHex] == nil {
+                        assetLockStatusBeforeRound[outPointHex] = existing.statusRaw
+                    }
                     // Consumed (4) is the terminal lifecycle state — never
                     // let a non-Consumed snapshot regress it. Writers race:
                     // the wallet-event adapter's batched drain can deliver a
@@ -759,8 +772,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// the base upsert by endChangeset: the identity an unbound identity
     /// top-up was built or assigned to pay. Storing the recorded identity
     /// again succeeds (an assignment retries its store this way); another
-    /// identity is refused, except on a consumed row, where a stale value is
-    /// dropped and the recorded one kept, as the SQLite store does.
+    /// identity is refused, except on a row that was consumed before this
+    /// round, where a stale value is dropped and the recorded one kept, as the
+    /// SQLite store does. A status the same round staged does not count.
     func persistAssetLockIdentityRecipient(walletId: Data, outPoint: Data, identityId: Data) throws {
         try onQueue {
             guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
@@ -775,7 +789,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 throw AssetLockPersistenceError.missingRecord
             }
             if let previous = record.identityRecipient, previous != identityId {
-                if Self.isTerminalAssetLockStatus(record.statusRaw) { return }
+                let statusBefore = assetLockStatusBeforeRound[hex] ?? record.statusRaw
+                if Self.isTerminalAssetLockStatus(statusBefore) { return }
                 throw AssetLockPersistenceError.conflictingIdentityRecipient
             }
             record.identityRecipient = identityId
@@ -3628,6 +3643,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func beginChangeset(walletId: Data) {
         onQueue {
             self.inChangeset = true
+            self.assetLockStatusBeforeRound = [:]
             self.roundUtxoCreditVerdicts = [:]
             self.roundUtxoCreditTally = UtxoCreditVerdictTally()
             SDKLogger.event(
@@ -3717,6 +3733,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 self.roundUtxoCreditTally = UtxoCreditVerdictTally()
                 self.roundIndex = nil
                 self.roundAdvancedFinalityBoundary = false
+                self.assetLockStatusBeforeRound = [:]
                 self.inChangeset = false
                 self.drainDeferredBackfills()
             }

@@ -6234,9 +6234,13 @@ extension ManagedPlatformWallet {
     }
 
     /// Outcome of `resumeTopUpToRecordedRecipient`: the identity the lock
-    /// paid (32 bytes; in this wallet or not) and its balance after the
-    /// top-up: the proved one, or for an identity this wallet manages a newer
-    /// verified balance the wallet already holds.
+    /// paid (32 bytes; in this wallet or not) and a balance of it. For an
+    /// identity this wallet does not manage, `newBalance` is the balance
+    /// proved by this top-up. For one it manages, it is the balance the
+    /// wallet retains locally after recording the top-up, which need not
+    /// reflect this payment (a concurrent refresh, or a proof whose store
+    /// failed, can leave an older or a newer value): read the identity's
+    /// balance again before showing it as the result of this payment.
     public struct IdentityTopUpResult: Equatable, Sendable {
         public let identityId: Data
         public let newBalance: UInt64
@@ -6269,9 +6273,12 @@ extension ManagedPlatformWallet {
     ///   reserved. Never build a new lock; resume that outpoint with
     ///   `resumeTopUpToRecordedRecipient`, after the next launch if it is not
     ///   tracked now, whatever the resume answers.
-    /// - any other error: resume that outpoint the same way. Only after one
-    ///   of these errors does a resume answering `assetLockNotTracked` mean
-    ///   the lock was removed before it was sent, so a new call is safe.
+    /// - any other error: resume that outpoint the same way. A resume
+    ///   answering `assetLockNotTracked` means only that this wallet does not
+    ///   track the outpoint now: the lock may still be on the network (the
+    ///   wallet may have been removed after Core accepted it, and a reimport
+    ///   finds it only after the rescan), so it is no reason to build a new
+    ///   lock. Only `transactionBroadcastRejected` licenses a new call.
     ///
     /// The native call runs to completion even if the calling task is
     /// cancelled, and its outcome is still delivered.
@@ -6315,6 +6322,17 @@ extension ManagedPlatformWallet {
                 return (.failure(error), built)
             }
         }.value
+        return try Self.deliverTopUpOutcome(outcome, built: built, to: onAssetLockBuilt)
+    }
+
+    /// Report the built outpoint, if any, then return the outcome or throw
+    /// its error: a failed top-up that built a lock must hand its outpoint
+    /// over before the error, since the outpoint is what the caller resumes.
+    static func deliverTopUpOutcome<Value>(
+        _ outcome: Result<Value, Error>,
+        built: AssetLockBuiltOutPoint?,
+        to onAssetLockBuilt: (AssetLockBuiltOutPoint) -> Void
+    ) throws -> Value {
         if let built {
             onAssetLockBuilt(built)
         }

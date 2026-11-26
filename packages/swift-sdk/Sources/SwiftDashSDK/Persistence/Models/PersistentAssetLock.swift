@@ -253,8 +253,7 @@ public final class PersistentAssetLock {
         statusRaw: Int,
         proofBytes: Data? = nil,
         operationId: Data? = nil,
-        shieldedRecipientRaw43: Data? = nil,
-        identityRecipient: Data? = nil
+        shieldedRecipientRaw43: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -267,9 +266,42 @@ public final class PersistentAssetLock {
         self.proofBytes = proofBytes
         self.operationId = operationId
         self.shieldedRecipientRaw43 = shieldedRecipientRaw43
-        self.identityRecipient = identityRecipient
         self.createdAt = Date()
         self.updatedAt = Date()
+    }
+
+    /// A row that records the identity its unbound top-up pays. Internal, like
+    /// the field's setter: only the SDK records a recipient (at build, from
+    /// Rust's snapshot, and in `assignTopUpRecipient`), so a client cannot
+    /// save a replacement row for the same outpoint with another identity.
+    convenience init(
+        outPointHex: String,
+        walletId: Data,
+        transactionBytes: Data,
+        fundingTypeRaw: Int,
+        identityIndexRaw: Int32,
+        accountIndexRaw: Int32 = 0,
+        amountDuffs: Int64,
+        statusRaw: Int,
+        proofBytes: Data? = nil,
+        operationId: Data? = nil,
+        shieldedRecipientRaw43: Data? = nil,
+        identityRecipient: Data?
+    ) {
+        self.init(
+            outPointHex: outPointHex,
+            walletId: walletId,
+            transactionBytes: transactionBytes,
+            fundingTypeRaw: fundingTypeRaw,
+            identityIndexRaw: identityIndexRaw,
+            accountIndexRaw: accountIndexRaw,
+            amountDuffs: amountDuffs,
+            statusRaw: statusRaw,
+            proofBytes: proofBytes,
+            operationId: operationId,
+            shieldedRecipientRaw43: shieldedRecipientRaw43
+        )
+        self.identityRecipient = identityRecipient
     }
 }
 

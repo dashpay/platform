@@ -110,6 +110,27 @@ final class AssetLockIdentityRecipientPersistenceTests: XCTestCase {
         XCTAssertEqual(try handler.loadCachedAssetLocks(walletId: walletId).first?.statusRaw, 4)
     }
 
+    /// The consumed exception counts only a row consumed before the round. A
+    /// round whose upsert consumes a live row and whose sidecar names another
+    /// identity is refused as a conflict, as SQLite judges the row before the
+    /// update: it must not commit the consumed status with the old recipient.
+    func testShouldRefuseAConflictingRecipientInTheRoundThatConsumesALiveRow() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        try round(handler, status: 1, recipient: recipient)
+
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistAssetLocks(walletId: walletId, upserts: [snapshot(status: 4)], removed: []))
+        XCTAssertThrowsError(try handler.persistAssetLockIdentityRecipient(
+            walletId: walletId, outPoint: rawOutPoint, identityId: otherRecipient))
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+
+        let row = try handler.loadCachedAssetLocks(walletId: walletId).first
+        XCTAssertEqual(row?.statusRaw, 1, "the live row is not consumed")
+        XCTAssertEqual(
+            try handler.loadAssetLockIdentityRecipient(walletId: walletId, outPoint: rawOutPoint), recipient)
+    }
+
     func testShouldFailClosedWithoutARowAChangesetOrAWellFormedValue() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
