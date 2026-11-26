@@ -116,11 +116,25 @@ export default function analyseConfigFactory() {
           ?.value?.result?.node_info?.id;
 
         if (runningNodeId && runningNodeId !== platformNodeId) {
+          // A restart only helps when the configured key is known to give the
+          // registered ID. Matching on the saved ID alone says nothing about
+          // the key, and without a usable one a restarted Tenderdash cannot
+          // start again.
+          const isKeyVerified = samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')
+            === platformNodeId;
+
+          const solution = isKeyVerified
+            ? chalk`The configured node key matches the registered node ID, but Tenderdash
+has not loaded it yet. Please restart Platform to apply it:
+  {bold.cyanBright dashmate restart --platform ${renderConfigFlag(config.getName())}}`
+            : chalk`The saved node ID matches the registered one, but no configured node key was
+found that gives it. Please check the configured Tenderdash node key first, and set the key
+for the registered node ID if it is missing or wrong:
+  {bold.cyanBright dashmate config set platform.drive.tenderdash.node.key KEY ${renderConfigFlag(config.getName())}}`;
+
           const problem = new Problem(
             'Tenderdash is running with a node ID other than the one found in the ProReg transaction',
-            chalk`The configured node key matches the registered node ID, but Tenderdash
-has not loaded it yet. Please restart Platform to apply it:
-  {bold.cyanBright dashmate restart --platform ${renderConfigFlag(config.getName())}}`,
+            solution,
             SEVERITY.HIGH,
           );
 

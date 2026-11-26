@@ -387,6 +387,21 @@ describe('analyseConfigFactory', () => {
         expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
       });
 
+      // Without a key there is nothing for a restarted Tenderdash to load, so
+      // a restart would stop a running node that then cannot start again
+      it('should not advise a restart when only the saved node ID matches and there is no key', () => {
+        samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', undefined);
+        config.set('platform.drive.tenderdash.node', { id: masternodeStatus.dmnState.platformNodeID });
+
+        const problems = analyseConfig(samples);
+
+        expect(problems).to.have.lengthOf(1);
+        expect(problems[0].getDescription()).to.include('Tenderdash is running with a node ID');
+        expect(problems[0].getSolution()).to.not.match(/dashmate\s+restart/);
+        expect(problems[0].getSolution()).to.include('platform.drive.tenderdash.node.key');
+        expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+      });
+
       it('should report nothing when Tenderdash runs with the registered ID', () => {
         tenderdashStatus.result.node_info.id = masternodeStatus.dmnState.platformNodeID;
 
