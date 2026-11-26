@@ -295,8 +295,8 @@ async fn should_emit_the_balance_a_completed_scan_found() {
 }
 
 /// A pool whose first chunk is full and served, and whose later chunks the
-/// mock has no answer for: a scan takes the store, commits the first chunk,
-/// then fails on the next fetch.
+/// mock has no answer for: a scan appends the first chunk, then fails on the
+/// next fetch.
 async fn pool_failing_after_one_chunk() -> dash_sdk::Sdk {
     let mut sdk = dash_sdk::Sdk::new_mock();
     let count = 2048
@@ -323,13 +323,13 @@ async fn pool_failing_after_one_chunk() -> dash_sdk::Sdk {
     sdk
 }
 
-/// A scan holds the store write lock for its whole download. A change that
-/// lands meanwhile is read by the emitter, which waits for the store instead
-/// of giving up, and the update comes out once the scan releases it, here
-/// after the scan failed. The scan is paused inside its download, after it
-/// took the store and committed its first chunk.
+/// A scan does not hold the store across its download, and the emitter
+/// waits for a store a writer holds instead of giving up: the update comes
+/// out once the writer releases it. A scan that fails afterwards leaves the
+/// emitter watching. The scan is paused inside its download, after it
+/// committed its first chunk.
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-async fn should_emit_once_a_failed_scan_releases_the_store() {
+async fn should_emit_once_a_held_store_is_released_while_a_scan_is_paused() {
     let coordinator = coordinator_with(pool_failing_after_one_chunk().await, &tree_path());
     let wallet = [2; 32];
     register(&coordinator, wallet, &[0]).await;
@@ -350,19 +350,20 @@ async fn should_emit_once_a_failed_scan_releases_the_store() {
         tokio::spawn(async move { coordinator.sync(true, &CancellationToken::new()).await })
     };
     pause.wait_entered().await;
-    assert!(
-        coordinator.store().try_write().is_err(),
-        "the paused scan holds the store"
-    );
+    let held = coordinator
+        .store()
+        .try_write()
+        .expect("the paused scan does not hold the store");
 
-    // Needs no store: the emitter wakes and waits for the scan's store.
+    // Needs no store: the emitter wakes and waits for the held store.
     coordinator.mark_hydrated(wallet, true).await;
     emitter.assert_quiet().await;
 
-    pause.release();
+    drop(held);
     let update = emitter.next().await;
     assert_eq!(update.revision, 2);
     assert_eq!(ordinary_credits(&update), 0);
+    pause.release();
     let outcome = tokio::time::timeout(DELIVERY, scan)
         .await
         .expect("scan ends")
@@ -386,7 +387,7 @@ async fn should_emit_once_a_failed_scan_releases_the_store() {
 
 /// A wallet that was unregistered is read first in a pass: its `Unbound`
 /// needs no store, so it is not held up behind a bound wallet's read while
-/// a scan holds the store.
+/// a writer holds the store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn should_emit_an_unregistered_wallet_before_bound_ones_wait_for_the_store() {
     let coordinator = coordinator(&tree_path());
@@ -414,7 +415,7 @@ async fn should_emit_an_unregistered_wallet_before_bound_ones_wait_for_the_store
     }
 
     // Park the emitter in a delivery for the last wallet, unregister the
-    // middle one, then hold the store as a scan would.
+    // middle one, then hold the store as a writer would.
     pause.arm();
     coordinator
         .store()

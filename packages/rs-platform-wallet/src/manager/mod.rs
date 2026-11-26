@@ -164,7 +164,7 @@ const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
 
 /// Deadline for joining the shielded balance emitter at shutdown. The emitter
 /// observes its cancellation at every await, including the wait for a store a
-/// scan holds, so only a host callback it is inside can hold it up; the bound
+/// writer holds, so only a host callback it is inside can hold it up; the bound
 /// keeps such a callback from hanging `destroy`. The handle stays in its slot
 /// until a join completes, so a timeout or a dropped `shutdown` future leaves
 /// it for a later `shutdown` on the same manager to re-join, and the report

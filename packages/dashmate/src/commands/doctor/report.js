@@ -72,10 +72,10 @@ The command collects diagnostic information and creates an obfuscated archive fo
           task: async (ctx, task) => {
             const archivePath = process.cwd();
 
-            await archiveSamples(ctx.samples, archivePath);
+            const archiveFilePath = await archiveSamples(ctx.samples, archivePath);
 
             // eslint-disable-next-line no-param-reassign
-            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.samples.date.toISOString()}.tar.gz}`;
+            task.output = chalk`Saved to {bold.cyanBright ${archiveFilePath}}`;
           },
           options: {
             persistentOutput: true,

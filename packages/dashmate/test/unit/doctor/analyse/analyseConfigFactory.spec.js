@@ -1,9 +1,14 @@
+import fs from 'fs';
+import path from 'path';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
+import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import analyseConfigFactory from '../../../../src/doctor/analyse/analyseConfigFactory.js';
 import { SEVERITY } from '../../../../src/doctor/Prescription.js';
 import Samples from '../../../../src/doctor/Samples.js';
 import { ERRORS as LETSENCRYPT_ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import { ERRORS as ZEROSSL_ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 
 describe('analyseConfigFactory', () => {
   let analyseConfig;
@@ -308,6 +313,113 @@ describe('analyseConfigFactory', () => {
       const [problem] = analyseWithRecord({ state: 'ABSENT' });
 
       expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+  });
+
+  describe('Platform node ID', () => {
+    const NODE_ID_PROBLEM = 'Platform Node ID doesn\'t match the one found in the ProReg transaction';
+
+    let masternodeStatus;
+
+    beforeEach(() => {
+      // Captured from a Dash Core v24.0.3 node running a registered evonode
+      masternodeStatus = JSON.parse(fs.readFileSync(
+        path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc/24.0.3/masternode-status-evonode.json'),
+        'utf8',
+      ));
+
+      samples.setServiceInfo('core', 'masternodeStatus', masternodeStatus);
+    });
+
+    // Tenderdash identifies itself to its peers with the configured key, and
+    // they only accept it as this evonode when its ID is the one registered on
+    // chain. A node whose key does not match runs but never takes part.
+    it('should report a node key that does not match the registered node ID', () => {
+      const nodeKey = generateTenderdashNodeKey();
+
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+      config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(nodeKey));
+
+      const descriptions = analyseConfig(samples).map((problem) => problem.getDescription());
+
+      expect(descriptions).to.include(NODE_ID_PROBLEM);
+    });
+
+    it('should report nothing when the node key gives the registered ID, whatever ID is saved', () => {
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', masternodeStatus.dmnState.platformNodeID);
+      config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+
+      expect(analyseConfig(samples)).to.be.empty();
+    });
+
+    it('should analyse a config with neither a node key nor a saved node ID', () => {
+      config.set('platform.drive.tenderdash.node', {});
+
+      const descriptions = analyseConfig(samples).map((problem) => problem.getDescription());
+
+      expect(descriptions).to.include(NODE_ID_PROBLEM);
+    });
+
+    describe('while Tenderdash runs with another node ID', () => {
+      let tenderdashStatus;
+
+      beforeEach(() => {
+        // Captured from Tenderdash 2.0.0-dev.3, and stored the way the
+        // collector stores it: as a settled promise
+        tenderdashStatus = JSON.parse(fs.readFileSync(
+          path.join(PACKAGE_ROOT_DIR, 'test/fixtures/tenderdashRpc/2.0.0-dev.3/status.json'),
+          'utf8',
+        ));
+
+        samples.setServiceInfo('drive_tenderdash', 'status', { status: 'fulfilled', value: tenderdashStatus });
+        samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', masternodeStatus.dmnState.platformNodeID);
+      });
+
+      // Tenderdash loads its key at startup, so a key corrected in the config
+      // only takes effect after a restart. Until then peers still see the old ID.
+      it('should say a restart is needed when the configured key is right but not yet loaded', () => {
+        const problems = analyseConfig(samples);
+
+        expect(problems).to.have.lengthOf(1);
+        expect(problems[0].getDescription()).to.not.equal(NODE_ID_PROBLEM);
+        expect(problems[0].getDescription()).to.include('Tenderdash is running with a node ID');
+        expect(problems[0].getSolution()).to.include('dashmate restart --platform');
+        expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+      });
+
+      // Without a key there is nothing for a restarted Tenderdash to load, so
+      // a restart would stop a running node that then cannot start again
+      it('should not advise a restart when only the saved node ID matches and there is no key', () => {
+        samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', undefined);
+        config.set('platform.drive.tenderdash.node', { id: masternodeStatus.dmnState.platformNodeID });
+
+        const problems = analyseConfig(samples);
+
+        expect(problems).to.have.lengthOf(1);
+        expect(problems[0].getDescription()).to.include('Tenderdash is running with a node ID');
+        expect(problems[0].getSolution()).to.not.match(/dashmate\s+restart/);
+        expect(problems[0].getSolution()).to.include('platform.drive.tenderdash.node.key');
+        expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+      });
+
+      it('should report nothing when Tenderdash runs with the registered ID', () => {
+        tenderdashStatus.result.node_info.id = masternodeStatus.dmnState.platformNodeID;
+
+        expect(analyseConfig(samples)).to.be.empty();
+      });
+
+      it('should report nothing extra when Tenderdash did not answer', () => {
+        samples.setServiceInfo('drive_tenderdash', 'status', { status: 'rejected', reason: {} });
+
+        expect(analyseConfig(samples)).to.be.empty();
+      });
+    });
+
+    // A report collected by an older dashmate has no ID derived from the key
+    it('should report nothing when the node ID is the registered one', () => {
+      config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
+
+      expect(analyseConfig(samples)).to.be.empty();
     });
   });
 

@@ -4746,8 +4746,8 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<(HashSet<[u8; 32]>, u64), PlatformWalletError>>,
 {
-    // `try_read`, not `read().await`: when a sync holds the store, waiting
-    // here would serialize the lock wait in front of the fetch below, which
+    // `try_read`, not `read().await`: when a writer (a sync's append or
+    // commit, another spend) holds the store, waiting here would serialize the lock wait in front of the fetch below, which
     // otherwise overlaps it. A contended lock simply takes the fetch path
     // and leaves the cache untouched (no pre-fetch tree size to pin).
     let tree_size_before_fetch = match store.try_read() {
@@ -4989,7 +4989,26 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// Also drops any matching pending reservation so the
 /// confirmed-spent state and the in-flight-spend state can't
 /// disagree.
-async fn mark_notes_spent<S: ShieldedStore>(
+///
+/// The changeset carries each note itself, marked spent, not only its
+/// nullifier. A note a sync pass just found can be spent before the
+/// pass's receipt round reaches the host; the host then has no row for
+/// `nullifiers_spent` to flip, and the receipt would land unspent. A
+/// spent row saved here is kept by the host whatever arrives later
+/// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
+/// read under the same guard: a sync pass may have re-saved the note
+/// with newer metadata since `notes` were selected.
+///
+/// The round is queued before that guard drops, downgraded to a read guard
+/// so balance reads can run alongside the host I/O, unless a writer has
+/// queued ahead of them. Until the round has reached the host, no writer
+/// gets in:
+/// - a sync pass can't commit a newer copy of a note and have its round
+///   overtake this one, which would roll the host back to older metadata;
+/// - a Clear can't purge the store and return. The host deletes its rows
+///   once Clear returns, so a round landing after that would put a deleted
+///   note back.
+pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
@@ -4997,19 +5016,41 @@ async fn mark_notes_spent<S: ShieldedStore>(
     notes: &[ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
     let mut changeset = ShieldedChangeSet::default();
-    {
-        let mut store = store.write().await;
-        for note in notes {
-            if store
-                .mark_spent(id, &note.nullifier)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-            {
-                changeset.record_nullifier_spent(id, note.nullifier);
+    let mut store = store.write().await;
+    for note in notes {
+        if store
+            .mark_spent(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+        {
+            if let Some(stored) = stored_note_to_save(&*store, id, &note.nullifier) {
+                changeset.record_note(id, stored);
             }
+            changeset.record_nullifier_spent(id, note.nullifier);
         }
     }
+    let _round_guard = store.downgrade();
     queue_shielded_changeset(persister, wallet_id, changeset);
     Ok(())
+}
+
+/// `id`'s stored copy of the note with `nullifier`, for a spend's round to
+/// save. A failed read is logged and skipped rather than failing the spend:
+/// the note is already marked spent, and the round still carries its
+/// nullifier.
+fn stored_note_to_save<S: ShieldedStore>(
+    store: &S,
+    id: SubwalletId,
+    nullifier: &[u8; 32],
+) -> Option<ShieldedNote> {
+    store.get_note(id, nullifier).unwrap_or_else(|e| {
+        tracing::warn!(
+            wallet_id = %hex::encode(id.wallet_id),
+            account = id.account_index,
+            error = %e,
+            "Could not read a spent note to save it with its spend"
+        );
+        None
+    })
 }
 
 /// Select unspent notes and reserve them against an in-flight
