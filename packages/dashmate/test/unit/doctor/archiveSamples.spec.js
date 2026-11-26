@@ -618,6 +618,45 @@ describe('archiveSamples', () => {
       expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
     });
 
+    // Nothing to pack makes the packer refuse before it takes over the open
+    // file, so the file would be left open; an empty listing is refused
+    // before the file is opened
+    it('should not open the archive file when no staged samples are listed', async function it() {
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const { readdirSync } = fs;
+      this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => (
+        path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')
+          ? []
+          : readdirSync(dirPath, ...args)
+      ));
+      const openSync = this.sinon.spy(fs, 'openSync');
+
+      await expect(archiveSamples(samples, outputDir, config))
+        .to.be.rejectedWith('No samples were left in the staging directory to pack');
+
+      const partialOpens = openSync.getCalls().filter((call) => String(call.args[0]).endsWith('.partial'));
+
+      expect(partialOpens).to.be.empty();
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+    });
+
+    // Once the archive file is open, any failure before packing takes it
+    // over closes it and removes it
+    it('should close and remove the archive file when it cannot be written to', async function it() {
+      const openSync = this.sinon.spy(fs, 'openSync');
+      this.sinon.stub(fs, 'createWriteStream').throws(new Error('cannot write'));
+
+      await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('cannot write');
+
+      const [partialOpen] = openSync.getCalls().filter((call) => String(call.args[0]).endsWith('.partial'));
+
+      expect(partialOpen).to.exist();
+      expect(() => fs.fstatSync(partialOpen.returnValue)).to.throw().with.property('code', 'EBADF');
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+    });
+
     // A failure is reported as it was thrown when the staged samples could
     // be removed: nothing is added to it
     it('should rethrow a failure that is not an error as it is', async function it() {

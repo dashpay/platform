@@ -170,6 +170,12 @@ export default async function archiveSamples(samples, folderPath, config) {
     // Listed before the archive file is opened, which only packing closes.
     const stagedFiles = fs.readdirSync(archiveDir);
 
+    // The packer refuses an empty list before it takes over the file, which
+    // would then be left open; something removed what was written meanwhile
+    if (stagedFiles.length === 0) {
+      throw new Error('No samples were left in the staging directory to pack');
+    }
+
     // Packed under a name only this run uses and renamed once complete, so a
     // failure never leaves a truncated archive under the report's name and
     // never touches a file this run did not create.
@@ -179,9 +185,12 @@ export default async function archiveSamples(samples, folderPath, config) {
     // and a file this run did not create is not its own to remove. Created
     // readable by its owner only, since it can be left behind when renaming
     // and removing it both fail.
-    const output = fs.createWriteStream(null, { fd: fs.openSync(partialFilePath, 'wx', 0o600) });
+    const fd = fs.openSync(partialFilePath, 'wx', 0o600);
+    let output;
 
     try {
+      output = fs.createWriteStream(null, { fd });
+
       // pipeline closes the file when packing fails, so it can be removed
       await pipeline(
         create(
@@ -199,6 +208,21 @@ export default async function archiveSamples(samples, folderPath, config) {
 
       fs.renameSync(partialFilePath, archiveFilePath);
     } catch (e) {
+      // A failure before packing takes the file over leaves it open, and a
+      // file still open cannot be removed everywhere
+      try {
+        if (!output) {
+          fs.closeSync(fd);
+        } else if (!output.closed) {
+          await new Promise((resolve) => {
+            output.once('close', resolve);
+            output.destroy();
+          });
+        }
+      } catch {
+        // The packing or rename error is the one to report
+      }
+
       try {
         fs.rmSync(partialFilePath, { force: true });
       } catch {
