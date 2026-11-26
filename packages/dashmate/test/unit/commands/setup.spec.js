@@ -173,17 +173,11 @@ describe('Setup command', () => {
     });
 
     // Its identities, ports, chain and peers belong to the whole group, and
-    // the seed node's wallet registers them.
-    it('should refuse the local group and say how to set it up again', async () => {
-      const error = await setupPlatform({}, { preset: 'local' });
-
-      expect(error.message).to.include('dashmate group reset --group local --hard');
-      expect(getPlatformArtefacts).to.not.have.been.called();
-    });
-
-    // `setup local` builds three masternodes unless told otherwise.
-    it('should give the group setup the number of masternodes to build again', async () => {
-      const members = ['local_1', 'local_2', 'local_3', 'local_4', 'local_seed'].map((name) => {
+    // the seed node's wallet registers them. The group's reset removes every
+    // config whose group is local, and `setup local` builds its configs again
+    // by name, wherever they are now, so neither is advised.
+    it('should refuse the local group without advising a reset or a setup', async () => {
+      const members = ['local_1', 'local_2', 'local_3', 'local_seed'].map((name) => {
         const config = new Config(name, defaultConfigs.get('local').getStoredOptions());
         config.set('group', 'local');
 
@@ -193,23 +187,9 @@ describe('Setup command', () => {
 
       const error = await setupPlatform({}, { preset: 'local' });
 
-      expect(error.message).to.match(/ {2}dashmate setup local --node-count=4$/);
-    });
-
-    // The group's reset selects every config whose group is local, and one
-    // created from local_seed inherits it. `setup local` would not build it
-    // again.
-    it('should not advise the local group rebuild while it holds a config setup local does not build', async () => {
-      const seed = new Config('local_seed', defaultConfigs.get('local').getStoredOptions());
-      seed.set('group', 'local');
-      const observer = new Config('observer', seed.getStoredOptions());
-      useConfigs([defaultConfigs.get('base'), seed, observer]);
-
-      const error = await setupPlatform({}, { preset: 'local' });
-
-      expect(error.message).to.include('Platform-only setup does not support the local group')
-        .and.include('observer');
-      expect(error.message).to.not.include('group reset');
+      expect(error.message).to.include('Platform-only setup does not support the local group');
+      expect(error.message).to.not.include('reset')
+        .and.not.include('dashmate setup');
       expect(getPlatformArtefacts).to.not.have.been.called();
     });
 

@@ -6,11 +6,7 @@ import getPlatformSetupState, {
 } from './getPlatformSetupState.js';
 import { findCertificateFiles, inspectCertificateFiles } from './getPlatformArtefactsFactory.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
-import findLocalGroupConfigsNotRebuilt, {
-  LOCAL_GROUP_MEMBER_NAME,
-  renderLocalGroupSetupCommand,
-} from './findLocalGroupConfigsNotRebuilt.js';
-import { PRESET_LOCAL, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
+import { PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
 import quoteShellArgument, { isShellQuotable } from '../util/quoteShellArgument.js';
 
 const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
@@ -18,10 +14,9 @@ const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
- * @param {ConfigFile} configFile
  * @return {assertPlatformCanStart}
  */
-export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, configFile) {
+export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
   /**
    * The node ID Tenderdash will start with: the one its rendered key derives
    * to, whatever the file's id field says
@@ -180,28 +175,14 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
     if (key === null) {
       const problem = 'this masternode has no Platform node key';
       const runCoreAlone = `To run Core alone until then: dashmate config set platform.enable false ${flag}`;
-      const groupName = config.get('group');
 
-      // The local group's identities, ports and peers belong to the whole
-      // group, which `setup local` builds again: local_1 to local_N and
-      // local_seed. A config of another name in that group, the refused one
-      // or any other, would be removed by the group's reset and not built
-      // again.
-      if (groupName === PRESET_LOCAL && LOCAL_GROUP_MEMBER_NAME.test(name)
-        && findLocalGroupConfigsNotRebuilt(configFile).length === 0) {
-        refuse(name, problem, [
-          `Set the ${groupName} group up again with:`,
-          `  dashmate group reset --group ${groupName} --hard`,
-          `  ${renderLocalGroupSetupCommand(configFile, [name])}`,
-        ].join('\n'));
-      }
-
-      // Setup builds only the presets. A hard reset would remove a member of
-      // any other group, a config with any other name, or one in the local
-      // group with the refused member, entirely, and nothing could create it
-      // again, so the remedy is the setting itself.
+      // Platform-only setup serves only the mainnet and testnet presets. A
+      // group's hard reset removes every config of the group, and `setup
+      // local` builds the local group's configs again by name, taking back
+      // one that was moved to another group. So for a member of any group or
+      // a config that is not a preset, the remedy is the setting itself.
       // `config set` would take the key on its command line.
-      if (groupName || !PLATFORM_PRESETS.includes(name)) {
+      if (config.get('group') || !PLATFORM_PRESETS.includes(name)) {
         refuse(name, problem, [
           ...(setupState.state === PLATFORM_SETUP_STATE.CORE_NOT_SET_UP
             ? [describePlatformSetupState(setupState, name)]

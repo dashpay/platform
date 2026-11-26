@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import HomeDir from '../../../src/config/HomeDir.js';
 import Config from '../../../src/config/Config.js';
-import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import assertPlatformCanStartFactory from '../../../src/config/assertPlatformCanStartFactory.js';
 import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
@@ -14,7 +13,6 @@ describe('assertPlatformCanStart', () => {
   let defaultConfigs;
   let setUp;
   let hardResetPlatform;
-  let configFile;
   let assertPlatformCanStart;
 
   /**
@@ -53,8 +51,7 @@ describe('assertPlatformCanStart', () => {
   beforeEach(() => {
     homeDir = HomeDir.createTemp();
     ({ defaultConfigs, setUp, hardResetPlatform } = createPlatformSetupConfigs(homeDir));
-    configFile = new ConfigFile([], '5.2.0', 'abcdef12', null, null);
-    assertPlatformCanStart = assertPlatformCanStartFactory(homeDir, defaultConfigs, configFile);
+    assertPlatformCanStart = assertPlatformCanStartFactory(homeDir, defaultConfigs);
   });
 
   afterEach(() => {
@@ -365,67 +362,36 @@ describe('assertPlatformCanStart', () => {
   });
 
   /**
-   * @param {string} name
-   * @return {Config} a config of the local group, as `setup local` names them
-   */
-  function localGroupConfig(name) {
-    const config = new Config(name, defaultConfigs.get('local').getStoredOptions());
-    config.set('group', 'local');
-
-    return config;
-  }
-
-  /**
-   * @return {Config} local_1 without a node key
+   * @return {Config} local_1 of the local group, without a node key
    */
   function keylessLocalMember() {
-    const config = localGroupConfig('local_1');
+    const config = new Config('local_1', defaultConfigs.get('local').getStoredOptions());
+    config.set('group', 'local');
     config.set('core.masternode.operator.privateKey', '1bbac8e471b80050ea44afb514c87cb1ef03db5c66e643c7d6e0f09b29bedbc0');
     config.set('externalIp', '127.0.0.1');
 
     return config;
   }
 
-  // Platform-only setup does not support a group, whose identities belong to
-  // the whole group.
-  it('should send a local group member without a key to the group setup', () => {
+  // The local group's reset removes every config whose group is local, and
+  // `setup local` builds its configs again by name, wherever they are now: a
+  // member moved to another group would be taken back and given a new key.
+  // Neither is advised; the remedy is the setting itself, as for every other
+  // masternode.
+  it('should name the settings to fix for a local group member without a key, and advise no reset or setup', () => {
     const config = keylessLocalMember();
-    configFile.setConfigs([config, localGroupConfig('local_2'), localGroupConfig('local_seed')]);
-
-    const refusal = refusalOf(config);
-
-    expect(refusal.message).to.include('dashmate group reset --group local --hard')
-      .and.include('dashmate setup local');
-    expect(refusal.message).to.not.include('setup --platform');
-  });
-
-  // `setup local` builds three masternodes unless told otherwise.
-  it('should give the group setup the number of masternodes to build again', () => {
-    const config = keylessLocalMember();
-    configFile.setConfigs([
-      config, ...['local_2', 'local_3', 'local_4', 'local_seed'].map(localGroupConfig),
-    ]);
-
-    expect(refusalOf(config).remedy).to.match(/ {2}dashmate setup local --node-count=4$/);
-  });
-
-  // The group's reset selects every config whose group is local, and one
-  // created from local_seed inherits it. `setup local` would not build it
-  // again.
-  it('should not advise the group rebuild while the local group holds a config setup local does not build', () => {
-    const config = keylessLocalMember();
-    const observer = localGroupConfig('observer');
-    observer.set('core.masternode.enable', false);
-    configFile.setConfigs([config, localGroupConfig('local_seed'), observer]);
 
     const refusal = refusalOf(config);
 
     expect(refusal.problem).to.equal('this masternode has no Platform node key');
     expect(refusal.remedy).to.include('platform.drive.tenderdash.node.key')
       .and.include('platform.drive.tenderdash.node.id')
-      .and.include('dashmate config render --config local_1');
+      .and.include(homeDir.joinPath('config.json'))
+      .and.include('dashmate config render --config local_1')
+      .and.include('dashmate config set platform.enable false --config local_1');
     expect(refusal.remedy).to.not.include('reset --')
-      .and.not.include('dashmate setup');
+      .and.not.include('dashmate setup')
+      .and.not.include('config set platform.drive.tenderdash.node');
   });
 
   // A hard reset removes a member of a group setup does not build, or a

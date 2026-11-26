@@ -18,9 +18,6 @@ import readSecretInput, { getReadableByOthersWarning } from '../util/readSecretI
 import isInteractiveSession from '../util/isInteractiveSession.js';
 import promptOrThrow from '../util/promptOrThrow.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
-import findLocalGroupConfigsNotRebuilt, {
-  renderLocalGroupSetupCommand,
-} from '../config/findLocalGroupConfigsNotRebuilt.js';
 import validateIPv4 from '../listr/prompts/validators/validateIPv4.js';
 import { readCertificateFilePair } from '../listr/prompts/validators/validateCertificateFilePaths.js';
 import createPortValidators, { findPortCollision } from '../listr/prompts/validators/createPortValidators.js';
@@ -598,19 +595,8 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
     }
 
     if (preset === PRESET_LOCAL) {
-      const notRebuilt = findLocalGroupConfigsNotRebuilt(configFile);
-      const unsupported = 'Platform-only setup does not support the local group: its identities,'
-        + ' ports, chain and peers belong to the whole group.';
-
-      if (notRebuilt.length > 0) {
-        throw new Error(`${unsupported} The group also holds ${notRebuilt.join(', ')}, which`
-          + ` \`dashmate setup local\` does not build: resetting the group would remove`
-          + ` ${notRebuilt.length === 1 ? 'it' : 'them'} for good.`);
-      }
-
-      throw new Error(`${unsupported} Set it up again with:\n`
-        + '  dashmate group reset --group local --hard\n'
-        + `  ${renderLocalGroupSetupCommand(configFile)}`);
+      throw new Error('Platform-only setup does not support the local group: its identities,'
+        + ' ports, chain and peers belong to the whole group.');
     }
 
     if (!PLATFORM_PRESETS.includes(preset)) {
