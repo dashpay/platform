@@ -400,7 +400,7 @@ pub(crate) async fn wait_after_broadcast<T>(
     wait.await.map_err(Error::into_unconfirmed)
 }
 
-fn broadcast_may_have_been_accepted(error: &Error) -> bool {
+pub(crate) fn broadcast_may_have_been_accepted(error: &Error) -> bool {
     match error {
         Error::StateTransitionResultUnconfirmed(_)
         | Error::AlreadyExists(_)
