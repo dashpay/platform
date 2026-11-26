@@ -20,6 +20,9 @@ import generateRandomString from '../src/util/generateRandomString.js';
 // the same Docker Hub repository as the name without it.
 const DOCKER_HUB_HOST = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\//;
 
+// A Tenderdash 2.0.0 prerelease image, as 5.1 prereleases stored it.
+const TENDERDASH_DEV_IMAGE = /^dashpay\/tenderdash:2\.0\.0-dev\.\d+$/;
+
 /**
  * Split a Core image reference into its repository, the Core major version its
  * tag names, and whether a digest pins it.
@@ -1955,6 +1958,19 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       // Runs for formats before 5.1.0-rc.2, including configs every earlier 5.1
       // prerelease stamped, up to 5.1.0-rc.1.
       '5.1.0-rc.2': (configFile) => {
+        // Move the Tenderdash 2.0.0-dev images 5.1 prereleases stored to the 2.0
+        // release line. Any other Tenderdash image is the operator's choice.
+        const tenderdashImage = base.getStored('platform.drive.tenderdash.docker.image');
+
+        Object.values(configFile.configs)
+          .forEach((options) => {
+            const tenderdashDocker = options.platform?.drive?.tenderdash?.docker;
+            if (typeof tenderdashDocker?.image === 'string'
+              && TENDERDASH_DEV_IMAGE.test(tenderdashDocker.image.replace(DOCKER_HUB_HOST, ''))) {
+              tenderdashDocker.image = tenderdashImage;
+            }
+          });
+
         // Platform 5.1 needs Dash Core 24. Move nodes on any Core 23 image of
         // dashpay/dashd to the Core image this release ships: the `23` tag earlier
         // releases stored, and any Core 23 release or build an operator pinned

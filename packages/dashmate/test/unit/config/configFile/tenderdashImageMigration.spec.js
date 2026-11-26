@@ -21,9 +21,42 @@ describe('Tenderdash image migration', () => {
   const getMigrations = getConfigFileMigrationsFactory(null, defaults);
   const migrateConfigFile = migrateConfigFileFactory(getMigrations);
 
-  it('should use the Tenderdash 2.0.0-dev.3 image for new configurations', () => {
-    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.3');
+  it('should use the Tenderdash 2.0 image for new configurations', () => {
+    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0');
   });
+
+  for (const fromVersion of ['5.1.0-dev.2', '5.1.0-rc.1']) {
+    it(`should move Tenderdash 2.0.0-dev images to 2.0 from config format ${fromVersion}`, () => {
+      const image = (tag) => ({ platform: { drive: { tenderdash: { docker: { image: tag } } } } });
+      const configFileData = {
+        configFormatVersion: fromVersion,
+        configs: {
+          dev3: image('dashpay/tenderdash:2.0.0-dev.3'),
+          dev1: image('dashpay/tenderdash:2.0.0-dev.1'),
+          dockerHub: image('docker.io/dashpay/tenderdash:2.0.0-dev.2'),
+          exact: image('dashpay/tenderdash:2.0.0'),
+          major: image('dashpay/tenderdash:2'),
+          devSuffix: image('dashpay/tenderdash:2.0.0-dev.3-custom'),
+          otherRepository: image('example/tenderdash:2.0.0-dev.3'),
+          digest: image(`dashpay/tenderdash:2.0.0-dev.3@sha256:${'0'.repeat(64)}`),
+          withoutPlatform: {},
+        },
+      };
+
+      const { configs } = migrateConfigFile(configFileData, fromVersion, version);
+      const imageOf = (name) => configs[name].platform.drive.tenderdash.docker.image;
+
+      for (const name of ['dev3', 'dev1', 'dockerHub']) {
+        expect(imageOf(name)).to.equal('dashpay/tenderdash:2.0');
+      }
+      expect(imageOf('exact')).to.equal('dashpay/tenderdash:2.0.0');
+      expect(imageOf('major')).to.equal('dashpay/tenderdash:2');
+      expect(imageOf('devSuffix')).to.equal('dashpay/tenderdash:2.0.0-dev.3-custom');
+      expect(imageOf('otherRepository')).to.equal('example/tenderdash:2.0.0-dev.3');
+      expect(imageOf('digest')).to.equal(`dashpay/tenderdash:2.0.0-dev.3@sha256:${'0'.repeat(64)}`);
+      expect(configs.withoutPlatform).to.deep.equal({});
+    });
+  }
 
   it('should produce a config format past the Tenderdash migration while the package is at dev.1', () => {
     expect(semver.gte(getConfigFormatVersion(getMigrations(), '5.1.0-dev.1'), '5.1.0-dev.2')).to.be.true();
@@ -45,7 +78,7 @@ describe('Tenderdash image migration', () => {
 
       for (const name of ['mainnet', 'testnet']) {
         expect(migrated.configs[name].platform.drive.tenderdash.docker.image)
-          .to.equal('dashpay/tenderdash:2.0.0-dev.3');
+          .to.equal('dashpay/tenderdash:2.0');
       }
       expect(migrated.configs.withoutPlatform).to.deep.equal({});
       expect(migrated.configs.withoutDocker).to.deep.equal({
