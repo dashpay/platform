@@ -11,6 +11,8 @@ describe('removeLegacyReportStagingDirs', () => {
   let outsideDir;
 
   /**
+   * A directory laid out the way earlier versions staged a report
+   *
    * @param {string} name
    * @param {string} [root]
    * @return {string}
@@ -19,9 +21,23 @@ describe('removeLegacyReportStagingDirs', () => {
     const dir = path.join(root, name);
 
     fs.mkdirSync(path.join(dir, 'core'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'date.txt'), name.slice('dashmate-report-'.length));
+    fs.writeFileSync(path.join(dir, 'systemInfo.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'dashmateConfig.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'dashmateVersion.txt'), '4.0.0');
     fs.writeFileSync(path.join(dir, 'core', 'stdOut.txt'), 'log line\n');
+    fs.writeFileSync(path.join(dir, 'core', 'dockerInspect.json'), '{}');
 
     return dir;
+  }
+
+  /**
+   * @param {string} dir
+   * @return {number}
+   */
+  function modeOf(dir) {
+    // eslint-disable-next-line no-bitwise
+    return fs.lstatSync(dir).mode & 0o777;
   }
 
   /**
@@ -235,12 +251,44 @@ describe('removeLegacyReportStagingDirs', () => {
   // A directory tree is removed only once nobody else can change it while it
   // is being removed, and only if all of it is on the same file system.
   describe('what a staging directory holds', () => {
+    // The same name is what unpacking an earlier report next to its archive
+    // produces, and that copy can hold notes of the operator's. Only what an
+    // earlier version wrote while staging is removed.
+    [
+      ['a file of its own at the top', (dir) => fs.writeFileSync(path.join(dir, 'notes.txt'), 'mine')],
+      ['a file of its own beside the samples', (dir) => fs.writeFileSync(path.join(dir, 'core', 'notes.txt'), 'mine')],
+      ['a directory deeper than the samples', (dir) => fs.mkdirSync(path.join(dir, 'core', 'more'))],
+      ['a collection date other than its name', (dir) => fs.writeFileSync(path.join(dir, 'date.txt'), 'edited')],
+      ['no collection date', (dir) => fs.rmSync(path.join(dir, 'date.txt'))],
+      ['a link among the samples', (dir) => fs.symlinkSync(outsideDir, path.join(dir, 'core', 'peers.json'))],
+      ['a directory no service had', (dir) => {
+        fs.mkdirSync(path.join(dir, 'scratch'));
+        fs.writeFileSync(path.join(dir, 'scratch', 'status.txt'), 'mine');
+      }],
+      ['a sample of one service under another', (dir) => fs.writeFileSync(path.join(dir, 'core', 'genesis.json'), '{}')],
+    ].forEach(([description, change]) => {
+      it(`should leave a directory with ${description} in place and closed to others`, () => {
+        const dir = makeStagingDir(legacyName);
+
+        change(dir);
+
+        const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+        expect(removed).to.be.empty();
+        expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
+          .to.deep.equal([[dir, true]]);
+        expect(fs.existsSync(dir)).to.be.true();
+        expect(modeOf(dir)).to.equal(0o700);
+      });
+    });
+
     it('should remove a tree that others could write to, once only its owner can', function it() {
       const dir = makeStagingDir(legacyName);
       const writable = path.join(dir, 'core');
 
       fs.chmodSync(writable, 0o777);
 
+      const openSync = this.sinon.spy(fs, 'openSync');
       const fchmodSync = this.sinon.spy(fs, 'fchmodSync');
       const readdirSync = this.sinon.spy(fs, 'readdirSync');
 
@@ -250,23 +298,45 @@ describe('removeLegacyReportStagingDirs', () => {
 
       // Closed to others before what it holds is read, through the directory
       // itself rather than its path, so a link put in its place is not followed
-      const closed = fchmodSync.withArgs(this.sinon.match.number, 0o755);
+      const opened = openSync.withArgs(writable).firstCall;
+      const closed = fchmodSync.getCalls().find((call) => call.calledAfter(opened));
 
-      expect(closed).to.have.been.calledOnce();
-      expect(closed.firstCall).to.have.been.calledBefore(readdirSync.withArgs(writable).firstCall);
+      // eslint-disable-next-line no-bitwise
+      expect(opened.args[1] & fs.constants.O_NOFOLLOW).to.not.equal(0);
+      expect(closed.args).to.deep.equal([opened.returnValue, 0o700]);
+      expect(closed).to.have.been.calledBefore(readdirSync.withArgs(writable).firstCall);
     });
 
-    it('should leave a tree alone if another user owns anything in it', function it() {
+    // What it cannot remove it still keeps from other users: the samples in
+    // it are what the report masks
+    // Its owner can still write to it, so it can still hold samples
+    it('should close and remove a staging directory its owner could not read', () => {
+      const dir = makeStagingDir(legacyName);
+
+      fs.chmodSync(dir, 0o355);
+
+      const { removed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.deep.equal([dir]);
+    });
+
+    it('should leave a tree another user owns part of, closed to others', function it() {
       const dir = makeStagingDir(legacyName);
       const entry = path.join(dir, 'core', 'stdOut.txt');
+
+      fs.chmodSync(dir, 0o755);
+      fs.chmodSync(path.join(dir, 'core'), 0o755);
 
       stubLstatOf(this.sinon, entry, { uid: process.getuid() + 1 });
 
       const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
 
       expect(removed).to.be.empty();
-      expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
+      expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
+        .to.deep.equal([[dir, true]]);
       expect(fs.existsSync(entry)).to.be.true();
+      expect(modeOf(dir)).to.equal(0o700);
+      expect(modeOf(path.join(dir, 'core'))).to.equal(0o700);
     });
 
     it('should leave a tree alone if part of it is on another file system', function it() {

@@ -38,32 +38,6 @@ The command collects diagnostic information and creates an archive, with the nod
     const tasks = new Listr(
       [
         {
-          // Earlier versions left each report's files in the temp directory.
-          // Removed whether or not a new archive is created, since they are
-          // not part of it.
-          title: 'Remove files left by earlier reports',
-          task: async (ctx, task) => {
-            const { removed, failed } = removeLegacyReportStagingDirs(os.tmpdir());
-
-            const lines = [
-              ...removed.map((dir) => `Removed ${dir}`),
-              ...failed.map(({ dir, error }) => `Could not remove ${dir}: ${error.message}`),
-            ];
-
-            if (lines.length === 0) {
-              task.skip('Nothing to remove');
-
-              return;
-            }
-
-            // eslint-disable-next-line no-param-reassign
-            task.output = lines.join('\n');
-          },
-          options: {
-            persistentOutput: true,
-          },
-        },
-        {
           task: async (ctx, task) => {
             const agreement = await task.prompt({
               type: 'toggle',
@@ -97,6 +71,34 @@ The command collects diagnostic information and creates an archive, with the nod
             if (!agreement) {
               throw new Error('Archive creation was declined');
             }
+          },
+        },
+        {
+          // Earlier versions left each report's files in the temp directory.
+          // Only removed once the operator has agreed to a report, so nothing
+          // is removed by a run they decline.
+          title: 'Remove files left by earlier reports',
+          task: async (ctx, task) => {
+            const { removed, failed } = removeLegacyReportStagingDirs(os.tmpdir());
+
+            const lines = [
+              ...removed.map((dir) => `Removed ${dir}`),
+              ...failed.map(({ dir, error, restricted }) => (
+                `Left ${dir}, ${restricted ? 'closed to other users' : 'could not close it to other users'}: ${error.message}`
+              )),
+            ];
+
+            if (lines.length === 0) {
+              task.skip('Nothing to remove');
+
+              return;
+            }
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = lines.join('\n');
+          },
+          options: {
+            persistentOutput: true,
           },
         },
         {

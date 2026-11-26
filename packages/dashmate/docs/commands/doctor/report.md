@@ -31,7 +31,7 @@ Logs can still contain other sensitive text, such as earlier passwords or short 
 
 Before creating the archive, the command asks for your confirmation. The generated archive is compressed with TAR/GZIP and saved to the current working directory.
 
-Each run also removes the files that earlier dashmate versions left in the system temporary directory while creating reports (`dashmate-report-<date>` directories owned by the current user), and lists what it removed.
+Once you confirm, the command also removes the files that earlier dashmate versions left in the system temporary directory while creating reports: `dashmate-report-<date>` directories owned by the current user that hold only the files those versions wrote. A directory under that name that holds anything else, such as an unpacked report with your own notes in it, is left in place and closed to other users. The command lists what it removed and what it left.
 
 You can use this archive to analyze the node's condition yourself or send it to the Dash Core Group support team for assistance.
 The archive is particularly useful when seeking help on issues that are difficult to diagnose.
