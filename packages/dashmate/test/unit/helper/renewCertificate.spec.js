@@ -3,6 +3,7 @@ import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import renewCertificate from '../../../src/helper/renewCertificate.js';
+import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import obtainLetsEncryptCertificateTaskFactory from '../../../src/listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import obtainZeroSSLCertificateTaskFactory from '../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
@@ -232,6 +233,46 @@ describe('renewCertificate', () => {
       .to.equal('pending-certificate-id-00000000000');
     expect(persisted.get('platform.gateway.ssl.enabled')).to.be.true();
     expect(writeConfigTemplates).to.not.have.been.called();
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+  });
+
+  // The helper image is pinned to the CLI that started it, so after a manual
+  // CLI upgrade it keeps running the older build against a config the newer
+  // one migrated. Renewing there would save its state under the newer stamp
+  // and render every service file from its own templates.
+  it('should refuse to renew from an older helper before asking for a certificate', async function it() {
+    const data = JSON.parse(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8'));
+    data.configFormatVersion = '4.2.0';
+    const migrated = JSON.stringify(data);
+    fs.writeFileSync(homeDir.joinPath('config.json'), migrated);
+
+    const olderHelperRepository = new ConfigFileJsonRepository(
+      (raw) => raw,
+      homeDir,
+      () => null,
+      '4.1.0',
+    );
+    const obtainCertificateTask = this.sinon.stub();
+    const writeConfigTemplates = this.sinon.stub();
+
+    const refusal = await renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: olderHelperRepository,
+      writeConfigTemplates,
+    }).then(() => null, (e) => e);
+
+    expect(refusal).to.be.an('error').with.property('message').that.matches(/updated by a newer dashmate/);
+    // Recorded as a cause a restart fixes, not as one that may have spent an
+    // issuance: nothing was asked of the authority.
+    expect(classifyRenewalFailure(refusal, { provider: 'zerossl' }).code)
+      .to.equal(RENEWAL_FAILURE_CODES.HELPER_OUTDATED);
+
+    expect(obtainCertificateTask).to.not.have.been.called();
+    expect(writeConfigTemplates).to.not.have.been.called();
+    expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(migrated);
     expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
   });
 

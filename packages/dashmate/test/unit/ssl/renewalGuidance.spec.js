@@ -58,6 +58,17 @@ describe('deriveRenewalGuidance', () => {
     });
   });
 
+  // The restarted helper renews by itself, so a working certificate only waits
+  // for the restart. A broken one cannot wait that long.
+  it('should wait for a restart only while the certificate still works', () => {
+    const record = failed(RENEWAL_FAILURE_CODES.HELPER_OUTDATED);
+
+    expect(deriveRenewalGuidance({ record, isCertificateUsable: true }).safeAction)
+      .to.equal(SAFE_ACTION.WAIT_AFTER_LOCAL_FIX);
+    expect(deriveRenewalGuidance({ record, isCertificateUsable: false }).safeAction)
+      .to.equal(SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX);
+  });
+
   it('should let an outstanding issuance outrank a cause that could otherwise be repaired', () => {
     const record = failed(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE, {
       issuanceSpentAt: new Date().toISOString(),

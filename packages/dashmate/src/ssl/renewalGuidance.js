@@ -71,8 +71,9 @@ function safeActionForRemedy(remedy, isCertificateUsable) {
 
   // Waiting is only ever advised on a signal this repository raised itself,
   // and it stays conditional: once the certificate in use has stopped working,
-  // an hour of waiting is a live outage.
-  if (remedy === REMEDY_CLASS.WAIT) {
+  // an hour of waiting is a live outage. A restart is the same: the restarted
+  // helper renews by itself, but not before a broken certificate costs an outage.
+  if (remedy === REMEDY_CLASS.WAIT || remedy === REMEDY_CLASS.RESTART_NODE) {
     return isCertificateUsable
       ? SAFE_ACTION.WAIT_AFTER_LOCAL_FIX
       : SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX;

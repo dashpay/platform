@@ -377,6 +377,43 @@ describe('renderCertificateGuidance', () => {
     });
   });
 
+  // Obtaining by hand repairs this certificate, but the helper that refused to
+  // renew it is still the older one and would fail the next renewal too.
+  it('should tell the operator to restart the node when the helper is outdated', () => {
+    config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+    const output = render({ isNodeRunning: true, renewal: guidanceFor({ code: 'HELPER_OUTDATED' }) });
+
+    expect(output).to.match(/^ {6}dashmate restart\b/m);
+    // The repair first: a restart reloads whatever pair is on disk.
+    expect(output.indexOf('ssl obtain')).to.be.within(0, output.indexOf('dashmate restart'));
+  });
+
+  it('should still tell the operator to restart while a request is withheld', () => {
+    config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+    const output = render({
+      isNodeRunning: true,
+      renewal: guidanceFor({ code: 'HELPER_OUTDATED', issuance: 'uncertain' }),
+    });
+
+    expect(output).to.match(/^ {6}dashmate restart\b/m);
+    // Nothing here repairs the pair on disk first, and a restart reloads it.
+    expect(output).to.contain('Once the certificate files on disk work');
+    expect(output).to.not.match(/^ {6}dashmate ssl obtain\b/m);
+  });
+
+  // `restart` refuses a node that is not running. Starting it is already
+  // advised, and that replaces the helper as well.
+  it('should not tell the operator to restart a stopped node', () => {
+    config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+    const output = render({ isNodeRunning: false, renewal: guidanceFor({ code: 'HELPER_OUTDATED' }) });
+
+    expect(output).to.not.contain('dashmate restart');
+    expect(output).to.match(/^ {6}dashmate start\b/m);
+  });
+
   it('should say when images failed to pull', () => {
     expect(render({ pull: { ok: true, failed: 2, total: 7 } }))
       .to.contain('2 of 7 failed');
