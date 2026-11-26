@@ -132,6 +132,9 @@ export default async function archiveSamples(samples, folderPath, config) {
       {
         cwd: archiveDir,
         gzip: true,
+        // Without this every entry records the name and ids of the account
+        // that ran the report, which the samples themselves have masked
+        portable: true,
         file: path.join(folderPath, `${archiveName}.tar.gz`),
       },
       fs.readdirSync(archiveDir),

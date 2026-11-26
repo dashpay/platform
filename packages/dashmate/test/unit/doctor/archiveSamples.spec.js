@@ -293,4 +293,27 @@ describe('archiveSamples', () => {
       expect(entries.map((entry) => path.posix.normalize(entry))).to.not.include('.');
     });
   });
+
+  // The operator's name is masked out of every sample, and the archive format
+  // would otherwise record it anyway as the owner of each file in it.
+  it('should not record who owns the archived files', async () => {
+    samples.setServiceInfo('core', 'stdOut', 'log line\n');
+
+    await archiveSamples(samples, archiveRoot, config);
+
+    const owners = [];
+
+    await list({
+      file: path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`),
+      onReadEntry: (entry) => owners.push([
+        entry.header.uname || null,
+        entry.header.gname || null,
+        entry.header.uid ?? null,
+        entry.header.gid ?? null,
+      ]),
+    });
+
+    expect(owners).to.not.be.empty();
+    expect(owners).to.deep.equal(owners.map(() => [null, null, null, null]));
+  });
 });
