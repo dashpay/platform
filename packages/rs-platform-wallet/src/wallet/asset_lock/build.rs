@@ -4058,6 +4058,97 @@ mod tests {
         }
     }
 
+    /// The pool stored with a recipient lock's row is the one a resume signs
+    /// with: the funding account of the lock's type, with the credit-output
+    /// address the build used marked used. Any other pool in the same write
+    /// would not let a restarted wallet rederive that key.
+    #[tokio::test]
+    async fn should_store_the_signing_pool_with_a_recipient_lock_row() {
+        use crate::changeset::{
+            AssetLockRecipient, PersistenceCapabilities, PlatformAddressRecipients,
+        };
+        use crate::wallet::asset_lock::funding_account::funding_account_type;
+        use dpp::address_funds::PlatformAddress;
+
+        let platform_addresses =
+            PlatformAddressRecipients::new([(PlatformAddress::P2pkh([0x47; 20]), None)].into())
+                .unwrap();
+        for (funding_type, recipient, kind) in [
+            (
+                AssetLockFundingType::IdentityTopUpNotBound,
+                AssetLockRecipient::Identity(dpp::prelude::Identifier::from([0x47; 32])),
+                "identity",
+            ),
+            (
+                AssetLockFundingType::AssetLockAddressTopUp,
+                AssetLockRecipient::PlatformAddresses(platform_addresses.clone()),
+                "Platform-address",
+            ),
+            (
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                AssetLockRecipient::Shielded([0x47; 43]),
+                "shielded",
+            ),
+        ] {
+            let broadcaster = Arc::new(CountingOkBroadcaster::default());
+            let persistence = Arc::new(CapturingPersistence {
+                commits_inline: true,
+                capabilities_override: Some(
+                    PersistenceCapabilities::WALLET_DRAIN
+                        .union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
+                        .union(PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING)
+                        .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS),
+                ),
+                ..Default::default()
+            });
+            let (manager, signer) = funded_asset_lock_manager_with_persistence(
+                Arc::clone(&broadcaster),
+                Arc::clone(&persistence),
+            )
+            .await;
+
+            let (path, out_point) = manager
+                .broadcast_funded_asset_lock_tracked(
+                    super::AssetLockBuildAmount::Exact(1_000_000),
+                    &ASSET_LOCK_FUNDING_SOURCES,
+                    0,
+                    funding_type,
+                    0,
+                    Some(recipient),
+                    &signer,
+                    None,
+                    None,
+                    |_| {},
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
+
+            let stored = persistence.stored.lock().unwrap();
+            let row_write = stored
+                .iter()
+                .find(|cs| {
+                    cs.asset_locks
+                        .as_ref()
+                        .is_some_and(|locks| locks.asset_locks.contains_key(&out_point))
+                })
+                .unwrap_or_else(|| panic!("{kind}: the row was stored"));
+            let account_type = funding_account_type(funding_type, 0);
+            let signing_address = row_write
+                .account_address_pools
+                .iter()
+                .filter(|pool| pool.account_type == account_type)
+                .flat_map(|pool| pool.addresses.iter())
+                .find(|info| info.path == path)
+                .unwrap_or_else(|| {
+                    panic!("{kind}: the row's write holds the {account_type:?} pool with {path}")
+                });
+            assert!(
+                signing_address.is_used(),
+                "{kind}: the credit-output address is stored used"
+            );
+        }
+    }
+
     /// A refused unbound top-up hands its funding index back: nothing was
     /// sent and nothing on chain would ever mark the index used, so kept, each
     /// failed pool store would use up one of the account's few pre-generated
