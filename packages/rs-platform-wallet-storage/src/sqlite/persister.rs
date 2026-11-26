@@ -1569,10 +1569,11 @@ impl PlatformWalletPersistence for SqlitePersister {
             .map_err(PersistenceError::from)?;
         let mut conn = self.conn().map_err(PersistenceError::from)?;
         self.flush_locked(&mut conn, &wallet_id)?;
+        // Past the commit above, a failure or refusal dropped nothing buffered.
         let refusal = match schema::asset_locks::assign_identity_recipient(
             &mut conn, &wallet_id, &out_point, &identity,
         )
-        .map_err(PersistenceError::from)?
+        .map_err(|e| PersistenceError::from(e).after_buffer_committed())?
         {
             IdentityRecipientAssignment::Assigned
             | IdentityRecipientAssignment::AlreadyRecorded => return Ok(()),
@@ -1585,7 +1586,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         Err(PersistenceError::backend_with_kind(
             PersistenceErrorKind::Constraint,
             format!("identity recipient not assigned at {out_point}: {refusal}"),
-        ))
+        )
+        .after_buffer_committed())
     }
 
     /// The wallet's buffered writes are committed first, under the same
@@ -1612,7 +1614,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             index,
             address.script_pubkey().as_bytes(),
         )
-        .map_err(PersistenceError::from)
+        .map_err(|e| PersistenceError::from(e).after_buffer_committed())
     }
 
     /// In both flush modes: the connection every drain takes is held from
@@ -2090,14 +2092,21 @@ fn load_wallet_snapshot(
             hex::encode(wallet_id)
         ))
     })?;
-    restore_asset_lock_funding_pools(&mut wallet_info, conn, &wallet_id, network, ctx).map_err(
-        |e| {
-            PersistenceError::backend(format!(
-                "asset-lock funding pool rehydration failed for {}: {e}",
-                hex::encode(wallet_id)
-            ))
-        },
-    )?;
+    let funding_issuance_floors = restore_asset_lock_funding_pools(
+        &wallet,
+        &mut wallet_info,
+        &core_state.records,
+        conn,
+        &wallet_id,
+        network,
+        ctx,
+    )
+    .map_err(|e| {
+        PersistenceError::backend(format!(
+            "asset-lock funding pool rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
     if account_manifest
         .provider
         .iter()
@@ -2125,9 +2134,7 @@ fn load_wallet_snapshot(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
-        // This backend restores pools through `apply_persisted_core_state`,
-        // which reports no unreachable funding rows.
-        funding_issuance_floors: Default::default(),
+        funding_issuance_floors,
     })
 }
 

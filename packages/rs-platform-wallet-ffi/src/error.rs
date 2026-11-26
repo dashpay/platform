@@ -838,27 +838,6 @@ pub enum PlatformWalletFFIResultCode {
     /// signing): the top-up of any identity and the deprecated external and
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
-    /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
-    /// identity top-up lock records no identity to pay (it was rebuilt from
-    /// the chain, for example after a restore from the seed, and its credit
-    /// output names none), so no resume pays it: it may have been meant for
-    /// someone else's identity. Nothing was submitted or paid. Not retryable
-    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
-    /// is recoverable once the user assigns it a recipient
-    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
-    /// resume to that identity proceeds. One whose Platform consumption is
-    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
-    /// is refused with [`Self::ErrorAssetLockConsumptionUnknown`] (82).
-    ErrorAssetLockRecipientUnknown = 81,
-    /// Maps `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
-    /// identity top-up lock that records no recipient and whose Platform
-    /// consumption is unknown (rebuilt from the chain after a restore, status
-    /// `RecoveredFromChain`) cannot be assigned a recipient, since Platform
-    /// may already have used it. Nothing was assigned; the lock stays
-    /// tracked. Distinct from [`Self::ErrorAssetLockAlreadyConsumed`] (24),
-    /// a confirmed use: this one is unknown, and the funds may still be
-    /// unspent on Platform.
-    ErrorAssetLockConsumptionUnknown = 82,
 
     /// Maps `PlatformWalletError::BalanceHistoryInconsistentHeights`: the
     /// balance history read kept getting one page of Platform's address
@@ -912,6 +891,42 @@ pub enum PlatformWalletFFIResultCode {
     /// `platform_wallet_manager_local_shielded_balance_snapshot` still
     /// reports its busy case as [`Self::ErrorWalletOperation`] (6).
     ErrorShieldedBalanceBusy = 87,
+
+    /// Maps `PlatformWalletError::ShieldedMerkleWitnessUnavailable`: no
+    /// checkpoint of the wallet's local commitment tree covers a selected note
+    /// yet (its position was appended after the latest checkpoint). Raised
+    /// while the spend is assembled, before any proof is built or anything
+    /// broadcast, and the note reservations are released, so nothing left the
+    /// wallet: RETRYABLE after the next shielded sync, which checkpoints the
+    /// tree at its size. Only that case: a store that cannot produce the path
+    /// (unreadable, poisoned, or a covered position the tree cannot witness)
+    /// is `ShieldedStoreError`, which keeps the generic code. Returned by every
+    /// note spend (transfer, unshield, withdrawal, identity top-up and identity
+    /// create from the pool, private document create). Distinct from
+    /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
+    ErrorShieldedMerkleWitnessUnavailable = 88,
+
+    /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
+    /// identity top-up lock records no identity to pay (it was rebuilt from
+    /// the chain, for example after a restore from the seed, and its credit
+    /// output names none), so no resume pays it: it may have been meant for
+    /// someone else's identity. Nothing was submitted or paid. Not retryable
+    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
+    /// is recoverable once the user assigns it a recipient
+    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
+    /// resume to that identity proceeds. One whose Platform consumption is
+    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
+    /// is refused with [`Self::ErrorAssetLockConsumptionUnknown`] (90).
+    ErrorAssetLockRecipientUnknown = 89,
+    /// Maps `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
+    /// identity top-up lock that records no recipient and whose Platform
+    /// consumption is unknown (rebuilt from the chain after a restore, status
+    /// `RecoveredFromChain`) cannot be assigned a recipient, since Platform
+    /// may already have used it. Nothing was assigned; the lock stays
+    /// tracked. Distinct from [`Self::ErrorAssetLockAlreadyConsumed`] (24),
+    /// a confirmed use: this one is unknown, and the funds may still be
+    /// unspent on Platform.
+    ErrorAssetLockConsumptionUnknown = 90,
 
     /// The named thing does not exist.
     ///
@@ -1190,6 +1205,13 @@ fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIRe
     }
 }
 
+/// The message of a shielded spend refused until the next shielded sync
+/// (codes 19 and 88): what a host can show the user, with the wallet's own
+/// diagnostic after it.
+pub(crate) fn retry_after_sync_message(error: &PlatformWalletError) -> String {
+    format!("Wallet is still syncing to a confirmed state — try again shortly. ({error})")
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
         // Preserve the SDK's submission phase before any diagnostic can be
@@ -1279,6 +1301,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            // Raised before the proof and the broadcast: nothing was sent, so
+            // it keeps a retryable code instead of the catch-all a host must
+            // read as possibly sent.
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
             }
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
@@ -1629,7 +1657,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }) => PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive,
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        PlatformWalletFFIResult::err(code, error.to_string()).with_consensus_of(&error)
+        // A spend refused until the next sync says so in words a host can
+        // show, as the spend contract (`map_spend_result`) words it.
+        let message = match &error {
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
+                retry_after_sync_message(&error)
+            }
+            _ => error.to_string(),
+        };
+        PlatformWalletFFIResult::err(code, message).with_consensus_of(&error)
     }
 }
 
@@ -2993,10 +3029,10 @@ mod tests {
     }
 
     #[test]
-    fn should_pin_the_unassigned_unbound_top_up_code_at_81() {
+    fn should_pin_the_unassigned_unbound_top_up_code_at_89() {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorAssetLockRecipientUnknown as i32,
-            81
+            89
         );
         let result: PlatformWalletFFIResult =
             PlatformWalletError::AssetLockRecipientUnknown(dashcore::OutPoint::null()).into();
@@ -3008,10 +3044,10 @@ mod tests {
     }
 
     #[test]
-    fn should_pin_the_consumption_unknown_code_at_82() {
+    fn should_pin_the_consumption_unknown_code_at_90() {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorAssetLockConsumptionUnknown as i32,
-            82
+            90
         );
         let result: PlatformWalletFFIResult =
             PlatformWalletError::AssetLockConsumptionUnknown(dashcore::OutPoint::null()).into();
@@ -3738,6 +3774,23 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
         );
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A note no checkpoint covers yet is refused before the proof and the
+    /// broadcast, so it reaches the host by its own retryable code and code
+    /// 19's wording, never as the catch-all a host reads as possibly sent.
+    #[test]
+    fn should_report_an_unavailable_merkle_witness_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable("position 7".to_string()),
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+        );
+        assert_eq!(result.code as u32, 88);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
+        assert!(message.contains("try again shortly"), "{message}");
     }
 
     /// A public contact request a loaded wallet refuses until its private

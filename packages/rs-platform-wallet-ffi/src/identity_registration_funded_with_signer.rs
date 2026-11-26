@@ -26,7 +26,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::identity_top_up::catch_top_up_panic;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, ensure_not_on_runtime};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use rs_sdk_ffi::MnemonicResolverHandle;
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
 /// even when the lock records it. An unbound
 /// top-up lock pays only the identity it recorded: another identity is
 /// `ErrorAssetLockRecipientMismatch` (61), and a lock recording none is
-/// `ErrorAssetLockRecipientUnknown` (81). For crash recovery prefer
+/// `ErrorAssetLockRecipientUnknown` (89). For crash recovery prefer
 /// [`platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
 /// which takes no identity, pays the one the lock is for (in this wallet or
 /// not), and resumes bound and unbound top-up locks alike.
@@ -374,7 +374,7 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
 /// `out_new_balance` its proved new balance. Errors: `ErrorAssetLockNotTracked`
 /// (23), `ErrorAssetLockAlreadyConsumed` (24), `ErrorIdentityNotFound` (7)
 /// for a bound lock whose identity the wallet has not loaded yet (resume
-/// once identities are synced), `ErrorAssetLockRecipientUnknown` (81) for an
+/// once identities are synced), `ErrorAssetLockRecipientUnknown` (89) for an
 /// unbound lock recording no identity (assign one first with
 /// [`platform_wallet_assign_identity_top_up_recipient`]), and the funding
 /// mismatch error for a lock that is not an identity top-up.
@@ -427,6 +427,11 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
     check_ptr!(out_new_balance);
     *out_identity_id = [0; 32];
     *out_new_balance = 0;
+    // `block_on_worker` cannot block a runtime thread (a host calling from a
+    // wallet callback): refused before anything is resumed.
+    if let Err(result) = ensure_not_on_runtime("identity top-up resume") {
+        return result;
+    }
     let out_point = dashcore::OutPoint::from(&*out_point);
     let core_signer_addr = core_signer_handle as usize;
 
@@ -478,19 +483,22 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
 /// `identity_recipient_unassigned`) may already have been used on Platform,
 /// which the wallet cannot tell. It is assigned only when
 /// `acknowledge_unknown_consumption` is `true`, after the user has been told
-/// so; with `false` it is `ErrorAssetLockConsumptionUnknown` (82). Platform
+/// so; with `false` it is `ErrorAssetLockConsumptionUnknown` (90). Platform
 /// uses an outpoint once: if it already used this one, the resume is refused
 /// there and reports `ErrorAssetLockAlreadyConsumed` (24), and nothing is paid
 /// twice.
 ///
 /// The persister records the recipient alone, in a round of its own, and
 /// only once that commits can a resume pay it. On success the identity is
-/// assigned; on any error nothing was stored, and any identity may be
-/// assigned again.
+/// assigned. A refused backend write (a persistence error) leaves no
+/// assignment, and any identity may be assigned again. Other errors do not
+/// establish that the lock is unassigned (the round may have committed before
+/// the lock was found swept, consumed or recording another identity); read
+/// the tracked outpoint before offering another recipient.
 ///
 /// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint or one the
 /// wallet stopped tracking meanwhile, `ErrorAssetLockAlreadyConsumed` (24) for
-/// a consumed lock, `ErrorAssetLockConsumptionUnknown` (82) as above,
+/// a consumed lock, `ErrorAssetLockConsumptionUnknown` (90) as above,
 /// `ErrorAssetLockRecipientMismatch` (61) when the lock already records a
 /// different identity (assigning the recorded one again is a no-op), and a
 /// persistence error when the host's persister does not keep identity
@@ -510,6 +518,11 @@ pub unsafe extern "C" fn platform_wallet_assign_identity_top_up_recipient(
     identity_id: *const [u8; 32],
     acknowledge_unknown_consumption: bool,
 ) -> PlatformWalletFFIResult {
+    // `block_on_worker` cannot block a runtime thread (a host calling from a
+    // wallet callback): refused before anything is assigned.
+    if let Err(result) = ensure_not_on_runtime("identity top-up recipient assignment") {
+        return result;
+    }
     // A panic must not reach this `extern "C"` frame. An assignment pays
     // nothing, so a plain wallet-operation error is enough.
     catch_assignment_panic("identity top-up recipient assignment", || {
@@ -678,6 +691,71 @@ mod topup_existing_lock_guard_tests {
             "{message}"
         );
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// Called from a callback this library invokes, the caller is inside the
+    /// runtime the new top-up exports block on. They refuse instead of
+    /// panicking there (the iOS profiles abort on a panic), with their outputs
+    /// left zeroed.
+    #[test]
+    fn should_refuse_a_top_up_call_made_from_inside_the_runtime() {
+        let op = zero_out_point();
+        let id = [7u8; 32];
+        let (assigned, resumed, resumed_outputs, topped_up, topped_up_outputs) =
+            crate::runtime::runtime().block_on(async {
+                let assigned =
+                    unsafe { platform_wallet_assign_identity_top_up_recipient(0, &op, &id, false) };
+                let mut identity = [9u8; 32];
+                let mut balance = 9u64;
+                let resumed = unsafe {
+                    platform_wallet_resume_identity_top_up_to_recorded_recipient_signer(
+                        0,
+                        &op,
+                        dangling_core_signer(),
+                        &mut identity,
+                        &mut balance,
+                    )
+                };
+                let mut new_balance = 9u64;
+                let mut built = OutPointFFI {
+                    txid: [9u8; 32],
+                    vout: 9,
+                };
+                let topped_up = unsafe {
+                    crate::identity_top_up::platform_wallet_top_up_external_identity_with_funding_signer(
+                        0,
+                        &id,
+                        100_000,
+                        0,
+                        dangling_core_signer(),
+                        &mut new_balance,
+                        &mut built,
+                    )
+                };
+                (
+                    assigned,
+                    resumed,
+                    (identity, balance),
+                    topped_up,
+                    (new_balance, built.txid, built.vout),
+                )
+            });
+        assert_eq!(resumed_outputs, ([0; 32], 0));
+        assert_eq!(topped_up_outputs, (0, [0; 32], 0));
+        for mut result in [assigned, resumed, topped_up] {
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            );
+            let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned();
+            assert!(
+                message.contains("from inside a wallet callback"),
+                "{message}"
+            );
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+        }
     }
 
     #[test]

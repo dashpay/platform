@@ -901,6 +901,10 @@ fn should_assign_only_the_identity_recipient_of_a_stored_row() {
             Some(PersistenceErrorKind::Constraint),
             "{refused:?}"
         );
+        assert!(
+            refused.left_buffer_committed(),
+            "a refusal after the buffer's commit dropped nothing: {refused:?}"
+        );
     }
     drop(persister);
 
@@ -943,9 +947,13 @@ fn should_write_buffered_changes_before_an_assignment() {
         },
     );
 
-    assert!(persister
+    let refused = persister
         .assign_asset_lock_identity_recipient(w, swept, Identifier::from([0x33; 32]))
-        .is_err());
+        .expect_err("the swept row is gone");
+    assert!(
+        refused.left_buffer_committed(),
+        "the sweep before it was written, not dropped: {refused:?}"
+    );
     assert!(!persister.buffer_has_changeset_for_test(&w));
     assert_eq!(persister.asset_lock_status(&w, &swept).unwrap(), None);
 }

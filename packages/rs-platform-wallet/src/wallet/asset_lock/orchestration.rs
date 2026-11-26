@@ -561,6 +561,66 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.resolve_funding_checked(
+            funding,
+            funding_type,
+            destination_index,
+            recipient,
+            false,
+            asset_lock_signer,
+            on_built,
+            on_out_point,
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_with_is_timeout_fallback`] for a resume to the
+    /// Platform-address recipients the caller read from the lock's own row.
+    /// Unlike an external funding that names its own payees, the row the
+    /// resume claims must still record exactly these recipients: a row
+    /// recreated at the outpoint by an owned funding records none, and its
+    /// funds must not go to the old payees.
+    pub(crate) async fn resolve_funding_to_recorded_recipients<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        recipient: Option<AssetLockRecipient>,
+        asset_lock_signer: &AS,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
+        self.resolve_funding_checked(
+            funding,
+            funding_type,
+            0,
+            recipient,
+            true,
+            asset_lock_signer,
+            None,
+            |_| {},
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_observing_out_point`], where
+    /// `platform_addresses_must_be_recorded` refuses an existing
+    /// Platform-address lock whose row records no recipients.
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_funding_checked<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        recipient: Option<AssetLockRecipient>,
+        platform_addresses_must_be_recorded: bool,
+        asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_out_point: impl FnOnce(OutPoint) + Send,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
@@ -693,15 +753,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     funding_type,
                     consume_invitation_voucher,
                 );
+                let requested_identity = match &recipient {
+                    Some(AssetLockRecipient::Identity(identity)) => Some(*identity),
+                    _ => None,
+                };
+                let requested_platform_addresses = match &recipient {
+                    Some(AssetLockRecipient::PlatformAddresses(recipients)) => Some(recipients),
+                    _ => None,
+                };
                 if !invitation_reclaim {
-                    let requested_identity = match &recipient {
-                        Some(AssetLockRecipient::Identity(identity)) => Some(*identity),
-                        _ => None,
-                    };
-                    let requested_platform_addresses = match &recipient {
-                        Some(AssetLockRecipient::PlatformAddresses(recipients)) => Some(recipients),
-                        _ => None,
-                    };
                     validate_existing_asset_lock_role(
                         out_point,
                         funding_type,
@@ -711,18 +771,55 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             recorded_identity,
                             requested_platform_addresses,
                             recorded_platform_addresses: recorded_platform_addresses.as_ref(),
+                            platform_addresses_must_be_recorded,
                         },
                         actual_funding_type,
                         actual_identity_index,
                     )?;
                 }
+                // Checked again on the row the resume claims, under the same
+                // guard: the row read above may since have been removed by
+                // rejection cleanup and recreated at this outpoint by a build
+                // for another recipient.
+                let authorize = |current: &TrackedResumeMetadata| {
+                    if current.status.is_consumed() {
+                        return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+                    }
+                    if authorized_invitation_reclaim(
+                        current.funding_type,
+                        funding_type,
+                        consume_invitation_voucher,
+                    ) {
+                        return Ok(());
+                    }
+                    validate_existing_asset_lock_role(
+                        out_point,
+                        funding_type,
+                        destination_index,
+                        RecipientCheck {
+                            requested_identity,
+                            recorded_identity: current.identity_recipient,
+                            requested_platform_addresses,
+                            recorded_platform_addresses: current
+                                .platform_address_recipients
+                                .as_ref(),
+                            platform_addresses_must_be_recorded,
+                        },
+                        current.funding_type,
+                        current.identity_index,
+                    )
+                };
                 on_out_point(out_point);
                 // 300s is a window for the record or a mined-height lookup to
                 // prove the lock, not a finality timeout: on expiry the caller
                 // falls back to an unbounded ChainLock wait, so a resumed
                 // broadcast lock never fails just because IS was slow.
                 match self
-                    .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
+                    .resume_authorized_asset_lock(
+                        &out_point,
+                        Some(Duration::from_secs(300)),
+                        &authorize,
+                    )
                     .await
                 {
                     Ok((proof, path)) => Ok(FundingResolution::Resolved(ResolvedFunding {
@@ -769,6 +866,9 @@ struct RecipientCheck<'a> {
     recorded_identity: Option<Identifier>,
     requested_platform_addresses: Option<&'a PlatformAddressRecipients>,
     recorded_platform_addresses: Option<&'a PlatformAddressRecipients>,
+    /// A resume to the recipients the caller read from the row: the row must
+    /// still record them, so a row that records none is refused too.
+    platform_addresses_must_be_recorded: bool,
 }
 
 /// Authorize a tracked one-shot output for the operation that is about to
@@ -782,9 +882,11 @@ struct RecipientCheck<'a> {
 /// external funding) serves only a funding to exactly those addresses:
 /// anything else is
 /// [`PlatformWalletError::AssetLockPlatformAddressRecipientMismatch`]. One
-/// that records none serves any Platform-address funding: it is an owned
-/// funding or an external one tracked before recipients were recorded, which
-/// the wallet cannot tell apart, so the host picks the payees. Invitation vouchers never pass this generic validator—the
+/// that records none serves any Platform-address funding that names its own
+/// payees: it is an owned funding or an external one tracked before
+/// recipients were recorded, which the wallet cannot tell apart, so the host
+/// picks the payees. A resume to the recipients read from the row
+/// (`platform_addresses_must_be_recorded`) refuses it. Invitation vouchers never pass this generic validator—the
 /// explicit reclaim authorization above is the only bypass.
 fn validate_existing_asset_lock_role(
     out_point: OutPoint,
@@ -799,6 +901,7 @@ fn validate_existing_asset_lock_role(
         recorded_identity,
         requested_platform_addresses,
         recorded_platform_addresses,
+        platform_addresses_must_be_recorded,
     } = recipients;
     let eligible = match expected_funding_type {
         AssetLockFundingType::IdentityRegistration => {
@@ -824,6 +927,12 @@ fn validate_existing_asset_lock_role(
     }
     if actual_funding_type == AssetLockFundingType::AssetLockAddressTopUp {
         return match recorded_platform_addresses {
+            None if platform_addresses_must_be_recorded => {
+                Err(PlatformWalletError::InvalidParameter(format!(
+                    "asset lock {out_point} no longer records the recipients it was resumed \
+                     to: the row was recreated by another funding, so nothing was paid"
+                )))
+            }
             None => Ok(()),
             Some(recorded) if requested_platform_addresses == Some(recorded) => Ok(()),
             Some(recorded) => Err(

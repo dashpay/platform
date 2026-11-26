@@ -270,6 +270,120 @@ pub fn insert_derived_funding_address(
     Ok(())
 }
 
+const MARK_FUNDING_ADDRESS_USED_SQL: &str = "INSERT INTO core_address_pool \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11, NULL) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, pool_type, address_index) \
+     DO UPDATE SET used = 1, reserved_at = NULL";
+
+/// Store the used mark of an address a funding account saw used on chain:
+/// a row is added if none is stored at its index, and a stored one is marked
+/// used, nothing else about it changed.
+///
+/// Sync marks a funding address used on finding a lock that pays it, and no
+/// pool snapshot need follow before the wallet closes. Without the mark a
+/// restored pool would hand that key out again for the next lock.
+pub fn mark_funding_address_used(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+    address_index: u32,
+    script: &[u8],
+    public_key: Option<&PublicKeyType>,
+) -> Result<(), WalletStorageError> {
+    if !is_asset_lock_funding_account(account_type) {
+        return Ok(());
+    }
+    if script.is_empty() {
+        return Err(WalletStorageError::EmptyPoolAddressScript {
+            account_type: accounts::account_type_db_label(account_type),
+            address_index,
+        });
+    }
+    let (public_key, key_type) = match public_key {
+        Some(key @ PublicKeyType::ECDSA(bytes)) if bytes.len() == ECDSA_PUBLIC_KEY_LEN => {
+            (Some(bytes.as_slice()), Some(key_type_to_i64(key)))
+        }
+        _ => (None, None),
+    };
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    tx.prepare_cached(MARK_FUNDING_ADDRESS_USED_SQL)?
+        .execute(params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+            pool_type_to_i64(pool_type),
+            i64::from(address_index),
+            script,
+            public_key,
+            key_type,
+        ])?;
+    Ok(())
+}
+
+/// One stored funding-address row: `(address_index, script, public_key, used)`,
+/// the public key only when an ECDSA key of the right width is stored.
+pub type FundingPoolRow = (u32, Vec<u8>, Option<Vec<u8>>, bool);
+
+/// Load every stored row of one funding account's pool, ordered by index,
+/// whether or not it carries key material.
+///
+/// Older writers stored the addresses sync derived without a public key, and
+/// those rows still say how far the pool reached and which indices were
+/// used; the restore takes the key from the account xpub where it can.
+pub fn load_funding_pool_rows(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+) -> Result<Vec<FundingPoolRow>, WalletStorageError> {
+    let account_index = i64::from(accounts::account_index(account_type));
+    let key_class = i64::from(accounts::account_key_class(account_type));
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    let account_type = accounts::account_type_db_label(account_type);
+    let mut stmt = conn.prepare(
+        "SELECT address_index, length(script), script, key_type, length(public_key), \
+                public_key, used FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND account_index = ?4 AND key_class = ?5 \
+           AND user_identity_id = ?6 AND friend_identity_id = ?7 \
+         ORDER BY address_index",
+    )?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        account_type,
+        pool_type_to_i64(pool_type),
+        account_index,
+        key_class,
+        user_identity_id.as_slice(),
+        friend_identity_id.as_slice(),
+    ])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let address_index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get::<_, i64>(0)?,
+        )?;
+        blob::check_size(row.get::<_, i64>(1)?)?;
+        let script = row.get::<_, Vec<u8>>(2)?;
+        let ecdsa_key = row.get::<_, Option<i64>>(3)? == Some(KEY_TYPE_ECDSA)
+            && row.get::<_, Option<i64>>(4)? == Some(ECDSA_PUBLIC_KEY_LEN as i64);
+        let public_key = if ecdsa_key {
+            row.get::<_, Option<Vec<u8>>>(5)?
+        } else {
+            None
+        };
+        out.push((address_index, script, public_key, row.get(6)?));
+    }
+    Ok(out)
+}
+
 const RELEASE_UNSENT_ADDRESS_SQL: &str = "UPDATE core_address_pool \
         SET used = 0, reserved_at = NULL \
      WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
