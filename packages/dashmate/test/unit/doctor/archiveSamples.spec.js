@@ -215,6 +215,26 @@ describe('archiveSamples', () => {
       });
     });
 
+    // The outer URL's own escapes can change case while the inner ones stay
+    // as the config writes them
+    it("should scrub a nested URL's credential when a log changes the case of the outer escapes only", async () => {
+      const inner = 'https://innerUser:inner%2F:Password7Qx@inner.example.com/';
+      const outer = `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}`;
+
+      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl', outer);
+      samples.setDashmateConfig(obfuscateConfig(config));
+
+      const quoted = outer.replace(/%(?!25)[0-9A-F]{2}/g, (escape) => escape.toLowerCase());
+
+      expect(quoted).to.contain('inner%252F%3aPassword7Qx');
+
+      samples.setServiceInfo('gateway', 'stdOut', `lego: directory ${quoted} unreachable\n`);
+
+      const archived = await archiveAndRead();
+
+      expect(archived).to.not.contain('Password7Qx');
+    });
+
     // Masking one secret must not hide part of another from the search: each
     // is looked for in the text as it was, and every match is masked
     it('should mask the whole of two secrets that overlap in the text', async () => {
