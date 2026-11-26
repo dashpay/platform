@@ -973,12 +973,13 @@ describe('collectSamplesTaskFactory', () => {
     function useCollector(sinon, {
       validateLetsEncryptCertificate = sinon.stub().resolves({}),
       checkGatewayCertificate = checkGatewayCertificateFactory(homeDir),
+      tenderdashRequest = sinon.stub().resolves({}),
     }) {
       collectSamplesTask = collectSamplesTaskFactory(
         dockerCompose,
         sinon.stub().returns(rpcClient),
         sinon.stub().resolves('127.0.0.1'),
-        sinon.stub().returns({ request: sinon.stub().resolves({}) }),
+        sinon.stub().returns({ request: tenderdashRequest }),
         getServiceList,
         sinon.stub().resolves({}),
         homeDir,
@@ -988,6 +989,62 @@ describe('collectSamplesTaskFactory', () => {
         new RenewalRecordRepository(homeDir),
       );
     }
+
+    // Doctor decides on the masternode's state and on whether the node ID
+    // registered for it is the one Tenderdash has, live and when it reads a
+    // report back. A secret spelled like the state, or like part of the ID,
+    // must not change either verdict; the rest of Core's answer is still
+    // scrubbed.
+    [
+      ['with only a saved node ID', () => ({ id: deriveTenderdashNodeId(generateTenderdashNodeKey()) })],
+      ['with a node key', () => {
+        const key = generateTenderdashNodeKey();
+
+        return { id: deriveTenderdashNodeId(key), key };
+      }],
+    ].forEach(([name, makeNode]) => {
+      it(`should keep the masternode state and node IDs when a secret is spelled like them, ${name}`, async function it() {
+        const node = makeNode();
+        const masternodeStatus = readCoreRpcFixture('masternode-status-evonode.json');
+
+        masternodeStatus.state = 'POSE_BANNED';
+        masternodeStatus.status = 'Banned, see POSE_BANNED';
+        masternodeStatus.dmnState.platformNodeID = node.id;
+
+        config.set('core.masternode.enable', true);
+        config.set('platform.drive.tenderdash.node', node);
+        config.set('core.rpc.users.dapi.password', 'POSE_BANNED');
+        config.set('core.rpc.users.tenderdash.password', node.id.slice(4, 16));
+
+        rpcClient.masternode.withArgs('status').resolves({ result: masternodeStatus });
+
+        const tenderdashRequest = this.sinon.stub().resolves({});
+        tenderdashRequest.withArgs('status').resolves({ result: { node_info: { id: node.id } } });
+
+        useCollector(this.sinon, { tenderdashRequest });
+
+        const archivePath = await collectAndArchive();
+        const restored = await unarchiveSamplesFactory(
+          () => [SERVICE, { name: 'core' }, { name: 'drive_tenderdash' }],
+        )(archivePath);
+
+        [samples, restored].forEach((collected) => {
+          const where = collected === samples ? 'live' : 'from the archive';
+          const configProblems = analyseConfig(collected).map((problem) => problem.getDescription());
+
+          expect(analyseCoreFactory()(collected).map((problem) => problem.getDescription()), where)
+            .to.include('The masternode has been banned due to failing Proof-of-Service checks.');
+          expect(configProblems, where)
+            .to.not.include('Platform Node ID doesn\'t match the one found in the ProReg transaction');
+          expect(configProblems, where).to.not.include(
+            'Tenderdash is running with a node ID other than the one found in the ProReg transaction',
+          );
+        });
+
+        expect(restored.getServiceInfo('core', 'masternodeStatus').status)
+          .to.equal(`Banned, see ${'*'.repeat('POSE_BANNED'.length)}`);
+      });
+    });
 
     // Doctor chooses the problem to report by the SSL check's error code, live
     // and when it reads a report back, so a secret spelled like the code must

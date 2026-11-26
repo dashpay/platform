@@ -339,6 +339,43 @@ describe('archiveSamples', () => {
       });
     });
 
+    // Core's and Tenderdash's answers keep only the facts doctor decides on,
+    // found by where they are in the answer and by looking like what they
+    // are; everything else in them is scrubbed
+    it('should keep only the facts of an RPC answer that are where and what they should be', async () => {
+      const secret = 'plantedFactSecret7Qx';
+      const nodeId = 'a'.repeat(40);
+
+      config.set('core.rpc.users.tenderdash.password', secret);
+
+      samples.setServiceInfo('core', 'masternodeStatus', {
+        state: 'POSE_BANNED',
+        'dmnState.platformNodeID': secret,
+        '': { state: secret },
+        dmnState: { platformNodeID: nodeId, ownerAddress: secret },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'status', {
+        value: { result: { node_info: { id: `${nodeId} ${secret}` } } },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', nodeId);
+
+      const restored = await unarchiveSamplesFactory(() => [{ name: 'core' }, { name: 'drive_tenderdash' }])(
+        await archiveSamples(samples, archiveRoot, config),
+      );
+
+      const masked = '*'.repeat(secret.length);
+
+      expect(restored.getServiceInfo('core', 'masternodeStatus')).to.deep.equal({
+        state: 'POSE_BANNED',
+        'dmnState.platformNodeID': masked,
+        '': { state: masked },
+        dmnState: { platformNodeID: nodeId, ownerAddress: masked },
+      });
+      expect(restored.getServiceInfo('drive_tenderdash', 'status').value.result.node_info.id)
+        .to.equal(`${nodeId} ${masked}`);
+      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(nodeId);
+    });
+
     // A secret can be spelled like a field name or be all digits. Masking it
     // in the serialized text would rename every such key - the config then
     // fails validation on the way back in - or break numbers that contain it.

@@ -5,10 +5,11 @@ import fs from 'fs';
 import { pipeline } from 'stream/promises';
 import { create } from 'tar';
 import createSecretScrubber from './createSecretScrubber.js';
-import getSampleFreeTextFields from './getSampleFreeTextFields.js';
+import getSampleFreeTextFields, { getSampleFactFilter } from './getSampleFreeTextFields.js';
 
 function writeSampleFile(archiveDir, service, filename, data, scrub) {
   const freeTextFields = service ? getSampleFreeTextFields(service, filename) : null;
+  const isFact = service ? getSampleFactFilter(service, filename) : null;
 
   if (data === undefined || data === null) {
     return;
@@ -22,11 +23,13 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
   const dataType = typeof data;
 
   if (dataType === 'string') {
-    buffer = scrub(data);
+    buffer = isFact?.([], data) ? data : scrub(data);
     filetype = '.txt';
   } else {
     // What a free-text field holds is free text all the way down
     const freeText = new WeakSet();
+    // The keys that lead to each object, for the facts named by them
+    const paths = new WeakMap();
 
     // Scrubbed value by value rather than as text, so keys, numbers and the
     // structure are left alone and doctor can still read the sample back. In
@@ -34,23 +37,29 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
     buffer = JSON.stringify(
       data,
       function scrubFreeText(key, value) {
+        const holderPath = isFact ? paths.get(this) : undefined;
+        // The sample itself is reached through the key of an outer wrapper
+        const valuePath = holderPath ? [...holderPath, key] : [];
+
         const isFreeText = freeTextFields === null
           || freeText.has(this)
           || freeTextFields.includes(key);
 
-        if (!isFreeText) {
+        if (typeof value === 'object' && value !== null) {
+          if (isFact) {
+            paths.set(value, valuePath);
+          }
+
+          if (isFreeText) {
+            freeText.add(value);
+          }
+
           return value;
         }
 
-        if (typeof value === 'string') {
-          return scrub(value);
-        }
-
-        if (typeof value === 'object' && value !== null) {
-          freeText.add(value);
-        }
-
-        return value;
+        return typeof value === 'string' && isFreeText && !isFact?.(valuePath, value)
+          ? scrub(value)
+          : value;
       },
       2,
     );
