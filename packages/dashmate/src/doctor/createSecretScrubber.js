@@ -13,7 +13,12 @@ import maskOperatorIdentity, { getOperatorIdentity } from '../util/maskOperatorI
  */
 const MIN_SCRUBBED_SECRET_LENGTH = 8;
 
-const PERCENT_ESCAPE = /%[0-9A-Fa-f]{2}/g;
+/**
+ * A percent-escape, also as it is written once its `%` is escaped again
+ * (`%2f` as `%252f`): a URL in a query value is encoded once more, its own
+ * escapes included
+ */
+const PERCENT_ESCAPE = /%(?:25)*[0-9A-Fa-f]{2}/g;
 
 /**
  * @param {string} text

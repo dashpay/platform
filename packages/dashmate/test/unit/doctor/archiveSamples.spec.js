@@ -189,6 +189,32 @@ describe('archiveSamples', () => {
       });
     });
 
+    // A URL in a query value is encoded once more, its own escapes included,
+    // and a log quoting the outer URL can write those in either case too
+    [
+      ['lower', '%2f', '%252F'],
+      ['upper', '%2F', '%252f'],
+    ].forEach(([written, inConfig, inLog]) => {
+      it(`should scrub a nested URL's credential written with ${written} case escapes whatever case a log uses`, async () => {
+        const inner = `https://innerUser:inner${inConfig}Password7Qx@inner.example.com/`;
+        const outer = `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}`;
+
+        config.set('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl', outer);
+        samples.setDashmateConfig(obfuscateConfig(config));
+
+        const quoted = outer.replace(encodeURIComponent(inConfig), inLog);
+
+        expect(quoted).to.contain(`inner${inLog}Password7Qx`);
+
+        samples.setServiceInfo('gateway', 'stdOut', `lego: directory ${quoted} unreachable\n`);
+
+        const archived = await archiveAndRead();
+
+        expect(archived).to.not.contain('Password7Qx');
+        expect(archived).to.contain('lego: directory https://acme.example.com/directory?upstream=');
+      });
+    });
+
     // Masking one secret must not hide part of another from the search: each
     // is looked for in the text as it was, and every match is masked
     it('should mask the whole of two secrets that overlap in the text', async () => {
