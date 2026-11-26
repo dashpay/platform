@@ -187,7 +187,9 @@ describe('DockerCompose service selection', () => {
         .to.deep.equal(['--profile', 'core', '--profile', 'platform']);
       expect(compose.execCompose).to.have.been.calledOnce();
       expect(compose.execCompose.firstCall.args[0]).to.equal('config');
-      expect(compose.execCompose.firstCall.args[1]).to.deep.equal(['drive_tenderdash', 'quorum_list']);
+      // Given names, Compose describes only them and what they depend on, and
+      // a service that mounts the same volume would go unseen.
+      expect(compose.execCompose.firstCall.args[1]).to.deep.equal([]);
     });
 
     /**
@@ -273,6 +275,79 @@ describe('DockerCompose service selection', () => {
         {
           drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
           drive_abci_alias: { name: 'dashmate_project_node_drive_abci_data' },
+        },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    /**
+     * @param {Object<string, Object[]>} serviceMounts - each service's volumes
+     * @param {Object} volumes - the project's volume definitions
+     */
+    function describeServices(serviceMounts, volumes) {
+      sandbox.stub(compose, 'execCompose').resolves({
+        exitCode: 0,
+        err: '',
+        out: JSON.stringify({
+          name: 'dashmate_project_node',
+          services: Object.fromEntries(Object.entries(serviceMounts)
+            .map(([name, mounts]) => [name, { volumes: mounts }])),
+          volumes,
+        }),
+      });
+    }
+
+    // Docker knows a volume by its name, and two keys can give the same one.
+    // Declaring it external under one key says the operator manages it, even
+    // though the other key is a plain one Compose created it for.
+    it('should leave out a volume one of its keys declares external', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeServices(
+        {
+          drive_abci: [
+            { type: 'volume', source: 'drive_abci_data', target: '/data' },
+            { type: 'volume', source: 'drive_abci_managed', target: '/managed' },
+          ],
+        },
+        {
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+          drive_abci_managed: { name: 'dashmate_project_node_drive_abci_data', external: true },
+        },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
+    });
+
+    // Removing a volume a service outside the reset also mounts would take
+    // that service's data, Core's included, once nothing holds it in use.
+    it('should leave out a volume a service it does not reset mounts too', async () => {
+      dockerVolumeLabels.dashmate_project_node_shared_data = composeLabels('dashmate_project_node', 'shared_data');
+      // Compose created it for the Platform key, starting that service first.
+      dockerVolumeLabels.dashmate_project_node_shared_cache = composeLabels('dashmate_project_node', 'drive_abci_cache');
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeServices(
+        {
+          core: [
+            { type: 'volume', source: 'shared_data', target: '/shared' },
+            { type: 'volume', source: 'core_cache', target: '/cache' },
+          ],
+          drive_abci: [
+            { type: 'volume', source: 'shared_data', target: '/shared' },
+            { type: 'volume', source: 'drive_abci_cache', target: '/cache' },
+            { type: 'volume', source: 'drive_abci_data', target: '/data' },
+          ],
+        },
+        {
+          shared_data: { name: 'dashmate_project_node_shared_data' },
+          // Two keys for one volume, one for each service
+          core_cache: { name: 'dashmate_project_node_shared_cache' },
+          drive_abci_cache: { name: 'dashmate_project_node_shared_cache' },
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
         },
       );
 

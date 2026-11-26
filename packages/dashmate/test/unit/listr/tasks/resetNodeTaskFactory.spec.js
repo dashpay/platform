@@ -972,9 +972,12 @@ describe('resetNodeTaskFactory', () => {
         }
 
         if (command === 'config') {
+          // Given no names, Compose describes every service of the model.
+          const serviceNames = args.length > 0
+            ? [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
+            : [...PLATFORM_SERVICES, 'core', 'dashmate_helper', ...Object.keys(serviceVolumes)];
           const services = Object.fromEntries(
-            [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
-              .map((name) => [name, { volumes: serviceVolumes[name] }]),
+            serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
           );
 
           return {
@@ -1116,6 +1119,34 @@ describe('resetNodeTaskFactory', () => {
 
       expect(removedVolumes).to.have.members([
         'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+    });
+
+    // An override can give a Platform service a volume Core mounts too, or an
+    // external key for a volume a Platform key also names. Docker knows the
+    // volume by its name, and it is Platform data only when Platform alone
+    // uses it and nothing declares it external.
+    it('should keep a volume Core mounts too, or one any key declares external', async () => {
+      serviceVolumes.core = [
+        ...serviceVolumes.core,
+        { type: 'volume', source: 'core_shared', target: '/shared' },
+      ];
+      serviceVolumes.gateway = [
+        { type: 'volume', source: 'core_data', target: '/core' },
+        { type: 'volume', source: 'gateway_shared', target: '/shared' },
+        { type: 'volume', source: 'gateway_managed', target: '/managed' },
+      ];
+      createProjectVolumes();
+      volumeDefinitions.gateway_shared = { name: 'docker_core_shared' };
+      volumeDefinitions.gateway_managed = { name: 'docker_drive_abci_data', external: true };
+      // Created for the Platform key, as when Compose started the gateway first
+      dockerVolumeLabels.docker_core_shared['com.docker.compose.volume'] = 'gateway_shared';
+
+      await platformReset();
+
+      expect(removedVolumes).to.have.members([
         'docker_drive_tenderdash',
         'docker_rs-dapi-access-logs',
       ]);

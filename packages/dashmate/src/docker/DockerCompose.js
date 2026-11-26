@@ -476,21 +476,29 @@ export default class DockerCompose {
 
   /**
    * Get the Docker names of the volumes Compose created for the given services
+   * and that only they use
    *
-   * Compose also loads the services these depend on, so the project's volume
-   * list would include theirs (Core's data, for a Platform service that depends
-   * on Core). Only the given services' own mounts are read.
+   * Docker knows a volume by its name, and several keys of the Compose files
+   * can give the same one, so each check is on that name. The project's whole
+   * model is read, every profile given enabled: given service names, Compose
+   * describes only them and what they depend on, and the services that mount
+   * the same volume would go unseen.
+   *
+   * A volume is left out when any key that names it is external, since the
+   * operator manages it, and when a service other than the given ones mounts
+   * it under any key, Core included, since removing it would take that
+   * service's data.
    *
    * A mounted volume is not necessarily the project's own: an override can
-   * mount an external volume, or one that another project created under the
-   * same explicit name. Only a volume Docker labels as created by this project
-   * for that mount is returned, and an external one never is.
+   * mount one that another project created under the same explicit name. Only
+   * a volume Docker labels as created by this project for one of its keys is
+   * returned.
    *
    * @param {Config} config
    * @param {Object} options
    * @param {string[]} options.serviceNames
    * @param {string[]} [options.profiles] - Profiles to enable, so that every
-   *  named service is part of the model
+   *  service of the Compose files is part of the model
    * @return {Promise<string[]>}
    */
   async getVolumeNames(config, { serviceNames, profiles = [] }) {
@@ -502,7 +510,7 @@ export default class DockerCompose {
 
     let project;
     try {
-      const { out } = await dockerCompose.execCompose('config', serviceNames, {
+      const { out } = await dockerCompose.execCompose('config', [], {
         ...this.#createOptions(config, { profiles }),
         commandOptions: ['--format', 'json'],
       });
@@ -512,49 +520,64 @@ export default class DockerCompose {
       throw new DockerComposeError(e);
     }
 
-    const { services, volumes = {} } = project;
+    const { services = {}, volumes = {} } = project;
     const projectName = project.name ?? this.#generateEnvs(config).COMPOSE_PROJECT_NAME;
 
-    const mounts = serviceNames.flatMap((serviceName) => {
-      // Without the service its volumes are unknown, and skipping it would
-      // leave them in place unnoticed.
-      if (!services?.[serviceName]) {
+    // Without the service its volumes are unknown, and skipping it would
+    // leave them in place unnoticed.
+    serviceNames.forEach((serviceName) => {
+      if (!services[serviceName]) {
         throw new Error(`Docker Compose did not describe service '${serviceName}' in 'docker compose config'`);
       }
-
-      return services[serviceName].volumes ?? [];
     });
 
-    // Docker name to the mounted keys that name it
-    const candidates = new Map();
-    mounts
-      .filter((mount) => mount.type === 'volume' && mount.source)
-      .filter((mount) => !volumes[mount.source]?.external)
-      .forEach((mount) => {
-        const name = volumes[mount.source]?.name ?? `${projectName}_${mount.source}`;
+    const getDockerName = (key) => volumes[key]?.name ?? `${projectName}_${key}`;
 
-        candidates.set(name, (candidates.get(name) ?? new Set()).add(mount.source));
+    const getMountedKeys = (service) => (service.volumes ?? [])
+      .filter((mount) => mount.type === 'volume' && mount.source)
+      .map((mount) => mount.source);
+
+    // Docker name to every key of the model that names it
+    const keysByName = new Map();
+    new Set([...Object.keys(volumes), ...Object.values(services).flatMap(getMountedKeys)])
+      .forEach((key) => {
+        const name = getDockerName(key);
+
+        keysByName.set(name, (keysByName.get(name) ?? new Set()).add(key));
       });
 
+    const namesMountedElsewhere = new Set(Object.entries(services)
+      .filter(([serviceName]) => !serviceNames.includes(serviceName))
+      .flatMap(([, service]) => getMountedKeys(service))
+      .map(getDockerName));
+
+    const candidates = new Set(serviceNames
+      .flatMap((serviceName) => getMountedKeys(services[serviceName]))
+      .map(getDockerName));
+
     const ownedNames = await Promise.all(
-      Array.from(candidates).map(async ([name, keys]) => {
-        let labels;
-        try {
-          ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
-        } catch (e) {
-          // Never created, so nothing to remove
-          if (e.statusCode === 404) {
-            return null;
+      Array.from(candidates)
+        .filter((name) => !namesMountedElsewhere.has(name))
+        .filter((name) => !Array.from(keysByName.get(name))
+          .some((key) => volumes[key]?.external))
+        .map(async (name) => {
+          let labels;
+          try {
+            ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
+          } catch (e) {
+            // Never created, so nothing to remove
+            if (e.statusCode === 404) {
+              return null;
+            }
+
+            throw e;
           }
 
-          throw e;
-        }
+          const isOwned = labels?.['com.docker.compose.project'] === projectName
+            && keysByName.get(name).has(labels?.['com.docker.compose.volume']);
 
-        const isOwned = labels?.['com.docker.compose.project'] === projectName
-          && keys.has(labels?.['com.docker.compose.volume']);
-
-        return isOwned ? name : null;
-      }),
+          return isOwned ? name : null;
+        }),
     );
 
     return ownedNames.filter((name) => name !== null);
