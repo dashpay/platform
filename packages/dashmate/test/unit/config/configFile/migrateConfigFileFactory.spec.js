@@ -5,6 +5,7 @@ import { STOCK_PRERELEASE_IDS } from '../../../../src/config/stockImages.js';
 import Config from '../../../../src/config/Config.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
+import getConfigFormatVersion from '../../../../src/config/configFile/getConfigFormatVersion.js';
 import createDIContainer from '../../../../src/createDIContainer.js';
 import getConfigFileDataV0250 from '../../../../src/test/fixtures/getConfigFileDataV0250.js';
 
@@ -806,7 +807,8 @@ describe('migrateConfigFileFactory', () => {
       const migrated = migrateConfigFile(configFileData, '5.1.0-rc.1', release);
 
       expect(migrated.configs.mainnet.core.docker.image).to.equal('dashpay/dashd:24');
-      expect(migrated.configFormatVersion).to.equal(release);
+      expect(migrated.configFormatVersion)
+        .to.equal(getConfigFormatVersion(container.resolve('getConfigFileMigrations')(), release));
     });
   });
 
