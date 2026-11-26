@@ -149,6 +149,24 @@ describe('renderNodeKeyBackup', () => {
     expect(fs.readFileSync(path.join(dirPath, 'node-key'), 'utf8')).to.equal('earlier backup\n');
   });
 
+  // A failed export must leave nothing that passes for a backup, and
+  // nothing that keeps the next attempt from running.
+  it('should remove what a failed export wrote, so that it can run again', () => {
+    const { backupCommand } = renderNodeKeyBackup('testnet');
+    fs.writeFileSync(path.join(binDir, 'dashmate'), '#!/bin/sh\nprintf partial\nexit 1\n', { mode: 0o755 });
+
+    const { status } = runInShell(backupCommand);
+
+    expect(status).to.not.equal(0);
+    expect(fs.readdirSync(homeDir)).to.be.empty();
+
+    fs.writeFileSync(path.join(binDir, 'dashmate'), '#!/bin/sh\necho "key of $*"\n', { mode: 0o755 });
+
+    expect(runInShell(backupCommand).status).to.equal(0);
+    expect(fs.readFileSync(path.join(homeDir, 'node-key-testnet', 'node-key'), 'utf8'))
+      .to.equal('key of config get platform.drive.tenderdash.node.key --config testnet\n');
+  });
+
   // The umask is the operator's: left at 077, the reset that follows would
   // render files the Platform containers cannot read.
   it('should leave the operator\'s umask as it was', () => {

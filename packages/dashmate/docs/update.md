@@ -101,11 +101,11 @@ $ dashmate start
 
 `dashmate reset --platform --hard` also sets every Platform option back to the preset's defaults: the node key, the Platform ports, the certificate provider and the certificate. Nothing of Platform survives it. On mainnet it also disables Platform, because the mainnet preset does. Set Platform up again with `dashmate setup --platform`, which configures only Platform and leaves Core as it is.
 
-An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a new directory in your home directory, named after the config, that only you can open. `mkdir` refuses a directory or file of that name that exists, so an earlier backup is never lost or written into, and the parentheses keep the `umask` from staying set in your shell. Check that the backup is not empty before you reset, and keep it in that directory or another one only you can open:
+An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a new directory in your home directory, named after the config, that only you can open. `mkdir` refuses a directory or file of that name that exists, so an earlier backup is never lost or written into; a failed export removes what it wrote, so the command can run again; and the parentheses keep the `umask` from staying set in your shell. Check that the backup is not empty before you reset, and keep it in that directory or another one only you can open:
 
 ```bash
 $ dashmate stop --platform --config testnet            # skip if Platform is not running
-$ (umask 077 && mkdir -m 700 "$HOME"/node-key-testnet && set -o noclobber && dashmate config get platform.drive.tenderdash.node.key --config testnet > "$HOME"/node-key-testnet/node-key)
+$ (umask 077 && mkdir -m 700 "$HOME"/node-key-testnet && set -o noclobber && { dashmate config get platform.drive.tenderdash.node.key --config testnet > "$HOME"/node-key-testnet/node-key || { rm -f "$HOME"/node-key-testnet/node-key; rmdir "$HOME"/node-key-testnet; exit 1; }; })
 $ dashmate reset --platform --hard --config testnet
 $ dashmate setup --platform --config testnet --platform-node-key-file "$HOME"/node-key-testnet/node-key
 $ dashmate update --config testnet                     # now pulls the Platform images

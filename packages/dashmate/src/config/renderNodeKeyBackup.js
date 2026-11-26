@@ -20,7 +20,9 @@ export const NODE_KEY_PATH = 'platform.drive.tenderdash.node.key';
  *   noclobber keeps the redirection from writing into a file that exists. The
  *   umask stays inside the subshell: left in the operator's shell, it would
  *   give the files the reset renders next modes the Platform containers
- *   cannot read.
+ *   cannot read;
+ * - a failed export removes what it wrote and the directory it created, so
+ *   nothing that looks like a backup is left, and it can be run again.
  *
  * Config names are not restricted, so the directory name keeps only
  * characters that cannot change the path.
@@ -37,7 +39,8 @@ export default function renderNodeKeyBackup(configName) {
   return {
     filePath,
     backupCommand: `(umask 077 && mkdir -m 700 ${dirPath} && set -o noclobber`
-      + ` && dashmate config get ${NODE_KEY_PATH} ${flag} > ${filePath})`,
+      + ` && { dashmate config get ${NODE_KEY_PATH} ${flag} > ${filePath}`
+      + ` || { rm -f ${filePath}; rmdir ${dirPath}; exit 1; }; })`,
     setupCommand: `dashmate setup --platform ${flag} --platform-node-key-file ${filePath}`,
   };
 }
