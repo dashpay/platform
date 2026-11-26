@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use rusqlite::OptionalExtension;
 use tokio::sync::watch;
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
@@ -1167,6 +1168,25 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError::Storage(e.to_string()))
     }
 
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .is_some_and(|state| state.is_spent(nullifier)))
+    }
+
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note(nullifier))
+            .cloned())
+    }
+
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
         let Some(sw) = self.subwallets.get_mut(&id) else {
             return Ok(false);
@@ -1755,6 +1775,51 @@ impl ShieldedStore for FileBackedShieldedStore {
         position: u64,
         depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
+        // No checkpoint at `depth` covers a position the tree holds:
+        // `Ok(None)`, as the trait states. shardtree reports a position past the checkpoint as
+        // a `NotContained` query error, which the wrapper flattens into the
+        // same string as a storage failure, so the store reads the
+        // checkpoint's position first and keeps `Err` for failures. The
+        // table is the wrapper's own (`SqliteShardStore`), which
+        // `reset_commitment_tree` also wipes by name; read on the recovery
+        // connection, as the tree's connection is owned by the wrapper. Its
+        // writes commit as they return (WAL), and the caller's lock keeps a
+        // writer out between this read and the witness.
+        let checkpoint: Option<Option<u64>> = {
+            let conn = self.pending_conn.lock().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("recovery connection mutex poisoned: {e}"))
+            })?;
+            conn.query_row(
+                "SELECT position FROM commitment_tree_checkpoints \
+                 ORDER BY checkpoint_id DESC LIMIT 1 OFFSET ?1",
+                [depth as i64],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("read checkpoint at depth {depth}: {e}"))
+            })?
+            .map(|covered| covered.map(|p| p as u64))
+        };
+        let covered = match checkpoint {
+            Some(Some(covered)) => position <= covered,
+            // No checkpoint at this depth, or an empty-tree checkpoint.
+            None | Some(None) => false,
+        };
+        if !covered {
+            // `Ok(None)` only for a leaf the tree holds, which a later
+            // checkpoint covers. A position the tree does not hold (notes
+            // restored against a shorter tree, or a tree reset whose note
+            // purge failed) is not something a sync adds, so it is `Err`.
+            let size = self.tree_size()?;
+            if position >= size {
+                return Err(FileShieldedStoreError::Storage(format!(
+                    "note position {position} is not in the commitment tree (size {size})"
+                )));
+            }
+            return Ok(None);
+        }
+
         let tree = self
             .tree
             .lock()
@@ -2844,6 +2909,31 @@ mod tests {
             let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen 3");
             assert!(store.pending_redrives(id_b).expect("b").is_empty());
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A re-save of a stale unspent copy must not offer a spent note again.
+    #[test]
+    fn should_keep_a_note_spent_when_a_stale_copy_is_re_saved() {
+        let path = temp_tree_path("stale_resave_keeps_spent");
+        let id = SubwalletId::new([0x9; 32], 0);
+        let nf = [0x3B; 32];
+        let stale = ShieldedNote {
+            position: 0,
+            cmx: [0x1; 32],
+            nullifier: nf,
+            block_height: 10,
+            is_spent: false,
+            value: 500,
+            note_data: vec![0u8; 115],
+        };
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        store.save_note(id, &stale).expect("save");
+        assert!(store.mark_spent(id, &nf).expect("mark spent"));
+        store.save_note(id, &stale).expect("re-save");
+        assert!(store.is_note_spent(id, &nf).expect("read"));
+        assert!(store.get_unspent_notes(id).expect("read").is_empty());
+        drop(store);
         let _ = std::fs::remove_file(&path);
     }
 

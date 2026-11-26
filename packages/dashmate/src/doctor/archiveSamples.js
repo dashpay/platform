@@ -1,6 +1,8 @@
+import crypto from 'crypto';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { pipeline } from 'stream/promises';
 import { create } from 'tar';
 
 function writeSampleFile(archiveDir, service, filename, data) {
@@ -33,11 +35,16 @@ function writeSampleFile(archiveDir, service, filename, data) {
 /**
  * @param {Samples} samples
  * @param {string} folderPath
+ * @return {Promise<string>} - path of the created archive
  */
 export default async function archiveSamples(samples, folderPath) {
   const tempDir = os.tmpdir();
-  const archiveName = `dashmate-report-${samples.date.toISOString()}`;
+  // Windows does not allow ':' in file names. The exact collection time is
+  // kept in the archive's date sample, so the name only has to be readable.
+  const timestamp = samples.date.toISOString().replace(/:/g, '-');
+  const archiveName = `dashmate-report-${timestamp}`;
   const archiveDir = path.join(tempDir, archiveName);
+  const archiveFilePath = path.join(folderPath, `${archiveName}.tar.gz`);
 
   writeSampleFile(archiveDir, null, 'date', samples.date.toISOString());
   writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo());
@@ -53,12 +60,31 @@ export default async function archiveSamples(samples, folderPath) {
     }
   }
 
-  await create(
-    {
-      cwd: archiveDir,
-      gzip: true,
-      file: path.join(folderPath, `${archiveName}.tar.gz`),
-    },
-    ['.'],
-  );
+  // Packed under a name only this run uses and renamed once complete, so a
+  // failure never leaves a truncated archive under the report's name and never
+  // touches a file this run did not create.
+  const partialFilePath = `${archiveFilePath}.${crypto.randomBytes(4).toString('hex')}.partial`;
+
+  // Opened before the guard below: `wx` refuses a file that already exists,
+  // and a file this run did not create is not its own to remove. Created
+  // readable by its owner only, since it can be left behind when renaming and
+  // removing it both fail.
+  const output = fs.createWriteStream(null, { fd: fs.openSync(partialFilePath, 'wx', 0o600) });
+
+  try {
+    // pipeline closes the file when packing fails, so it can be removed
+    await pipeline(create({ cwd: archiveDir, gzip: true }, ['.']), output);
+
+    fs.renameSync(partialFilePath, archiveFilePath);
+  } catch (e) {
+    try {
+      fs.rmSync(partialFilePath, { force: true });
+    } catch {
+      // The packing or rename error is the one to report
+    }
+
+    throw e;
+  }
+
+  return archiveFilePath;
 }
