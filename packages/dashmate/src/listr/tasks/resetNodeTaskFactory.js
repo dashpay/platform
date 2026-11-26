@@ -235,6 +235,22 @@ export default function resetNodeTaskFactory(
               `  dashmate reset --config ${name} --hard`,
             ].join('\n'));
           }
+
+          // `group reset --hard` removes the local group's configs. With
+          // --platform that would take their Core settings too and leave Core's
+          // containers and data without a config.
+          if (ctx.isPlatformOnlyReset && ctx.removeConfig) {
+            const groupName = config.get('group');
+
+            throw new Error([
+              `Cannot reset Platform only and remove config '${config.getName()}': its Core`
+                + ' settings would go with it.',
+              'To remove Platform services and data and keep the configs:',
+              `  dashmate group reset --group ${groupName} --platform`,
+              'To remove the configs, Core included, and set the network up again:',
+              `  dashmate group reset --group ${groupName} --hard`,
+            ].join('\n'));
+          }
         },
       },
       {

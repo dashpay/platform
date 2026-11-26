@@ -242,6 +242,19 @@ describe('resetNodeTaskFactory', () => {
       expect(fs.existsSync(homeDir.joinPath('local', 'platform', 'drive', 'tenderdash', 'config.toml'))).to.be.true();
     });
 
+    // `group reset --hard` removes the local group's configs, and with
+    // --platform it removed them too, Core settings included, while Core's
+    // containers and data stayed behind without a config.
+    it('should refuse a hard Platform reset that would remove the config', async () => {
+      await expect(hardReset({ isPlatformOnlyReset: true, removeConfig: true, isForce: false }))
+        .to.be.rejectedWith(/'local_1'[\s\S]*dashmate group reset --group local --platform[\s\S]*dashmate group reset --group local --hard/);
+
+      expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+      expect(dockerCompose.rm).to.not.have.been.called();
+      expect(configFile.isConfigExists('local_1')).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('local_1', 'core', 'dash.conf'))).to.be.true();
+    });
+
     it('should remove only its own directory on a full hard reset', async () => {
       await hardReset({ isPlatformOnlyReset: false });
 
