@@ -11,7 +11,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
@@ -227,11 +227,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
-///   An entry owned by a non-funding account of `wallet_info` (keys-only or
-///   DashPay external) is skipped: no funding account can derive it, and
-///   the SQLite loader has already restored it on its own pool through
-///   `core_pool::restore_pools`. A caller that has not leaves that pool as
-///   it was; routing the entry to a funds account never marked it there.
+///   Every entry is offered to funding pools, including reciprocal DashPay
+///   receiving pools. A used address restored in a non-funding pool skips
+///   discovery unless a reciprocal receiving account exists, and suppresses
+///   `UnresolvedUtxoAddress`; it suppresses `OrphanedUtxoOwner` only when that
+///   pool belongs to the entry's named owner.
 /// - **InstantSend locks**: every `instant_locks_for_non_final_records`
 ///   entry is replayed through `mark_instant_send_utxos` after the UTXO
 ///   restore, so instant-locked funds come back instant-locked instead of
@@ -372,20 +372,37 @@ pub fn apply_persisted_core_state(
         .collect();
     // Suppress diagnostics only for addresses actually restored as used.
     // Contact addresses can also belong to a reciprocal receiving pool.
-    let mut non_funding_used = HashSet::new();
+    let mut non_funding_used: HashMap<_, Vec<OwningAccount>> = HashMap::new();
     let mut non_funding_only_used = HashSet::new();
     for account in wallet_info.accounts.all_accounts() {
         let account_type = account.managed_account_type();
         let kind = account_type.to_account_type();
-        if account_keys.contains(&owning_account_for(&kind)) {
+        let owner = owning_account_for(&kind);
+        if account_keys.contains(&owner) {
             continue;
         }
+        let has_reciprocal_receiver = match kind {
+            AccountType::DashpayExternalAccount {
+                user_identity_id,
+                friend_identity_id,
+                ..
+            } => wallet_info
+                .accounts
+                .dashpay_receival_accounts
+                .keys()
+                .any(|key| {
+                    key.user_identity_id == friend_identity_id
+                        && key.friend_identity_id == user_identity_id
+                }),
+            _ => false,
+        };
         for pool in account_type.address_pools() {
             for info in pool.addresses().values().filter(|info| info.is_used()) {
-                non_funding_used.insert(info.address.clone());
-                if !matches!(kind, AccountType::DashpayExternalAccount { .. })
-                    || wallet_info.accounts.dashpay_receival_accounts.is_empty()
-                {
+                non_funding_used
+                    .entry(info.address.clone())
+                    .or_default()
+                    .push(owner.clone());
+                if !has_reciprocal_receiver {
                     non_funding_only_used.insert(info.address.clone());
                 }
             }
@@ -436,7 +453,10 @@ pub fn apply_persisted_core_state(
             };
             match account_keys.iter().position(|k| k == owner) {
                 Some(target) => per_account_addrs[target].push(addr.clone()),
-                None if !non_funding_used.contains(addr) => {
+                None if !non_funding_used
+                    .get(addr)
+                    .is_some_and(|owners| owners.contains(owner)) =>
+                {
                     orphaned_owners.push(owner_label(owner))
                 }
                 None => {}
@@ -543,8 +563,10 @@ pub fn apply_persisted_core_state(
         // except used addresses already restored in a non-funding pool.
         let unresolved = outside_funds_pools(
             wallet_info,
-            (unmatched.iter().map(|u| &u.address))
-                .chain(used.iter().filter(|addr| !non_funding_used.contains(*addr))),
+            (unmatched.iter().map(|u| &u.address)).chain(
+                used.iter()
+                    .filter(|addr| !non_funding_used.contains_key(*addr)),
+            ),
         )
         .len();
         let mut funding = wallet_info.accounts.all_funding_accounts_mut();
@@ -851,6 +873,9 @@ fn discover_in_funds_accounts(
     ctx: &LoadCtx,
 ) -> Result<usize, WalletStorageError> {
     use key_wallet::managed_account::address_pool::KeySource;
+
+    #[cfg(test)]
+    tests::DISCOVERY_RUNS.with(|runs| runs.set(runs.get() + 1));
 
     let mut derived = 0;
     for account in wallet_info.accounts.all_funding_accounts_mut() {
@@ -1385,6 +1410,10 @@ mod tests {
     use super::*;
     use key_wallet::managed_account::address_pool::MAX_GAP_LIMIT;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    thread_local! {
+        pub(super) static DISCOVERY_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
 
     fn manifest_for(w: &Wallet) -> Vec<AccountRegistrationEntry> {
         w.accounts
@@ -2018,15 +2047,26 @@ mod tests {
 
     #[test]
     fn should_keep_funds_reuse_guard_for_a_mislabeled_provider_address() {
-        assert_provider_used_address_restored(false);
+        assert_provider_used_address_restored(false, None);
     }
 
     #[test]
     fn should_not_report_a_used_address_restored_in_a_provider_pool() {
-        assert_provider_used_address_restored(true);
+        assert_provider_used_address_restored(true, None);
     }
 
-    fn assert_provider_used_address_restored(real_provider: bool) {
+    #[test]
+    fn should_report_a_missing_owner_even_when_a_provider_pool_holds_the_used_address() {
+        assert_provider_used_address_restored(
+            true,
+            Some(owning_account_for(&AccountType::CoinJoin { index: 9 })),
+        );
+    }
+
+    fn assert_provider_used_address_restored(
+        real_provider: bool,
+        stored_owner: Option<OwningAccount>,
+    ) {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::Address;
         use platform_wallet::wallet::provider_key_at_index::{
@@ -2062,15 +2102,16 @@ mod tests {
             first_external_address(&wallet_info, &manifest)
         };
 
+        let expect_orphan = !real_provider || stored_owner.is_some();
         let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
         used.insert(
             address.clone(),
-            Some(OwningAccount {
+            Some(stored_owner.unwrap_or(OwningAccount {
                 account_type: "provider_platform".to_string(),
                 account_index: 0,
                 user_identity_id: [0u8; 32],
                 friend_identity_id: [0u8; 32],
-            }),
+            })),
         );
 
         let core = platform_wallet::changeset::CoreChangeSet {
@@ -2103,10 +2144,10 @@ mod tests {
             !real_provider,
             "a mislabeled funds address must retain its reuse guard"
         );
-        assert_eq!(ctx.degradation().degraded, !real_provider);
+        assert_eq!(ctx.degradation().degraded, expect_orphan);
         assert_eq!(
             ctx.degradation().by_site.get(&LoadSite::OrphanedUtxoOwner),
-            if real_provider { None } else { Some(&1) }
+            if expect_orphan { Some(&1) } else { None }
         );
     }
 
@@ -4559,6 +4600,51 @@ mod tests {
             let shared = first_pool_address(&wallet, &receiving, past);
             assert_eq!(first_pool_address(&wallet, &reverse, past), shared);
             (wallet, manifest, receiving, reverse, shared)
+        }
+
+        #[test]
+        fn should_skip_discovery_for_a_used_contact_with_an_unrelated_receiving_account() {
+            let (mut wallet, _) = fixture(59);
+            let receiving = AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xcc; 32],
+            };
+            for account in [receiving, contact()] {
+                wallet.add_account(account, None).unwrap();
+            }
+            let manifest = manifest_for(&wallet);
+            let address = first_pool_address(&wallet, &contact(), 0);
+            for ctx in [LoadCtx::strict(), LoadCtx::recovery()] {
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let external = info
+                    .accounts
+                    .dashpay_external_accounts
+                    .values_mut()
+                    .next()
+                    .unwrap();
+                assert!(
+                    external.managed_account_type_mut().address_pools_mut()[0].mark_used(&address)
+                );
+                DISCOVERY_RUNS.with(|runs| runs.set(0));
+                load_into(
+                    &mut info,
+                    &manifest,
+                    Vec::new(),
+                    &HashMap::new(),
+                    &HashMap::from([(address.clone(), Some(owning_account_for(&contact())))]),
+                    &ctx,
+                )
+                .unwrap();
+                assert!(!ctx.degradation().degraded, "{:?}", ctx.degradation());
+                DISCOVERY_RUNS.with(|runs| {
+                    assert_eq!(
+                        runs.get(),
+                        0,
+                        "unrelated contact must not trigger discovery"
+                    )
+                });
+            }
         }
 
         #[test]
