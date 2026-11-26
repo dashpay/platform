@@ -176,7 +176,7 @@ A testnet or devnet may restart Platform from a new genesis, which starts its Pl
 Only then is the node's old Platform data useless, and it has to be removed with `dashmate reset --platform`.
 The reset asks for confirmation, then removes the Platform containers and the Drive and Tenderdash data, and keeps the configuration and the Core data.
 Each testnet restart so far has shipped its new genesis in a dashmate release, as a configuration migration that applies when the new version first runs, so install that release before the reset.
-A node that does not run Platform (`platform.enable` is `false`) has no Platform data and skips the reset: dashmate refuses a Platform-only reset there.
+A node that does not run Platform (`platform.enable` is `false`) can skip the reset, and dashmate refuses a Platform-only reset there anyway. If it ran Platform before, it still has that old Platform data, and it would use it if Platform were enabled again. To clear the data, enable Platform for the reset only: `dashmate config set platform.enable true`, then `dashmate reset --platform`, then `dashmate config set platform.enable false`.
 
 As with any update, run the steps one at a time in the same shell, and stop at the first one that fails:
 
