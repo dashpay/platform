@@ -11,7 +11,7 @@ import VerificationServerUnreachableError from '../../../../ssl/errors/Verificat
 import findCertificatePairProblem, {
   findCertificateFilesProblem,
 } from '../../../../ssl/findCertificatePairProblem.js';
-import selectLeafCertificate from '../../../../ssl/selectLeafCertificate.js';
+import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../../ssl/selectLeafCertificate.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -367,7 +367,10 @@ and all Dash service ports listed above.`);
 
           const { error, detail } = selectLeafCertificate(ctx.certificateFile, privateKeyPem);
 
-          if (error) {
+          // A response cut short or out of order says nothing about the
+          // certificate, and the next obtain downloads it again.
+          if (error === LEAF_SELECTION_ERRORS.KEY_MISMATCH
+            || error === LEAF_SELECTION_ERRORS.KEY_UNUSABLE) {
             throw new Error(`The certificate ZeroSSL sent does not belong to the private key in ${ctx.privateKeyFilePath}: ${detail}.\n`
               + `${ctx.bundleFilePath} was left as it was.`
               + ' Please obtain a new certificate using the obtain command with the --force flag,'

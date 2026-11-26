@@ -555,6 +555,20 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
     });
 
+    // A response cut short says nothing about the issuance, and the next
+    // obtain asks for the same certificate again.
+    it('should not send a download cut short to a new certificate', async function it() {
+      this.timeout(30000);
+      downloadCertificate.resolves(pair.pem.slice(0, pair.pem.length / 2));
+
+      const error = await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS })
+        .then(() => null, (e) => e);
+
+      expect(error.message).to.include('run the obtain command again')
+        .and.not.include('--force');
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem.slice(0, pair.pem.length / 2));
+    });
+
     // The bundle is replaced in place, and renewal writes over one the gateway
     // is serving.
     it('should not replace the bundle with a download the key on disk cannot serve', async function it() {
