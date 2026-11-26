@@ -385,8 +385,8 @@ struct LoadIdentityView: View {
                     return Data(hexString: trimmed)
                 }
 
-                // The masternode key fields take hex or WIF (the testnet
-                // presets fill WIF); Rust reads either. A key that is typed
+                // The masternode key fields take hex or WIF. Replace any
+                // testnet preset placeholders before loading. A key that is typed
                 // but refused stops the load with Rust's reason instead of
                 // being dropped, since the vote sheets sign with the stored
                 // voting key. The refusal never repeats the typed text.

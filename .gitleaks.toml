@@ -1,0 +1,186 @@
+title = "Dash Platform Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# Match known fields and formats in specific files so other credentials in
+# those files still reach the default rules, including generic-api-key.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Swift schema manifests: SHA-256 by model or generated Swift file"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/swift-sdk/schema-releases\.json$''',
+  '''^packages/swift-sdk/SwiftTests/SwiftDashSDKTests/Fixtures/SchemaStores/legacy-[a-f0-9]+/manifest\.json$''',
+]
+regexes = [
+  '''^(?:Persistent(?:ShieldedViewingKey|Token(?:Balance|HistoryEvent)?)(?:\.swift)?|TokenTypes\.swift)"\s*:\s*"[a-f0-9]{64}"$''',
+]
+
+[[rules.allowlists]]
+description = "Generated Python protobuf descriptor construction"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/dapi-grpc/clients/(?:core/v0/python/core|platform/v0/python/platform)_pb2\.py$''']
+regexes = ['''^_descriptor\._internal_create_key,\r?\n[ \t]+(?:[bB])?'?[A-Za-z0-9_.=-]{10,150}'$''']
+
+[[rules.allowlists]]
+description = "Test signing fingerprints"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^\.github/scripts/tests/test_(?:dashmate_deb_versions|sign_dashmate_checksums)\.py$''']
+regexes = ['''^(?:REPOSITORY_KEY_FINGERPRINT|KEY|QUANTUM_EXPLORER_KEY|SUBKEY)[ \t]*=[ \t]*["'][A-F0-9]{40}["']$''']
+
+[[rules.allowlists]]
+description = "Public token and contract IDs in examples and tests"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/js-evo-sdk/tests/unit/facades/(?:documents|tokens)\.spec\.ts$''',
+  '''^packages/kotlin-sdk/KotlinExampleApp/app/src/main/java/org/dashfoundation/example/ui/contracts/QueryRegistry\.kt$''',
+  '''^packages/rs-dpp/src/(?:data_contract/associated_token/(?:token_distribution_key\.rs|token_distribution_rules/mod\.rs)|tokens/token_payment_info/mod\.rs)$''',
+  '''^packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/(?:AppState|Views/(?:DiagnosticsView|LocalDataContractsView))\.swift$''',
+  '''^packages/wasm-dpp2/tests/unit/TokenDistributionRules\.spec\.ts$''',
+  '''^packages/wasm-sdk/tests/(?:functional/transitions/tokens\.spec\.ts|unit/fixtures/data-contract-v1-with-docs-tokens-groups\.ts)$''',
+]
+regexes = [
+  '''^(?:paymentTokenContractId|tokenId|TEST_TOKEN_ID|token_id|testTokenId|(?:distributionRules\.)?newTokensDestinationIdentity)["']?[ \t]*[:=][ \t]*["'][1-9A-HJ-NP-Za-km-z]{43,44}["']$''',
+  '''^(?:Token History",[ \t]*"|Token contract:[ \t]*)[1-9A-HJ-NP-Za-km-z]{43,44}"?$''',
+]
+
+[[rules.allowlists]]
+description = "Public wallet fixture address in the transport example"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/src/transport/FixtureTransport/README\.md$''']
+regexes = ['''->[ \t]*[1-9A-HJ-NP-Za-km-z]{34}[ \t]*$''']
+
+[[rules.allowlists]]
+description = "Public operator and quorum keys in RPC samples and tests"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/dapi/test/(?:mocks/coreAPIFixture\.js|unit/grpcServer/handlers/core/getMasternodeStatusHandlerFactory\.spec\.js)$''',
+  '''^packages/dashmate/test/fixtures/coreRpc/24\.0\.3/masternode-status-evonode\.json$''',
+  '''^packages/js-dapi-client/(?:lib/test/fixtures/getMNListDiffsFixture\.js|test/(?:fixtures/coreV24TestnetMasternodeListDiff\.json|unit/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider\.spec\.js))$''',
+  '''^packages/rs-drive-abci/(?:src/rpc/core\.rs|tests/supporting_files/(?:mainnet_protx_list_diffs|core_v24_protx_list_diffs(?:/legacy_operator_key)?)/[0-9]+-[0-9]+\.json)$''',
+  '''^packages/wasm-sdk/tests/unit/verified-context\.spec\.ts$''',
+]
+regexes = [
+  '''^(?:pubKeyOperator|QUORUM_KEY)["']?[ \t]*[:=][ \t]*["'][a-f0-9]{96}["']?$''',
+  '''^keyID(?:Operator|Voting)["']?[ \t]*:[ \t]*["'][a-f0-9]{40}["']$''',
+]
+
+[[rules.allowlists]]
+description = "Public operator keys split at read chunk boundaries in Gitleaks 8.22.1"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/js-dapi-client/test/fixtures/coreV24TestnetMasternodeListDiff\.json$''',
+  '''^packages/rs-drive-abci/tests/supporting_files/mainnet_protx_list_diffs/1-2128896\.json$''',
+]
+regexes = ['''^pubKeyOperator"[ \t]*:[ \t]*"[a-f0-9]{10,95}$''']
+
+[[rules.allowlists]]
+description = "Public secp256k1 inputs and masternode voting addresses in tests"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/dapi/test/unit/transactionsFilter/testTransactionAgainstFilter\.spec\.js$''',
+  '''^packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/(?:MasternodeVotingKeyFfiTest|security/MasternodeVotingKeySigningTest)\.kt$''',
+]
+regexes = [
+  '''^inputPubKey[ \t]*=[ \t]*["'][a-f0-9]{130}["']$''',
+  '''^keyOneVotingAddressHex[ \t]*=[ \t]*"[a-f0-9]{40}"$''',
+]
+
+[[rules.allowlists]]
+description = "Public wallet scripts, extended public keys and deterministic database keys"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/wallet-lib/fixtures/(?:[a-z0-9]+-fullstore-snapshot-[0-9]+|getTransactionHistory|increasetable|mockedStore1|gathersail)\.json$''',
+  '''^packages/wallet-lib/src/(?:types/Account/methods/(?:broadcastTransaction|decrypt|getUTXOS)|utils/outputHandler)\.spec\.js$''',
+  '''^packages/rs-drive/tests/deterministic_root_hash\.rs$''',
+]
+regexes = [
+  '''^scriptPubKey["']?[ \t]*:[ \t]*["'][a-f0-9]{50}["']$''',
+  '''^(?:hdpubkey|extPubKey)["']?[ \t]*[:=][ \t]*["'](?:tpub|xpub)[1-9A-HJ-NP-Za-km-z]{107}["']$''',
+  '''^key[ \t]*:[ \t]*"(?:[a-f0-9]{40}|[a-f0-9]{64})"$''',
+]
+
+[[rules.allowlists]]
+description = "Misidentified code expressions in test sources"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/rs-drive-abci/src/execution/platform_events/core_based_updates/update_masternode_list/operator_key_encoding_tests\.rs$''',
+  '''^packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/StateTransitionTests\.swift$''',
+]
+regexes = [
+  '''^key_change_height[ \t]*=[ \t]*V24_ACTIVATION_HEIGHT[ \t]*$''',
+  '''^key3Private[ \t]*=[ \t]*self\.key3Private[ \t]*$''',
+]
+
+[[rules.allowlists]]
+description = "Public upstream Yarn 4.12.0 bundle metadata"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^\.yarn/releases/yarn-4\.12\.0\.cjs$''']
+regexes = ['''^apiKey:"[a-f0-9]{32}"$''']
+
+[[rules.allowlists]]
+description = "Deterministic BLS and hex signing vectors in dedicated test files"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/js-dash-sdk/src/SDK/Client/Client\.spec\.ts$''',
+  '''^packages/rs-dpp/tests/fixtures/bls_compatibility/vectors\.json$''',
+  '''^packages/rs-drive-abci/src/mimic/fixtures/core_quorums\.json$''',
+  '''^packages/swift-sdk/SwiftTests/SwiftDashSDKTests/(?:DataTransformersTests|ValidationTests)\.swift$''',
+  '''^packages/wasm-dpp2/tests/unit/(?:IdentitySigner|PlatformAddressSigner)\.spec\.ts$''',
+  '''^packages/wasm-sdk/tests/unit/conversion-derivation\.spec\.ts$''',
+]
+regexes = [
+  '''^(?:secret_key|privateKeyFixture|(?:input|assetLock|identity|test)?[Pp]rivateKeyHex|validKey)["']?[ \t]*[:=][ \t]*["'](?:[a-f0-9]{64}|[a-f0-9]{16})["']$''',
+]
+
+[[rules.allowlists]]
+description = "WIF and hex keys in signing test vectors"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/MasternodeVotingKeyFfiTest\.kt$''',
+  '''^packages/rs-dpp/src/tests/fixtures/instant_asset_lock_proof_fixture\.rs$''',
+  '''^packages/strategy-tests/src/transitions\.rs$''',
+  '''^packages/wasm-dpp/(?:lib/test/fixtures/get(?:InstantAssetLockProof|InstantLock|PrivateAndPublicKeyForSigning)Fixture\.js|test/integration/identity/stateTransition/IdentityTopUpTransition/validation/basic/validateIdentityTopUpTransitionBasicFactory\.spec\.js)$''',
+  '''^packages/wasm-dpp2/tests/unit/(?:IdentitySigner|PlatformAddressSigner)\.spec\.ts$''',
+  '''^packages/wasm-sdk/tests/unit/conversion-derivation\.spec\.ts$''',
+]
+regexes = [
+  '''^(?:keyOneTestnetWif|private_key_hex|privateKey(?:Hex|Wif)?|testPrivateKeyWif)["']?[ \t]*[:=][ \t]*["'](?:[1-9A-HJ-NP-Za-km-z]{52}|[a-f0-9]{64})["']$''',
+]
+
+[[rules.allowlists]]
+description = "Deterministic wallet fixture keys and derivation vectors"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/wallet-lib/fixtures/(?:cR4t6e_pk|fixtures|gathersail|knifeeasily|wallets/[a-f0-9]+/wallet)\.json$''',
+  '''^packages/wallet-lib/src/(?:types/DerivableKeyChain/DerivableKeyChain|types/Identities/methods/getIdentityHDKeyByIndex|utils/mnemonic)\.spec\.js$''',
+  '''^packages/wallet-lib/tests/(?:functional/sweepWallet|integration/(?:plugins/Workers/TransactionsSyncWorker|types/(?:Account|Wallet)))\.spec\.js$''',
+]
+regexes = [
+  '''^(?:privateKey|expectedIdentityPrivateKey[01]_[01])["']?[ \t]*[:=][ \t]*["'](?:[1-9A-HJ-NP-Za-km-z]{52}|[a-f0-9]{64})["']$''',
+  '''^(?:HDPrivateKey1(?:Mainnet|Testnet)|hdprivkey|HDRoot(?:Encrypted)?PrivateKey(?:Mainnet|Testnet)|expectedRootDIP15AccountKey_[01]|expectedKeyForChild_0|expectedIdentityHDKey[01]_[01]|expected(?:En|Jp|Es|Cn|CnTrad|It|Ko|Cz)RootKey|expected24frRootKeyMain|WALLET_HD_KEY|testHDKey)["']?[ \t]*[:=][ \t]*["'](?:[tx]prv)[1-9A-HJ-NP-Za-km-z]{107}["']$''',
+]
+
+[[rules]]
+id = "private-key"
+
+[[rules.allowlists]]
+description = "Dedicated localhost TLS key fixture for the Rust DAPI proxy tests"
+paths = ['''^packages/rs-dapi-client/tests/data/proxy/server\.key$''']

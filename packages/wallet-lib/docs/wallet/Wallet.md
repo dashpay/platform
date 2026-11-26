@@ -65,7 +65,7 @@ const wallet = new Wallet({
 
 ```js
 const wallet = new Wallet({
-  HDPrivateKey: 'tprv8ZgxMBicQKsPeWisxgPVWiXho8ozsAUqc3uvpAhBuoGvSTxqkxPZbTeG43mvgXn3iNfL3cBL1NmR4DaVoDBPMUXe1xeiLoc39jU9gRTVBd2'
+  HDPrivateKey: extendedPrivateKey
 })
 ```
 
@@ -89,7 +89,7 @@ const wallet = new Wallet({
 
 ```js
 const wallet = new Wallet({
-  privateKey: 'cR4t6evwVZoCp1JsLk4wURK4UmBCZzZotNzn9T1mhBT19SH9JtNt'
+  privateKey: privateKeyWif
 })
 ```
 

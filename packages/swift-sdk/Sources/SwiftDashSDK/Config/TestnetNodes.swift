@@ -91,15 +91,15 @@ public class TestnetNodesLoader {
     public static func createSampleTestnetNodes() -> TestnetNodes {
         let sampleMasternode = MasternodeInfo(
             proTxHash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            owner: KeyInfo(privateKey: "cVwySadFkE9GhznGjLHtqGJ2FPvkEbvEE1WnMCCvhUZZMWJmTzrq"),
-            voter: KeyInfo(privateKey: "cRtLvGwabTRyJdYfWQ9H2hsg9y5TN9vMEX8PvnYVfcaJdNjNQzNb")
+            owner: KeyInfo(privateKey: "<masternode-owner-key>"),
+            voter: KeyInfo(privateKey: "<masternode-voting-key>")
         )
 
         let sampleHPMasternode = HPMasternodeInfo(
             protxTxHash: "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-            owner: KeyInfo(privateKey: "cN5YgNRq8rbcJwngdp3fRzv833E7Z74TsF8nB6GhzRg8Gd9aGWH1"),
-            voter: KeyInfo(privateKey: "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY"),
-            payout: KeyInfo(privateKey: "cMnkMfwMVmCM3NkF6p6dLKJMcvgN1BQvLRMvdWMjELUTdJM6QpyG")
+            owner: KeyInfo(privateKey: "<evonode-owner-key>"),
+            voter: KeyInfo(privateKey: "<evonode-voting-key>"),
+            payout: KeyInfo(privateKey: "<evonode-payout-key>")
         )
 
         return TestnetNodes(

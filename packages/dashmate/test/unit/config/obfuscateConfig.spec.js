@@ -50,8 +50,8 @@ describe('obfuscateConfig', () => {
     const secrets = {
       'core.rpc.users.dapi.password': 'dapiRpcPassword7Qx',
       'core.tor.control.password': 'torControlPassword7Qx',
-      'core.spork.privateKey': 'sporkPrivateKey7Qx',
-      'core.masternode.operator.privateKey': 'operatorPrivateKey7Qx',
+      'core.spork.privateKey': 'spork test fixture',
+      'core.masternode.operator.privateKey': 'operator test fixture',
       'platform.gateway.ssl.providerConfigs.zerossl.apiKey': 'zeroSslApiKey'.padEnd(32, '7'),
       'platform.drive.tenderdash.node.key': 'tenderdashNodeKey7Qx',
     };

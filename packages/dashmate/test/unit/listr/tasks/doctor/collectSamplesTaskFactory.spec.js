@@ -661,16 +661,20 @@ describe('collectSamplesTaskFactory', () => {
     // know, and a command line has too many ways of carrying one to mask it
     // argument by argument. No analyser reads it, so it is left out; only the
     // executable stays.
+    const shellFixture = 'shellFixtureSecret7Qx';
+    const hyphenFixture = 'hyphenFixtureSecret7Qx';
+    const healthFixture = 'healthFixtureSecret7Qx';
+
     [
-      ['a shell command line', { Cmd: ['sh', '-c', 'exec app --password shellSecret7Qx'] }],
+      ['a shell command line', { Cmd: ['sh', '-c', `exec app --password ${shellFixture}`] }],
       ['a value after its option', { Cmd: ['app', '--token', 'separateSecret7Qx'] }],
-      ['a value that starts with a hyphen', { Cmd: ['app', '--token', '-hyphenSecret7Qx'] }],
+      ['a value that starts with a hyphen', { Cmd: ['app', '--token', `-${hyphenFixture}`] }],
       ['a positional value after the script name', {
         Cmd: ['sh', '-c', 'exec app --password "$1"', 'sh', 'positionalSecret7Qx'],
       }],
       ['an entrypoint argument', { Entrypoint: ['/entry.sh', 'entrypointSecret7Qx'] }],
       ['a health check', {
-        Healthcheck: { Test: ['CMD-SHELL', 'curl -u probe:healthSecret7Qx http://localhost/'], Interval: 1e9 },
+        Healthcheck: { Test: ['CMD-SHELL', `curl -u probe:${healthFixture} http://localhost/`], Interval: 1e9 },
       }],
     ].forEach(([description, commandConfig]) => {
       it(`should leave the container command out of the archive, with ${description}`, async () => {
