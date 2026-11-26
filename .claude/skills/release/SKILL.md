@@ -127,7 +127,7 @@ gh issue comment 4246 --repo dashpay/platform --body \
   "Please publish v<version> to apt only if the SHA256SUMS the publisher uses has sha256 <sha256>, the file Release Dashmate checksums verified (<job url>); stop before writing anything otherwise, and confirm here which you did."
 ```
 
-Re-run no job of the release and rebuild nothing until it is published and checked: a rebuild replaces `SHA256SUMS`, and the request then no longer matches.
+Re-run no job of the release and rebuild nothing until it is published and checked: a rebuild replaces `SHA256SUMS`, and the request then no longer matches. The one exception is a definitive refusal. If infra refuses the request for good, for instance because that Debian version is already published with other bytes and needs a new revision, the freeze ends for that revision once infra confirms the request is closed and will not be carried out. Then follow [Rebuilding the dashmate deb](#rebuilding-the-dashmate-deb-of-a-published-release) with the next revision. Make a new handoff with the re-run checksums job's link and sha256; the old request does not cover it.
 
 When infra says it is published, run the check below for each suite the release belongs in. Until it passes, the release is not done: report it as pending. If it fails, report the failure to infra on #4246.
 
