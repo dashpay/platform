@@ -13,6 +13,7 @@ grovedb_version_switcher.py: switch GroveDB dependencies across Cargo.toml files
 Usage:
   grovedb_version_switcher.py version <semver>
   grovedb_version_switcher.py local
+  grovedb_version_switcher.py tag <tag>
   grovedb_version_switcher.py rev <rev>
   grovedb_version_switcher.py branch <branch>
   grovedb_version_switcher.py main_branch_latest   # resolves default branch, fetches latest SHA, and applies rev
@@ -20,6 +21,7 @@ Usage:
 Supports both inline-table and simple dependency forms, e.g.:
   grovedb = { version = "3.0.0", default-features = false }
   grovedb = "3.0.0"
+  grovedb = { git = "https://github.com/dashpay/grovedb", tag = "<tag>" }
   grovedb = { git = "https://github.com/dashpay/grovedb", rev = "<rev>" }
 
 For local mode, updates to path-based dependencies pointing to a sibling checkout.
@@ -37,6 +39,8 @@ GROVEDB_DEPS = {
     "grovedb-version": "../../../grovedb/grovedb-version",
     "grovedb-visualize": "../../../grovedb/grovedb-visualize",
     "grovedb-epoch-based-storage-flags": "../../../grovedb/grovedb-epoch-based-storage-flags",
+    "grovedb-query": "../../../grovedb/grovedb-query",
+    "grovedb-commitment-tree": "../../../grovedb/grovedb-commitment-tree",
 }
 
 
@@ -143,8 +147,13 @@ def switch_dep(block_text: str, dep_name: str, mode: str, value: Optional[str]):
         keys = [k for k, _ in pairs]
         d = {k: v for k, v in pairs}
 
+        # `name = { workspace = true, ... }` takes its source from the root
+        # [workspace.dependencies] entry, which this script edits on its own.
+        if d.get('workspace') == 'true':
+            return block_text
+
         # remove conflicting keys
-        for k in ("git", "rev", "branch", "path", "version"):
+        for k in ("git", "rev", "tag", "branch", "path", "version"):
             if k in d:
                 del d[k]
                 if k in keys:
@@ -156,11 +165,11 @@ def switch_dep(block_text: str, dep_name: str, mode: str, value: Optional[str]):
         elif mode == 'local':
             keys.insert(0, 'path')
             d['path'] = f'"{GROVEDB_DEPS[dep_name]}"'
-        elif mode == 'rev':
+        elif mode in ('rev', 'tag'):
             keys.insert(0, 'git')
             d['git'] = f'"{GIT_URL}"'
-            keys.insert(1, 'rev')
-            d['rev'] = f'"{value}"'
+            keys.insert(1, mode)
+            d[mode] = f'"{value}"'
         elif mode == 'branch':
             keys.insert(0, 'git')
             d['git'] = f'"{GIT_URL}"'
@@ -186,8 +195,8 @@ def switch_dep(block_text: str, dep_name: str, mode: str, value: Optional[str]):
             return name_prefix + f'"{value}"'
         elif mode == 'local':
             body = f'{{ path = "{GROVEDB_DEPS[dep_name]}" }}'
-        elif mode == 'rev':
-            body = f'{{ git = "{GIT_URL}", rev = "{value}" }}'
+        elif mode in ('rev', 'tag'):
+            body = f'{{ git = "{GIT_URL}", {mode} = "{value}" }}'
         elif mode == 'branch':
             body = f'{{ git = "{GIT_URL}", branch = "{value}" }}'
         else:
@@ -223,6 +232,8 @@ def main():
     p_version = sub.add_parser('version')
     p_version.add_argument('semver')
     sub.add_parser('local')
+    p_tag = sub.add_parser('tag')
+    p_tag.add_argument('tag')
     p_rev = sub.add_parser('rev')
     p_rev.add_argument('rev')
     p_branch = sub.add_parser('branch')
@@ -236,6 +247,9 @@ def main():
     elif args.cmd == 'local':
         mode = 'local'
         val = None
+    elif args.cmd == 'tag':
+        mode = 'tag'
+        val = args.tag
     elif args.cmd == 'rev':
         mode = 'rev'
         val = args.rev

@@ -103,34 +103,64 @@ runs:
           && grep -q 'BEGIN PRIVATE KEY' "$NOTARY_API_KEY_PATH" \
           || { echo '::error::Could not decode MACOS_NOTARY_API_KEY_BASE64 into a .p8 key; it must be the base64 of the key file.'; exit 1; }
         notary_auth=(--key "$NOTARY_API_KEY_PATH" --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER_ID")
-        submit_log="$RUNNER_TEMP/notarytool_submit.log"
+        packages=()
         while IFS= read -r -d '' pkg; do
-          # stdin is the package list, so keep it away from the tools.
-          if ! xcrun notarytool submit "$pkg" "${notary_auth[@]}" --wait --timeout 1h < /dev/null 2>&1 | tee "$submit_log"; then
-            echo "::error::notarytool failed for $pkg."
+          packages+=("$pkg")
+        done < <(find "$PACKAGES_PATH" -type f -name '*.pkg' -print0)
+        [ "${#packages[@]}" -gt 0 ] || { echo "::error::No .pkg files found under $PACKAGES_PATH."; exit 1; }
+        # Upload every package before waiting for any. Apple notarizes the
+        # submissions in parallel, so the waits below take about as long as
+        # the slowest package rather than the sum of all of them.
+        ids=()
+        for i in "${!packages[@]}"; do
+          log="$RUNNER_TEMP/notarytool_submit_$i.log"
+          if ! xcrun notarytool submit "${packages[$i]}" "${notary_auth[@]}" 2>&1 | tee "$log"; then
+            echo "::error::notarytool failed for ${packages[$i]}."
             exit 1
           fi
-          # notarytool exits 0 when Apple rejects the submission.
-          if ! grep -q 'status: Accepted' "$submit_log"; then
-            submission_id="$(awk '$1 == "id:" { print $2; exit }' "$submit_log")"
-            [ -z "$submission_id" ] || xcrun notarytool log "$submission_id" "${notary_auth[@]}" < /dev/null || true
+          id="$(awk '$1 == "id:" { print $2; exit }' "$log")"
+          [ -n "$id" ] || { echo "::error::notarytool reported no submission id for ${packages[$i]}."; exit 1; }
+          ids+=("$id")
+        done
+        # Every package's verdict is reported before the step fails, so one
+        # run shows all the packages Apple did not accept.
+        failed=false
+        for i in "${!packages[@]}"; do
+          pkg="${packages[$i]}"
+          log="$RUNNER_TEMP/notarytool_wait_$i.log"
+          if ! xcrun notarytool wait "${ids[$i]}" "${notary_auth[@]}" --timeout 1h 2>&1 | tee "$log"; then
+            xcrun notarytool log "${ids[$i]}" "${notary_auth[@]}" || true
+            echo "::error::notarytool failed for $pkg."
+            failed=true
+            continue
+          fi
+          # notarytool exits 0 when Apple rejects the submission, so the
+          # verdict comes from the status line of its report.
+          if ! awk '$1 == "status:" { status = $2 } END { exit (status == "Accepted" ? 0 : 1) }' "$log"; then
+            xcrun notarytool log "${ids[$i]}" "${notary_auth[@]}" || true
             echo "::error::Apple did not report $pkg as accepted: it was rejected or is still in progress."
-            exit 1
+            failed=true
+            continue
           fi
           echo "::notice::Apple accepted $pkg."
+        done
+        if "$failed"; then
+          exit 1
+        fi
+        for pkg in "${packages[@]}"; do
           # Attach the ticket so the installer also verifies offline. The
           # ticket can take a moment to become available after acceptance.
           # An accepted package without it still verifies online.
           stapled=false
           for attempt in 1 2 3 4 5; do
-            if xcrun stapler staple "$pkg" < /dev/null; then
+            if xcrun stapler staple "$pkg"; then
               stapled=true
               break
             fi
             [ "$attempt" -eq 5 ] || sleep 15
           done
           "$stapled" || echo "::warning::Could not staple the notarization ticket to $pkg."
-        done < <(find "$PACKAGES_PATH" -type f -name '*.pkg' -print0)
+        done
 
     - name: Delete the Apple keychain
       if: always()
