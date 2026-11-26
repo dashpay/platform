@@ -125,6 +125,48 @@ describe('archiveSamples', () => {
       expect(archived).to.contain('masternodeblsprivkey=');
     });
 
+    it('should scrub credentials from config URLs and build arguments out of logs', async () => {
+      config.set(
+        'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+        'https://acmeUser:acmePassword7Qx@acme.example.com/directory',
+      );
+      config.set('platform.drive.abci.docker.build.buildArgs', {
+        HTTPS_PROXY: 'http://proxyUser:proxyPassword7Qx@proxy.example.com:3128',
+      });
+      samples.setDashmateConfig(obfuscateConfig(config));
+
+      samples.setServiceInfo(
+        'gateway',
+        'stdOut',
+        'lego: fetching https://acmeUser:acmePassword7Qx@acme.example.com/directory\n'
+          + 'lego: retrying with acmePassword7Qx\n',
+      );
+      samples.setServiceInfo(
+        'drive_abci',
+        'stdErr',
+        'build: using proxy http://proxyUser:proxyPassword7Qx@proxy.example.com:3128\n'
+          + 'build: proxy auth proxyPassword7Qx rejected\n',
+      );
+
+      await archiveSamples(samples, archiveRoot, config);
+
+      const archivePath = path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`);
+      const archived = zlib.gunzipSync(fs.readFileSync(archivePath)).toString('utf8');
+
+      expect(archived).to.not.contain('acmePassword7Qx');
+      expect(archived).to.not.contain('proxyPassword7Qx');
+      expect(archived).to.contain('@acme.example.com/directory');
+      expect(archived).to.contain(`lego: retrying with ${'*'.repeat('acmePassword7Qx'.length)}`);
+      expect(archived).to.contain('build: using proxy ');
+      expect(archived).to.contain(`build: proxy auth ${'*'.repeat('proxyPassword7Qx'.length)} rejected`);
+
+      // The config copy, with the URL and the build argument hidden, still reads back
+      const restored = await unarchiveSamplesFactory(() => [])(archivePath);
+
+      expect(restored.getDashmateConfig().get('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl'))
+        .to.equal('https://********:***************@acme.example.com/directory');
+    });
+
     it('should mask the whole of a secret that contains another', async () => {
       config.set('core.rpc.users.tenderdash.password', 'nestedSecret1');
       config.set('core.rpc.users.quorum_list.password', 'nestedSecret1Tail9');
