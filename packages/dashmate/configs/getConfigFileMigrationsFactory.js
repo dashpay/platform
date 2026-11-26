@@ -16,14 +16,19 @@ import {
 } from '../src/config/stockImages.js';
 import generateRandomString from '../src/util/generateRandomString.js';
 
+// The hostnames of Docker Hub. An image named with one of them is pulled from
+// the same Docker Hub repository as the name without it.
+const DOCKER_HUB_HOST = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\//;
+
 /**
  * Split a Core image reference into its repository and the Core major version
  * its tag names.
  *
  * `dashpay/dashd:23.1.8-nightly.2026.09.22@sha256:…` gives `dashpay/dashd` and 23.
- * The major is null when the tag names no version (`latest`, `patched`) or the
- * image is pinned by digest alone. A registry port is not read as a tag: a tag
- * holds no `/`, so `registry.example.org:5000/dashd` has none.
+ * A Docker Hub hostname is dropped, so `docker.io/dashpay/dashd` is
+ * `dashpay/dashd` too. The major is null when the tag names no version (`latest`,
+ * `patched`) or the image is pinned by digest alone. A registry port is not read
+ * as a tag: a tag holds no `/`, so `registry.example.org:5000/dashd` has none.
  *
  * @param {string} image
  * @return {{repository: string, coreMajor: number|null}}
@@ -34,7 +39,7 @@ function parseCoreImage(image) {
   const major = tag?.match(/^(\d+)(?:\.\d+){0,2}(?:-[\w.-]+)?$/)?.[1];
 
   return {
-    repository: repository ?? image,
+    repository: (repository ?? image).replace(DOCKER_HUB_HOST, ''),
     coreMajor: major === undefined ? null : Number(major),
   };
 }

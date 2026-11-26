@@ -757,6 +757,11 @@ describe('migrateConfigFileFactory', () => {
         'dashpay/dashd:23.1.8-nightly.2026.09.22',
         `dashpay/dashd:23@sha256:${'0'.repeat(64)}`,
         `dashpay/dashd:23.1.4@sha256:${'ab'.repeat(32)}`,
+        // Docker resolves every Docker Hub spelling to the same repository.
+        'docker.io/dashpay/dashd:23.0.2',
+        'index.docker.io/dashpay/dashd:23.1',
+        'registry-1.docker.io/dashpay/dashd:23',
+        `docker.io/dashpay/dashd:23.1.4@sha256:${'cd'.repeat(32)}`,
       ];
 
       const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
@@ -823,6 +828,8 @@ describe('migrateConfigFileFactory', () => {
       testnet: 'myorg/dashd:patched',
       mainnet_digest: `dashpay/dashd@sha256:${'ab'.repeat(32)}`,
       testnet_registry: 'registry.example.org:5000/dashd:23.1.4',
+      // The same path on another registry is another repository.
+      mainnet_ghcr: 'ghcr.io/dashpay/dashd:23.0.2',
     };
     const core24 = {
       mainnet_core24: 'myorg/dashd:24.0.3',
@@ -832,6 +839,7 @@ describe('migrateConfigFileFactory', () => {
     configFileData.configs.testnet.core.docker.image = mayNotBeCore24.testnet;
     addNode('mainnet_digest', 'mainnet', mayNotBeCore24.mainnet_digest);
     addNode('testnet_registry', 'testnet', mayNotBeCore24.testnet_registry);
+    addNode('mainnet_ghcr', 'mainnet', mayNotBeCore24.mainnet_ghcr);
     addNode('mainnet_core24', 'mainnet', core24.mainnet_core24);
     configFileData.configs.local.core.docker.image = core24.local;
 
