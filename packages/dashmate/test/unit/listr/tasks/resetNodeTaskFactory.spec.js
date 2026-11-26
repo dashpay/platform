@@ -276,6 +276,19 @@ describe('resetNodeTaskFactory', () => {
     let lockedDirectories;
 
     /**
+     * @param {number} mode
+     * @param {...string} segments
+     * @return {string}
+     */
+    function lockDirectoryWithMode(mode, ...segments) {
+      const directoryPath = homeDir.joinPath(...segments);
+      fs.chmodSync(directoryPath, mode);
+      lockedDirectories.push(directoryPath);
+
+      return directoryPath;
+    }
+
+    /**
      * Make a directory read-only, so the entries in it cannot be removed, the
      * way a directory Docker creates as root is for the operator
      *
@@ -283,19 +296,22 @@ describe('resetNodeTaskFactory', () => {
      * @return {string}
      */
     function lockDirectory(...segments) {
-      const directoryPath = homeDir.joinPath(...segments);
-      fs.chmodSync(directoryPath, 0o555);
-      lockedDirectories.push(directoryPath);
-
-      return directoryPath;
+      return lockDirectoryWithMode(0o555, ...segments);
     }
 
-    beforeEach(function beforeEach() {
-      // Permissions do not bind root.
+    /**
+     * Permissions do not bind root, so a test that relies on them cannot run
+     * as root.
+     *
+     * @param {Mocha.Context} test
+     */
+    function skipAsRoot(test) {
       if (process.getuid?.() === 0) {
-        this.skip();
+        test.skip();
       }
+    }
 
+    beforeEach(() => {
       lockedDirectories = [];
 
       writeFile('testnet', 'core', 'dash.conf');
@@ -312,29 +328,38 @@ describe('resetNodeTaskFactory', () => {
     });
 
     // A reset that leaves Platform files behind and reports success leaves the
-    // next start or setup to run on them unnoticed. It must fail, and say
-    // exactly what is left and how to finish.
-    it('should fail and name each path it could not remove', async () => {
+    // next start or setup to run on them unnoticed. Finding out once the
+    // services and part of the files are gone would leave a node whose Compose
+    // project no longer loads, so the reset checks first and changes nothing.
+    it('should refuse before touching anything and name each path it cannot remove', async function test() {
+      skipAsRoot(this);
+
+      const { key } = config.get('platform.drive.tenderdash.node');
       const sslPath = lockDirectory('testnet', 'platform', 'gateway', 'ssl');
       const rateLimiterPath = lockDirectory('testnet', 'platform', 'gateway', 'rate_limiter');
 
-      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+      const error = await hardReset({ isPlatformOnlyReset: true, isForce: false }).then(
         () => { throw new Error('the reset succeeded'); },
         (e) => e,
       );
 
-      expect(error.message).to.include(sslPath);
-      expect(error.message).to.include(rateLimiterPath);
+      expect(error.message).to.include(`'${sslPath}'`);
+      expect(error.message).to.include(`'${rateLimiterPath}'`);
+      expect(error.message).to.include('sudo chown -R');
+      expect(error.message).to.include('chmod -R u+rwX');
       expect(error.message).to.include('run the reset again');
 
-      // Everything removable is removed, so only the named paths are left.
-      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'drive'))).to.be.false();
-      expect(fs.existsSync(homeDir.joinPath('testnet', 'core', 'dash.conf'))).to.be.true();
+      expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+      expect(dockerCompose.rm).to.not.have.been.called();
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'drive', 'tenderdash', 'config.toml'))).to.be.true();
+      expect(config.get('platform.drive.tenderdash.node.key')).to.equal(key);
     });
 
     // Removing an empty directory needs only its parent to be writable, so a
     // read-only one that Docker created for a missing mount source is removed.
-    it('should remove an empty directory it cannot write', async () => {
+    it('should remove an empty directory it cannot write', async function test() {
+      skipAsRoot(this);
+
       fs.mkdirSync(homeDir.joinPath('testnet', 'platform', 'gateway', 'envoy.yaml'));
       lockDirectory('testnet', 'platform', 'gateway', 'envoy.yaml');
 
@@ -343,11 +368,166 @@ describe('resetNodeTaskFactory', () => {
       expect(fs.existsSync(homeDir.joinPath('testnet', 'platform'))).to.be.false();
     });
 
-    it('should fail when it cannot remove a config it removes', async () => {
+    it('should refuse to remove a config it cannot remove completely', async function test() {
+      skipAsRoot(this);
+
       const sslPath = lockDirectory('testnet', 'platform', 'gateway', 'ssl');
 
       await expect(reset({ isHardReset: true, removeConfig: true }))
         .to.be.rejectedWith(sslPath);
+
+      expect(dockerCompose.down).to.not.have.been.called();
+      expect(configFile.isConfigExists('testnet')).to.be.true();
+    });
+
+    // The Platform directory itself goes only if the config's directory is
+    // writable, and nothing inside tells that.
+    it('should refuse when the directory holding the target is not writable', async function test() {
+      skipAsRoot(this);
+
+      const configPath = lockDirectory('testnet');
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`'${configPath}'`);
+      expect(error.message).to.include(`chmod u+rwx '${configPath}'`);
+      expect(dockerCompose.rm).to.not.have.been.called();
+    });
+
+    // Nothing in the config's directory can even be looked at, so the
+    // directory itself is what needs fixing.
+    it('should name the directory holding the target when it cannot be searched', async function test() {
+      skipAsRoot(this);
+
+      const configPath = lockDirectoryWithMode(0o444, 'testnet');
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`chmod u+rwx '${configPath}'`);
+      expect(error.message).to.not.include('chmod -R');
+      expect(dockerCompose.rm).to.not.have.been.called();
+    });
+
+    // A link that points nowhere is still a path to remove from its directory.
+    it('should check the directory holding a target that is a dangling link', async function test() {
+      skipAsRoot(this);
+
+      fs.rmSync(homeDir.joinPath('testnet', 'platform'), { recursive: true });
+      fs.symlinkSync(homeDir.joinPath('nowhere'), homeDir.joinPath('testnet', 'platform'));
+      const configPath = lockDirectory('testnet');
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith(`chmod u+rwx '${configPath}'`);
+
+      expect(dockerCompose.rm).to.not.have.been.called();
+    });
+
+    it('should count paths beyond the first ten rather than list them', async function test() {
+      skipAsRoot(this);
+
+      const lockedPaths = Array.from({ length: 12 }, (_, i) => {
+        writeFile('testnet', 'platform', `locked-${i}`, 'file');
+
+        return lockDirectory('testnet', 'platform', `locked-${i}`);
+      });
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith(/and 2 more/);
+
+      expect(lockedPaths).to.have.lengthOf(12);
+    });
+
+    // A link out of the config's directory, to another node's files or the
+    // host's certificates, must lose the link and nothing it points to.
+    it('should remove a symbolic link and not what it points to', async () => {
+      const outsidePath = writeFile('outside', 'keep.txt');
+      fs.symlinkSync(path.dirname(outsidePath), homeDir.joinPath('testnet', 'platform', 'gateway', 'link'));
+
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform'))).to.be.false();
+      expect(fs.readFileSync(outsidePath, 'utf8')).to.equal('content');
+    });
+
+    // A directory that becomes read-only between the check and the removal
+    // keeps its entries; the rest is still removed and the path named.
+    it('should go on past a directory that turns read-only during removal', async function test() {
+      const sslPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+      const { accessSync } = fs;
+      let sslChecks = 0;
+      this.sinon.stub(fs, 'accessSync').callsFake((checkedPath, mode) => {
+        if (checkedPath === sslPath) {
+          sslChecks += 1;
+
+          if (sslChecks > 1) {
+            const error = new Error(`EACCES: permission denied, access '${checkedPath}'`);
+            error.code = 'EACCES';
+            throw error;
+          }
+        }
+
+        return accessSync.call(fs, checkedPath, mode);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`'${sslPath}'`);
+      expect(error.message).to.include('dashmate config render --config testnet');
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'drive'))).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'bundle.crt'))).to.be.true();
+    });
+
+    // Other failures during removal leave the same half-removed files behind.
+    it('should give the same recovery for any other failure during removal', async function test() {
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error(`EIO: i/o error, unlink '${filePath}'`);
+          error.code = 'EIO';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
+    });
+
+    // What the check cannot foresee, such as a file in a sticky directory or
+    // one marked immutable, fails once removal has begun. Compose then needs
+    // the service files rendered again before the reset can run.
+    it('should name what it could not remove once removal has begun', async function test() {
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
+          error.code = 'EPERM';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`'${keyPath}'`);
+      expect(error.message).to.include('dashmate config render --config testnet');
+      expect(dockerCompose.rm).to.have.been.calledOnce();
     });
   });
 

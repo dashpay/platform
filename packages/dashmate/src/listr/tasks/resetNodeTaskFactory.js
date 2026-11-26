@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import wait from '../../util/wait.js';
 import resolveConfigDirectory from '../../config/resolve-config-directory.js';
@@ -86,11 +87,15 @@ export default function resetNodeTaskFactory(
    * cannot write cannot be removed, so such a directory is returned once rather
    * than entry by entry, unless it is empty: removing an empty directory needs
    * only its parent to be writable. Symbolic links are removed, never followed.
+   * A dry run removes nothing and returns what a removal would leave, as far as
+   * permissions show it.
    *
    * @param {string} targetPath
+   * @param {Object} [options]
+   * @param {boolean} [options.dryRun=false]
    * @return {string[]} paths left in place for lack of permission
    */
-  function removePathAsFarAsPermitted(targetPath) {
+  function removePathAsFarAsPermitted(targetPath, { dryRun = false } = {}) {
     const deniedPaths = [];
 
     /**
@@ -104,6 +109,13 @@ export default function resetNodeTaskFactory(
       } catch (e) {
         if (e.code === 'ENOENT') {
           return true;
+        }
+
+        // A parent directory this user cannot search
+        if (isPermissionError(e)) {
+          deniedPaths.push(currentPath);
+
+          return false;
         }
 
         throw e;
@@ -132,7 +144,28 @@ export default function resetNodeTaskFactory(
           if (!isEmptied) {
             return false;
           }
+        } else if (dryRun) {
+          let isEmpty;
+          try {
+            isEmpty = fs.readdirSync(currentPath).length === 0;
+          } catch (e) {
+            if (!isPermissionError(e)) {
+              throw e;
+            }
+
+            isEmpty = false;
+          }
+
+          if (!isEmpty) {
+            deniedPaths.push(currentPath);
+
+            return false;
+          }
         }
+      }
+
+      if (dryRun) {
+        return true;
       }
 
       try {
@@ -162,42 +195,157 @@ export default function resetNodeTaskFactory(
       return true;
     }
 
+    // The target itself goes only if its parent directory is writable, and
+    // it is not even found if the parent cannot be searched. A link is the
+    // target here, wherever it points.
+    if (dryRun) {
+      const parentPath = path.dirname(targetPath);
+
+      try {
+        fs.lstatSync(targetPath);
+        // eslint-disable-next-line no-bitwise
+        fs.accessSync(parentPath, fs.constants.W_OK | fs.constants.X_OK);
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          return [];
+        }
+
+        if (!isPermissionError(e)) {
+          throw e;
+        }
+
+        return [parentPath];
+      }
+    }
+
     remove(targetPath);
 
     return deniedPaths;
   }
 
   /**
-   * Remove a path and everything under it, or fail naming what is left
-   *
-   * The config is saved only when the command succeeds, so after this error
-   * config.json is as it was and the reset can be run again.
-   *
-   * @param {string} targetPath
+   * @param {string[]} deniedPaths
+   * @return {string[]} one line per path, as many as are listed
    */
-  function removePath(targetPath) {
-    const deniedPaths = removePathAsFarAsPermitted(targetPath);
+  function formatDeniedPaths(deniedPaths) {
+    const lines = deniedPaths.slice(0, MAX_REPORTED_PATHS)
+      .map((deniedPath) => `  '${deniedPath}'`);
+
+    if (deniedPaths.length > MAX_REPORTED_PATHS) {
+      lines.push(`  and ${deniedPaths.length - MAX_REPORTED_PATHS} more`);
+    }
+
+    return lines;
+  }
+
+  /**
+   * The service files a hard reset removes: the config's whole directory, or
+   * its Platform part for a Platform-only reset
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {string|null} null when the reset removes no files
+   */
+  function getPathToRemove(config, ctx) {
+    // The group name only selects the defaults. Each member's service files
+    // live in a directory named after the config itself.
+    const configDirectory = resolveConfigDirectory(homeDir, config.getName());
+
+    if (!ctx.removeConfig && !ctx.isHardReset) {
+      return null;
+    }
+
+    if (ctx.isPlatformOnlyReset) {
+      return path.join(configDirectory, 'platform');
+    }
+
+    return configDirectory;
+  }
+
+  /**
+   * Refuse a reset whose files this user cannot remove, while nothing has
+   * changed
+   *
+   * Found out only during removal, the services and part of the files would be
+   * gone, and with them service files Compose needs to load the project.
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   */
+  function assertPathCanBeRemoved(config, ctx) {
+    const targetPath = getPathToRemove(config, ctx);
+
+    if (targetPath === null) {
+      return;
+    }
+
+    const deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
 
     if (deniedPaths.length === 0) {
       return;
     }
 
-    const shownPaths = deniedPaths.slice(0, MAX_REPORTED_PATHS)
-      .map((deniedPath) => `  '${deniedPath}'`);
+    const { uid, gid } = os.userInfo();
 
-    if (deniedPaths.length > MAX_REPORTED_PATHS) {
-      shownPaths.push(`  and ${deniedPaths.length - MAX_REPORTED_PATHS} more`);
+    // A parent that is not writable needs fixing on its own, not with all it
+    // holds.
+    const parentPath = path.dirname(targetPath);
+    const remedy = deniedPaths.includes(parentPath)
+      ? [`  sudo chown ${uid}:${gid} '${parentPath}'`, `  chmod u+rwx '${parentPath}'`]
+      : [`  sudo chown -R ${uid}:${gid} '${targetPath}'`, `  chmod -R u+rwX '${targetPath}'`];
+
+    throw new Error([
+      `Cannot reset config '${config.getName()}': this user cannot remove`
+        + ` ${deniedPaths.length} path(s) under '${targetPath}':`,
+      ...formatDeniedPaths(deniedPaths),
+      'They are probably owned by root, created by a container, or read-only.',
+      'Nothing has been changed. Give them to this user and make them writable, for example:',
+      ...remedy,
+      'then run the reset again.',
+    ].join('\n'));
+  }
+
+  /**
+   * Remove a path and everything under it, or fail naming what is left
+   *
+   * The config is saved only when the command succeeds, so after this error
+   * config.json is as it was.
+   *
+   * @param {string} targetPath
+   * @param {Config} config
+   */
+  function removePath(targetPath, config) {
+    // Part of the service files may be gone by the time removal fails, and
+    // Compose needs them to load the project, so they are rendered again
+    // before the reset is. Starting the node first would let Docker create the
+    // missing mount sources, as root.
+    const recovery = [
+      'then render the service files again and run the reset again:',
+      `  dashmate config render --config ${config.getName()}`,
+      'Do not start the node before the reset has completed.',
+    ];
+
+    let deniedPaths;
+    try {
+      deniedPaths = removePathAsFarAsPermitted(targetPath);
+    } catch (e) {
+      throw new Error([
+        `Could not remove '${targetPath}': ${e.message}`,
+        'Fix the cause,',
+        ...recovery,
+      ].join('\n'));
     }
 
-    // Starting the node first would let Docker create the removed mount
-    // sources again, as root.
+    if (deniedPaths.length === 0) {
+      return;
+    }
+
     throw new Error([
       `Could not remove ${deniedPaths.length} path(s) under '${targetPath}' for lack of permission:`,
-      ...shownPaths,
-      'They are probably owned by root, created by a container. Remove them with sufficient',
-      'rights, or fix their ownership or permissions, for example:',
+      ...formatDeniedPaths(deniedPaths),
+      'Remove them with sufficient rights, for example:',
       `  sudo rm -rf '${targetPath}'`,
-      'then run the reset again. Do not start the node before the reset has completed.',
+      ...recovery,
     ].join('\n'));
   }
 
@@ -254,6 +402,8 @@ export default function resetNodeTaskFactory(
               `  dashmate group reset --group ${groupName} --hard`,
             ].join('\n'));
           }
+
+          assertPathCanBeRemoved(config, ctx);
         },
       },
       {
@@ -362,12 +512,10 @@ export default function resetNodeTaskFactory(
       {
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
-        task: () => {
-          const serviceConfigsPath = resolveConfigDirectory(homeDir, config.getName());
-
+        task: (ctx) => {
           configFile.removeConfig(config.getName());
 
-          removePath(serviceConfigsPath);
+          removePath(getPathToRemove(config, ctx), config);
         },
       },
       {
@@ -376,10 +524,6 @@ export default function resetNodeTaskFactory(
         task: (ctx) => {
           const groupName = config.get('group');
           const defaultConfigName = groupName || config.getName();
-
-          // The group name only selects the defaults. Each member's service
-          // files live in a directory named after the config itself.
-          const configDirectory = resolveConfigDirectory(homeDir, config.getName());
 
           if (defaultConfigs.has(defaultConfigName)) {
             // Reset config if the corresponding default config exists
@@ -400,19 +544,13 @@ export default function resetNodeTaskFactory(
             ensureTenderdashNodeKey(config);
 
             // Remove service configs
-            let serviceConfigsPath = configDirectory;
-
-            if (ctx.isPlatformOnlyReset) {
-              serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
-            }
-
-            removePath(serviceConfigsPath);
+            removePath(getPathToRemove(config, ctx), config);
           } else {
             // Delete config if no base config
             configFile.removeConfig(config.getName());
 
             // Remove service configs
-            removePath(configDirectory);
+            removePath(getPathToRemove(config, ctx), config);
           }
         },
       },
