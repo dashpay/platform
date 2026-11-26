@@ -132,6 +132,7 @@ fn record_of(
     actions: &[SerializedAction],
 ) -> PendingRedrive {
     PendingRedrive {
+        spend_context: None,
         activity_id: [activity; 32],
         anchor: [0; 32],
         nullifiers: actions.iter().map(|action| action.nullifier).collect(),

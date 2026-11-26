@@ -223,6 +223,7 @@ fn save_unconfirmed_spend(
         .arm_redrive(
             id,
             PendingRedrive {
+                spend_context: None,
                 activity_id,
                 anchor: ANCHOR,
                 nullifiers: inputs.to_vec(),
