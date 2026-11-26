@@ -116,6 +116,8 @@ export default class SetupCommand extends BaseCommand {
    * @param {setupPlatformTask} setupPlatformTask
    * @param {getPlatformArtefacts} getPlatformArtefacts
    * @param {HomeDir} homeDir
+   * @param {StartedContainers} startedContainers
+   * @param {Docker} docker
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -129,6 +131,8 @@ export default class SetupCommand extends BaseCommand {
     setupPlatformTask,
     getPlatformArtefacts,
     homeDir,
+    startedContainers,
+    docker,
   ) {
     if (flags.platform) {
       return this.runPlatformSetup(args, flags, {
@@ -138,6 +142,8 @@ export default class SetupCommand extends BaseCommand {
         setupPlatformTask,
         getPlatformArtefacts,
         homeDir,
+        startedContainers,
+        docker,
       });
     }
 
@@ -376,7 +382,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
       failure = e;
     }
 
-    await SetupCommand.stopStartedCore(context, flags);
+    await SetupCommand.stopStartedContainers(dependencies, flags);
 
     if (failure) {
       SetupCommand.reportPlatformSetupFailure(context, dependencies.homeDir);
@@ -390,34 +396,57 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
   }
 
   /**
-   * Stop the Core this command started, the way `dashmate stop` stops it
+   * Stop the containers this command started, the way `dashmate stop` stops
+   * them
    *
    * The command's cleanup on exit force-removes the containers it started, and
-   * this Core runs on the node's chain database. Docker sends it SIGTERM and
-   * waits for the stop grace period of its service instead. A Core that was
-   * running before setup is left alone. If stopping fails, that cleanup still
-   * removes the container.
+   * the Core that setup starts runs on the node's chain database. Docker sends
+   * each SIGTERM and waits for the stop grace period of its service instead.
+   * Every container the command started counts, so a Core whose container
+   * Compose created and which then never answered is stopped this way too. A
+   * Core that was running before setup is not among them. If stopping fails,
+   * that cleanup still removes the containers.
    *
-   * @param {Object} ctx
+   * @param {Object} dependencies
+   * @param {StartedContainers} dependencies.startedContainers
+   * @param {Docker} dependencies.docker
    * @param {Object} flags
    * @return {Promise<void>}
    */
-  static async stopStartedCore(ctx, flags) {
-    if (!ctx.isCoreStartedBySetup) {
-      return;
-    }
-
+  static async stopStartedContainers({ startedContainers, docker }, flags) {
     try {
+      const containers = (await Promise.all(startedContainers.getContainers().map(async (id) => {
+        const container = docker.getContainer(id);
+
+        try {
+          const { State: state } = await container.inspect();
+
+          return state.Running ? container : null;
+        } catch (e) {
+          // Removed already
+          if (e.statusCode === 404) {
+            return null;
+          }
+
+          throw e;
+        }
+      }))).filter((container) => container !== null);
+
+      if (containers.length === 0) {
+        return;
+      }
+
       await new Listr([{
-        title: 'Stop the Core that setup started',
-        task: () => ctx.coreService.stop(),
+        title: 'Stop the containers setup started',
+        task: () => Promise.all(containers.map((container) => container.stop())),
       }], {
         renderer: flags.verbose ? 'verbose' : 'default',
         rendererOptions: { clearOutput: false, collapse: false },
       }).run();
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.error(`Could not stop Core gracefully (${e.message}); it is stopped by force now.`);
+      console.error(`Could not stop the containers setup started gracefully (${e.message});`
+        + ' they are stopped by force now.');
     }
   }
 

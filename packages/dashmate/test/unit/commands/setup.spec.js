@@ -8,6 +8,7 @@ import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
 import MuteOneLineError from '../../../src/oclif/errors/MuteOneLineError.js';
+import StartedContainers from '../../../src/docker/StartedContainers.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
 import { issueCertificate } from '../../../src/test/certificateFixtures.js';
 
@@ -27,6 +28,8 @@ describe('Setup command', () => {
   let nodeKey;
   let keyFile;
   let stderr;
+  let startedContainers;
+  let docker;
 
   /**
    * @param {Config[]} configs
@@ -59,6 +62,8 @@ describe('Setup command', () => {
         setupPlatformTask,
         getPlatformArtefacts,
         homeDir,
+        startedContainers,
+        docker,
       );
     } catch (e) {
       return e instanceof MuteOneLineError ? e.getError() : e;
@@ -105,6 +110,8 @@ describe('Setup command', () => {
     keyFile = writeSecret('node-key', `${nodeKey}\n`);
 
     dockerCompose = { isServiceRunning: this.sinon.stub().resolves(true) };
+    startedContainers = new StartedContainers();
+    docker = { getContainer: this.sinon.stub() };
 
     artefacts = { certificateFiles: [], dataVolumes: [], activeServices: [] };
     getPlatformArtefacts = this.sinon.stub().callsFake(async () => artefacts);
@@ -432,18 +439,20 @@ describe('Setup command', () => {
   });
 
   // The command's cleanup on exit force-removes the containers it started.
-  // The Core setup started runs on the node's chain database, so it is
-  // stopped first the way `dashmate stop` stops it, with its grace period.
-  describe('a Core that setup started', () => {
-    let coreService;
+  // The Core setup started runs on the node's chain database, so everything
+  // setup started is stopped first the way `dashmate stop` stops it, with the
+  // grace period of its service.
+  describe('the containers setup started', () => {
+    let core;
 
     /**
      * @param {Error} [failure]
      */
     function startCoreInTask(failure = undefined) {
       setupPlatformTask.callsFake(() => new Listr([{
-        task: (ctx) => {
-          Object.assign(ctx, { coreService, isCoreStartedBySetup: true });
+        task: () => {
+          // What Compose does on `run core`, before Core is asked anything
+          startedContainers.addContainer('dashmate_testnet-core-run-1');
 
           if (failure) {
             throw failure;
@@ -453,38 +462,54 @@ describe('Setup command', () => {
     }
 
     beforeEach(function beforeEach() {
-      coreService = { stop: this.sinon.stub().resolves(true) };
+      core = {
+        inspect: this.sinon.stub().resolves({ State: { Running: true } }),
+        stop: this.sinon.stub().resolves(),
+        kill: this.sinon.stub().resolves(),
+        remove: this.sinon.stub().resolves(),
+      };
+      docker.getContainer.withArgs('dashmate_testnet-core-run-1').returns(core);
     });
 
-    it('should be stopped gracefully when setup succeeds', async () => {
+    it('should stop a Core it started gracefully when setup succeeds', async () => {
       startCoreInTask();
 
       const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
 
       expect(error).to.be.null();
-      expect(coreService.stop).to.have.been.calledOnce();
+      expect(core.stop).to.have.been.calledOnceWithExactly();
+      expect(core.kill).to.not.have.been.called();
     });
 
-    it('should be stopped gracefully when setup fails', async () => {
+    it('should stop a Core it started gracefully when setup fails', async () => {
       startCoreInTask(new Error('wrong key'));
 
       const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
 
       expect(error.message).to.equal('wrong key');
-      expect(coreService.stop).to.have.been.calledOnce();
+      expect(core.stop).to.have.been.calledOnceWithExactly();
     });
 
-    it('should leave a Core that was already running alone', async () => {
-      setupPlatformTask.callsFake(() => new Listr([{
-        task: (ctx) => {
-          Object.assign(ctx, { coreService });
-        },
-      }], { renderer: 'silent' }));
+    // Compose created the container, and then Core never answered: setup has
+    // no handle on Core yet, but the container is the command's.
+    it('should stop gracefully a Core whose start failed after its container was created', async () => {
+      startCoreInTask(new Error('Core did not start in time'));
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.equal('Core did not start in time');
+      expect(core.stop).to.have.been.calledOnceWithExactly();
+    });
+
+    it('should leave containers that already stopped, and a Core it did not start, alone', async () => {
+      core.inspect.resolves({ State: { Running: false } });
+      startCoreInTask();
 
       const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
 
       expect(error).to.be.null();
-      expect(coreService.stop).to.not.have.been.called();
+      expect(core.stop).to.not.have.been.called();
+      expect(docker.getContainer).to.have.been.calledOnceWith('dashmate_testnet-core-run-1');
     });
   });
 

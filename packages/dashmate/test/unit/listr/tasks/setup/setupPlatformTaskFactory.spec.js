@@ -235,8 +235,6 @@ describe('setupPlatformTask', () => {
       expect(waitForCoreSync).to.have.been.calledOnce();
       expect(readPlatformRegistration.firstCall.args[0]).to.deep.equal({ name: 'started Core' });
       expect(ctx.isCoreRunning).to.be.false();
-      // The command stops it gracefully when the run ends.
-      expect(ctx.isCoreStartedBySetup).to.be.true();
     });
 
     // Compose 2.24 creates the volumes of every service its profiles enable,
