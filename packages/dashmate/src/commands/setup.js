@@ -8,7 +8,7 @@ import BaseCommand from '../oclif/command/BaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 import printUnwrapped from '../oclif/errors/printUnwrapped.js';
 import Config from '../config/Config.js';
-import { findCertificateFiles } from '../config/getPlatformArtefactsFactory.js';
+import { findCertificateFiles, inspectCertificateFiles } from '../config/getPlatformArtefactsFactory.js';
 import getPlatformSetupState, {
   PLATFORM_SETUP_STATE,
   describePlatformSetupState,
@@ -504,6 +504,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
     let setupState = getPlatformSetupState(config, {
       defaultConfig,
       certificateFiles: findCertificateFiles(homeDir, preset),
+      isCertificateUsable: inspectCertificateFiles(homeDir, preset).isUsable,
     });
     if (setupState.state !== PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED) {
       refuse(describePlatformSetupState(setupState, preset));
@@ -826,6 +827,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
         markers: certificateFiles,
         certificateId: ctx.config.get('platform.gateway.ssl.providerConfigs.zerossl.id'),
+        isCertificateInstalled: inspectCertificateFiles(homeDir, ctx.preset).isUsable,
       }, ctx.preset);
     } else if (ctx.isCertificateStepStarted) {
       const lines = ['Platform setup did not finish, and nothing was saved.'];

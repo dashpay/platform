@@ -36,6 +36,8 @@ If IP verification fails, the command will retry automatically unless the `--no-
 
 The `--force` flag can be used to replace a certificate even if it's still valid, which is useful for testing or when you need to replace a certificate for other reasons.
 
+Before it enables TLS, the command checks the certificate files it leaves: the bundle and the private key must load as a matching pair, and the certificate must not have expired. A certificate file found on disk is not downloaded again, so if the files are damaged, for example cut short by a full disk, the command fails without enabling TLS. Obtain a new certificate with `--force` in that case.
+
 ## Examples
 
 ```bash

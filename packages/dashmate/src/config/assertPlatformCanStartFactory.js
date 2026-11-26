@@ -50,6 +50,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
     return getPlatformSetupState(config, {
       defaultConfig: defaultConfigs.has(name) ? defaultConfigs.get(name) : undefined,
       certificateFiles: findCertificateFiles(homeDir, name),
+      isCertificateUsable: inspectCertificateFiles(homeDir, name).isUsable,
     });
   }
 
@@ -63,11 +64,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
    * @return {string}
    */
   function describeInterruptedSetup(setupState, name, certificate) {
-    // Files the gateway cannot serve are not an installed certificate.
-    const remedy = describePlatformSetupState(
-      certificate.isUsable ? setupState : { ...setupState, markers: [] },
-      name,
-    );
+    const remedy = describePlatformSetupState(setupState, name);
 
     if (certificate.directories.length === 0) {
       return remedy;

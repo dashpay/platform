@@ -545,6 +545,13 @@ describe('Setup command', () => {
 
   describe('a run that fails', () => {
     let sslDir;
+    let pair;
+
+    before(function before() {
+      // RSA key generation is slow in pure JS.
+      this.timeout(30000);
+      pair = issueCertificate({ ip: '1.2.3.4' });
+    });
 
     /**
      * Make the setup task install a certificate, as a provider does, and fail
@@ -554,14 +561,15 @@ describe('Setup command', () => {
      */
     function failAfterInstalling({
       failure = new Error('Platform services were started while setup ran'),
+      files = { 'bundle.crt': 'certificate', 'private.key': 'key' },
       ...ctxFields
     } = {}) {
       setupPlatformTask.callsFake(() => new Listr([{
         task: (ctx) => {
           Object.assign(ctx, { isCertificateStepStarted: true }, ctxFields);
           fs.mkdirSync(sslDir, { recursive: true });
-          fs.writeFileSync(path.join(sslDir, 'bundle.crt'), 'certificate');
-          fs.writeFileSync(path.join(sslDir, 'private.key'), 'key');
+          Object.entries(files)
+            .forEach(([fileName, content]) => fs.writeFileSync(path.join(sslDir, fileName), content));
 
           throw failure;
         },
@@ -629,13 +637,57 @@ describe('Setup command', () => {
     // ZeroSSL recorded its certificate in config.json, and its files are what
     // finishing needs.
     it('should keep a ZeroSSL certificate and say how to finish without a new one', async () => {
-      failAfterInstalling({ createdCertificate: true, isZeroSslCertificateRecorded: true });
+      failAfterInstalling({
+        createdCertificate: true,
+        isZeroSslCertificateRecorded: true,
+        files: { 'bundle.crt': pair.pem, 'private.key': pair.keyPem },
+      });
 
       await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
 
       expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.true();
       expect(stderr).to.include('dashmate ssl obtain --config testnet');
       expect(stderr).to.not.include('--force');
+    });
+
+    // A disk that filled while ZeroSSL's bundle was written leaves part of it
+    // next to an intact key. A plain obtain finds the bundle there and would
+    // not write it again.
+    it('should not call a truncated ZeroSSL bundle installed', async () => {
+      failAfterInstalling({
+        createdCertificate: true,
+        isZeroSslCertificateRecorded: true,
+        failure: new Error('ENOSPC: no space left on device'),
+        files: { 'bundle.crt': pair.pem.slice(0, pair.pem.length / 2), 'private.key': pair.keyPem },
+      });
+
+      await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(stderr).to.include('dashmate ssl obtain --force --config testnet');
+    });
+
+    // The next run refuses the interrupted setup, and its advice has to be
+    // the same.
+    it('should give a retry over a truncated ZeroSSL bundle the commands that create a new certificate', async () => {
+      const config = configFile.getConfig('testnet');
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), pair.pem.slice(0, pair.pem.length / 2));
+      fs.writeFileSync(path.join(sslDir, 'private.key'), pair.keyPem);
+
+      const error = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('dashmate ssl obtain --force --config testnet');
+
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), pair.pem);
+
+      const retried = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(retried.message).to.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
     });
   });
 

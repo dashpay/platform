@@ -7,12 +7,32 @@ import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFi
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
+import { issueCertificate } from '../../../../src/test/certificateFixtures.js';
 
 describe('obtainZeroSSLCertificateTaskFactory', () => {
   let config;
   let verificationServer;
   let validateZeroSslCertificate;
   let obtainZeroSSLCertificateTask;
+  let pair;
+
+  /**
+   * Put a certificate pair the gateway can serve where the task finds it
+   *
+   * @param {string} bundleFilePath
+   * @param {string} privateKeyFilePath
+   */
+  function writeCertificatePair(bundleFilePath, privateKeyFilePath) {
+    fs.mkdirSync(path.dirname(bundleFilePath), { recursive: true });
+    fs.writeFileSync(bundleFilePath, pair.pem);
+    fs.writeFileSync(privateKeyFilePath, pair.keyPem, { mode: 0o600 });
+  }
+
+  before(function before() {
+    // RSA key generation is slow in pure JS.
+    this.timeout(30000);
+    pair = issueCertificate({ ip: '127.0.0.1' });
+  });
 
   beforeEach(function beforeEach() {
     config = {
@@ -167,6 +187,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         id: 'certificate-id-000000000000000000',
         status: 'issued',
       });
+      writeCertificatePair(homeDir.joinPath('bundle.crt'), homeDir.joinPath('private.key'));
       const task = obtainZeroSSLCertificateTaskFactory(
         this.sinon.stub(),
         this.sinon.stub(),
@@ -281,6 +302,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     try {
       const realConfig = getBaseConfigFactory(homeDir)();
       realConfig.set('platform.gateway.ssl.provider', 'self-signed');
+      writeCertificatePair(homeDir.joinPath('bundle.crt'), homeDir.joinPath('private.key'));
       const validate = this.sinon.stub().resolves({
         data: {
           apiKey: 'api-key',
@@ -323,12 +345,77 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     }
   });
 
+  // A disk that filled while the bundle was written leaves part of it next
+  // to an intact key. The issued certificate is not downloaded again while a
+  // bundle is there, and TLS enabled over this one would serve nothing.
+  it('should not enable TLS until the certificate files on disk can be served', async function it() {
+    const homeDir = HomeDir.createTemp();
+
+    try {
+      const realConfig = getBaseConfigFactory(homeDir)();
+      realConfig.set('platform.gateway.ssl.provider', 'zerossl');
+      const sslConfigDir = homeDir.joinPath('ssl');
+      const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');
+      const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
+      writeCertificatePair(bundleFilePath, privateKeyFilePath);
+      fs.writeFileSync(bundleFilePath, pair.pem.slice(0, pair.pem.length / 2));
+
+      const validate = this.sinon.stub().resolves({
+        data: {
+          apiKey: 'api-key',
+          bundleFilePath,
+          certificate: {
+            expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            status: 'issued',
+          },
+          csrFilePath: path.join(sslConfigDir, 'csr.pem'),
+          externalIp: '127.0.0.1',
+          isBundleFilePresent: true,
+          isCsrFilePresent: true,
+          isPrivateKeyFilePresent: true,
+          privateKeyFilePath,
+          sslConfigDir,
+        },
+      });
+      const buildTask = () => obtainZeroSSLCertificateTaskFactory(
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        verificationServer,
+        homeDir,
+        validate,
+      )(realConfig, {
+        onCertificateCreated: this.sinon.stub(),
+      });
+
+      await expect(buildTask().run({ expirationDays: 30 }))
+        .to.be.rejectedWith('cannot be served');
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.false();
+
+      fs.writeFileSync(bundleFilePath, pair.pem);
+
+      await buildTask().run({ expirationDays: 30 });
+
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+    } finally {
+      homeDir.remove();
+    }
+  });
+
   it('should create the ZeroSSL private key with mode 0600', async function it() {
     const homeDir = HomeDir.createTemp();
 
     try {
       const realConfig = getBaseConfigFactory(homeDir)();
       const privateKeyFilePath = homeDir.joinPath('ssl', 'private.key');
+      // The bundle of the issued certificate is already there.
+      fs.mkdirSync(homeDir.joinPath('ssl'), { recursive: true });
+      fs.writeFileSync(homeDir.joinPath('ssl', 'bundle.crt'), pair.pem);
       const validate = this.sinon.stub().resolves({
         error: ERRORS.CERTIFICATE_ID_IS_NOT_SET,
         data: {
@@ -346,7 +433,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       });
       const task = obtainZeroSSLCertificateTaskFactory(
         this.sinon.stub().resolves('certificate-request'),
-        this.sinon.stub().resolves({ privateKey: 'private-key' }),
+        this.sinon.stub().resolves({ privateKey: pair.keyPem }),
         this.sinon.stub().resolves({
           id: 'certificate-id-000000000000000000',
           status: 'issued',

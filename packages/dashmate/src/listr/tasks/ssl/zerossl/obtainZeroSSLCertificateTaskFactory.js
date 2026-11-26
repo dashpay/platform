@@ -8,6 +8,7 @@ import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
 import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import VerificationServerUnreachableError from '../../../../ssl/errors/VerificationServerUnreachableError.js';
+import findCertificatePairProblem from '../../../../ssl/findCertificatePairProblem.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -361,6 +362,30 @@ and all Dash service ports listed above.`);
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.bundleFilePath;
+        },
+      },
+      {
+        // The gateway serves TLS from these files. A bundle found on disk is
+        // not downloaded again, so one that a full disk cut short would stay
+        // as it is.
+        title: 'Check certificate files',
+        task: async (ctx) => {
+          let problem;
+
+          try {
+            problem = findCertificatePairProblem(
+              fs.readFileSync(ctx.bundleFilePath, 'utf8'),
+              fs.readFileSync(ctx.privateKeyFilePath, 'utf8'),
+            );
+          } catch (e) {
+            problem = e.message;
+          }
+
+          if (problem !== null) {
+            throw new Error(`The certificate files in ${ctx.sslConfigDir} cannot be served: ${problem}.\n`
+              + 'Please obtain a new certificate using the obtain command with the --force flag,'
+              + ' and revoke the previous certificate in the ZeroSSL dashboard');
+          }
         },
       },
       {

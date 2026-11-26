@@ -220,7 +220,7 @@ describe('getPlatformSetupState', () => {
 
       expect(text).to.include('dashmate ssl obtain --force --config testnet');
       // `ssl cleanup` cancels every unfinished certificate of the account.
-      expect(text).to.include(`cancel the unfinished certificate ${'c'.repeat(32)} in the ZeroSSL dashboard`);
+      expect(text).to.include(`cancel certificate ${'c'.repeat(32)} in the ZeroSSL dashboard`);
     });
 
     // A second --force would spend another certificate when a valid pair is
@@ -235,12 +235,33 @@ describe('getPlatformSetupState', () => {
 
       const setupState = stateOf(config, {
         certificateFiles: [`${sslDir}/bundle.crt`, `${sslDir}/private.key`],
+        isCertificateUsable: true,
       });
       const text = describePlatformSetupState(setupState, 'testnet');
 
       expect(setupState.state).to.equal(PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED);
       expect(text).to.include('dashmate ssl obtain --config testnet');
       expect(text).to.not.include('--force');
+    });
+
+    // A run that stopped while writing them, out of disk space say, leaves
+    // both names on disk. A plain obtain finds them there and would enable
+    // TLS without writing them again.
+    it('should not call the certificate installed when its files are there but cannot be served', async () => {
+      const config = await hardResetPlatform(setUp('testnet', { masternode: true }));
+      config.set('platform.drive.tenderdash.node.key', setUp('testnet', { masternode: true }).get('platform.drive.tenderdash.node.key'));
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+      const sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+
+      const setupState = stateOf(config, {
+        certificateFiles: [`${sslDir}/bundle.crt`, `${sslDir}/private.key`],
+        isCertificateUsable: false,
+      });
+
+      expect(describePlatformSetupState(setupState, 'testnet'))
+        .to.include('dashmate ssl obtain --force --config testnet');
     });
   });
 });

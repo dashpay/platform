@@ -1,4 +1,3 @@
-import path from 'path';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import renderNodeKeyBackup, { NODE_KEY_PATH } from './renderNodeKeyBackup.js';
 
@@ -12,9 +11,6 @@ export const PLATFORM_SETUP_STATE = {
 const VOLUME_MARKER_PREFIX = 'Docker volume ';
 
 const PRESET_NAMES = ['mainnet', 'testnet'];
-
-// Both files of the gateway certificate: what ZeroSSL writes last.
-const CERTIFICATE_FILE_NAMES = ['bundle.crt', 'private.key'];
 
 /**
  * Whether the Core part of a config was set up
@@ -68,6 +64,8 @@ function isCoreSetUp(config, defaultConfig) {
  * @param {Config} [options.defaultConfig] - the preset's defaults
  * @param {string[]} [options.certificateFiles] - gateway certificate files found
  * @param {string[]} [options.dataVolumes] - Platform data volumes that exist
+ * @param {boolean} [options.isCertificateUsable] - whether the gateway can
+ *  serve TLS from its certificate files, by `inspectCertificateFiles`
  * @return {{ state: string, markers: string[] }} markers are option paths,
  *  file paths and volumes, never values
  */
@@ -75,6 +73,7 @@ export default function getPlatformSetupState(config, {
   defaultConfig,
   certificateFiles = [],
   dataVolumes = [],
+  isCertificateUsable = false,
 } = {}) {
   if (!isCoreSetUp(config, defaultConfig)) {
     return { state: PLATFORM_SETUP_STATE.CORE_NOT_SET_UP, markers: [] };
@@ -86,12 +85,14 @@ export default function getPlatformSetupState(config, {
 
   // ZeroSSL saves every answer as soon as it creates a certificate. If the
   // run stops before it ends, the answers stay and TLS stays off. Whether
-  // the issued pair reached the disk decides how to finish.
+  // the issued pair reached the disk whole decides how to finish: a plain
+  // obtain does not write files it finds there again.
   if (ssl.provider === 'zerossl' && zeroSsl.id !== null && ssl.enabled === false && key !== null) {
     return {
       state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
       markers: certificateFiles,
       certificateId: zeroSsl.id,
+      isCertificateInstalled: isCertificateUsable,
     };
   }
 
@@ -125,25 +126,23 @@ export default function getPlatformSetupState(config, {
 }
 
 /**
- * Whether both gateway certificate files are among a state's markers, as
- * they are once an interrupted ZeroSSL setup installed its certificate
- *
- * @param {{ markers: string[] }} setupState
- * @return {boolean}
- */
-function hasCertificateFiles({ markers }) {
-  return CERTIFICATE_FILE_NAMES
-    .every((fileName) => markers.some((marker) => path.basename(marker) === fileName));
-}
-
-/**
  * What the state means for the operator and what to run
  *
- * @param {{ state: string, markers: string[], certificateId?: string }} setupState
+ * @param {{
+ *   state: string,
+ *   markers: string[],
+ *   certificateId?: string,
+ *   isCertificateInstalled?: boolean,
+ * }} setupState
  * @param {string} configName
  * @return {string}
  */
-export function describePlatformSetupState({ state, markers, certificateId }, configName) {
+export function describePlatformSetupState({
+  state,
+  markers,
+  certificateId,
+  isCertificateInstalled,
+}, configName) {
   const flag = renderConfigFlag(configName);
   const setupCommand = `dashmate setup --platform ${flag}`;
 
@@ -160,7 +159,7 @@ export function describePlatformSetupState({ state, markers, certificateId }, co
       ].join('\n');
 
     case PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED: {
-      if (hasCertificateFiles({ markers })) {
+      if (isCertificateInstalled) {
         return [
           `An earlier Platform setup of ${configName} stopped after ZeroSSL issued its certificate`,
           'and the certificate was installed. Its answers were saved. To finish the setup:',
@@ -171,11 +170,12 @@ export function describePlatformSetupState({ state, markers, certificateId }, co
 
       return [
         `An earlier Platform setup of ${configName} stopped after it created a ZeroSSL certificate`,
-        'and before the certificate was verified. Its answers were saved, but that certificate',
+        'and before the certificate was installed. Its answers were saved, but that certificate',
         'cannot be completed. To finish the setup:',
         '  1. open inbound TCP port 80 to this node',
         `  2. dashmate ssl obtain --force ${flag}    (creates a new certificate)`,
-        `  3. cancel the unfinished certificate ${certificateId} in the ZeroSSL dashboard`,
+        `  3. cancel certificate ${certificateId} in the ZeroSSL dashboard, or revoke it if it`,
+        '     was issued',
         `then continue with 'dashmate update ${flag}' and start the node.`,
         `('dashmate ssl cleanup ${flag}' would cancel every unfinished certificate of the`,
         'API key\'s account, other nodes\' included.) Do not reset Platform in between: that',

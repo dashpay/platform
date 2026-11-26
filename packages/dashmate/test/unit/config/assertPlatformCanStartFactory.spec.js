@@ -246,6 +246,32 @@ describe('assertPlatformCanStart', () => {
       expect(refusalOf(config)).to.not.be.null();
     });
 
+    // A run that stopped while writing the bundle, out of disk space say,
+    // leaves part of it next to an intact key.
+    it('should refuse it with a truncated bundle, and not call the certificate installed', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles({
+        'bundle.crt': pair.pem.slice(0, pair.pem.length / 2),
+        'private.key': pair.keyPem,
+      });
+
+      const refusal = refusalOf(config);
+
+      expect(refusal.problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
+      expect(refusal.remedy).to.include('dashmate ssl obtain --force --config testnet');
+      expect(assertPlatformCanStart.findPendingSetup(config).canStart).to.be.undefined();
+    });
+
+    // Clients refuse an expired certificate, so the gateway serves no TLS.
+    it('should refuse it with an expired certificate', async function it() {
+      this.timeout(30000);
+      const expired = issueCertificate({ ip: '1.2.3.4', days: -1 });
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles({ 'bundle.crt': expired.pem, 'private.key': expired.keyPem });
+
+      expect(refusalOf(config).problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
+    });
+
     // TLS works from the installed pair: only renewal is not managed yet,
     // which update reports.
     it('should start once the issued certificate is installed', async () => {

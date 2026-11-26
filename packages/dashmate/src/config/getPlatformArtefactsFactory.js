@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import selectPlatformServices from '../docker/selectPlatformServices.js';
-import selectLeafCertificate from '../ssl/selectLeafCertificate.js';
+import findCertificatePairProblem from '../ssl/findCertificatePairProblem.js';
 
 // Container states in which a service is not doing anything.
 const STOPPED_STATES = ['exited', 'created'];
@@ -81,9 +81,9 @@ function inspectFile(filePath) {
  *
  * The gateway bind-mounts both files. A missing one, a link that points
  * nowhere and a directory, which Docker creates for a missing mount source,
- * serve nothing, and neither does a pair that does not load or match. A file
- * this process cannot read counts as usable: Docker running as root mounts
- * files the operator's user cannot read.
+ * serve nothing, and neither does a pair that does not load or match or whose
+ * certificate expired. A file this process cannot read counts as usable:
+ * Docker running as root mounts files the operator's user cannot read.
  *
  * @param {HomeDir} homeDir
  * @param {string} configName
@@ -101,7 +101,10 @@ export function inspectCertificateFiles(homeDir, configName) {
   let isUsable = [bundle, key].every(({ kind }) => kind === 'file' || kind === 'unknown');
 
   if (isUsable && bundle.kind === 'file' && key.kind === 'file') {
-    isUsable = !selectLeafCertificate(bundle.content.toString('utf8'), key.content.toString('utf8')).error;
+    isUsable = findCertificatePairProblem(
+      bundle.content.toString('utf8'),
+      key.content.toString('utf8'),
+    ) === null;
   }
 
   return { isUsable, directories };
