@@ -85,7 +85,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
 
     const interactive = isInteractiveSession({ flags });
 
-    // A masternode whose Platform part is not set up (after `reset --platform
+    // A node whose Platform part is not set up (after `reset --platform
     // --hard`) is set up before it is updated, and setup obtains the
     // certificate. The certificate check is skipped until then: its remedies
     // (an obtain, `ssl obtain`) would configure TLS behind setup's back, and

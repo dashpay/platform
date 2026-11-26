@@ -64,13 +64,67 @@ describe('assertPlatformCanStart', () => {
     expect(refusalOf(config)).to.be.null();
   });
 
-  // Only a masternode must run the identity registered for it on chain.
-  it('should leave fullnodes and nodes without Platform alone', () => {
+  // A fullnode needs no registered identity: any key serves it.
+  it('should leave fullnodes that are set up and nodes without Platform alone', () => {
     const fullnode = setUp('testnet', { masternode: false });
     const regular = setUp('testnet', { masternode: true, evo: false });
+    const coreOnly = setUp('testnet', { masternode: false, evo: false });
 
     expect(refusalOf(fullnode)).to.be.null();
     expect(refusalOf(regular)).to.be.null();
+    expect(refusalOf(coreOnly)).to.be.null();
+  });
+
+  // After `reset --platform --hard` a testnet Evo fullnode keeps Platform
+  // enabled with no certificate, so `update && start` would bring up a gateway
+  // that cannot serve TLS, and create the Platform volumes that setup then
+  // refuses as data a reset kept.
+  it('should refuse an Evo fullnode reset with --hard and point to setup --platform', async () => {
+    const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
+
+    const refusal = refusalOf(config);
+
+    expect(refusal.problem).to.equal('its Platform part is not set up');
+    expect(refusal.remedy).to.include('dashmate setup --platform --config testnet')
+      .and.include('dashmate config set platform.enable false --config testnet');
+  });
+
+  // The gateway serves TLS from bundle.crt and private.key whatever the
+  // provider, so a fullnode whose Platform was set up has TLS on or files of
+  // its own.
+  describe('a fullnode whose Platform was set up', () => {
+    it('should start with a self-signed certificate', () => {
+      const config = setUp('testnet', { masternode: false });
+      config.set('platform.gateway.ssl.provider', 'self-signed');
+
+      expect(refusalOf(config)).to.be.null();
+    });
+
+    it('should start with certificate files that dashmate does not manage', async () => {
+      const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      const sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), 'certificate');
+      fs.writeFileSync(path.join(sslDir, 'private.key'), 'key');
+
+      expect(refusalOf(config)).to.be.null();
+    });
+
+    // Setup cannot set these up, so it is not offered; nor is the reset that
+    // led here a Platform-only setup's to repair.
+    it('should leave a fullnode that is not a preset alone', async () => {
+      const mainnet = await hardResetPlatform(setUp('mainnet', { masternode: false }));
+      const custom = new Config('my-testnet', (await hardResetPlatform(setUp('testnet', { masternode: false }))).getStoredOptions());
+      const seed = new Config('local_seed', defaultConfigs.get('local').getStoredOptions());
+      seed.set('group', 'local');
+      seed.set('core.masternode.enable', false);
+      seed.set('platform.drive.tenderdash.mode', 'seed');
+
+      expect(mainnet.get('platform.enable')).to.be.false();
+      expect(refusalOf(mainnet)).to.be.null();
+      expect(refusalOf(custom)).to.be.null();
+      expect(refusalOf(seed)).to.be.null();
+    });
   });
 
   // After a testnet hard reset Platform stays enabled and the key is gone.
@@ -194,10 +248,9 @@ describe('assertPlatformCanStart', () => {
 
   describe('a setup an update has to wait for', () => {
     // A certificate obtained by update would make Platform setup refuse.
-    it('should find an Evo fullnode reset with --hard, which can start', async () => {
+    it('should find an Evo fullnode reset with --hard', async () => {
       const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
 
-      expect(refusalOf(config)).to.be.null();
       expect(assertPlatformCanStart.findPendingSetup(config).remedy)
         .to.include('dashmate setup --platform --config testnet');
     });

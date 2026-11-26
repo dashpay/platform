@@ -53,15 +53,39 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
   }
 
   /**
-   * Refuse to start a masternode's Platform without its registered identity
+   * @param {string} name
+   * @param {string} problem
+   * @param {string} remedy
+   */
+  function refuse(name, problem, remedy) {
+    const error = new Error(`Cannot start Platform of ${name}: ${problem}.\n${remedy}`);
+    error.problem = problem;
+    error.remedy = remedy;
+
+    throw error;
+  }
+
+  /**
+   * Refuse to start Platform of a node whose Platform part is not set up
    *
-   * After `reset --platform --hard` an evonode keeps Platform enabled (testnet)
-   * with no node key, so Tenderdash would start on a node_key.json that says
+   * A masternode's Platform runs its registered identity. After
+   * `reset --platform --hard` an evonode keeps Platform enabled (testnet) with
+   * no node key, so Tenderdash would start on a node_key.json that says
    * "null". A node whose config was saved but whose service files were not
-   * rendered would run an older identity. Both are refused here, before
-   * anything is rendered or started, with the command that sets them right.
+   * rendered would run an older identity.
    *
-   * Fullnodes are left alone: any key serves them, and dashmate gives them one.
+   * A fullnode needs no registered identity: any key serves it, and dashmate
+   * gives it one. After the same reset an Evo fullnode keeps Platform enabled
+   * with no certificate, and `update && start` would bring up a gateway that
+   * cannot serve TLS, and create the Platform data volumes that setup then
+   * refuses as data a reset kept. It is refused while Platform-only setup sees
+   * its Platform part as not set up, by the same markers setup checks. The
+   * gateway serves TLS from its certificate files whatever the provider, so a
+   * fullnode whose Platform was set up has TLS on or files of its own. Only the
+   * presets Platform-only setup serves are refused: it cannot set up others.
+   *
+   * Every case is refused here, before anything is rendered or started, with
+   * the command that sets it right.
    *
    * The error carries `problem` and `remedy`, for callers that word the
    * refusal themselves.
@@ -70,24 +94,34 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
    * @param {Config} config
    */
   function assertPlatformCanStart(config) {
-    if (!config.get('platform.enable') || !config.get('core.masternode.enable')) {
+    if (!config.get('platform.enable')) {
       return;
     }
 
     const name = config.getName();
     const flag = renderConfigFlag(name);
+
+    if (!config.get('core.masternode.enable')) {
+      if (!PLATFORM_PRESETS.includes(name)) {
+        return;
+      }
+
+      const setupState = getSetupState(config);
+
+      if (setupState.state === PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED) {
+        refuse(name, 'its Platform part is not set up', [
+          describePlatformSetupState(setupState, name),
+          `To run Core alone until then: dashmate config set platform.enable false ${flag}`,
+        ].join('\n'));
+      }
+
+      return;
+    }
+
     const { id, key } = config.get('platform.drive.tenderdash.node');
     const mode = config.get('platform.drive.tenderdash.mode');
 
     const setupState = getSetupState(config);
-
-    const refuse = (problem, remedy) => {
-      const error = new Error(`Cannot start Platform of ${name}: ${problem}.\n${remedy}`);
-      error.problem = problem;
-      error.remedy = remedy;
-
-      throw error;
-    };
 
     if (key === null) {
       const groupName = config.get('group');
@@ -95,14 +129,14 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
       // A group's identities, ports and peers belong to the whole group, and
       // setting up Platform alone does not support them.
       if (groupName) {
-        refuse('this masternode has no Platform node key', [
+        refuse(name, 'this masternode has no Platform node key', [
           `Set the ${groupName} group up again with:`,
           `  dashmate group reset --group ${groupName} --hard`,
           `  dashmate setup ${groupName}`,
         ].join('\n'));
       }
 
-      refuse('this masternode has no Platform node key', [
+      refuse(name, 'this masternode has no Platform node key', [
         describePlatformSetupState(setupState, name),
         `To run Core alone until then: dashmate config set platform.enable false ${flag}`,
       ].join('\n'));
@@ -110,6 +144,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
 
     if (mode !== 'validator') {
       refuse(
+        name,
         `this masternode runs Tenderdash in '${mode}' mode, and a masternode must validate`,
         `Set it with:\n  dashmate config set platform.drive.tenderdash.mode validator ${flag}`,
       );
@@ -117,11 +152,12 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
 
     // Rendering again would not finish it: TLS is still off.
     if (setupState.state === PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED) {
-      refuse('its Platform setup did not finish', describePlatformSetupState(setupState, name));
+      refuse(name, 'its Platform setup did not finish', describePlatformSetupState(setupState, name));
     }
 
     if (readRenderedNodeId(config) !== id) {
       refuse(
+        name,
         'the service files do not hold the configured node ID',
         `Render them again with:\n  dashmate config render ${flag}`,
       );
@@ -133,8 +169,8 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
    * it has to
    *
    * Besides what stops Platform from starting, this covers an Evo fullnode
-   * after `reset --platform --hard`: it can start with the key the reset gave
-   * it, but a certificate obtained now would make Platform setup refuse.
+   * whose ZeroSSL setup stopped half-way: a certificate obtained now would make
+   * Platform setup refuse.
    *
    * @param {Config} config
    * @return {Error|null} with `problem` and `remedy`

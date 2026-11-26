@@ -114,7 +114,7 @@ $ dashmate start --platform --config testnet           # or `dashmate start --co
 
 `setup --platform` reads the registration from the masternode list, through Core, and accepts only the key whose node ID is registered. If Core is stopped it starts Core for the duration of the command and waits until Core has synced. It also obtains the gateway certificate.
 
-Run setup before `update`. On mainnet the reset disables Platform, so an earlier `update` pulls no Platform images, and `dashmate start` runs Core alone without saying so: nothing reminds you that Platform still has to be set up. On testnet an earlier `update` says that Platform must be set up first and skips its certificate check.
+Run setup before `update`. On mainnet the reset disables Platform, so an earlier `update` pulls no Platform images, and `dashmate start` runs Core alone without saying so: nothing reminds you that Platform still has to be set up. On testnet an earlier `update` says that Platform must be set up first and skips its certificate check, and `start`, `restart` and `core reindex` refuse to start Platform, on a masternode and on an Evo fullnode, until it is set up. To run Core alone in the meantime, disable Platform with `dashmate config set platform.enable false --config testnet`; setup enables it again.
 
 If `platform.quorumList.enabled` is `true`, stop the whole node with `dashmate stop --config testnet` instead: `stop --platform` also stops Core then.
 
