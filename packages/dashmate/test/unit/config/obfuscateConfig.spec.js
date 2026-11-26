@@ -238,33 +238,15 @@ describe('obfuscateConfig', () => {
     });
 
     // A URL parser also takes a web URL with no slashes after the scheme, so
-    // text can carry one that way too
+    // a value can carry one that way inside other text too
     it('should hide a token in a web URL without slashes inside other text', () => {
       const config = getBaseConfigFactory()();
 
-      config.set('description', 'mirror https:mirrorToken7Qx@mirror.example.com/ for builds');
+      config.set('core.docker.image', 'mirror https:mirrorToken7Qx@mirror.example.com/ for builds');
 
-      expect(obfuscateConfig(config).get('description'))
+      expect(obfuscateConfig(config).get('core.docker.image'))
         .to.equal(`mirror https:${'*'.repeat('mirrorToken7Qx'.length)}@mirror.example.com/ for builds`);
       expect(getConfigSecretValues(config)).to.include('mirrorToken7Qx');
-    });
-
-    // Text puts brackets or quotes around a link and can list links with no
-    // space between them; a link's query ends where the link does, and a URL
-    // in that query is hidden with it
-    it('should hide the query values of each URL with credentials in free text, and nothing around them', () => {
-      const config = getBaseConfigFactory()();
-
-      config.set(
-        'description',
-        'mirrors <https://u1:p1@a.example/?sig=tokenOne>,<https://u2:p2@b.example/?sig=tokenTwo#top>,'
-        + ' "https://u3:p3@c.example/x?a=1&b=two" and https://u4:p4@d.example/?next=https://v:q@e.example/&sig=T',
-      );
-
-      expect(obfuscateConfig(config).get('description')).to.equal(
-        'mirrors <https://**:**@a.example/?sig=********>,<https://**:**@b.example/?sig=********#top>,'
-        + ' "https://**:**@c.example/x?a=*&b=***" and https://**:**@d.example/?next=**********************&sig=*',
-      );
     });
 
     it('should hide them when the URL has extra slashes before them', () => {
@@ -344,21 +326,45 @@ describe('obfuscateConfig', () => {
       .to.equal('https://acme.example.com/directory');
   });
 
-  // Free text is where an operator writes their own name, and nothing reads
-  // it as a value
-  it('should mask the account name in the description and contact addresses', function it() {
-    this.sinon.stub(os, 'userInfo').returns({ username: 'alice', homedir: '/home/alice' });
-
+  // Nothing reads the free text an operator writes as a value, and it can
+  // quote secrets and links in any form, so the copy keeps only whether it
+  // was set
+  it('should leave the description and contact addresses out, keeping whether they were set', () => {
     const config = getBaseConfigFactory()();
 
-    config.set('description', 'node run by alice for testing');
+    config.set('description', "built from https://u:p@builds.example.com/team's/drive.tar?sig=token by alice");
     config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', 'alice@example.com');
 
     const obfuscated = obfuscateConfig(config);
 
-    expect(obfuscated.get('description')).to.equal('node run by ***** for testing');
+    expect(obfuscated.get('description')).to.equal('<redacted>');
     expect(obfuscated.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
-      .to.equal('*****@example.com');
+      .to.equal('<redacted>');
+
+    config.set('description', '');
+    config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', null);
+
+    const unset = obfuscateConfig(config);
+
+    expect(unset.get('description')).to.equal('');
+    expect(unset.get('platform.gateway.ssl.providerConfigs.letsencrypt.email')).to.be.null();
+  });
+
+  // Free text is recognised where the schema puts it. A JSON access log
+  // template can name its fields anything, and their values are Envoy's
+  // format operators, which the copy has to keep.
+  it('should keep an access log template field named like a free-text field', () => {
+    const config = getBaseConfigFactory()();
+
+    const accessLog = {
+      type: 'stdout',
+      format: 'json',
+      template: { description: '%RESPONSE_CODE_DETAILS%', email: '%REQ(X-CONTACT)%' },
+    };
+
+    config.set('platform.gateway.log.accessLogs', [accessLog]);
+
+    expect(obfuscateConfig(config).get('platform.gateway.log.accessLogs')).to.deep.equal([accessLog]);
   });
 
   // Dashmate keeps its files under the home directory HOME names, which can

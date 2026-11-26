@@ -25,16 +25,14 @@ const NON_SECRET_BUILD_ARGS = ['CARGO_BUILD_PROFILE', 'SDK_TEST_DATA'];
  */
 const URL_USERINFO = /((?:[a-z][a-z0-9+.-]*:[\\/]+)|(?:(?:https?|wss?|ftp):))([^\s/\\?#]+)@/gi;
 
-/**
- * The rest of a URL written inside other text, after its credentials: up to a
- * space, or a quote or an angle bracket that text puts around a link
- */
-const URL_REST = /[^\s"'<>`]*/y;
-
 const VALUE_KIND = {
   PLAIN: 'plain',
   // Hidden whole
   SECRET: 'secret',
+  // Free text the operator writes, which nothing reads as a value: left out
+  // whole, keeping only whether it was set, since it can quote a secret or a
+  // link in any form
+  FREE_TEXT: 'freeText',
   // An argument for a service's own command line, where an option can carry a
   // key or a password as `-name=value`: the value is hidden, the name kept.
   // Core reads values only after `=` and refuses a bare argument, so one
@@ -54,9 +52,15 @@ function classifyValue(field, parentField, grandparentField) {
     return VALUE_KIND.SECRET;
   }
 
-  // Build arguments and command arguments are recognised where the schema
-  // puts them. Other things can carry the same names - a Drive logger can be
-  // named anything - and their values are ones the config has to keep.
+  // Free text, build arguments and command arguments are recognised where
+  // the schema puts them. Other things can carry the same names - a Drive
+  // logger or a field of a JSON access log template can be named anything -
+  // and their values are ones the config has to keep.
+  if ((field === 'description' && parentField === undefined)
+    || (field === 'email' && parentField === 'letsencrypt' && grandparentField === 'providerConfigs')) {
+    return VALUE_KIND.FREE_TEXT;
+  }
+
   if (parentField === 'buildArgs' && grandparentField === 'build') {
     return NON_SECRET_BUILD_ARGS.includes(field) ? VALUE_KIND.PLAIN : VALUE_KIND.SECRET;
   }
@@ -86,10 +90,9 @@ function forEachStringValue(object, callback, parentField = undefined, grandpare
 }
 
 /**
- * Config fields whose values are free text an operator writes, and nothing
- * reads as a value
+ * What the report carries in place of a value it leaves out
  */
-const FREE_TEXT_FIELD_NAMES = ['description', 'email'];
+export const REDACTED_VALUE = '<redacted>';
 
 /**
  * @param {string} value
@@ -153,76 +156,6 @@ function hideTextUrlCredentials(text) {
 
     return `${scheme}${hiddenUserinfo}@`;
   });
-}
-
-/**
- * @param {string} query - a URL's query, without its `?`
- * @return {string} the query with the value of each parameter hidden
- */
-function hideQueryValues(query) {
-  return query.split('&').map((parameter) => {
-    const separatorIndex = parameter.indexOf('=');
-
-    return separatorIndex === -1
-      ? parameter
-      : `${parameter.slice(0, separatorIndex + 1)}${hideString(parameter.slice(separatorIndex + 1))}`;
-  }).join('&');
-}
-
-/**
- * @param {string} text
- * @return {string} the text with the query values hidden in each URL written
- *   in it with credentials, since a URL that carries a password can carry a
- *   token in its query too. A URL inside such a query is hidden with it.
- */
-function hideTextUrlQueryValues(text) {
-  let hidden = '';
-  let copied = 0;
-  let urlEnd = 0;
-
-  for (const match of text.matchAll(URL_USERINFO)) {
-    // Within the query of a URL already hidden
-    if (match.index < urlEnd) {
-      continue;
-    }
-
-    const restStart = match.index + match[0].length;
-
-    URL_REST.lastIndex = restStart;
-
-    const [rest] = URL_REST.exec(text);
-
-    urlEnd = restStart + rest.length;
-
-    const queryIndex = rest.indexOf('?');
-
-    if (queryIndex !== -1) {
-      const fragmentIndex = rest.indexOf('#', queryIndex);
-      const queryStart = restStart + queryIndex + 1;
-      const queryEnd = fragmentIndex === -1 ? urlEnd : restStart + fragmentIndex;
-
-      hidden += text.slice(copied, queryStart) + hideQueryValues(text.slice(queryStart, queryEnd));
-      copied = queryEnd;
-    }
-  }
-
-  return hidden + text.slice(copied);
-}
-
-/**
- * @param {string} text
- * @param {string[]} maskings - copies of the text, each with some of it
- *   masked by `*`, character for character
- * @return {string} the text with everything any of them masks masked
- */
-function combineMaskings(text, maskings) {
-  let combined = '';
-
-  for (let index = 0; index < text.length; index += 1) {
-    combined += maskings.some((masked) => masked[index] === '*') ? '*' : text[index];
-  }
-
-  return combined;
 }
 
 /**
@@ -359,22 +292,23 @@ export function getConfigSecretValues(config) {
 
 /**
  * @param {Config} config
- * @param {function(string): string} [scrubFreeText] - masks secrets known
- *   from elsewhere in free text the operator writes, such as the node
- *   description, replacing each character it masks with `*`. No other value
- *   is passed to it: the copy has to keep the values the config is made of,
- *   which a secret can be spelled like.
  * @return {Config}
  */
-export default function obfuscateConfig(
-  config,
-  scrubFreeText = (text) => text,
-) {
+export default function obfuscateConfig(config) {
   const identity = getOperatorIdentity();
 
   const clonedOptions = lodash.cloneDeep(config.getOptions());
 
   forEachStringValue(clonedOptions, (object, field, kind) => {
+    if (kind === VALUE_KIND.FREE_TEXT) {
+      if (object[field] !== '') {
+        // eslint-disable-next-line no-param-reassign
+        object[field] = REDACTED_VALUE;
+      }
+
+      return;
+    }
+
     let value = object[field];
 
     if (kind === VALUE_KIND.SECRET) {
@@ -391,27 +325,13 @@ export default function obfuscateConfig(
     // the samples, except that a home directory is written `/~`: the schema
     // requires log paths to be absolute, and doctor validates this copy when
     // it reads a report back. The account name is masked where it can name
-    // the operator - in paths and in free text - but not in values the
-    // config is made of, which it can be spelled like: an account named
-    // `info` or `production` would otherwise change a log level or the
-    // environment, or make the copy invalid.
-    const isFreeText = FREE_TEXT_FIELD_NAMES.includes(field);
-
-    // Before the operator's identity is masked, which could rewrite part of
-    // a secret. Nothing reads free text as a value, so a URL's query in it
-    // can be hidden too: once its credentials are hidden, a secret the query
-    // shares with a config value no longer matches that value whole. Both
-    // are looked for in the same text, so hiding one does not keep the
-    // other from being found.
-    if (isFreeText) {
-      value = combineMaskings(value, [scrubFreeText(value), hideTextUrlQueryValues(value)]);
-    }
-
-    const namesOperator = isLocalPath(value) || isFreeText;
-
+    // the operator - in paths - but not in values the config is made of,
+    // which it can be spelled like: an account named `info` or `production`
+    // would otherwise change a log level or the environment, or make the
+    // copy invalid.
     value = maskOperatorIdentity(
       value,
-      namesOperator ? identity : { ...identity, username: null },
+      isLocalPath(value) ? identity : { ...identity, username: null },
       { homeReplacement: '/~' },
     );
 

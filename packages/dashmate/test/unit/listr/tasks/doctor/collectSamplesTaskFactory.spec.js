@@ -22,6 +22,7 @@ import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/col
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import validateLetsEncryptCertificateFactory from '../../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
 import RenewalRecord from '../../../../../src/ssl/renewalRecord/RenewalRecord.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
@@ -1251,68 +1252,83 @@ describe('collectSamplesTaskFactory', () => {
       expect(onDisk.getCode()).to.equal(`${handWritten}-code`);
     });
 
-    // The config copy hides secret fields field by field and leaves other
-    // values as they are, since doctor reads them back. Nothing reads the
-    // free text an operator writes, and a secret can be repeated there.
-    it('should mask a config secret repeated in the description or the contact address', async () => {
-      const secret = 'repeatedSecret7Qx';
+    // Nothing doctor analyses reads the free text an operator writes in the
+    // config, and that text can quote secrets and links in any form, such as
+    // a build argument's URL in full with a token in its query. The report
+    // carries only whether it was set.
+    const buildUrl = "https://builder:buildPassword7Qx@builds.example.com/team's/drive.tar?sig=signedQueryToken7Qx&expires=99";
 
-      config.set('core.rpc.users.dapi.password', secret);
-      config.set('description', `node, rpc password ${secret}`);
-      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', `ops+${secret}@example.com`);
+    [
+      [
+        'an authenticated URL with an apostrophe in its path, copied from a build argument',
+        `drive built from ${buildUrl} for testing`,
+        { PRIVATE_BUILD_URL: buildUrl },
+        ['buildPassword7Qx', 'signedQueryToken7Qx', "team's/drive.tar", 'builds.example.com'],
+      ],
+      [
+        'a URL with credentials and a query token',
+        'mirror https://mirrorUser:mirrorPassword7Qx@mirror.example.net/private/core.tar?token=mirrorQueryToken7Qx for builds',
+        null,
+        ['mirrorUser', 'mirrorPassword7Qx', 'mirrorQueryToken7Qx', 'mirror.example.net/private/core.tar'],
+      ],
+      [
+        'a plain sentence',
+        'rack 7 in Frankfurt, run by the Quokka team',
+        null,
+        ['rack 7 in Frankfurt', 'Quokka team'],
+      ],
+    ].forEach(([kind, description, buildArgs, fragments]) => {
+      it(`should leave the description out of the archive when it holds ${kind}`, async () => {
+        if (buildArgs) {
+          config.set('platform.drive.abci.docker.build.buildArgs', buildArgs);
+        }
 
-      const archivePath = await collectAndArchive();
+        config.set('description', description);
 
-      expect(readArchivedBytes(archivePath)).to.not.contain(secret);
+        const archivePath = await collectAndArchive();
 
-      const restoredConfig = (await unarchiveSamplesFactory(getServiceList)(archivePath))
-        .getDashmateConfig();
+        const archived = readArchivedBytes(archivePath);
 
-      const masked = '*'.repeat(secret.length);
+        [description, ...fragments].forEach((fragment) => expect(archived).to.not.contain(fragment));
 
-      expect(restoredConfig.get('description')).to.equal(`node, rpc password ${masked}`);
-      expect(restoredConfig.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
-        .to.equal(`ops+${masked}@example.com`);
+        const restoredConfig = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+          .getDashmateConfig();
+
+        [samples.getDashmateConfig(), restoredConfig].forEach((collectedConfig) => {
+          expect(collectedConfig.get('description')).to.equal('<redacted>');
+        });
+      });
     });
 
-    // A URL that carries a password can carry a token in its query too, and
-    // the description can quote a build argument's URL in full
-    it('should mask the query values of a URL with a password in the description', async () => {
-      const password = 'buildPassword7Qx';
-      const token = 'signedQueryToken7Qx';
-      const buildUrl = `https://builder:${password}@builds.example.com/drive.tar?sig=${token}&expires=99`;
+    // The Let's Encrypt check reports the contact address with the rest of
+    // what it looked at, so it is left out there too. The config copy says
+    // whether it is set, and its marker stays as it is even when a secret is
+    // spelled like it.
+    it('should leave the contact address out of the archive', async function it() {
+      const email = 'quokka.ops+frankfurt@example.org';
 
-      config.set('platform.drive.abci.docker.build.buildArgs', { PRIVATE_BUILD_URL: buildUrl });
-      config.set('description', `drive built from ${buildUrl} for testing`);
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
+      config.set('core.rpc.users.dapi.password', 'redacted');
+
+      useCollector(this.sinon, {
+        validateLetsEncryptCertificate: validateLetsEncryptCertificateFactory(homeDir),
+      });
 
       const archivePath = await collectAndArchive();
 
       const archived = readArchivedBytes(archivePath);
 
-      expect(archived).to.not.contain(password);
-      expect(archived).to.not.contain(token);
+      expect(archived).to.not.contain('quokka.ops');
+      expect(archived).to.not.contain('frankfurt@example.org');
 
-      const restoredConfig = (await unarchiveSamplesFactory(getServiceList)(archivePath))
-        .getDashmateConfig();
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
 
-      expect(restoredConfig.get('description')).to.equal(
-        `drive built from https://*******:${'*'.repeat(password.length)}@builds.example.com/drive.tar`
-        + `?sig=${'*'.repeat(token.length)}&expires=** for testing`,
-      );
-    });
-
-    // A config secret quoted in such a query can run past the value that
-    // holds it, here into the fragment, and is still masked whole
-    it('should mask all of a config secret quoted in the query of a URL with a password', async () => {
-      const secret = 'firstPart123#secondPart456';
-
-      config.set('platform.drive.abci.docker.build.buildArgs', { BUILD_TOKEN: secret });
-      config.set('description', `drive built from https://builder:buildPassword7Qx@builds.example.com/?sig=${secret} for testing`);
-
-      const archived = readArchivedBytes(await collectAndArchive());
-
-      expect(archived).to.not.contain('firstPart123');
-      expect(archived).to.not.contain('secondPart456');
+      [samples, restored].forEach((collected) => {
+        expect(collected.getDashmateConfig().get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+          .to.equal('<redacted>');
+        expect(collected.getServiceInfo('gateway', 'ssl').data).to.not.have.property('email');
+      });
     });
 
     // A password can be spelled like a value the config schema requires

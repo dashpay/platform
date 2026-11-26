@@ -3,7 +3,7 @@ import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
 import si from 'systeminformation';
-import obfuscateConfig from '../../../config/obfuscateConfig.js';
+import obfuscateConfig, { REDACTED_VALUE } from '../../../config/obfuscateConfig.js';
 import createSecretScrubber from '../../../doctor/createSecretScrubber.js';
 import getSampleFreeTextFields from '../../../doctor/getSampleFreeTextFields.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
@@ -75,8 +75,6 @@ function obfuscateOperatorName(data, scrub, freeTextFields = null) {
 function hideOperatorNameIn(text, scrub) {
   return maskOperatorIdentity(typeof text === 'string' ? scrub(text) : text, getOperatorIdentity());
 }
-
-const REDACTED_VALUE = '<redacted>';
 
 /**
  * @param {*} entry - a `NAME=value` string
@@ -277,7 +275,7 @@ export default function collectSamplesTaskFactory(
           title: 'Configuration',
           task: async (ctx) => {
             ctx.samples.setDashmateVersion(DASHMATE_VERSION);
-            ctx.samples.setDashmateConfig(obfuscateConfig(config, scrub));
+            ctx.samples.setDashmateConfig(obfuscateConfig(config));
 
             // Tenderdash takes its ID from the node key, which the sampled
             // config has redacted. The ID itself is public: Tenderdash
@@ -359,6 +357,10 @@ export default function collectSamplesTaskFactory(
                         config,
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
+
+                      // The contact address is left out, as it is from the
+                      // config copy, which says whether it is set
+                      delete data?.email;
 
                       obfuscateOperatorName(data, scrub);
 
