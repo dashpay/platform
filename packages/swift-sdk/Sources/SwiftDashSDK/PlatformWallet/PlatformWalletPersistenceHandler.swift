@@ -602,8 +602,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         entry.shieldedRecipientRaw43 ?? existing.shieldedRecipientRaw43
                     // A recorded identity recipient is never replaced.
                     existing.identityRecipient = existing.identityRecipient ?? entry.identityRecipient
+                    // Stored bytes win, as for `identityRecipient`: they are
+                    // immutable once recorded.
                     existing.platformAddressRecipients =
-                        entry.platformAddressRecipients ?? existing.platformAddressRecipients
+                        existing.platformAddressRecipients ?? entry.platformAddressRecipients
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(

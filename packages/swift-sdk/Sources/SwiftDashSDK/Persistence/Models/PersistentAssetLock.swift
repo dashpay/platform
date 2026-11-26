@@ -252,8 +252,10 @@ public final class PersistentAssetLock {
     /// types, and locks tracked before recipients were recorded.
     ///
     /// Default `nil` keeps SwiftData's lightweight migration safe. Lands in
-    /// the live, not yet published, V5 schema.
-    public var platformAddressRecipients: Data?
+    /// the live, not yet published, V5 schema. Read-only outside the SDK,
+    /// like `identityRecipient`: only the checked recipient callback writes
+    /// it, so client code cannot clear a pending payment's recipients.
+    public internal(set) var platformAddressRecipients: Data?
 
     /// Record timestamps.
     public var createdAt: Date
