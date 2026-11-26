@@ -571,6 +571,7 @@ GPBObjCClassDeclaration(TenderdashTransactionProof);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse);
+GPBObjCClassDeclaration(WaitForStateTransitionResultResponse_StateBeforeBlock);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0);
 
@@ -16141,6 +16142,7 @@ void WaitForStateTransitionResultRequest_ClearVersionOneOfCase(WaitForStateTrans
 @dynamic stateTransitionHash;
 @dynamic prove;
 @dynamic requestUserBalance;
+@dynamic proveStateBeforeBlock;
 
 typedef struct WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0__storage_ {
   uint32_t _has_storage_[1];
@@ -16177,6 +16179,15 @@ typedef struct WaitForStateTransitionResultRequest_WaitForStateTransitionResultR
         .number = WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_RequestUserBalance,
         .hasIndex = 3,
         .offset = 4,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "proveStateBeforeBlock",
+        .dataTypeSpecific.clazz = Nil,
+        .number = WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_ProveStateBeforeBlock,
+        .hasIndex = 5,
+        .offset = 6,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
@@ -16312,6 +16323,7 @@ typedef struct WaitForStateTransitionResultResponse_SuccessWithOwnerBalance__sto
 @dynamic proof;
 @dynamic successWithOwnerBalance;
 @dynamic hasMetadata, metadata;
+@dynamic hasStateBeforeBlock, stateBeforeBlock;
 
 typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_ {
   uint32_t _has_storage_[2];
@@ -16319,6 +16331,7 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
   Proof *proof;
   ResponseMetadata *metadata;
   WaitForStateTransitionResultResponse_SuccessWithOwnerBalance *successWithOwnerBalance;
+  WaitForStateTransitionResultResponse_StateBeforeBlock *stateBeforeBlock;
 } WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -16363,6 +16376,15 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
+      {
+        .name = "stateBeforeBlock",
+        .dataTypeSpecific.clazz = GPBObjCClass(WaitForStateTransitionResultResponse_StateBeforeBlock),
+        .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_StateBeforeBlock,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, stateBeforeBlock),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 class]
@@ -16394,6 +16416,63 @@ void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - WaitForStateTransitionResultResponse_StateBeforeBlock
+
+@implementation WaitForStateTransitionResultResponse_StateBeforeBlock
+
+@dynamic hasProof, proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct WaitForStateTransitionResultResponse_StateBeforeBlock__storage_ {
+  uint32_t _has_storage_[1];
+  Proof *proof;
+  ResponseMetadata *metadata;
+} WaitForStateTransitionResultResponse_StateBeforeBlock__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = WaitForStateTransitionResultResponse_StateBeforeBlock_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_StateBeforeBlock__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = WaitForStateTransitionResultResponse_StateBeforeBlock_FieldNumber_Metadata,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_StateBeforeBlock__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[WaitForStateTransitionResultResponse_StateBeforeBlock class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(WaitForStateTransitionResultResponse_StateBeforeBlock__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(WaitForStateTransitionResultResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetRecentStateTransitionStatusRequest
 
 @implementation GetRecentStateTransitionStatusRequest

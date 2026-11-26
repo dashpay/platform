@@ -12,6 +12,7 @@ use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
 
+use dash_sdk::platform::identity_withdrawals::IdentityWithdrawal;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::withdraw_from_identity::{
     WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
@@ -137,6 +138,26 @@ impl IdentityWallet {
         }
 
         Ok(())
+    }
+
+    /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
+    /// first, read with proofs as the withdrawals system contract stood at one block height:
+    /// each one's amount, destination, status, and the asset unlock transaction that carries
+    /// it once Platform pooled it. A read whose pages keep coming back at different heights
+    /// fails after a few walks and can be tried again; see
+    /// [`Sdk::fetch_all_identity_withdrawals`](dash_sdk::Sdk::fetch_all_identity_withdrawals).
+    ///
+    /// Any identity can be asked for, not only the wallet's. Withdrawals from Platform
+    /// addresses and from the shielded pool are not found: the withdrawals contract stores
+    /// them under its own owner, not under anything the wallet keeps.
+    pub async fn identity_withdrawals(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Vec<IdentityWithdrawal>, PlatformWalletError> {
+        Ok(self
+            .sdk
+            .fetch_all_identity_withdrawals(*identity_id)
+            .await?)
     }
 
     /// Withdraw credits using an externally-provided identity and signer.

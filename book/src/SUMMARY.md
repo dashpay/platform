@@ -153,6 +153,7 @@
 - [Fetch Traits](sdk/fetch-traits.md)
 - [Protocol Versions in the SDK](sdk/protocol-versions.md)
 - [Features from Protocol Version 14](sdk/protocol-version-gate.md)
+- [Updating Apps for Protocol Version 15](sdk/protocol-version-15-upgrade.md)
 - [Put Operations](sdk/put-operations.md)
 - [Identity Keys Deep Dive](sdk/identity-keys.md)
 - [BLAST Sync](sdk/blast-sync.md)

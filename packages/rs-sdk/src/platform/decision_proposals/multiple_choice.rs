@@ -270,7 +270,8 @@ impl MultipleChoiceProposalVote {
             .contenders
             .iter()
             .map(|(choice_id, contender)| {
-                let mut contender = contender.try_to_contender(document_type, platform_version)?;
+                let mut contender =
+                    contender.try_to_contender_bounded(document_type, platform_version)?;
                 Ok((
                     *choice_id,
                     ChoiceInVote {

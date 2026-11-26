@@ -73,6 +73,7 @@
 
 '@dashevo/wasm-dpp2': &wasm-dpp2
   - packages/wasm-dpp2/**
+  - packages/scripts/build-wasm.sh
   - *wasm-dpp
 
 '@dashevo/dapi-grpc': &dapi-grpc
@@ -120,6 +121,7 @@ dashmate:
 
 '@dashevo/wasm-sdk': &wasm-sdk
   - packages/wasm-sdk/**
+  - packages/scripts/build-wasm.sh
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
   - packages/rs-dapi-client/**

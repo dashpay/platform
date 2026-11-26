@@ -56,11 +56,23 @@ pub enum ElementKind {
     SumItemWithBackwardsReferences,
     /// An item with a sum that records the references pointing at it
     ItemWithSumItemWithBackwardsReferences,
+    /// A count sum tree with an i128 total whose count and sum are part of
+    /// the hashed state
+    ProvableCountProvableBigSumTree,
+    /// A count sum tree with an i128 total
+    CountBigSumTree,
+    /// A sum tree with an i128 total that is part of the hashed state
+    ProvableBigSumTree,
+    /// A provable big sum tree whose entries are also ranked by their sum
+    ProvableBigSumIndexedTree,
+    /// A provable count provable big sum tree whose entries are also ranked
+    /// on up to three axes
+    ProvableCountProvableBigSumIndexedTree,
 }
 
 impl ElementKind {
     /// Every kind, in declaration order
-    pub const ALL: [ElementKind; 26] = [
+    pub const ALL: [ElementKind; 31] = [
         ElementKind::Item,
         ElementKind::Reference,
         ElementKind::Tree,
@@ -87,6 +99,11 @@ impl ElementKind {
         ElementKind::ItemWithBackwardsReferences,
         ElementKind::SumItemWithBackwardsReferences,
         ElementKind::ItemWithSumItemWithBackwardsReferences,
+        ElementKind::ProvableCountProvableBigSumTree,
+        ElementKind::CountBigSumTree,
+        ElementKind::ProvableBigSumTree,
+        ElementKind::ProvableBigSumIndexedTree,
+        ElementKind::ProvableCountProvableBigSumIndexedTree,
     ];
 
     /// The kind of an element. Looks through the `NonCounted`, `NotSummed`
@@ -131,6 +148,15 @@ impl ElementKind {
             Element::ItemWithSumItemWithBackwardsReferences(..) => {
                 ElementKind::ItemWithSumItemWithBackwardsReferences
             }
+            Element::ProvableCountProvableBigSumTree(..) => {
+                ElementKind::ProvableCountProvableBigSumTree
+            }
+            Element::CountBigSumTree(..) => ElementKind::CountBigSumTree,
+            Element::ProvableBigSumTree(..) => ElementKind::ProvableBigSumTree,
+            Element::ProvableBigSumIndexedTree(..) => ElementKind::ProvableBigSumIndexedTree,
+            Element::ProvableCountProvableBigSumIndexedTree(..) => {
+                ElementKind::ProvableCountProvableBigSumIndexedTree
+            }
         }
     }
 
@@ -153,7 +179,12 @@ impl ElementKind {
             | ElementKind::ProvableSumIndexedTree
             | ElementKind::ProvableCountIndexedTree
             | ElementKind::ProvableCountProvableSumIndexedTree
-            | ElementKind::PrivateDocumentStore => true,
+            | ElementKind::PrivateDocumentStore
+            | ElementKind::ProvableCountProvableBigSumTree
+            | ElementKind::CountBigSumTree
+            | ElementKind::ProvableBigSumTree
+            | ElementKind::ProvableBigSumIndexedTree
+            | ElementKind::ProvableCountProvableBigSumIndexedTree => true,
             ElementKind::Item
             | ElementKind::Reference
             | ElementKind::SumItem

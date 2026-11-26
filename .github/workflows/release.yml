@@ -28,6 +28,7 @@ jobs:
     if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
     permissions:
       contents: read
+      actions: read
     # Keep the workflow with its release source. The host controller supplies
     # a fresh JIT runner bound to this run/attempt, independent of branch name.
     uses: ./.github/workflows/release-npm-build.yml
@@ -44,13 +45,13 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Check Tenderdash seed snapshot freshness
         run: node packages/dashmate/scripts/generate-tenderdash-seeds.js --check
 
       - name: Check package version matches tag
-        uses: geritol/match-tag-to-package-version@0.2.0
+        uses: geritol/match-tag-to-package-version@dd6acafe4382a73f4282687d5ee384b238ea1df7 # 0.2.0
         if: github.event_name == 'release'
         env:
           TAG_PREFIX: v
@@ -76,12 +77,12 @@ jobs:
       # attempt token auth instead of the trusted-publishing OIDC exchange.
       # npm's default registry is already registry.npmjs.org.
       - name: Setup Node.JS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.14.1'
 
       - name: Download built package artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: js-build-${{ github.sha }}
           path: release-artifacts
@@ -136,7 +137,7 @@ jobs:
           NODE
 
       - name: Set suffix
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         id: suffix
         with:
           result-encoding: string
@@ -151,7 +152,7 @@ jobs:
             }
 
       - name: Set NPM release tag
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         id: tag
         with:
           result-encoding: string
@@ -332,16 +333,16 @@ jobs:
           - package_type: deb
             os: ubuntu-24.04
           - package_type: macos
-            os: macos-14
+            os: macos-15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download JS build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: js-build-${{ github.sha }}
           # The mixed JS/NPM artifact is rooted at the repository, since its
@@ -355,7 +356,7 @@ jobs:
 
       - name: Set up Docker for macOS
         if: runner.os == 'macOS'
-        uses: docker-practice/actions-setup-docker@master
+        uses: docker-practice/actions-setup-docker@509de4a162d8fd24b2721a9fb3721131a6a4776b # master
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -387,7 +388,7 @@ jobs:
       # Under another name, so the release job does not sign them.
       - name: Keep rejected macOS packages for inspection
         if: failure() && steps.check_macos_packages.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dashmate-macos-rejected-${{ github.sha }}
           path: packages/dashmate/dist/**
@@ -396,7 +397,7 @@ jobs:
       # Overwritten when a published release's packages are rebuilt by re-running
       # this job; the artifact of the earlier attempt has the same name.
       - name: Upload Dashmate packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
           path: packages/dashmate/dist/**
@@ -430,7 +431,7 @@ jobs:
           - package_type: deb
             os: ubuntu-24.04
           - package_type: macos
-            os: macos-14
+            os: macos-15
     steps:
       # Treat finished installers as data. This job never installs or runs
       # package code and never restores caches from the build jobs. The macOS
@@ -438,14 +439,14 @@ jobs:
       # cleans the workspace, so it comes before the download.
       - name: Check out the signing action
         if: runner.os == 'macOS'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           sparse-checkout: /.github/actions/macos-sign-notarize/
           sparse-checkout-cone-mode: false
 
       - name: Download Dashmate packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
           path: release-artifacts
@@ -464,8 +465,437 @@ jobs:
           notary_api_key_id: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
           notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
 
+      # A maintainer's signature covers SHA256SUMS, which covers these
+      # packages, so the packages of a signed release are never replaced.
+      - name: Refuse to replace the packages of a signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          set -euo pipefail
+          signatures="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[].name | select(startswith("SHA256SUMS."))' | paste -sd ' ' -)"
+          if [ -n "${signatures}" ]; then
+            echo "::error::The release is signed (${signatures}), so its packages are not replaced. To rebuild them, delete the signature first, then sign the new SHA256SUMS."
+            exit 1
+          fi
+
+      # The apt repository serves both architectures from the release's debs,
+      # so the deb leg publishes exactly one of each or nothing. Every other
+      # leg publishes no deb: one there would be recorded, uploaded and listed
+      # in SHA256SUMS beside the deb leg's two.
+      - name: Require one amd64 and one arm64 deb, from the deb leg only
+        env:
+          PACKAGE_TYPE: ${{ matrix.package_type }}
+        run: |
+          set -euo pipefail
+          amd64=0 arm64=0 all=0 names=''
+          while IFS= read -r -d '' file; do
+            name="${file##*/}"
+            case "${name}" in
+              *_amd64.deb) amd64=$((amd64 + 1)) ;;
+              *_arm64.deb) arm64=$((arm64 + 1)) ;;
+            esac
+            all=$((all + 1))
+            names="${names} ${name}"
+          done < <(find release-artifacts -type f -name '*.deb' ! -path '*/.*' -print0)
+          if [ "${PACKAGE_TYPE}" != deb ]; then
+            if [ "${all}" != 0 ]; then
+              echo "::error::The ${PACKAGE_TYPE} leg publishes no deb, found:${names}"
+              exit 1
+            fi
+          elif [ "${amd64} ${arm64} ${all}" != '1 1 2' ]; then
+            echo "::error::Expected one amd64 and one arm64 deb, found:${names:- none}"
+            exit 1
+          fi
+
+      # Hashed in the job that publishes the packages, after signing and right
+      # before the upload, so SHA256SUMS lists the bytes that were built and
+      # signed rather than whatever the release holds later. Each file is
+      # recorded under the name the upload gives it, its base name; the upload
+      # skips hidden files, and so does this. The records go into this job's
+      # own log, one `dashmate package: <sha256>  <name>` line each, where the
+      # checksums job reads them: no other job can write to it.
+      - name: Record package checksums
+        env:
+          LC_ALL: C
+          RECORD: ${{ runner.temp }}/dashmate-${{ matrix.package_type }}.sha256
+        run: |
+          set -euo pipefail
+          others="$(find release-artifacts ! -path '*/.*' ! -type f ! -type d)"
+          if [ -n "${others}" ]; then
+            echo "::error::Not a regular file: ${others}"
+            exit 1
+          fi
+          # Every package name starts with dashmate. Nothing else, and above all
+          # no SHA256SUMS, reaches the release from a build artifact.
+          name_pattern='^dashmate[A-Za-z0-9._-]*$'
+          : > "${RECORD}"
+          while IFS= read -r -d '' file; do
+            name="${file##*/}"
+            if ! [[ "${name}" =~ ${name_pattern} ]]; then
+              echo "::error::Refusing to publish ${file}: a package name must match ${name_pattern}"
+              exit 1
+            fi
+            sum="$(shasum -a 256 "${file}" | cut -d' ' -f1)"
+            printf '%s  %s\n' "${sum}" "${name}" >> "${RECORD}"
+          done < <(find release-artifacts -type f ! -path '*/.*' -print0)
+          if [ ! -s "${RECORD}" ]; then
+            echo "::error::No packages to record"
+            exit 1
+          fi
+          sed 's/^/dashmate package: /' "${RECORD}"
+
       - name: Upload artifacts to release
-        uses: softprops/action-gh-release@v0.1.15
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
         if: github.event_name == 'release'
         with:
           files: release-artifacts/**
+
+  # SHA256SUMS for the packages the release legs recorded. Maintainers sign it
+  # out of band and attach the signature as SHA256SUMS.asc. Nothing is checked
+  # out or installed here and no action runs: everything is the runner's gh
+  # and coreutils.
+  release-dashmate-checksums:
+    name: Release Dashmate checksums
+    needs:
+      - build-dashmate-packages
+      - release-dashmate-packages
+    # Only once every package type has been built and attached, so the file is
+    # never partial and never describes packages an earlier attempt built: a
+    # release leg also runs after its build failed, and then publishes the
+    # artifact of the last successful build.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.build-dashmate-packages.result == 'success'
+      && needs.release-dashmate-packages.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    # The sha256 of the SHA256SUMS this job checked and attached. The apt
+    # publish asks for that file only, by this digest.
+    outputs:
+      sha256sums_sha256: ${{ steps.attach.outputs.sha256 }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_ID: ${{ github.event.release.id }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      # Each package type's records come from the log of its one release leg in
+      # this run attempt. A re-run attempt lists the legs it did not re-run
+      # again, under new ids that still serve their logs.
+      - name: Read package checksums from the release legs' logs
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          # The runner colours the commands it echoes into a log, and newer gh
+          # versions refuse such a response unless told to allow it; older
+          # versions do not know that option. The help is read whole: a reader
+          # that stopped at the first match would cut gh off and fail the check.
+          help="$(gh api --help 2> /dev/null || true)"
+          job_log() {
+            case "${help}" in
+              *--allow-escape-sequences*) gh api --allow-escape-sequences "repos/${GITHUB_REPOSITORY}/actions/jobs/$1/logs" ;;
+              *) gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/$1/logs" ;;
+            esac
+          }
+          legs="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("Release Dashmate packages (")) | [.name, .id, .conclusion] | @tsv')"
+          mkdir -p checksums
+          for package_type in tarballs win deb macos; do
+            leg="$(echo "${legs}" | awk -F'\t' -v prefix="Release Dashmate packages (${package_type}, " 'index($1, prefix) == 1')"
+            case "${leg}" in
+              '' | *$'\n'*)
+                echo "::error::Expected one Release Dashmate packages job for ${package_type} in attempt ${GITHUB_RUN_ATTEMPT} of this run, found: ${leg:-none}"
+                exit 1
+                ;;
+            esac
+            IFS=$'\t' read -r name id conclusion <<< "${leg}"
+            if [ "${conclusion}" != success ]; then
+              echo "::error::${name} (job ${id}) did not succeed: ${conclusion:-unfinished}"
+              exit 1
+            fi
+            job_log "${id}" > log
+            sed -nE 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z dashmate package: ([0-9a-f]{64}  dashmate[A-Za-z0-9._-]*)$/\1/p' \
+              log > "checksums/dashmate-${package_type}.sha256"
+            if [ ! -s "checksums/dashmate-${package_type}.sha256" ]; then
+              echo "::error::The log of ${name} (job ${id}) records no packages"
+              exit 1
+            fi
+          done
+
+      # One `<sha256>  <name>` line per package, as sha256sum writes them,
+      # sorted by name, so the same packages always give the same file.
+      - name: Generate SHA256SUMS
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          # One record per package type of the release-dashmate-packages
+          # matrix, and nothing else.
+          : > records
+          for package_type in tarballs win deb macos; do
+            if [ ! -s "checksums/dashmate-${package_type}.sha256" ]; then
+              echo "::error::No checksums were recorded for the ${package_type} packages"
+              exit 1
+            fi
+            cat "checksums/dashmate-${package_type}.sha256" >> records
+          done
+          if grep -Evx '[0-9a-f]{64}  dashmate[A-Za-z0-9._-]*' records; then
+            echo "::error::The lines above are not in the form '<sha256>  <package name>'"
+            exit 1
+          fi
+          duplicates="$(cut -d' ' -f3 records | sort | uniq -d | paste -sd ' ' -)"
+          if [ -n "${duplicates}" ]; then
+            echo "::error::More than one package would be published as: ${duplicates}"
+            exit 1
+          fi
+          sort -k2,2 records > SHA256SUMS
+          cat SHA256SUMS
+
+      # GitHub reports a sha256 digest for each asset it serves. The release's
+      # dashmate assets must be exactly the recorded packages: none missing,
+      # none with other bytes, none left over from an earlier build.
+      - name: Check the release serves the recorded packages
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | select(.name | startswith("dashmate"))
+              | (if .state == "uploaded" and ((.digest // "") | startswith("sha256:"))
+                 then .digest[7:] else "missing" end) + "  " + .name' \
+            | sort -k2,2 > published
+          if ! diff -u --label recorded --label published SHA256SUMS published; then
+            echo "::error::The release's dashmate assets are not the packages the release jobs recorded. Delete assets left from an earlier build, or re-run the release job of the package type that differs."
+            exit 1
+          fi
+
+      # A signed SHA256SUMS is never replaced: the signature would then vouch
+      # for a file it never saw. Listed right before the upload, so a signature
+      # attached while this job ran is seen too. The upload goes through the API
+      # so the job learns the new asset's id, and the job writes that id and the
+      # file's sha256 into its own log: the signing script signs only that asset.
+      - name: Attach SHA256SUMS to the release
+        id: attach
+        run: |
+          set -euo pipefail
+          assets="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | [.name, .id] | @tsv')"
+          signatures="$(echo "${assets}" | awk -F'\t' '$1 ~ /^SHA256SUMS\./ {print $1}' | paste -sd ' ' -)"
+          if [ -n "${signatures}" ]; then
+            echo "::error::${TAG} is signed (${signatures}), so its SHA256SUMS is not replaced. If its packages changed, delete the signature and SHA256SUMS, re-run this job, and sign the new file."
+            exit 1
+          fi
+          previous="$(echo "${assets}" | awk -F'\t' '$1 == "SHA256SUMS" {print $2}')"
+          if [ -n "${previous}" ]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${previous}"
+          fi
+          id="$(gh api --method POST \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=SHA256SUMS" \
+            -H 'Content-Type: text/plain' --input SHA256SUMS --jq '.id')"
+          sum="$(shasum -a 256 SHA256SUMS | cut -d' ' -f1)"
+          case "${id}" in
+            '' | 0 | *[!0-9]*)
+              echo "::error::The upload of SHA256SUMS to ${TAG} returned no asset id (${id:-none}); re-run this job."
+              exit 1
+              ;;
+          esac
+          attached="$(gh api "repos/${GITHUB_REPOSITORY}/releases/assets/${id}" \
+            --jq '[.state, (.digest // "none")] | @tsv')"
+          if [ "${attached}" != "$(printf 'uploaded\tsha256:%s' "${sum}")" ]; then
+            echo "::error::Asset ${id} of ${TAG} is not the SHA256SUMS this job uploaded (${attached}); re-run this job."
+            exit 1
+          fi
+          echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"
+          echo "sha256=${sum}" >> "${GITHUB_OUTPUT}"
+
+  # Asks the apt publisher, infra's state machine, to publish the release's two
+  # debs. It downloads them itself and takes them only as SHA256SUMS lists them,
+  # so this runs once SHA256SUMS is attached. A final release reaches `stable`
+  # once its SHA256SUMS.asc is attached, on a later run or the publisher's daily
+  # one. This job neither reads nor changes the release, and no job needs it, so
+  # a failed publish leaves every asset in place; re-run this job to try again.
+  publish-dashmate-apt:
+    name: Publish Dashmate debs to apt
+    needs: release-dashmate-checksums
+    # A dispatch attaches no debs and no SHA256SUMS. The repository variable
+    # DASHMATE_APT_PUBLISH turns the job on when it is `true` (the comparison
+    # ignores case); unset or anything else leaves it off. It stays off until
+    # the publisher refuses a SHA256SUMS whose sha256 is not the
+    # sha256sums_sha256 this job sends. publish-dashmate-apt-off says so while
+    # it is off.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-checksums.result == 'success'
+      && vars.DASHMATE_APT_PUBLISH == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    # The role trusts this environment only, and the environment admits v* tags only.
+    environment: dashmate-apt-publish
+    permissions:
+      id-token: write
+      contents: none
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      SHA256SUMS_SHA256: ${{ needs.release-dashmate-checksums.outputs.sha256sums_sha256 }}
+      # The publisher runs one publish at a time, so this includes waiting for
+      # another one. It stays under the job's timeout and the hour the
+      # credentials last.
+      APT_PUBLISH_WAIT_SECONDS: 2400
+      APT_PUBLISH_POLL_SECONDS: 15
+      AWS_PAGER: ''
+    steps:
+      # The tag goes into the execution's name and input. Only the form the deb
+      # build accepts, so any tag whose debs were built passes. The publisher
+      # (dashpay/infra, stacks/apt/publisher/aptrepo.py) takes finals and dev,
+      # beta and rc prereleases, by the first identifier of the prerelease, and
+      # refuses every other kind (alpha, pr, hotfix). It does not publish that
+      # list anywhere this job can read, so it is repeated here: those kinds are
+      # skipped rather than turning the release run red. Keep it in step.
+      - name: Check the release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if ! [[ "${TAG}" =~ ${tag_pattern} ]]; then
+            # Quoted, so that no part of it starts a line of the log.
+            printf -v shown '%q' "${TAG}"
+            echo "::error::Not a release tag such as v5.1.0 or v5.1.0-rc.1: ${shown}"
+            exit 1
+          fi
+          if ! [[ "${SHA256SUMS_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::The Release Dashmate checksums job handed over no sha256 of the SHA256SUMS it attached."
+            exit 1
+          fi
+          label=''
+          case "${TAG}" in
+            *-*)
+              label="${TAG#*-}"
+              label="${label%%.*}"
+              ;;
+          esac
+          case "${label}" in
+            '' | dev | beta | rc) echo 'publish=true' >> "${GITHUB_OUTPUT}" ;;
+            *)
+              echo "::notice::${TAG} is not published to apt: the apt publisher takes finals and dev, beta and rc prereleases only, and refuses ${label} ones."
+              echo 'publish=false' >> "${GITHUB_OUTPUT}"
+              ;;
+          esac
+
+      - name: Get credentials for the apt publisher
+        if: steps.tag.outputs.publish == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::854439639386:role/dashmate-apt-release
+          aws-region: us-west-2
+
+      # The input names the release and the sha256 of the SHA256SUMS this run
+      # checked, so the publisher can refuse any other manifest the release
+      # holds by the time it serves the request.
+      #
+      # The execution's name is unique per run attempt, so a re-run starts a new
+      # publish, and made of the characters Step Functions accepts in names it
+      # logs, at most 80. Starting is idempotent for the same name and input, so
+      # the CLI's retries start no second one. What the execution reports is
+      # printed as one JSON line with every # escaped, so none of it can form a
+      # workflow command: `::` ones start a line, `##[` ones can be anywhere.
+      - name: Publish the debs to the apt repository
+        if: steps.tag.outputs.publish == 'true'
+        env:
+          STATE_MACHINE: arn:aws:states:us-west-2:854439639386:stateMachine:dashmate-apt-publish
+        run: |
+          set -euo pipefail
+          suffix="-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          name="${TAG//./-}"
+          name="${name:0:$((80 - ${#suffix}))}${suffix}"
+          input="$(jq -cn --arg tag "${TAG}" --arg sums "${SHA256SUMS_SHA256}" '{tag: $tag, sha256sums_sha256: $sums}')"
+          execution="$(aws stepfunctions start-execution --state-machine-arn "${STATE_MACHINE}" \
+            --name "${name}" --input "${input}" --query executionArn --output text \
+            --cli-connect-timeout 10 --cli-read-timeout 30)"
+          echo "Started ${execution}"
+          deadline=$((SECONDS + APT_PUBLISH_WAIT_SECONDS))
+          status=''
+          failed_reads=0
+          while :; do
+            # A read that fails is tried again, but not five times in a row: an
+            # error that does not clear, such as a denied read, fails the job early.
+            if description="$(aws stepfunctions describe-execution --execution-arn "${execution}" --output json \
+              --cli-connect-timeout 10 --cli-read-timeout 30)" \
+              && status="$(jq -er '.status' <<< "${description}")"; then
+              failed_reads=0
+              case "${status}" in
+                RUNNING | PENDING_REDRIVE) ;;
+                *) break ;;
+              esac
+            else
+              failed_reads=$((failed_reads + 1))
+              if [ "${failed_reads}" -ge 5 ]; then
+                echo "::error::Could not read ${execution} five times in a row. It may still be running; check it before re-running this job."
+                exit 1
+              fi
+              echo "::warning::Could not read the execution; trying again."
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::The apt publish did not finish within ${APT_PUBLISH_WAIT_SECONDS}s. ${execution} may still be running and succeed; check it before re-running this job."
+              exit 1
+            fi
+            sleep "${APT_PUBLISH_POLL_SECONDS}"
+          done
+          echo "apt publish: ${status}"
+          if [ "${status}" != SUCCEEDED ]; then
+            echo "::error::The apt publish of ${TAG} ended ${status}; its error and cause follow."
+            jq -c '{status, error, cause}' <<< "${description}" | sed 's/#/\\u0023/g'
+            # The state machine runs the publisher as a CodeBuild build, and a
+            # failed build is the cause, its keys capitalised by Step Functions
+            # (read here either way). Only a log name and the exit status of
+            # publish.py itself are taken from it, each in a form that cannot
+            # carry a command.
+            build="$(jq -c 'def lower: if type == "object"
+                then with_entries(.key |= ((.[0:1] | ascii_downcase) + .[1:]) | .value |= lower)
+                elif type == "array" then map(lower) else . end;
+              .cause | fromjson? | objects | lower | (.build // .) | objects' <<< "${description}" 2> /dev/null || true)"
+            exit_status="$(jq -r '[.phases[]? | select(.phaseType == "BUILD") | .contexts[]?
+              | select(.statusCode == "COMMAND_EXECUTION_ERROR") | .message | strings
+              | capture("^Error while executing command: python3 publish\\.py\\. Reason: exit status (?<n>[0-9]+)$").n]
+              | first // empty' <<< "${build}" 2> /dev/null || true)"
+            group="$(jq -r '.logs.groupName // empty | strings | select(test("^[A-Za-z0-9._/-]+$"))' <<< "${build}" 2> /dev/null || true)"
+            stream="$(jq -r '.logs.streamName // empty | strings | select(test("^[A-Za-z0-9._/-]+$"))' <<< "${build}" 2> /dev/null || true)"
+            if [ -n "${group}" ] && [ -n "${stream}" ]; then
+              echo "The publisher's log: CloudWatch Logs group ${group}, stream ${stream}."
+            fi
+            # publish.py exits 2 when it refuses the request, which can happen
+            # part-way, and 1 when it went through but logged a problem for a
+            # person, which can be about another release waiting for stable.
+            case "${exit_status}" in
+              2) echo "The publisher exited 2: it refused ${TAG}, possibly part-way. Its reason is the REFUSED: line of its log; check the suites before re-running this job." ;;
+              1) echo "The publisher exited 1: it logged a NEEDS A PERSON: problem, which can be about another release, so ${TAG} may be published; check the suites before re-running this job." ;;
+            esac
+            echo "If that log cannot be read, give infra the execution: ${execution}"
+            exit 1
+          fi
+
+  # A job skipped by its condition shows no reason, so this one says why the
+  # release run published nothing to apt. It runs exactly when
+  # publish-dashmate-apt would have, had DASHMATE_APT_PUBLISH been `true`.
+  publish-dashmate-apt-off:
+    name: Dashmate apt publish is off
+    needs: release-dashmate-checksums
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-checksums.result == 'success'
+      && vars.DASHMATE_APT_PUBLISH != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Say the apt publish is off
+        run: |
+          echo "::notice::The debs were not sent to the apt publisher: the repository variable DASHMATE_APT_PUBLISH is not 'true'. The release skill says when to turn it on."

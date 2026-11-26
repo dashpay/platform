@@ -4478,7 +4478,8 @@ mod tests {
                 )
                 .expect("expected to check tx")
                 .into_data()
-                .expect("expected an execution event");
+                .expect("expected an execution event")
+                .map(|admitted| admitted.event);
                 let Some(ExecutionEvent::Paid {
                     execution_operations,
                     ..

@@ -9,7 +9,8 @@
 //! closure, so the probe and the merge share one critical section.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use platform_wallet::changeset::{IdentityChangeSet, Merge, PlatformWalletChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -19,6 +20,12 @@ use crate::sqlite::error::WalletStorageError;
 #[derive(Default)]
 pub struct Buffer {
     inner: Mutex<HashMap<WalletId, PendingWrites>>,
+    /// How many changesets taken from the buffer were dropped without being
+    /// written or restored, per wallet ([`Self::note_dropped`]).
+    dropped: Mutex<HashMap<WalletId, u64>>,
+    /// How many times every buffered changeset was discarded at once
+    /// ([`Self::discard_all`]), which counts for every wallet.
+    discarded_all: AtomicU64,
 }
 
 /// Merged segments separated by identity removal/re-addition boundaries.
@@ -226,7 +233,29 @@ impl Buffer {
             .lock()
             .map_err(|_| WalletStorageError::LockPoisoned)?;
         guard.clear();
+        self.discarded_all.fetch_add(1, Ordering::SeqCst);
         Ok(())
+    }
+
+    /// Count a changeset that was taken for `wallet_id` and then dropped
+    /// without being written or restored ([`Self::dropped`]).
+    pub fn note_dropped(&self, wallet_id: &WalletId) {
+        let mut dropped = self.dropped.lock().unwrap_or_else(PoisonError::into_inner);
+        let count = dropped.entry(*wallet_id).or_default();
+        *count = count.saturating_add(1);
+    }
+
+    /// How many times what was buffered for `wallet_id` was dropped without
+    /// being written, a discard of every buffer included. It only grows.
+    pub fn dropped(&self, wallet_id: &WalletId) -> u64 {
+        let own = self
+            .dropped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(wallet_id)
+            .copied()
+            .unwrap_or(0);
+        own.saturating_add(self.discarded_all.load(Ordering::SeqCst))
     }
 }
 

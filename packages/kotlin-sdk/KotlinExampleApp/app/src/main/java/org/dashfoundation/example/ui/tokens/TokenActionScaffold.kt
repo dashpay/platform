@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.tokens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -17,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +34,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -43,8 +47,16 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
+
+/**
+ * What a form shows after its action returned: everything the dialog
+ * renders, fixed when the action ends, so a configuration change cannot
+ * relabel it from form state that is reloading.
+ */
+data class TokenActionNotice(val title: String, val message: String, val testTag: String)
 
 /**
  * Shared submit state for the 12 token-action forms — the Kotlin
@@ -64,6 +76,37 @@ class TokenActionViewModel : ViewModel() {
     /** Flips once on success; the scaffold observes it and pops back. */
     var completed by mutableStateOf(false)
         private set
+
+    /**
+     * A message the form shows after its action returned and before it
+     * closes ([showNoticeUntilDismissed]). Held here, not in the
+     * composition, so it survives a configuration change.
+     */
+    var notice by mutableStateOf<TokenActionNotice?>(null)
+        private set
+
+    private var noticeDismissed: CompletableDeferred<Unit>? = null
+
+    /**
+     * Show [notice] and suspend until [dismissNotice]. Called at the end
+     * of a [submit] block whose result the user must read before the form
+     * pops: the action is over, so no retry is offered while it shows.
+     */
+    suspend fun showNoticeUntilDismissed(notice: TokenActionNotice) {
+        val dismissed = CompletableDeferred<Unit>()
+        noticeDismissed = dismissed
+        this.notice = notice
+        try {
+            dismissed.await()
+        } finally {
+            this.notice = null
+        }
+    }
+
+    /** The user acknowledged [notice]. */
+    fun dismissNotice() {
+        noticeDismissed?.complete(Unit)
+    }
 
     /** Run [block] once; concurrent submits are ignored while in flight. */
     fun submit(block: suspend () -> Unit) {
@@ -130,12 +173,14 @@ fun rememberTokenActionContext(
     val tokenFlow = remember(tokenIdHex) {
         container.database.tokenDao().observeTokenById(tokenId)
     }
-    val token by tokenFlow.collectAsStateWithLifecycle(initialValue = null)
+    // Every emission: rows compare equal by id, and a rewritten row (the
+    // paused flag) must replace the one the form shows.
+    val token by tokenFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val identityFlow = remember(identityIdHex) {
         container.database.identityDao().observeByIdentityId(identityId)
     }
-    val identity by identityFlow.collectAsStateWithLifecycle(initialValue = null)
+    val identity by identityFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val contractIdHex = token?.contractId?.toHex()
     val contractFlow = remember(contractIdHex) {
@@ -144,7 +189,7 @@ fun rememberTokenActionContext(
     }
     val contract by (contractFlow
         ?: remember { kotlinx.coroutines.flow.flowOf<DataContractEntity?>(null) })
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by (manager?.wallets
@@ -187,8 +232,16 @@ fun TokenActionScaffold(
     navController: NavHostController,
     onSubmit: () -> Unit,
     tokenSummaryRows: @Composable () -> Unit = {},
+    submitTestTag: String = "tokenAction.submitButton",
+    backBlocked: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // Leaving pops the entry and clears [viewModel] with it, so a form whose
+    // result must be read ([TokenActionViewModel.showNoticeUntilDismissed])
+    // blocks system Back while it runs; the toolbar Back is disabled for
+    // the same reason. Same pattern as `DecisionProposalsScreen`.
+    BackHandler(enabled = backBlocked) {}
+
     LaunchedEffect(viewModel.completed) {
         if (viewModel.completed) navController.popBackStack()
     }
@@ -198,7 +251,10 @@ fun TokenActionScaffold(
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        onClick = { navController.popBackStack() },
+                        enabled = !backBlocked,
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -231,7 +287,7 @@ fun TokenActionScaffold(
                 enabled = canSubmit && context.wallet != null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("tokenAction.submitButton"),
+                    .testTag(submitTestTag),
                 onClick = onSubmit,
             )
 
@@ -250,6 +306,20 @@ fun TokenActionScaffold(
         title = "$title failed",
         onDismiss = { viewModel.error = null },
     )
+
+    // A result the user must read before the form closes
+    // ([TokenActionViewModel.showNoticeUntilDismissed]); dismissing it lets
+    // the submit finish and the form pop.
+    viewModel.notice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissNotice() },
+            title = { Text(notice.title) },
+            text = { Text(notice.message, modifier = Modifier.testTag(notice.testTag)) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
+            },
+        )
+    }
 }
 
 /**

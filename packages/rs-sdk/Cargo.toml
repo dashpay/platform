@@ -35,7 +35,7 @@ platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
 ciborium = { version = "0.2.2" }
 thiserror = "2.0.17"
-tokio = { version = "1.40", features = ["macros", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
 serde = { version = "1.0.219", default-features = false, features = [
@@ -53,7 +53,7 @@ bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter",
 zeroize = { version = "1.8", features = ["derive"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.64"
@@ -69,7 +69,7 @@ rs-dapi-client = { path = "../rs-dapi-client" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 dash-core-proof = { path = "../rs-core-proof" }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [

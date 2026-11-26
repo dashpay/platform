@@ -10,9 +10,9 @@ impl DriveDocumentSumQuery<'_> {
     /// v0 of [`Self::verify_point_lookup_count_and_sum_proof`].
     ///
     /// Mirror of [`Self::verify_point_lookup_sum_proof_v0`] but
-    /// extracts `count_sum_value_or_default()` (returns
-    /// `(u64, i64)`) from each verified count-sum-bearing element
-    /// instead of `sum_value_or_default()` (returns `i64`).
+    /// extracts `count_big_sum_value_or_default()` (returns
+    /// `(u64, i128)`) from each verified count-sum-bearing element
+    /// instead of `big_sum_value_or_default()` (returns `i128`).
     ///
     /// In-value extraction follows the same descent-vs-direct
     /// discriminator as the sum-only and count-only point-lookup
@@ -57,7 +57,13 @@ impl DriveDocumentSumQuery<'_> {
             // (`should_verify_an_average_point_proof_unchanged_at_protocol_version_13`).
             let (count, sum) = match elem {
                 Some(e) => {
-                    let (c, s) = e.underlying().count_sum_value_or_default();
+                    // At 128 bits, whatever width the type keeps its sums in: for an element
+                    // holding a 64-bit sum (every element before protocol version 15) this is that
+                    // sum widened (`crate::query::sum_width`). Edited in place in this shipped
+                    // generation: it returned the sum at 64 bits and refused a wider one; a
+                    // verifier runs on the client and decides nothing in a block, and every sum it
+                    // verified before is returned as the same number.
+                    let (c, s) = e.underlying().count_big_sum_value_or_default();
                     (Some(c), Some(s))
                 }
                 None => (None, None),

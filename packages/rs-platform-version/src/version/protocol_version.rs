@@ -10,8 +10,6 @@ use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
 #[cfg(feature = "mock-versions")]
 use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
 #[cfg(feature = "mock-versions")]
-use crate::version::mocks::v5_test::TEST_PLATFORM_V5;
-#[cfg(feature = "mock-versions")]
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::system_data_contract_versions::SystemDataContractVersions;
 #[cfg(feature = "mock-versions")]
@@ -27,6 +25,7 @@ use crate::version::v12::PLATFORM_V12;
 use crate::version::v13::PLATFORM_V13;
 use crate::version::v14::PLATFORM_V14;
 use crate::version::v15::PLATFORM_V15;
+use crate::version::v16::PLATFORM_V16;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
 use crate::version::v4::PLATFORM_V4;
@@ -67,20 +66,17 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V13,
     PLATFORM_V14,
     PLATFORM_V15,
+    PLATFORM_V16,
 ];
 
 #[cfg(feature = "mock-versions")]
 // We use OnceLock to be able to modify the version mocks
 pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::new();
 #[cfg(feature = "mock-versions")]
-const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[
-    TEST_PLATFORM_V2,
-    TEST_PLATFORM_V3,
-    TEST_PLATFORM_V4,
-    TEST_PLATFORM_V5,
-];
+const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] =
+    &[TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V15;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V16;
 
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 

@@ -10,6 +10,7 @@ use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "mocks")]
 use wasm_dpp2::serialization::conversions::to_object;
 use wasm_dpp2::{NetworkLikeJs, NetworkWasm};
 
@@ -243,6 +244,7 @@ impl WasmSdk {
     /// - 1: CRITICAL level AUTHENTICATION key (ECDSA_SECP256K1)
     /// - 2: HIGH level AUTHENTICATION key (ECDSA_SECP256K1)
     /// - 3: CRITICAL level TRANSFER key (ECDSA_HASH160) - for credit transfers
+    #[cfg(feature = "mocks")]
     #[wasm_bindgen(js_name = "generateTestIdentityKeys")]
     pub fn generate_test_identity_keys(seed: u64) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

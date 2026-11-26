@@ -77,10 +77,10 @@ fn end_due_vote_polls(
         .expect("expected to commit the block");
 }
 
-/// The protocol versions the end of block tests run at, 14 first. Protocol version 14 runs the
-/// same end of block generations on these paths as 15 today (`check_for_ended_vote_polls` v1,
-/// `clean_up_after_vote_polls_end` v0); the run at 14 pins them there, so a later change to 15's
-/// tables cannot leave 14 untested.
+/// The protocol versions the end of block tests run at, 14 first. Protocol version 14 runs
+/// `check_for_ended_vote_polls` v1 and 15 runs v2, which ends these contests as v1 does; both
+/// run `clean_up_after_vote_polls_end` v0. The run at 14 pins its generations there, so a later
+/// change to 15's tables cannot leave 14 untested.
 pub(super) fn end_of_block_test_versions() -> [&'static PlatformVersion; 2] {
     [
         PlatformVersion::get(14).expect("expected protocol version 14"),

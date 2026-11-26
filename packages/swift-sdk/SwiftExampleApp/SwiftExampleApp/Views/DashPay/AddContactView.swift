@@ -176,6 +176,7 @@ struct AddContactView: View {
                             Text(errorMessage)
                                 .font(.caption)
                                 .foregroundColor(.red)
+                                .accessibilityIdentifier("dashpay.addContact.error")
                         }
                     }
                 }
@@ -221,9 +222,11 @@ struct AddContactView: View {
                 Button(CollisionAccept.of(sendPrivately: sendPrivately).buttonTitle) {
                     acceptIncoming(from: recipient)
                 }
+                .accessibilityIdentifier("dashpay.addContact.collision.accept")
                 Button("Continue anyway") {
                     send(to: recipient)
                 }
+                .accessibilityIdentifier("dashpay.addContact.collision.continue")
             } message: { _ in
                 Text(CollisionAccept.of(sendPrivately: sendPrivately).message)
             }
@@ -232,6 +235,7 @@ struct AddContactView: View {
                 isPresented: .constant(unconfirmedNotice != nil)
             ) {
                 Button("Done") { dismiss() }
+                    .accessibilityIdentifier("dashpay.addContact.submitted.done")
             } message: {
                 if let unconfirmedNotice {
                     Text(unconfirmedNotice)

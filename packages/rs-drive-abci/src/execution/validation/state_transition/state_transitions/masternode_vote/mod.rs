@@ -25,6 +25,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::masternode_vote::state::v1::MasternodeVoteStateTransitionStateValidationV1;
+use crate::execution::validation::state_transition::masternode_vote::state::v2::MasternodeVoteStateTransitionStateValidationV2;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v1::MasternodeVoteStateTransitionTransformIntoActionValidationV1;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
@@ -87,9 +88,10 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
         {
             0 => self.validate_state_v0(action, platform, tx, platform_version),
             1 => self.validate_state_v1(action, platform, tx, platform_version),
+            2 => self.validate_state_v2(action, platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: validate_state".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -114,6 +116,9 @@ mod multiple_choice_proposal_tests;
 
 #[cfg(test)]
 mod end_date_cleanup_tests;
+
+#[cfg(test)]
+mod contest_resolution_tests;
 
 #[cfg(test)]
 mod tests {

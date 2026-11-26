@@ -52,6 +52,16 @@ object ShieldedProver {
          * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedIdentityTopUpFromPool].
          */
         IdentityTopUpFromPool(4),
+
+        /**
+         * TokenPurchaseFromShieldedPool (Type 28): the fee a purchase paid
+         * from one or two notes adds on top of the price
+         * (`compute_token_purchase_from_pool_fee`); more notes raise it.
+         * Backs
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedTokenPurchaseFromPool].
+         * Swift: `ShieldedFeeKind.tokenPurchaseFromPool`.
+         */
+        TokenPurchaseFromPool(5),
     }
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */

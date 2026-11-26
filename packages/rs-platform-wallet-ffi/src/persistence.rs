@@ -16,9 +16,7 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
 use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
-use key_wallet::managed_account::address_pool::{
-    AddressPool, AddressPoolType, AddressState, PublicKeyType,
-};
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -37,6 +35,7 @@ use platform_wallet::changeset::{
     PrivateContactRequestsPosition, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
     PERSISTENCE_CAPABILITIES_VERSION,
 };
+use platform_wallet::manager::{restore_account_address_pools, AddressPoolRestoreStats};
 use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
 use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -88,7 +87,10 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
-use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
+use platform_wallet::{
+    normalize_persisted_profile, ContactProfileEntry, DashPayProfile, DpnsNameInfo,
+    IdentityManagerStartState, IdentityStatus, ManagedIdentity,
+};
 use std::ffi::CStr;
 
 /// The persisted `TransactionContext` discriminant values shared with the
@@ -935,10 +937,18 @@ impl RoundOutcome {
 ///
 /// # Reentrancy contract (required of every callback)
 ///
-/// A persistence callback runs **synchronously on the calling native thread**,
-/// which is frequently a wallet-manager task **holding the manager's write
-/// lock**. That lock is non-reentrant. Therefore a callback MUST NOT call back
-/// into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
+/// A persistence callback runs **synchronously on the native thread that
+/// polls the wallet operation**, which is frequently a wallet-manager task
+/// **holding the manager's write lock**. That thread is not always the one
+/// that called the export: it may be a runtime worker, or the
+/// `pw-ffi-bigstack` thread an export runs its work on while its caller
+/// stays blocked (wallet create, persistor load, shielded configure and
+/// bind, wallet startup). So the callback context must be usable from any
+/// native thread, and a callback must not dispatch synchronously to the
+/// thread blocked in the export.
+///
+/// The manager's write lock is non-reentrant. Therefore a callback MUST NOT
+/// call back into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
 /// `platform_wallet_*` and friends), directly or indirectly — doing so
 /// deadlocks. Write the changeset to your storage backend and return; do not
 /// query live wallet state to enrich a row, and do not synchronously drive an
@@ -1255,7 +1265,9 @@ pub struct PersistenceCallbacks {
     // wallet; the outer `wallet_id` argument on the `store`
     // callback identifies the wallet the changeset originated from
     // (always identical to every entry's nested `wallet_id`).
-    /// Per-subwallet decrypted notes upserts.
+    /// Per-subwallet decrypted notes upserts. An upsert must keep an
+    /// existing row's spent flag (see
+    /// [`ShieldedNoteFFI`](crate::shielded_persistence::ShieldedNoteFFI)).
     #[cfg(feature = "shielded")]
     pub on_persist_shielded_notes_fn: Option<
         unsafe extern "C" fn(
@@ -3802,6 +3814,9 @@ impl PlatformWalletPersistence for FFIPersister {
                                 }
                                 | platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityTopUp {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::TokenUnshield {
+                                    identity_id: Some(identity_id),
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -4406,28 +4421,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 if !act_ptr.is_null() && act_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
                     for ffi in slice {
-                        let kind = match ffi.kind_tag {
-                            0 => ShieldedActivityKind::Shield,
-                            1 => ShieldedActivityKind::ShieldFromAssetLock,
-                            2 => ShieldedActivityKind::Received,
-                            3 => ShieldedActivityKind::Sent,
-                            4 => ShieldedActivityKind::Unshield,
-                            5 => ShieldedActivityKind::Withdrawal,
-                            6 => ShieldedActivityKind::IdentityCreate {
-                                identity_id: ffi.identity_id,
-                            },
-                            8 => ShieldedActivityKind::ShieldFromIdentity {
-                                identity_id: ffi.identity_id,
-                            },
-                            9 => ShieldedActivityKind::IdentityTopUp {
-                                identity_id: ffi.identity_id,
-                            },
-                            // 7 and any unknown tag fall back to the
-                            // residual — a forward-compat tag we don't yet
-                            // model still loads as an opaque spend rather
-                            // than getting dropped.
-                            _ => ShieldedActivityKind::ShieldedSpend,
-                        };
+                        // The wallet owns the tag table and its inverse: a
+                        // tag it does not know loads as the residual spend.
+                        let kind = ShieldedActivityKind::from_tag(
+                            ffi.kind_tag,
+                            ffi.identity_id,
+                            ffi.has_identity_id != 0,
+                        );
                         let direction = match ffi.direction {
                             0 => ShieldedDirection::In,
                             1 => ShieldedDirection::Out,
@@ -5350,7 +5350,7 @@ fn build_core_address_entry_ffi(
             AddressState::Used | AddressState::Reserved { .. } => true,
             AddressState::Available => false,
         },
-        balance: info.balance,
+        balance: 0,
         address_base58: address_ptr,
         derivation_path: path_ptr,
     })
@@ -5441,7 +5441,6 @@ unsafe fn address_info_from_ffi(
     };
     Ok(AddressInfo {
         address,
-        script_pubkey,
         public_key,
         index: entry.address_index,
         path,
@@ -5453,80 +5452,13 @@ unsafe fn address_info_from_ffi(
         } else {
             AddressState::Available
         },
-        tx_count: 0,
-        total_received: 0,
-        total_sent: 0,
-        balance: entry.balance,
-        label: None,
-        metadata: std::collections::BTreeMap::new(),
     })
 }
 
-/// Restore persisted `AddressInfo` rows into a managed account's
-/// `AddressPool`. Upsert: a persisted row overwrites the gap-limit
-/// default `ManagedWalletInfo::from_wallet` pre-derived at the same
-/// index, and the reverse-lookup maps + `highest_*` watermarks are
-/// extended to cover indices past that default gap window.
-///
-/// The persisted row is authoritative for its typed public key — the
-/// [`CoreAddressEntryFFI`] row carries the full typed key (ECDSA-33 /
-/// BLS-48 / EdDSA-32) with a [`KeyTypeTagFFI`] discriminator, so BLS
-/// operator and Ed25519 platform-node keys survive the round-trip in the
-/// row itself — with ONE legacy exception: rows persisted before the
-/// typed-key column existed carry an empty key (`public_key: None`).
-/// Overwriting a pre-derived typed entry with such a row would strip the
-/// in-memory BLS operator pubkeys that `from_wallet` derived from the
-/// account xpub, silently breaking operator-ownership matching for every
-/// pre-typed-key store. So when the incoming row has no key but the
-/// pre-derived entry at that index does, the existing typed key is kept
-/// (post-migration rows always carry their key, making this a no-op for
-/// them). Legacy Ed25519 platform-node rows cannot be recovered this way
-/// (hardened-only — no public derivation) nor migrated from the removed
-/// account-level batch (its data was dropped by the schema migration);
-/// per the pre-release convention those stores re-derive on
-/// delete+re-import.
-fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
-    for mut info in infos {
-        let idx = info.index;
-        if info.public_key.is_none() {
-            if let Some(existing) = pool.addresses.get(&idx) {
-                if existing.public_key.is_some() {
-                    info.public_key = existing.public_key.clone();
-                }
-            }
-        }
-        pool.address_index.insert(info.address.clone(), idx);
-        pool.script_pubkey_index
-            .insert(info.script_pubkey.clone(), idx);
-        pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-        if matches!(info.state, AddressState::Used) {
-            pool.used_indices.insert(idx);
-            pool.highest_used = Some(pool.highest_used.map_or(idx, |h| h.max(idx)));
-        }
-        pool.addresses.insert(idx, info);
-    }
-}
-
-/// Outcome of [`restore_core_address_pools`]: how many persisted address
-/// rows were routed into a managed pool and how many were skipped
-/// (invalid pool-type tag, no matching account/pool, or un-decodable row).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PoolRestoreStats {
-    routed: usize,
-    dropped: usize,
-}
-
-/// Restore persisted core address pools onto the matching managed
-/// accounts. Covers the funds-bearing accounts (keyed maps) AND the four
-/// masternode key-material provider accounts (dedicated `Option` fields);
-/// both unify to `&mut ManagedAccountType` via `ManagedAccountTrait`, so
-/// the used-flags + beyond-gap indices in the snapshot rehydrate the
-/// in-memory pools. Extracted from [`build_wallet_start_state`] so the
-/// routing — including the provider arms — is unit-testable.
-///
-/// A single match (rather than a funds-match-then-provider-fallback) is
-/// required: the borrow checker won't let a `None` fallback re-borrow
-/// `wallet_info.accounts` after the funds `get_mut`.
+/// Decode persisted core address pools and restore them onto the matching
+/// managed accounts through [`restore_account_address_pools`]. Rows this
+/// layer cannot decode (a removed legacy account tag, an invalid pool-type
+/// tag, an un-decodable row) count as dropped on top of the restore's own.
 ///
 /// # Safety
 /// Each `AccountAddressPoolFFI`'s `addresses_ptr` must point to
@@ -5538,20 +5470,20 @@ struct PoolRestoreStats {
 /// failure — a corrupt persisted row — so it surfaces rather than
 /// silently under-restoring.
 unsafe fn restore_core_address_pools(
+    wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
     pool_entries: &[AccountAddressPoolFFI],
     network: Network,
     wallet_id: &[u8; 32],
-) -> Result<PoolRestoreStats, PersistenceError> {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    let mut pools_routed = 0usize;
-    let mut pools_dropped = 0usize;
+) -> Result<AddressPoolRestoreStats, PersistenceError> {
+    let mut undecodable = 0usize;
+    let mut entries = Vec::with_capacity(pool_entries.len());
     for pool_ffi in pool_entries {
         let account_type = match account_type_from_spec(&pool_ffi.account) {
             Ok(t) => t,
             Err(e) => {
                 if is_legacy_removed_account_tag(pool_ffi.account.type_tag) {
-                    pools_dropped += 1;
+                    undecodable += 1;
                     continue;
                 }
                 return Err(e);
@@ -5563,7 +5495,7 @@ unsafe fn restore_core_address_pools(
             2 => AddressPoolType::Absent,
             3 => AddressPoolType::AbsentHardened,
             other => {
-                pools_dropped += 1;
+                undecodable += 1;
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     pool_type_tag = other,
@@ -5572,154 +5504,18 @@ unsafe fn restore_core_address_pools(
                 continue;
             }
         };
-        // Resolve the persisted pool's target account to its
-        // `&mut ManagedAccountType` (where the address pools live).
-        // Funds-bearing accounts (`ManagedCoreFundsAccount`) live in the
-        // keyed maps; the four masternode key-material provider accounts
-        // (`ManagedCoreKeysAccount`) live in dedicated `Option` fields.
-        // Both implement `ManagedAccountTrait`, so `managed_account_type_mut()`
-        // unifies them to a single `&mut ManagedAccountType` and the
-        // pool-population below is identical.
-        let managed_type = match account_type {
-            AccountType::Standard {
-                index,
-                standard_account_type: StandardAccountType::BIP44Account,
-            } => wallet_info
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&index)
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::Standard {
-                index,
-                standard_account_type: StandardAccountType::BIP32Account,
-            } => wallet_info
-                .accounts
-                .standard_bip32_accounts
-                .get_mut(&index)
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::CoinJoin { index } => wallet_info
-                .accounts
-                .coinjoin_accounts
-                .get_mut(&index)
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::DashpayReceivingFunds {
-                index,
-                user_identity_id,
-                friend_identity_id,
-            } => wallet_info
-                .accounts
-                .dashpay_receival_accounts
-                .get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                )
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::DashpayExternalAccount {
-                index,
-                user_identity_id,
-                friend_identity_id,
-            } => wallet_info
-                .accounts
-                .dashpay_external_accounts
-                .get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                )
-                .map(|a| a.managed_account_type_mut()),
-            // Asset-lock funding key-accounts (identity registration / top-up
-            // / invitation / address top-up). These MUST be restored: their
-            // credit outputs are OP_RETURN-payload outputs that never appear
-            // as on-chain UTXOs, so SPV can never rediscover their used
-            // indices — the persisted pool is the ONLY thing that carries the
-            // next-unused index across a restart. Dropping them (an
-            // unmatched `_ => None`) resets the pool to index 0 every launch;
-            // for `IdentityInvitation` that reused the EXPORTED one-time
-            // voucher key across invitations (a bearer-key reuse: one leaked
-            // link could then claim every same-key invite).
-            AccountType::IdentityRegistration => wallet_info
-                .accounts
-                .identity_registration
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::IdentityTopUp { registration_index } => wallet_info
-                .accounts
-                .identity_topup
-                .get_mut(&registration_index)
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::IdentityTopUpNotBoundToIdentity => wallet_info
-                .accounts
-                .identity_topup_not_bound
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::IdentityInvitation => wallet_info
-                .accounts
-                .identity_invitation
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::AssetLockAddressTopUp => wallet_info
-                .accounts
-                .asset_lock_address_topup
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::AssetLockShieldedAddressTopUp => wallet_info
-                .accounts
-                .asset_lock_shielded_address_topup
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            // Masternode provider key-material accounts — dedicated
-            // `Option<ManagedCoreKeysAccount>` fields. Restoring these
-            // rehydrates the used-flags + beyond-gap indices of the
-            // owner / voting / operator / platform-node pools.
-            AccountType::ProviderOwnerKeys => wallet_info
-                .accounts
-                .provider_owner_keys
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::ProviderVotingKeys => wallet_info
-                .accounts
-                .provider_voting_keys
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::ProviderOperatorKeys => wallet_info
-                .accounts
-                .provider_operator_keys
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            AccountType::ProviderPlatformKeys => wallet_info
-                .accounts
-                .provider_platform_keys
-                .as_mut()
-                .map(|a| a.managed_account_type_mut()),
-            _ => None,
-        };
-        let Some(managed_type) = managed_type else {
-            pools_dropped += 1;
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                ?account_type,
-                "load: skipping persisted address pool with no matching funds, \
-                 asset-lock funding, or provider account"
-            );
-            continue;
-        };
         let rows: &[CoreAddressEntryFFI] =
             if pool_ffi.addresses_ptr.is_null() || pool_ffi.addresses_count == 0 {
                 &[]
             } else {
                 unsafe { slice::from_raw_parts(pool_ffi.addresses_ptr, pool_ffi.addresses_count) }
             };
-        let mut infos: Vec<AddressInfo> = Vec::with_capacity(rows.len());
+        let mut addresses: Vec<AddressInfo> = Vec::with_capacity(rows.len());
         for row in rows {
             match unsafe { address_info_from_ffi(row, network) } {
-                Ok(info) => infos.push(info),
+                Ok(info) => addresses.push(info),
                 Err(e) => {
-                    pools_dropped += 1;
+                    undecodable += 1;
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         error = %e,
@@ -5728,34 +5524,15 @@ unsafe fn restore_core_address_pools(
                 }
             }
         }
-        let mut managed_pools = managed_type.address_pools_mut();
-        match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
-            Some(pool) => {
-                pools_routed += infos.len();
-                restore_address_pool(pool, infos);
-            }
-            None => {
-                pools_dropped += 1;
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    ?pool_type,
-                    "load: persisted address pool has no matching managed pool"
-                );
-            }
-        }
+        entries.push(AccountAddressPoolEntry {
+            account_type,
+            pool_type,
+            addresses,
+        });
     }
-    if pools_dropped > 0 {
-        tracing::warn!(
-            wallet_id = %hex::encode(wallet_id),
-            pools_routed,
-            pools_dropped,
-            "load: persisted address-pool restore completed with skipped rows"
-        );
-    }
-    Ok(PoolRestoreStats {
-        routed: pools_routed,
-        dropped: pools_dropped,
-    })
+    let mut stats = restore_account_address_pools(wallet, wallet_info, entries);
+    stats.dropped += undecodable;
+    Ok(stats)
 }
 
 /// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
@@ -6136,6 +5913,9 @@ fn decode_dashpay_backfill(
     )
 }
 
+/// Build wallet state, skipping address rows refused during pool restoration.
+/// UTXOs and the sync cursor still restore, so the balance may include coins
+/// whose signing paths are unavailable until their address rows are recovered.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -6348,7 +6128,7 @@ fn build_wallet_start_state(
     // every `used` flag — come from this snapshot. Without it a
     // restored wallet can hold a UTXO whose address the signer can't
     // map back to a derivation path, breaking core-to-core spends.
-    {
+    let funding_issuance_floors = {
         let pool_entries: &[AccountAddressPoolFFI] =
             if entry.core_address_pools.is_null() || entry.core_address_pools_count == 0 {
                 &[]
@@ -6360,9 +6140,16 @@ fn build_wallet_start_state(
         // SAFETY: `pool_entries` is a valid slice (checked above) and each
         // row's `addresses_ptr` follows the load-callback contract.
         unsafe {
-            restore_core_address_pools(&mut wallet_info, pool_entries, network, &entry.wallet_id)?;
+            restore_core_address_pools(
+                &wallet,
+                &mut wallet_info,
+                pool_entries,
+                network,
+                &entry.wallet_id,
+            )?
         }
-    }
+        .funding_issuance_floors
+    };
 
     // The platform-node (Ed25519) pool rehydrates through the same
     // `restore_core_address_pools` path above as every other pool: its
@@ -6792,6 +6579,7 @@ fn build_wallet_start_state(
         unused_asset_locks,
         unconfirmed_outgoing_txs,
         dashpay_backfill,
+        funding_issuance_floors,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -7252,7 +7040,7 @@ fn build_unused_asset_locks(
     Ok(map)
 }
 
-fn funding_type_from_u8(
+pub(crate) fn funding_type_from_u8(
     b: u8,
 ) -> Result<
     key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
@@ -7275,7 +7063,7 @@ fn funding_type_from_u8(
     })
 }
 
-fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
+pub(crate) fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
     use platform_wallet::AssetLockStatus;
     Ok(match b {
         0 => AssetLockStatus::Built,
@@ -7503,26 +7291,46 @@ unsafe fn restore_contact_profiles(spec: &IdentityRestoreEntryFFI, managed: &mut
     apply_contact_profile_rows(rows, managed);
 }
 
-/// Maximum cached `avatarUrl` length — mirrors the
-/// `MAX_AVATAR_URL_LEN` gate `platform-wallet`'s profile fetch applies
-/// before caching (DIP-15's 2048-char cap).
-const MAX_AVATAR_URL_LEN: usize = 2048;
-
-/// Defensive re-validation of a cached `avatarUrl` at restore. The
-/// fetch path already dropped non-`https://` / over-length URLs before
-/// caching ([`platform_wallet`]'s `is_valid_avatar_url`), but the URL is
-/// attacker-controlled public data and the UI will load it, so we
-/// re-apply the same `https://`-only, length-capped rule on the way back
-/// in. A URL that fails is dropped to `None` (the rest of the profile is
-/// still restored) rather than discarding the whole row.
-fn is_valid_avatar_url(url: &str) -> bool {
-    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
+/// Copy a host-owned profile row into a [`DashPayProfile`].
+/// The host frees the buffers after restoration returns. Acceptance of each
+/// field (the `https://`-only avatar URL, the payment-address forms) belongs
+/// to [`normalize_persisted_profile`]; this only marshals.
+///
+/// # Safety
+/// The row's string pointers must be null or readable NUL-terminated strings.
+unsafe fn profile_from_restore_row(row: &ContactProfileRestoreEntryFFI) -> DashPayProfile {
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
+        }
+    };
+    normalize_persisted_profile(DashPayProfile {
+        display_name: opt_string(row.display_name),
+        bio: opt_string(row.bio),
+        avatar_url: opt_string(row.avatar_url),
+        avatar_hash: row.avatar_hash_present.then_some(row.avatar_hash),
+        avatar_fingerprint: row
+            .avatar_fingerprint_present
+            .then_some(row.avatar_fingerprint),
+        public_message: opt_string(row.public_message),
+        core_payment_address: row
+            .core_payment_address_present
+            .then(|| row.core_payment_address.to_vec()),
+        platform_payment_address: row
+            .platform_payment_address_present
+            .then(|| row.platform_payment_address.to_vec()),
+        shielded_address: row
+            .shielded_address_present
+            .then(|| row.shielded_address.to_vec()),
+    })
 }
 
 /// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
 /// the managed identity's contact-profile cache. Split out from
-/// [`restore_contact_profiles`] so the c-string decode + avatar-url
-/// re-validation is unit-testable without a full
+/// [`restore_contact_profiles`] so the c-string decode + profile
+/// normalization is unit-testable without a full
 /// [`IdentityRestoreEntryFFI`].
 ///
 /// # Safety
@@ -7532,43 +7340,11 @@ unsafe fn apply_contact_profile_rows(
     rows: &[ContactProfileRestoreEntryFFI],
     managed: &mut ManagedIdentity,
 ) {
-    use platform_wallet::{ContactProfileEntry, DashPayProfile};
-
-    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
-        if ptr.is_null() {
-            None
-        } else {
-            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
-        }
-    };
-
     for row in rows {
-        let avatar_hash = if row.avatar_hash_present {
-            Some(row.avatar_hash)
-        } else {
-            None
-        };
-        let avatar_fingerprint = if row.avatar_fingerprint_present {
-            Some(row.avatar_fingerprint)
-        } else {
-            None
-        };
-        // Re-validate the public, attacker-controlled avatar URL; drop
-        // just the URL field (keep the rest of the profile) if it no
-        // longer passes the `https://` / length rule.
-        let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
-
         managed.dashpay_contact_profiles_mut().insert(
             Identifier::from(row.contact_id),
             ContactProfileEntry {
-                profile: Some(DashPayProfile {
-                    display_name: opt_string(row.display_name),
-                    bio: opt_string(row.bio),
-                    avatar_url,
-                    avatar_hash,
-                    avatar_fingerprint,
-                    public_message: opt_string(row.public_message),
-                }),
+                profile: Some(profile_from_restore_row(row)),
                 checked_at_ms: row.checked_at_ms,
             },
         );
@@ -8582,6 +8358,8 @@ mod tests {
         addresses: std::sync::Mutex<Vec<PrivateShieldedAddressFFI>>,
         removed: std::sync::Mutex<Vec<([u8; 32], [u8; 32])>>,
         cleared: std::sync::Mutex<Vec<[u8; 32]>>,
+        /// The name of the thread each `persist_scan_state` ran on.
+        persisted_on: std::sync::Mutex<Vec<Option<String>>>,
         /// What `load_scan_state` answers: 0 rows as stored, 1 an error,
         /// 2 a count without a buffer.
         load_mode: u8,
@@ -8643,6 +8421,10 @@ mod tests {
         }
         assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
         let host = &*(ctx as *const ScanStateHost);
+        host.persisted_on
+            .lock()
+            .unwrap()
+            .push(std::thread::current().name().map(str::to_owned));
         host.positions
             .lock()
             .unwrap()
@@ -9044,6 +8826,89 @@ mod tests {
                 "{what} fails the load"
             );
         }
+    }
+
+    /// Configuring a shielded store restores the private payments of the
+    /// wallets loaded before it. For an identity whose unresolved-payment
+    /// marker the store's journal clears, that stores the identity's
+    /// position, and the host receives it on the big-stack thread the export
+    /// polls on, not on the caller's (dashpay/platform#6020).
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_poll_the_shielded_configure_on_the_big_stack_thread() {
+        use crate::error::PlatformWalletFFIResultCode;
+        use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
+        use crate::manager::{
+            platform_wallet_manager_destroy, platform_wallet_manager_load_from_persistor,
+        };
+        use crate::shielded_sync::platform_wallet_manager_configure_shielded;
+        use crate::test_fixtures::mock_manager_with;
+        use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore};
+        use std::ffi::CString;
+
+        /// Releases the reference to the host the persister owns.
+        unsafe extern "C" fn release_host(context: *mut c_void) {
+            drop(std::sync::Arc::from_raw(context as *const ScanStateHost));
+        }
+
+        /// Destroys the manager when dropped, on a failed assertion too, and
+        /// before the store's directory.
+        struct Destroyed(Handle);
+        impl Drop for Destroyed {
+            fn drop(&mut self) {
+                unsafe { platform_wallet_manager_destroy(self.0) };
+            }
+        }
+
+        let host = std::sync::Arc::new(ScanStateHost::default());
+        host.positions
+            .lock()
+            .unwrap()
+            .push(position_row(7, 12, true));
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("shielded.sqlite");
+        // The journal an earlier process opened: it holds no payment of the
+        // wallet, which is what clears the marker.
+        FileBackedShieldedStore::open_path(&path, 100)
+            .expect("the store")
+            .open_private_payment_journal([42; 32])
+            .expect("the journal opened");
+
+        // The persister lives in a manager whose workers may outlast its
+        // destruction, so it owns a reference to the host, released with its
+        // last owner, where the other scan-state tests lend it a local.
+        let mut persister = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            scan_state_trio(),
+        );
+        persister.callbacks.context =
+            std::sync::Arc::into_raw(std::sync::Arc::clone(&host)) as *mut c_void;
+        persister.callbacks.release_fn = Some(release_host);
+        let manager =
+            Destroyed(PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager_with(persister)));
+        let loaded = unsafe { platform_wallet_manager_load_from_persistor(manager.0) };
+        assert_eq!(loaded.code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            host.persisted_on.lock().unwrap().is_empty(),
+            "the load stores no scan state"
+        );
+        host.positions.lock().unwrap().clear();
+
+        let path = CString::new(path.to_str().expect("utf-8 temp path")).expect("no NUL");
+        let configured =
+            unsafe { platform_wallet_manager_configure_shielded(manager.0, path.as_ptr()) };
+        assert_eq!(configured.code, PlatformWalletFFIResultCode::Success);
+
+        assert_eq!(
+            *host.persisted_on.lock().unwrap(),
+            vec![Some("pw-ffi-bigstack".to_string())],
+            "configure stores the cleared marker once, on the thread it is polled on"
+        );
+        let stored = host.positions.lock().unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].identity_id, [7; 32]);
+        assert!(!stored[0].private_payments_unresolved);
     }
 
     /// A host that does not declare the capability, wires only part of the
@@ -10782,7 +10647,9 @@ mod tests {
     /// - a host that hands back no record registers normally either way.
     #[test]
     fn a_recreated_wallet_must_clear_coverage_the_ffi_host_handed_back() {
-        use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+        use crate::event_handler::{
+            EventExtensionCallbacks, EventHandlerCallbacks, FFIEventHandler,
+        };
         use crate::runtime::runtime;
         use crate::wallet_restore_types::WalletRestoreEntryFFI;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -10901,7 +10768,7 @@ mod tests {
                     on_shielded_tree_progress_fn: None,
                     release_fn: None,
                 },
-                None,
+                EventExtensionCallbacks::default(),
             );
             let _runtime_guard = runtime().enter();
             PlatformWalletManager::new(
@@ -12626,8 +12493,9 @@ mod tests {
         };
         let info = unsafe { address_info_from_ffi(&entry, Network::Devnet) }
             .expect("restore must accept a testnet-prefixed string on devnet");
-        let runtime_key = dashcore::Address::from_script(&info.script_pubkey, Network::Devnet)
-            .expect("p2pkh script must convert back to an address");
+        let runtime_key =
+            dashcore::Address::from_script(&info.address.script_pubkey(), Network::Devnet)
+                .expect("p2pkh script must convert back to an address");
         assert_eq!(
             info.address, runtime_key,
             "restored address must be identical (network tag included) to the \
@@ -12773,7 +12641,7 @@ mod tests {
                 .managed_wallet
                 .first_bip44_managed_account_mut()
                 .expect("bip44 managed account")
-                .next_change_address(Some(&ctx.xpub), true)
+                .next_change_address(Some(&ctx.xpub))
                 .expect("bip44 change address"),
             ChangeTo::OtherAccount => {
                 let xpub = ctx
@@ -12786,7 +12654,7 @@ mod tests {
                 ctx.managed_wallet
                     .first_bip32_managed_account_mut()
                     .expect("bip32 managed account")
-                    .next_receive_address(Some(&xpub), true)
+                    .next_receive_address(Some(&xpub))
                     .expect("bip32 receive address")
             }
         };
@@ -13188,6 +13056,10 @@ mod tests {
     /// ends up with a `provider_owner_keys` account carrying its address
     /// pool — the restore target the provider arms route into.
     fn test_managed_wallet_info_with_provider_owner() -> ManagedWalletInfo {
+        ManagedWalletInfo::from_wallet(&test_wallet_with_provider_owner(), 0)
+    }
+
+    fn test_wallet_with_provider_owner() -> Wallet {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
         )
@@ -13203,8 +13075,7 @@ mod tests {
         accounts
             .insert(account)
             .expect("inserting the provider-owner account must succeed");
-        let wallet = Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts);
-        ManagedWalletInfo::from_wallet(&wallet, 0)
+        Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts)
     }
 
     /// Restore-arm coverage (PR #4120): a persisted core-address-pool row
@@ -13218,17 +13089,20 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use std::ffi::CString;
 
-        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+        let wallet = test_wallet_with_provider_owner();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
         // Read the managed provider-owner pool's actual type so the staged
         // FFI pool routes to it regardless of the pool-type convention.
-        let pool_type = {
+        let (pool_type, first_underived) = {
             let owner = wallet_info
                 .accounts
                 .provider_owner_keys
                 .as_mut()
                 .expect("managed provider-owner account must exist");
-            owner.managed_account_type_mut().address_pools_mut()[0].pool_type
+            let pool = &owner.managed_account_type_mut().address_pools_mut()[0];
+            let first_underived = pool.highest_generated().map_or(0, |h| h + 1);
+            (pool.pool_type(), first_underived)
         };
         let pool_type_tag: u8 = match pool_type {
             AddressPoolType::External => 0,
@@ -13237,16 +13111,17 @@ mod tests {
             AddressPoolType::AbsentHardened => 3,
         };
 
-        // A used address at an index beyond the pre-derived gap window.
-        const RESTORED_INDEX: u32 = 50;
+        // A used address at the first index past the pre-derived gap window;
+        // key-wallet refuses a row that would leave a gap before it.
+        let restored_index = first_underived;
         let addr_c = CString::new("yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA").unwrap();
-        let path_c = CString::new("m/9'/1'/2'/50").unwrap();
+        let path_c = CString::new(format!("m/9'/1'/2'/{restored_index}")).unwrap();
         let row = CoreAddressEntryFFI {
             public_key: [0u8; 48],
             public_key_len: 0,
             key_type_tag: 0,
             pool_type_tag,
-            address_index: RESTORED_INDEX,
+            address_index: restored_index,
             is_used: true,
             balance: 0,
             address_base58: addr_c.as_ptr(),
@@ -13263,14 +13138,21 @@ mod tests {
 
         // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
         let stats = unsafe {
-            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+            restore_core_address_pools(
+                &wallet,
+                &mut wallet_info,
+                &pools,
+                Network::Testnet,
+                &[0u8; 32],
+            )
         }
         .expect("restore must succeed for a well-formed provider pool");
         assert_eq!(
             stats,
-            PoolRestoreStats {
+            AddressPoolRestoreStats {
                 routed: 1,
-                dropped: 0
+                dropped: 0,
+                ..Default::default()
             },
             "the single provider-owner row must route into the managed pool, not drop"
         );
@@ -13284,21 +13166,21 @@ mod tests {
         let mut pools_mut = owner.managed_account_type_mut().address_pools_mut();
         let restored = pools_mut
             .iter_mut()
-            .find(|p| p.pool_type == pool_type)
+            .find(|p| p.pool_type() == pool_type)
             .expect("the provider-owner pool must exist");
         assert!(
-            restored.used_indices.contains(&RESTORED_INDEX),
+            restored.addresses()[&restored_index].is_used(),
             "the used index must be restored into the pool"
         );
         assert_eq!(
-            restored.highest_used,
-            Some(RESTORED_INDEX),
+            restored.highest_used(),
+            Some(restored_index),
             "highest_used must reflect the restored used index"
         );
         assert!(
             restored
-                .highest_generated
-                .is_some_and(|h| h >= RESTORED_INDEX),
+                .highest_generated()
+                .is_some_and(|h| h >= restored_index),
             "highest_generated must advance past the pre-derived gap window"
         );
 
@@ -13395,34 +13277,20 @@ mod tests {
         let payload =
             dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(h));
         let address = dashcore::Address::new(Network::Testnet, payload);
-        let script_pubkey = address.script_pubkey();
         AddressInfo {
             address,
-            script_pubkey,
             public_key,
             index,
             path: DerivationPath::from_str(&format!("m/9'/1'/2'/{}", index))
                 .expect("static derivation path must parse"),
             state: AddressState::Available,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: std::collections::BTreeMap::new(),
         }
     }
 
-    /// Push `key` at `index` through the full FFI row round-trip
-    /// (`build_core_address_entry_ffi` → `address_info_from_ffi` →
-    /// `restore_address_pool`) into `pool`, returning the restored entry's
-    /// typed key. No pre-seeded entry is needed — the widened row carries
-    /// the typed key itself.
-    fn round_trip_typed_key_into_pool(
-        pool: &mut AddressPool,
-        index: u32,
-        key: PublicKeyType,
-    ) -> Option<PublicKeyType> {
+    /// Push `key` at `index` through the FFI row round-trip
+    /// (`build_core_address_entry_ffi` → `address_info_from_ffi`), returning
+    /// the decoded row's typed key.
+    fn round_trip_typed_key(index: u32, key: PublicKeyType) -> Option<PublicKeyType> {
         let info = typed_key_test_address_info(index, Some(key));
         let mut owned: Vec<CString> = Vec::new();
         let entry = build_core_address_entry_ffi(
@@ -13436,58 +13304,24 @@ mod tests {
         // until after this decode.
         let restored = unsafe { address_info_from_ffi(&entry, Network::Testnet) }
             .expect("address_info_from_ffi must decode the row");
-        restore_address_pool(pool, vec![restored]);
         drop(owned);
-        pool.addresses
-            .get(&index)
-            .expect("restored entry must be present")
-            .public_key
-            .clone()
+        restored.public_key
     }
 
     /// A BLS (48B) operator key, an Ed25519 (32B) platform-node key, and an
     /// ECDSA (33B) control must each survive the widened
-    /// [`CoreAddressEntryFFI`] round-trip byte-for-byte and land in the
-    /// managed pool typed correctly — no pre-seeded entry and no merge.
-    /// This is what lets the seedless masternode-ownership scan match a
+    /// [`CoreAddressEntryFFI`] round-trip byte-for-byte and decode typed
+    /// correctly. This is what lets the seedless masternode-ownership scan match a
     /// ProRegTx `platform_node_id` after restore (replacing the old
     /// 33-byte-slot merge that only preserved a pre-derived key).
     #[test]
-    fn typed_public_key_survives_ffi_round_trip_into_fresh_pool() {
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
-        // Any managed keys account gives a real `AddressPool`; we restore at
-        // indices well beyond any pre-derived gap window so the pool has no
-        // pre-seeded entry at them.
-        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
-        let owner = wallet_info
-            .accounts
-            .provider_owner_keys
-            .as_mut()
-            .expect("managed provider-owner account must exist");
-        let pool = owner
-            .managed_account_type_mut()
-            .address_pools_mut()
-            .into_iter()
-            .next()
-            .expect("the account must have at least one pool");
-
-        const BLS_IDX: u32 = 500;
-        const EDDSA_IDX: u32 = 501;
-        const ECDSA_IDX: u32 = 502;
-        for idx in [BLS_IDX, EDDSA_IDX, ECDSA_IDX] {
-            assert!(
-                !pool.addresses.contains_key(&idx),
-                "index {idx} must start with no pre-seeded entry"
-            );
-        }
-
+    fn typed_public_key_survives_ffi_round_trip() {
+        let (bls_idx, eddsa_idx, ecdsa_idx) = (3, 4, 5);
         let bls = vec![0xABu8; 48];
         let eddsa = vec![0xCDu8; 32];
         let ecdsa = vec![0x02u8; 33];
 
-        let out_bls =
-            round_trip_typed_key_into_pool(pool, BLS_IDX, PublicKeyType::BLS(bls.clone()));
+        let out_bls = round_trip_typed_key(bls_idx, PublicKeyType::BLS(bls.clone()));
         match out_bls {
             Some(PublicKeyType::BLS(bytes)) => {
                 assert_eq!(bytes, bls, "BLS operator key must survive byte-for-byte")
@@ -13495,8 +13329,7 @@ mod tests {
             other => panic!("expected a typed BLS key after round-trip, got {:?}", other),
         }
 
-        let out_ed =
-            round_trip_typed_key_into_pool(pool, EDDSA_IDX, PublicKeyType::EdDSA(eddsa.clone()));
+        let out_ed = round_trip_typed_key(eddsa_idx, PublicKeyType::EdDSA(eddsa.clone()));
         match out_ed {
             Some(PublicKeyType::EdDSA(bytes)) => {
                 assert_eq!(
@@ -13510,8 +13343,7 @@ mod tests {
             ),
         }
 
-        let out_ec =
-            round_trip_typed_key_into_pool(pool, ECDSA_IDX, PublicKeyType::ECDSA(ecdsa.clone()));
+        let out_ec = round_trip_typed_key(ecdsa_idx, PublicKeyType::ECDSA(ecdsa.clone()));
         match out_ec {
             Some(PublicKeyType::ECDSA(bytes)) => {
                 assert_eq!(bytes, ecdsa, "ECDSA control key must survive byte-for-byte")
@@ -13563,57 +13395,6 @@ mod tests {
                 state, expected
             );
         }
-    }
-
-    /// A LEGACY row (persisted before the typed-key column: empty key,
-    /// `public_key: None` after decode) must NOT strip the typed key the
-    /// gap-limit prederivation put at the same index — pre-typed-key
-    /// stores otherwise lose their in-memory BLS operator pubkeys at
-    /// load and masternode operator-ownership matching silently breaks
-    /// (post-migration rows always carry their key, so the preservation
-    /// is a no-op for them). Also pins the inverse: a legacy row at an
-    /// index with no prederived entry restores key-less rather than
-    /// inventing anything.
-    #[test]
-    fn legacy_keyless_row_keeps_prederived_typed_key() {
-        let mut pool = AddressPool::new_without_generation(
-            DerivationPath::from_str("m/9'/1'/3'").expect("static path must parse"),
-            AddressPoolType::AbsentHardened,
-            5,
-            Network::Testnet,
-        );
-
-        // Prederived typed entry, as `ManagedWalletInfo::from_wallet`
-        // seeds BLS operator pools from the account xpub.
-        let bls = vec![0xE7u8; 48];
-        let prederived = typed_key_test_address_info(7, Some(PublicKeyType::BLS(bls.clone())));
-        pool.addresses.insert(7, prederived);
-
-        // Legacy rows: same index key-less, plus one at a fresh index.
-        let legacy_same_idx = typed_key_test_address_info(7, None);
-        let legacy_fresh_idx = typed_key_test_address_info(9, None);
-        restore_address_pool(&mut pool, vec![legacy_same_idx, legacy_fresh_idx]);
-
-        match &pool
-            .addresses
-            .get(&7)
-            .expect("entry 7 must exist")
-            .public_key
-        {
-            Some(PublicKeyType::BLS(bytes)) => assert_eq!(
-                bytes, &bls,
-                "legacy key-less row must keep the prederived BLS key"
-            ),
-            other => panic!("prederived BLS key was stripped, got {:?}", other),
-        }
-        assert!(
-            pool.addresses
-                .get(&9)
-                .expect("entry 9 must exist")
-                .public_key
-                .is_none(),
-            "a legacy row with no prederived counterpart stays key-less"
-        );
     }
 
     /// `account_xpub` must survive the persist→restore byte round-trip — it is
@@ -14032,6 +13813,12 @@ mod tests {
                 avatar_hash_present: true,
                 avatar_fingerprint: [0x22; 8],
                 avatar_fingerprint_present: true,
+                core_payment_address: transparent_address(0x00, 0xC1),
+                core_payment_address_present: true,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: shielded_fixture(),
+                shielded_address_present: true,
                 public_message: public_message.as_ptr(),
                 checked_at_ms: 1_700_000_000_000,
             },
@@ -14044,6 +13831,12 @@ mod tests {
                 avatar_hash_present: false,
                 avatar_fingerprint: [0u8; 8],
                 avatar_fingerprint_present: false,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [0; 43],
+                shielded_address_present: false,
                 public_message: std::ptr::null(),
                 checked_at_ms: 1_700_000_000_001,
             },
@@ -14068,6 +13861,15 @@ mod tests {
         );
         assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
         assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
+        assert_eq!(
+            alice_profile.core_payment_address,
+            Some(transparent_address(0x00, 0xC1).to_vec())
+        );
+        assert_eq!(alice_profile.platform_payment_address, None);
+        assert_eq!(
+            alice_profile.shielded_address,
+            Some(shielded_fixture().to_vec())
+        );
         assert!(alice_profile.bio.is_none());
 
         let bob = managed
@@ -14085,6 +13887,63 @@ mod tests {
         );
         assert!(bob_profile.avatar_hash.is_none());
         assert!(bob_profile.avatar_fingerprint.is_none());
+        assert!(bob_profile.shielded_address.is_none());
+    }
+
+    /// A storage-form transparent payment address: a 0x00/0x01 version byte,
+    /// then a 20-byte hash.
+    fn transparent_address(version: u8, fill: u8) -> [u8; 21] {
+        let mut address = [fill; 21];
+        address[0] = version;
+        address
+    }
+
+    /// Orchard key-components vector 0 (`default_d || default_pk_d`), a valid
+    /// raw Orchard address.
+    /// https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py
+    fn shielded_fixture() -> [u8; 43] {
+        [
+            0x8f, 0xf3, 0x38, 0x69, 0x71, 0xcb, 0x64, 0xb8, 0xe7, 0x78, 0x99, 0x08, 0xdd, 0x8e,
+            0xbd, 0x7d, 0xe9, 0x2a, 0x68, 0xe5, 0x86, 0xa3, 0x4d, 0xb8, 0xfe, 0xa9, 0x99, 0xef,
+            0xd2, 0x01, 0x6f, 0xae, 0x76, 0x75, 0x0a, 0xfa, 0xe7, 0xee, 0x94, 0x16, 0x46, 0xbc,
+            0xb9,
+        ]
+    }
+
+    /// Restore re-validates each payment address through platform-wallet,
+    /// dropping a wrong-version transparent address and undecodable Orchard
+    /// bytes from a stale or corrupt host row while keeping the rest.
+    #[test]
+    fn should_drop_invalid_payment_addresses_on_restore() {
+        use crate::wallet_restore_types::ContactProfileRestoreEntryFFI;
+
+        let name = std::ffi::CString::new("Carol").unwrap();
+        let row = ContactProfileRestoreEntryFFI {
+            contact_id: [0xDD; 32],
+            display_name: name.as_ptr(),
+            bio: std::ptr::null(),
+            avatar_url: std::ptr::null(),
+            avatar_hash: [0; 32],
+            avatar_hash_present: false,
+            avatar_fingerprint: [0; 8],
+            avatar_fingerprint_present: false,
+            core_payment_address: transparent_address(0x05, 0xC1),
+            core_payment_address_present: true,
+            platform_payment_address: transparent_address(0x01, 0xD1),
+            platform_payment_address_present: true,
+            shielded_address: [0xFF; 43],
+            shielded_address_present: true,
+            public_message: std::ptr::null(),
+            checked_at_ms: 0,
+        };
+        let profile = unsafe { profile_from_restore_row(&row) };
+        assert_eq!(profile.display_name.as_deref(), Some("Carol"));
+        assert_eq!(profile.core_payment_address, None);
+        assert_eq!(
+            profile.platform_payment_address,
+            Some(transparent_address(0x01, 0xD1).to_vec())
+        );
+        assert_eq!(profile.shielded_address, None);
     }
 
     /// Regression: ignored senders must be restored at load so a
@@ -15054,7 +14913,6 @@ mod tests {
         let pubkey =
             dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
         let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
-        let script_pubkey = address.script_pubkey();
         let path = DerivationPath::from(vec![
             ChildNumber::from_normal_idx(0).expect("valid child number"),
             ChildNumber::from_normal_idx(index).expect("valid child number"),
@@ -15064,17 +14922,10 @@ mod tests {
             pool_type,
             info: AddressInfo {
                 address,
-                script_pubkey,
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
                 state: AddressState::Used,
-                tx_count: 0,
-                total_received: 0,
-                total_sent: 0,
-                balance: 0,
-                label: None,
-                metadata: BTreeMap::new(),
             },
         }
     }

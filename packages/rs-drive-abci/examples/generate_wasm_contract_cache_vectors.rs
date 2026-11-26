@@ -223,6 +223,7 @@ fn wait_response(
                     ),
                 ),
                 metadata: Some(metadata),
+                state_before_block: None,
             },
         )),
     }

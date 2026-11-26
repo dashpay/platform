@@ -6,6 +6,12 @@ set -euo pipefail
 adb shell settings put system screen_off_timeout 2147483647
 adb shell svc power stayon true
 
+# Build the test APK before unlocking. Auth-required keys accept a key use only within
+# KeystoreManager.AUTH_VALIDITY_SECONDS (30 s) of the unlock below, and packaging an
+# uncached test APK can take longer than that, which failed the first Keystore test
+# with "User not authenticated". Built here, connectedDebugAndroidTest finds it up to date.
+./gradlew :sdk:assembleDebugAndroidTest --stacktrace "$@"
+
 # Auth-required identity keys need an enrolled secure lockscreen on the test AVD.
 adb shell locksettings set-pin 1234
 

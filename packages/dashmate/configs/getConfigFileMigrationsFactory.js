@@ -16,6 +16,36 @@ import {
 } from '../src/config/stockImages.js';
 import generateRandomString from '../src/util/generateRandomString.js';
 
+// The hostnames of Docker Hub. An image named with one of them is pulled from
+// the same Docker Hub repository as the name without it.
+const DOCKER_HUB_HOST = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\//;
+
+/**
+ * Split a Core image reference into its repository, the Core major version its
+ * tag names, and whether a digest pins it.
+ *
+ * `dashpay/dashd:23.1.8-nightly.2026.09.22@sha256:…` gives `dashpay/dashd`, 23
+ * and a digest pin. A Docker Hub hostname is dropped, so `docker.io/dashpay/dashd`
+ * is `dashpay/dashd` too. The major is null when the tag names no version
+ * (`latest`, `patched`) or the image is pinned by digest alone. A registry port
+ * is not read as a tag: a tag holds no `/`, so `registry.example.org:5000/dashd`
+ * has none.
+ *
+ * @param {string} image
+ * @return {{repository: string, coreMajor: number|null, pinnedByDigest: boolean}}
+ */
+function parseCoreImage(image) {
+  const { repository, tag, digest } = image
+    .match(/^(?<repository>[^@]+?)(?::(?<tag>[\w][\w.-]*))?(?<digest>@.*)?$/)?.groups ?? {};
+  const major = tag?.match(/^(\d+)(?:\.\d+){0,2}(?:-[\w.-]+)?$/)?.[1];
+
+  return {
+    repository: (repository ?? image).replace(DOCKER_HUB_HOST, ''),
+    coreMajor: major === undefined ? null : Number(major),
+    pinnedByDigest: digest !== undefined,
+  };
+}
+
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
@@ -336,6 +366,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
+
+                  // A copy keeps the permissions of the source, and the private key
+                  // must not be readable by other users on the host
+                  if (filename === 'private.key') {
+                    fs.chmodSync(newFilePath, 0o600);
+                  }
+
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
@@ -717,6 +754,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
+
+                  // A copy keeps the permissions of the source, and the private key
+                  // must not be readable by other users on the host
+                  if (filename === 'private.key') {
+                    fs.chmodSync(newFilePath, 0o600);
+                  }
+
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
@@ -1870,7 +1914,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '5.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
+          .forEach(([, options]) => {
             // From protocol version 15 Drive reads, with protx info, the operator payout of a
             // masternode whose operator key changed. Core refuses the method to the consensus
             // user until its whitelist names it, and loads the whitelist only when Core itself
@@ -1880,28 +1924,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (Array.isArray(whitelist) && !whitelist.includes('protxinfo')) {
               whitelist.push('protxinfo');
             }
-
-            // Move nodes from the Core 23 image earlier releases stored to the Core
-            // image this release ships. `dashpay/dashd:23` is the only Core 23 tag a
-            // release stored, so any other image is the operator's choice and is left
-            // alone.
-            //
-            // Only public networks, and the preset new local networks are set up
-            // from, move. Core 24 discards the sporks Core 23 stored, and on a local
-            // network or devnet whose nodes all move at once no peer has them
-            // anymore; dashmate signs local sporks only while setting the network up.
-            const isPublicNetwork = [NETWORK_MAINNET, NETWORK_TESTNET].includes(options.network);
-            const coreDocker = options.core?.docker;
-            if ((isPublicNetwork || name === 'local') && coreDocker?.image === 'dashpay/dashd:23') {
-              coreDocker.image = base.getStored('core.docker.image');
-            }
           });
 
         return configFile;
       },
-      // Sorts after every 5.1 prerelease key, so it runs for configs stamped by any 5.1
-      // prerelease build. Configs stamped 5.1.0 skip any 5.1 prerelease key added later.
-      '5.1.0': (configFile) => {
+      // Runs for formats before 5.1.0-dev.2, including configs stamped 5.1.0-dev.1.
+      '5.1.0-dev.2': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             const tenderdash = options.platform?.drive?.tenderdash;
@@ -1920,6 +1948,66 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (p2p?.maxOutgoingConnections > p2p?.maxConnections) {
               p2p.maxOutgoingConnections = p2p.maxConnections;
             }
+          });
+
+        return configFile;
+      },
+      // Runs for formats before 5.1.0-rc.2, including configs every earlier 5.1
+      // prerelease stamped, up to 5.1.0-rc.1.
+      '5.1.0-rc.2': (configFile) => {
+        // Platform 5.1 needs Dash Core 24. Move nodes on any Core 23 image of
+        // dashpay/dashd to the Core image this release ships: the `23` tag earlier
+        // releases stored, and any Core 23 release or build an operator pinned
+        // (`23.1`, `23.0.2`, `23.1.8-nightly`), with or without a digest.
+        //
+        // Only public networks, and the preset new local networks are set up
+        // from, move. Core 24 discards the sporks Core 23 stored, and on a local
+        // network or devnet whose nodes all move at once no peer has them
+        // anymore; dashmate signs local sporks only while setting the network up.
+        //
+        // Any other image is kept: one from another repository is the operator's
+        // own build, and a Core 24 or later tag is the operator's choice. It is
+        // warned about when its tag names a Core before 24 or no version, and
+        // when a digest pins it, because Docker runs the image the digest names
+        // whatever the tag says.
+        const core24Image = base.getStored('core.docker.image');
+
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const isPublicNetwork = [NETWORK_MAINNET, NETWORK_TESTNET].includes(options.network);
+            const coreDocker = options.core?.docker;
+            if (!(isPublicNetwork || name === 'local') || typeof coreDocker?.image !== 'string') {
+              return;
+            }
+
+            const { repository, coreMajor, pinnedByDigest } = parseCoreImage(coreDocker.image);
+
+            if (repository === 'dashpay/dashd' && coreMajor === 23) {
+              coreDocker.image = core24Image;
+
+              return;
+            }
+
+            const tagNamesCore24 = coreMajor !== null && coreMajor >= 24;
+            if (tagNamesCore24 && !pinnedByDigest) {
+              return;
+            }
+
+            let looksLike = `which looks like Core ${coreMajor}`;
+            if (coreMajor === null) {
+              looksLike = 'whose tag names no Core version';
+            } else if (tagNamesCore24) {
+              looksLike = 'which is pinned by a digest: Docker runs the image the digest '
+                + 'names, whatever its tag says';
+            }
+
+            // eslint-disable-next-line no-console
+            console.warn(
+              `Platform 5.1 needs Dash Core 24, but the '${name}' config runs Core from `
+              + `'${coreDocker.image}', ${looksLike}. Dashmate keeps a Core image it did not `
+              + 'store itself. Make sure the image is Core 24, or switch to the one this '
+              + `release ships: dashmate config set core.docker.image ${core24Image} --config=${name}`,
+            );
           });
 
         return configFile;

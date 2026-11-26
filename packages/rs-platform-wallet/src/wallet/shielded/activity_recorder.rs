@@ -26,7 +26,7 @@ use dash_sdk::platform::shielded::{try_decrypt_note, try_recover_outgoing_note};
 // re-export (`pub use drive_proof_verifier::types as query_types`)
 // rather than depending on it directly.
 use dash_sdk::query_types::ShieldedEncryptedNote;
-use grovedb_commitment_tree::ExtractedNoteCommitment;
+use grovedb_commitment_tree::{ExtractedNoteCommitment, PaymentAddress};
 
 use super::activity::{
     compute_activity_id, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
@@ -92,7 +92,30 @@ pub fn visible_output_cmxs(
     actions: &[SerializedAction],
     keys: &AccountViewingKeys,
 ) -> Vec<[u8; 32]> {
-    let mut cmxs: Vec<[u8; 32]> = Vec::new();
+    visible_outputs(actions, keys)
+        .into_iter()
+        .map(|output| output.cmx)
+        .collect()
+}
+
+/// One wallet-visible output of a built bundle
+/// ([`visible_outputs`]).
+pub(super) struct VisibleOutput {
+    /// The output note's commitment.
+    pub(super) cmx: [u8; 32],
+    /// The address an authored send pays, as its outgoing ciphertext
+    /// records it. `None` for an own output the incoming key decrypts (a
+    /// change note or a self-send), whose recipient is this account.
+    pub(super) sent_to: Option<PaymentAddress>,
+}
+
+/// The wallet-visible outputs behind [`visible_output_cmxs`], each with the
+/// address an authored send pays, read in the one pass that finds it.
+pub(super) fn visible_outputs(
+    actions: &[SerializedAction],
+    keys: &AccountViewingKeys,
+) -> Vec<VisibleOutput> {
+    let mut outputs = Vec::new();
     for a in actions {
         let wire = ShieldedEncryptedNote {
             cmx: a.cmx.to_vec(),
@@ -102,17 +125,23 @@ pub fn visible_output_cmxs(
         };
         // Own output (change / self-send) via IVK.
         if let Some((note, _addr)) = try_decrypt_note(&keys.prepared_ivk, &wire) {
-            cmxs.push(ExtractedNoteCommitment::from(note.commitment()).to_bytes());
+            outputs.push(VisibleOutput {
+                cmx: ExtractedNoteCommitment::from(note.commitment()).to_bytes(),
+                sent_to: None,
+            });
             continue;
         }
         // Authored send via OVK (encrypted to the wallet's own OVK).
-        if let Some((note, _recipient, _memo)) =
+        if let Some((note, recipient, _memo)) =
             try_recover_outgoing_note(&keys.outgoing_viewing_key, &wire)
         {
-            cmxs.push(ExtractedNoteCommitment::from(note.commitment()).to_bytes());
+            outputs.push(VisibleOutput {
+                cmx: ExtractedNoteCommitment::from(note.commitment()).to_bytes(),
+                sent_to: Some(recipient),
+            });
         }
     }
-    cmxs
+    outputs
 }
 
 /// Inputs the recorder needs that aren't carried by the kind itself.

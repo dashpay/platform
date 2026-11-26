@@ -4,10 +4,9 @@ use crate::error::Error;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
 use crate::query::moderated_join::decode_removals;
 use crate::query::{ChainedDocumentsResult, ChainedOuterDocuments, DriveDocumentQuery};
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
@@ -107,7 +106,7 @@ impl DriveDocumentQuery<'_> {
             }
             match path.get(3).map(|segment| segment.as_slice()) {
                 Some(segment) if segment == inner_type_name => {
-                    inner_documents.push(synthesize_index_only_document(
+                    let document = synthesize_index_only_document(
                         self.contract.id(),
                         self.document_type,
                         index,
@@ -115,7 +114,8 @@ impl DriveDocumentQuery<'_> {
                         &key,
                         Some(&element),
                         platform_version,
-                    )?);
+                    )?;
+                    inner_documents.push(document);
                 }
                 Some(segment) if segment == outer_type_name => {
                     // A stored document is any item, the sum-bearing one of a
@@ -131,12 +131,17 @@ impl DriveDocumentQuery<'_> {
                         )));
                     };
                     outer_documents.push(
-                        Document::from_bytes(
+                        Document::from_bytes_bounded(
                             serialized.as_slice(),
                             outer_document_type,
                             platform_version,
                         )
-                        .map_err(|e| Error::Protocol(Box::new(e)))?,
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(
+                                root_hash,
+                                Error::Protocol(Box::new(error)),
+                            )
+                        })?,
                     );
                 }
                 _ => {

@@ -9,7 +9,8 @@ import SwiftData
 /// `(walletId, accountIndex, position)` and re-saves with the same
 /// nullifier overwrite the existing row in place — Orchard
 /// nullifiers are globally unique, so repeated discovery of the
-/// same note (e.g. after a re-sync) shouldn't double-count.
+/// same note (e.g. after a re-sync) shouldn't double-count. A
+/// re-save never clears `isSpent` (see `persistShieldedNotes`).
 ///
 /// On cold start the matching `loadShieldedNotes` callback streams
 /// every row back to Rust so `ShieldedWallet::restore_from_snapshot`
@@ -73,19 +74,23 @@ public final class PersistentShieldedNote {
 }
 
 public extension PersistentShieldedNote {
-    /// Predicate for one wallet's unspent (spendable) notes — the
-    /// rows whose `value` sum IS that wallet's shielded balance.
-    /// Single home for the filter so every balance surface agrees on
-    /// what "unspent" means.
+    /// Predicate for one wallet's unspent note rows in every account,
+    /// identity accounts included. Summing their `value`s does not give
+    /// the wallet's shielded balance; that number comes from
+    /// `PlatformWalletManager.shieldedBalances`.
+    /// Single home for the filter so every surface that loads these rows
+    /// agrees on what "unspent" means.
     static func unspentPredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
         #Predicate<PersistentShieldedNote> {
             $0.walletId == walletId && $0.isSpent == false
         }
     }
 
-    /// Predicate for ALL wallets' unspent notes; callers scope by
-    /// walletId in memory (multi-wallet surfaces like the identity
-    /// funding picker).
+    /// Predicate for ALL wallets' unspent note rows, in every account,
+    /// identity accounts included; callers scope by walletId in memory.
+    /// As with [`unspentPredicate(walletId:)`], a balance comes from
+    /// `PlatformWalletManager.shieldedBalances`,
+    /// not from summing these rows.
     static var unspentPredicate: Predicate<PersistentShieldedNote> {
         #Predicate<PersistentShieldedNote> { $0.isSpent == false }
     }

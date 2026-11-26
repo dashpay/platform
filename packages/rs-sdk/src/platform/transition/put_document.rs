@@ -25,6 +25,10 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
+///
+/// A document whose revision is above the initial revision is sent as a replace, with
+/// its revision as given: it must be the revision the replace writes, the stored
+/// revision + 1. A fetched document carries the stored one.
 pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior

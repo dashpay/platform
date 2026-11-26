@@ -26,8 +26,8 @@ use super::contact_request::{recipient_key_purpose_is_valid, sender_key_purpose_
 use crate::error::StaleNodeError;
 use crate::platform::private_document_entries::private_document_entries_requirement;
 use crate::platform::private_document_scan::{
-    PrivateDocumentScan, PrivateDocumentScanKeys, ReceivedPrivateDocumentEntry,
-    SentPrivateDocumentEntry,
+    validate_private_document_properties, PrivateDocumentScan, PrivateDocumentScanKeys,
+    ReceivedPrivateDocumentEntry, SentPrivateDocumentEntry,
 };
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
@@ -35,11 +35,9 @@ use dpp::dashcore::key::rand::rngs::StdRng;
 use dpp::dashcore::key::rand::{RngCore, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::data_contract::document_type::{
     decode_private_document_payload, encode_private_document_payload, DocumentTypeRef,
 };
-use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -205,18 +203,12 @@ fn validate_request_properties(
     properties: &BTreeMap<String, Value>,
     platform_version: &PlatformVersion,
 ) -> Result<(), String> {
-    let result = dashpay_contract
-        .validate_document_properties(
-            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
-            Value::from(properties.clone()),
-            &DocumentSystemValues::default(),
-            platform_version,
-        )
-        .map_err(|error| error.to_string())?;
-    match result.errors.first() {
-        None => Ok(()),
-        Some(error) => Err(error.to_string()),
-    }
+    validate_private_document_properties(
+        dashpay_contract,
+        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        properties,
+        platform_version,
+    )
 }
 
 /// The outgoing viewing key an identity seals its private contact requests with, derived from

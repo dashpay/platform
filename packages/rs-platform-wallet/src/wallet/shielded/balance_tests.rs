@@ -5,14 +5,16 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::balance::{
-    ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
+    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    ShieldedLocalBalanceState, ShieldedOrdinaryBalance,
 };
 use super::{
-    FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedNote,
-    ShieldedStore, SubwalletId,
+    shielded_identity_account_index, FileBackedShieldedStore, NetworkShieldedCoordinator,
+    OrchardKeySet, ShieldedNote, ShieldedStore, SubwalletId,
 };
 use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
+use crate::manager::shielded_sync::WalletShieldedOutcome;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
 use tokio_util::sync::CancellationToken;
@@ -29,6 +31,30 @@ fn tree_path() -> PathBuf {
         "shielded_local_balance_{}_{nonce}_{sequence}.sqlite",
         std::process::id()
     ))
+}
+
+/// Run a Clear on `coordinator`, whose store is the file at `path`, that
+/// resets the commitment tree and then fails in the purge: a real SQLite
+/// schema error (the pending-spends table renamed away) for the length of
+/// the Clear. Requires that the purge is the step that failed.
+pub(super) async fn clear_failing_at_the_purge(
+    coordinator: &NetworkShieldedCoordinator,
+    path: &std::path::Path,
+) {
+    let conn = rusqlite::Connection::open(path).expect("open db");
+    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
+        .expect("break schema");
+    let cleared = coordinator.clear().await;
+    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
+        .expect("restore schema");
+    assert!(
+        matches!(
+            cleared,
+            Err(PlatformWalletError::ShieldedStoreError(ref message))
+                if message.contains("purge_all_subwallets failed")
+        ),
+        "the Clear must fail in the purge: {cleared:?}"
+    );
 }
 
 fn coordinator(path: &std::path::Path) -> NetworkShieldedCoordinator {
@@ -286,15 +312,9 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
         900
     );
 
-    // A real SQLite schema error makes FileBacked's purge fail. Its SQL-first
-    // ordering keeps the live subwallet ledger intact; the host keeps its rows.
-    let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
-        .unwrap();
-    assert!(coordinator.clear().await.is_err());
-    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
-        .unwrap();
-    drop(conn);
+    // FileBacked's SQL-first ordering keeps the live subwallet ledger intact
+    // when its purge fails; the host keeps its rows.
+    clear_failing_at_the_purge(&coordinator, &path).await;
     assert!(!coordinator.is_hydrated(wallet).await);
     assert_eq!(coordinator.registered_subwallets().await, vec![id]);
     assert_eq!(
@@ -307,6 +327,67 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
     assert_eq!(account.spendable_credits, 900);
     assert_eq!(account.source, ShieldedBalanceSource::ScannedThisSession);
     assert!(!coordinator.is_hydrated(wallet).await);
+}
+
+/// A Clear resets the commitment tree before it purges the ledger. When the
+/// reset lands and the purge fails, the notes stay, and so did the evidence
+/// of a scan completed in this session: with it, an account read as known
+/// with its pre-Clear amount, against a tree that Clear had emptied. A failed
+/// Clear forgets that evidence, so the wallet reads as incomplete until a
+/// scan completes again. The notes are kept.
+#[tokio::test]
+async fn should_forget_scan_evidence_when_a_clear_resets_the_tree_but_fails_to_purge() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [12; 32];
+    register(&coordinator, wallet, &[0]).await;
+    let id = SubwalletId::new(wallet, 0);
+    {
+        let mut store = coordinator.store().write().await;
+        store.save_note(id, &note(1, 900, false)).unwrap();
+        store.append_commitment(&[7; 32], true).unwrap();
+        // A scan completed in this session: the account's ledger is
+        // established with no host hydration behind it.
+        store.set_last_synced_note_index(id, 1).unwrap();
+    }
+    assert!(!coordinator.is_hydrated(wallet).await);
+    let scanned = ready(&coordinator, wallet).await.accounts[&0];
+    assert_eq!(scanned.spendable_credits, 900);
+    assert_eq!(scanned.source, ShieldedBalanceSource::ScannedThisSession);
+
+    clear_failing_at_the_purge(&coordinator, &path).await;
+
+    assert_eq!(
+        coordinator.local_balance_snapshot(wallet).await.unwrap(),
+        ShieldedLocalBalanceState::RestoreIncomplete,
+        "evidence of a scan of the tree as it was must not outlive the reset"
+    );
+    {
+        let store = coordinator.store().read().await;
+        assert_eq!(store.tree_size().unwrap(), 0, "the tree reset landed");
+        assert_eq!(
+            store.get_all_notes(id).unwrap().len(),
+            1,
+            "the failed purge kept the notes"
+        );
+        let account = store.local_account_balance(id).unwrap();
+        assert_eq!(account.source, ShieldedBalanceSource::NoHistory);
+        assert_eq!(account.last_scanned_index, None);
+        assert!(!account.is_established());
+        assert_eq!(account.spendable_credits, 900);
+    }
+    assert_eq!(coordinator.registered_subwallets().await, vec![id]);
+
+    // A scan that completes afterwards establishes the ledger again.
+    coordinator
+        .store()
+        .write()
+        .await
+        .set_last_synced_note_index(id, 1)
+        .unwrap();
+    let rescanned = ready(&coordinator, wallet).await.accounts[&0];
+    assert_eq!(rescanned.spendable_credits, 900);
+    assert_eq!(rescanned.source, ShieldedBalanceSource::ScannedThisSession);
 }
 
 #[tokio::test]
@@ -365,6 +446,7 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -575,5 +657,321 @@ async fn should_reject_restored_local_balance_overflow() {
     assert_eq!(
         ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
         u64::MAX
+    );
+}
+
+fn snapshot_of(spendable: &[(u32, u64)]) -> ShieldedLocalBalanceSnapshot {
+    snapshot_with_sources(
+        &spendable
+            .iter()
+            .map(|(account, credits)| (*account, *credits, ShieldedBalanceSource::Restored))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn snapshot_with_sources(
+    accounts: &[(u32, u64, ShieldedBalanceSource)],
+) -> ShieldedLocalBalanceSnapshot {
+    ShieldedLocalBalanceSnapshot {
+        accounts: accounts
+            .iter()
+            .map(|(account, spendable_credits, source)| {
+                (
+                    *account,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: *spendable_credits,
+                        source: *source,
+                        ..ShieldedLocalAccountBalance::default()
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn should_leave_identity_accounts_out_of_the_ordinary_balance() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    let snapshot = snapshot_of(&[(0, 100), (1, 50), (identity_account, 900)]);
+    assert_eq!(
+        snapshot.ordinary_balance().unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 150,
+            established: true,
+        }
+    );
+}
+
+#[test]
+fn should_report_an_established_zero_ordinary_balance_without_an_ordinary_account() {
+    let zero = ShieldedOrdinaryBalance {
+        spendable_credits: 0,
+        established: true,
+    };
+    assert_eq!(snapshot_of(&[]).ordinary_balance().unwrap(), zero);
+    let identity_account = shielded_identity_account_index(7).unwrap();
+    assert_eq!(
+        snapshot_with_sources(&[(identity_account, 900, ShieldedBalanceSource::NoHistory)])
+            .ordinary_balance()
+            .unwrap(),
+        zero,
+        "an identity account without history does not unsettle the ordinary balance"
+    );
+}
+
+#[test]
+fn should_refuse_an_ordinary_balance_past_u64() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    // The identity account's balance does not count toward the overflow.
+    let fits = snapshot_of(&[(0, u64::MAX - 1), (identity_account, u64::MAX)]);
+    assert_eq!(
+        fits.ordinary_balance().unwrap().spendable_credits,
+        u64::MAX - 1
+    );
+    let overflows = snapshot_of(&[(0, u64::MAX - 1), (1, 2), (identity_account, u64::MAX)]);
+    assert!(matches!(
+        overflows.ordinary_balance(),
+        Err(PlatformWalletError::ShieldedStoreError(message))
+            if message == "wallet-wide shielded balance exceeds u64"
+    ));
+}
+
+#[test]
+fn should_not_establish_the_ordinary_balance_while_an_ordinary_account_has_no_history() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    let snapshot = snapshot_with_sources(&[
+        (0, 100, ShieldedBalanceSource::ScannedThisSession),
+        (1, 0, ShieldedBalanceSource::NoHistory),
+        (
+            identity_account,
+            900,
+            ShieldedBalanceSource::ScannedThisSession,
+        ),
+    ]);
+    assert_eq!(
+        snapshot.ordinary_balance().unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 100,
+            established: false,
+        }
+    );
+}
+
+#[tokio::test]
+async fn should_not_establish_a_hydrated_empty_ledger_until_an_empty_scan_completes() {
+    let path = tree_path();
+    let coordinator = NetworkShieldedCoordinator::new(
+        Arc::new(empty_pool_sdk().await),
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(path, 100).unwrap(),
+    );
+    let wallet = [16; 32];
+    register(&coordinator, wallet, &[0]).await;
+    coordinator.mark_hydrated(wallet, true).await;
+    assert_eq!(
+        ready(&coordinator, wallet)
+            .await
+            .ordinary_balance()
+            .unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 0,
+            established: false,
+        },
+        "a hydrated ledger with no notes and no scan is not a known zero"
+    );
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    assert_eq!(
+        ready(&coordinator, wallet)
+            .await
+            .ordinary_balance()
+            .unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 0,
+            established: true,
+        },
+        "a completed empty scan makes the zero known"
+    );
+}
+
+// ── Sync passes superseded by a concurrent lifecycle change ─────────────
+//
+// A pass no longer holds the store lock across its download, so a
+// lifecycle change can land mid-pass. These drive `coordinator.sync` over
+// the mock SDK and inject the change from the tree-progress hook, which
+// fires inside the pass between store-lock holds.
+
+/// Install a tree-progress hook that runs `on_batch(call_index)` inside the
+/// pass (once per streamed batch), blocking on the lifecycle future.
+/// Nothing in the pass holds a coordinator or store lock while the hook
+/// runs, so the future completes without contention. It is driven on the
+/// runtime via `block_in_place` (the tests use the multi-thread flavor),
+/// `unconstrained` (the pass's task may have spent its coop budget) and
+/// under a timeout, so a regression that fires the hook while holding a
+/// lock the future needs fails the test instead of hanging it. Returns the
+/// call counter.
+fn hook_tree_progress<F, Fut>(
+    coordinator: &Arc<NetworkShieldedCoordinator>,
+    on_batch: F,
+) -> Arc<std::sync::atomic::AtomicUsize>
+where
+    F: Fn(Arc<NetworkShieldedCoordinator>, usize) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send,
+{
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let weak = Arc::downgrade(coordinator);
+    let counter = Arc::clone(&calls);
+    coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| {
+        let call = counter.fetch_add(1, Ordering::SeqCst);
+        if let Some(coordinator) = weak.upgrade() {
+            let lifecycle_change = tokio::task::unconstrained(tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                on_batch(coordinator, call),
+            ));
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(lifecycle_change)
+                    .expect("lifecycle change blocked inside the sync pass")
+            });
+        }
+    })));
+    calls
+}
+
+/// A host snapshot carrying sync state for `wallet`'s account 0.
+fn synced_start_state(wallet: [u8; 32]) -> ShieldedSyncStartState {
+    ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            SubwalletId::new(wallet, 0),
+            ShieldedSubwalletStartState {
+                has_sync_state: true,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    }
+}
+
+/// Coordinator over the empty mock pool, plus how many batches (hook calls)
+/// one uninterrupted pass over it streams — the unit the tests below count
+/// scan attempts in.
+async fn empty_pool_coordinator() -> (Arc<NetworkShieldedCoordinator>, usize) {
+    let path = tree_path();
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        Arc::new(empty_pool_sdk().await),
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+    ));
+    register(&coordinator, [0x30; 32], &[0]).await;
+    let calls = hook_tree_progress(&coordinator, |_, _| async {});
+    assert_eq!(
+        coordinator
+            .sync(true, &CancellationToken::new())
+            .await
+            .success_count(),
+        1
+    );
+    let batches_per_pass = calls.load(Ordering::SeqCst);
+    assert!(batches_per_pass > 0);
+    coordinator.unregister_wallet([0x30; 32]).await;
+    (coordinator, batches_per_pass)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_retry_sync_superseded_by_wallet_removal_without_resurrecting_it() {
+    let (coordinator, batches_per_pass) = empty_pool_coordinator().await;
+    let kept = [0x31; 32];
+    let removed = [0x32; 32];
+    register(&coordinator, kept, &[0]).await;
+    register(&coordinator, removed, &[0]).await;
+    let calls = hook_tree_progress(&coordinator, move |coordinator, call| async move {
+        if call == 0 {
+            coordinator.unregister_wallet(removed).await;
+        }
+    });
+
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    assert!(outcome.wallet_results.contains_key(&kept));
+    assert!(!outcome.wallet_results.contains_key(&removed));
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2 * batches_per_pass,
+        "the superseded scan was retried once"
+    );
+    let store = coordinator.store().read().await;
+    assert_eq!(
+        store
+            .local_account_balance(SubwalletId::new(kept, 0))
+            .unwrap()
+            .source,
+        ShieldedBalanceSource::ScannedThisSession
+    );
+    assert_eq!(
+        store
+            .local_account_balance(SubwalletId::new(removed, 0))
+            .unwrap()
+            .source,
+        ShieldedBalanceSource::NoHistory,
+        "the superseded pass must not write sync state for the removed wallet"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_fail_sync_after_repeated_supersession() {
+    let (coordinator, batches_per_pass) = empty_pool_coordinator().await;
+    let wallet = [0x33; 32];
+    register(&coordinator, wallet, &[0]).await;
+    // Every attempt is superseded by a restore of the wallet it scans.
+    let calls = hook_tree_progress(&coordinator, move |coordinator, _| async move {
+        let snapshot = synced_start_state(wallet);
+        coordinator
+            .restore_for_wallet(wallet, &snapshot)
+            .await
+            .unwrap();
+    });
+
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
+    assert_eq!(outcome.success_count(), 0, "{outcome:?}");
+    assert!(
+        matches!(&outcome.wallet_results[&wallet],
+            WalletShieldedOutcome::Err(message)
+                if message.contains("superseded")),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        3 * batches_per_pass,
+        "one attempt plus two retries"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_not_supersede_sync_for_a_wallet_bound_mid_pass() {
+    let (coordinator, batches_per_pass) = empty_pool_coordinator().await;
+    let scanning = [0x34; 32];
+    let late = [0x35; 32];
+    register(&coordinator, scanning, &[0]).await;
+    // A second wallet binds (register + restore) while the pass runs.
+    let calls = hook_tree_progress(&coordinator, move |coordinator, call| async move {
+        if call == 0 {
+            register(&coordinator, late, &[0]).await;
+            let snapshot = synced_start_state(late);
+            coordinator
+                .restore_for_wallet(late, &snapshot)
+                .await
+                .unwrap();
+        }
+    });
+
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    assert!(outcome.wallet_results.contains_key(&scanning));
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        batches_per_pass,
+        "binding another wallet must not discard the in-flight scan"
     );
 }

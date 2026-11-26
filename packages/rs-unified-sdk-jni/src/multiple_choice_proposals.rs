@@ -17,8 +17,8 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.MultipleChoiceProposalsNative`.
 
 use crate::decision_proposals::{
-    c_ptr, is_byte_array_of_len, read_bytes32, read_cstring, read_key32_zeroizing,
-    read_optional_cstring, string_or_null, take_wallet_json, to_unsigned,
+    c_ptr, is_byte_array_of_len, read_bytes32, read_cstring, read_fixed_bytes,
+    read_key32_zeroizing, read_optional_cstring, string_or_null, take_wallet_json, to_unsigned,
 };
 use crate::results::take_error;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
@@ -32,7 +32,9 @@ use platform_wallet_ffi::{
     MultipleChoiceProposalEditFFI, MultipleChoiceProposalParamsFFI,
 };
 use rs_sdk_ffi::{
-    dash_sdk_multiple_choice_proposal_cast_vote, dash_sdk_multiple_choice_proposal_fetch,
+    dash_sdk_multiple_choice_proposal_cast_vote,
+    dash_sdk_multiple_choice_proposal_cast_vote_with_signer,
+    dash_sdk_multiple_choice_proposal_fetch,
     dash_sdk_multiple_choice_proposal_get_choice_fund_to_join,
     dash_sdk_multiple_choice_proposal_get_kept_choice,
     dash_sdk_multiple_choice_proposal_get_masternode_vote,
@@ -664,6 +666,64 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MultipleChoiceProposa
     })
 }
 
+/// Vote among a multiple choice proposal's choices for a masternode with the host's signer
+/// and wait for the response (`dash_sdk_multiple_choice_proposal_cast_vote_with_signer`):
+/// the vote of `castVote`, signed by `signerHandle` with the voting key Rust builds from
+/// `votingAddress`.
+///
+/// * `voteChoice` / `choiceId` - as for `castVote`.
+/// * `voterProTxHash` - a 32-byte `byte[]`, the pro_tx_hash in wire order, as for `castVote`.
+/// * `votingAddress` - a 20-byte `byte[]`, the hash160 of the compressed voting public key
+///   (`MasternodeVotingKeyNative.votingAddressFromPrivateKey`).
+/// * `signerHandle` - a live `SignerHandle` (`PlatformWalletManager.signerHandle`) that the
+///   caller keeps alive for the call; rs-sdk-ffi refuses 0.
+///
+/// Returns nothing on success; throws on error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MultipleChoiceProposalsNative_castVoteWithSigner(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    proposal_id: JString,
+    vote_choice: jint,
+    choice_id: JString,
+    voter_pro_tx_hash: JByteArray,
+    voting_address: JByteArray,
+    signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(id) = read_cstring(env, &proposal_id, "proposalId") else {
+            return;
+        };
+        let Some(choice) = to_unsigned(env, vote_choice.into(), "voteChoice") else {
+            return;
+        };
+        let Some(choice_id) = read_optional_cstring(env, &choice_id, "choiceId") else {
+            return;
+        };
+        let Some(pro_tx_hash) = read_bytes32(env, &voter_pro_tx_hash, "voterProTxHash") else {
+            return;
+        };
+        let Some(address) = read_fixed_bytes::<20>(env, &voting_address, "votingAddress") else {
+            return;
+        };
+        let result = unsafe {
+            dash_sdk_multiple_choice_proposal_cast_vote_with_signer(
+                sdk as *const SDKHandle,
+                id.as_ptr(),
+                choice,
+                c_ptr(&choice_id),
+                pro_tx_hash.as_ptr(),
+                address.as_ptr(),
+                signer_handle as *const SignerHandle,
+            )
+        };
+        // Success carries no payload; take_error throws and frees on error.
+        unsafe { take_error(env, &result) };
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -759,6 +819,21 @@ mod tests {
                     "ByteArray", // voter_pro_tx_hash
                     "ByteArray", // voting_private_key
                     "Int",       // network_ord
+                ]),
+                "Unit".to_string()
+            )
+        );
+        assert_eq!(
+            kotlin_signature("castVoteWithSigner"),
+            (
+                types([
+                    "Long",      // sdk
+                    "String",    // proposal_id
+                    "Int",       // vote_choice
+                    "String?",   // choice_id
+                    "ByteArray", // voter_pro_tx_hash
+                    "ByteArray", // voting_address
+                    "Long",      // signer_handle
                 ]),
                 "Unit".to_string()
             )

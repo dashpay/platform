@@ -151,7 +151,9 @@ pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>)
 /// byte-identical transition is fund-safe (identical nullifiers cannot be
 /// spent twice) and converts silence into a confirmation (next scan sees the
 /// nullifiers spent); a spend that never lands keeps its notes held until its
-/// anchor is proven pruned.
+/// anchor is proven pruned, or until the note scan reads another transition's
+/// action spending one of them, which the saved transition's own actions tell
+/// apart (`sync::SavedSpendInput`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRedrive {
     /// Activity-entry id of the spend (sha256 of visible output cmxs);
@@ -185,6 +187,87 @@ pub struct PendingRedrive {
     /// automatic retries and permit separately authorized new payments.
     /// This is never a proof of failure and is always false for note spends.
     pub identity_user_abandoned: bool,
+    /// What the spend was priced and built for, checked again before any recovery
+    /// broadcast of [`Self::st_bytes`]: see [`SpendContext`]. `None` for a record saved
+    /// without one (by a build before contexts were kept, or a spend with no fee model of
+    /// its own to check), which recovery re-broadcasts as it always did.
+    pub spend_context: Option<SpendContext>,
+}
+
+/// The protocol context a note-consuming spend was selected, confirmed and built in, saved
+/// with its recovery record so that no recovery path, in this process or after a restart,
+/// broadcasts the saved transition once the network applies something else than it was
+/// priced for: the fee a transition carries is metered at the protocol version the network
+/// runs when it executes, so a transition built for one version pays out differently at
+/// another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpendContext {
+    /// The protocol version the spend was priced and built at: the SDK's operation version.
+    pub operation_version: u32,
+    /// The network protocol version the SDK had verified when the record was saved, if any.
+    pub network_version: Option<u32>,
+    /// The fee model the spend's fee follows.
+    pub fee_kind: super::note_selection::ShieldedFeeKind,
+    /// The fee the spend was selected, confirmed and built for.
+    pub planned_fee: u64,
+}
+
+impl SpendContext {
+    /// The version of [`Self::to_bytes`]'s layout, its first byte. A reader refuses any other.
+    const FORMAT: u8 = 1;
+    const LEN: usize = 1 + 4 + 4 + 1 + 4 + 8;
+
+    /// The bytes the file store keeps it as: the format byte, then the operation version,
+    /// the network version (0 when unknown), the fee model's tag and parameter and the
+    /// planned fee, little-endian. `None` for a fee model with no layout (a private
+    /// document create or a token pool spend, which have no such context).
+    pub(super) fn to_bytes(self) -> Option<[u8; Self::LEN]> {
+        use super::note_selection::ShieldedFeeKind as Kind;
+        let (tag, parameter) = match self.fee_kind {
+            Kind::Base => (0u8, 0u32),
+            Kind::Unshield => (1, 0),
+            Kind::Withdrawal => (2, 0),
+            Kind::IdentityCreate { num_keys } => (3, u32::try_from(num_keys).ok()?),
+            Kind::IdentityTopUp => (4, 0),
+            Kind::PrivateDocumentCreate { .. }
+            | Kind::TokenPurchase
+            | Kind::TokenPoolSpend { .. } => return None,
+        };
+        let mut bytes = [0u8; Self::LEN];
+        bytes[0] = Self::FORMAT;
+        bytes[1..5].copy_from_slice(&self.operation_version.to_le_bytes());
+        bytes[5..9].copy_from_slice(&self.network_version.unwrap_or(0).to_le_bytes());
+        bytes[9] = tag;
+        bytes[10..14].copy_from_slice(&parameter.to_le_bytes());
+        bytes[14..].copy_from_slice(&self.planned_fee.to_le_bytes());
+        Some(bytes)
+    }
+
+    /// The context [`Self::to_bytes`] wrote, or `None` for other bytes.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        use super::note_selection::ShieldedFeeKind as Kind;
+        if bytes.len() != Self::LEN || bytes[0] != Self::FORMAT {
+            return None;
+        }
+        let parameter = u32::from_le_bytes(bytes[10..14].try_into().ok()?);
+        let fee_kind = match bytes[9] {
+            0 => Kind::Base,
+            1 => Kind::Unshield,
+            2 => Kind::Withdrawal,
+            3 => Kind::IdentityCreate {
+                num_keys: usize::try_from(parameter).ok()?,
+            },
+            4 => Kind::IdentityTopUp,
+            _ => return None,
+        };
+        let network_version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+        Some(Self {
+            operation_version: u32::from_le_bytes(bytes[1..5].try_into().ok()?),
+            network_version: (network_version != 0).then_some(network_version),
+            fee_kind,
+            planned_fee: u64::from_le_bytes(bytes[14..].try_into().ok()?),
+        })
+    }
 }
 
 /// The DashPay private contact request a saved spend pays for: which identity
@@ -501,9 +584,44 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
 
+    /// Whether `id` holds a note with `nullifier` that is already marked
+    /// spent. The default scans [`Self::get_all_notes`]; stores with a
+    /// nullifier index should answer from it.
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .iter()
+            .any(|note| note.nullifier == *nullifier && note.is_spent))
+    }
+
+    /// `id`'s note with `nullifier`, if the store holds one. The default
+    /// scans [`Self::get_all_notes`]; stores with a nullifier index
+    /// should answer from it.
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .into_iter()
+            .find(|note| note.nullifier == *nullifier))
+    }
+
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
+
+    /// Keep, durably, that a credit pool scan proven at `height` is about to
+    /// mark notes spent, before it does: marking a fee note spent drops the
+    /// saved record of the spend it paid for, and the token note sweep must
+    /// not judge that spend's token notes from a token pool scan below the
+    /// height that dropped it, even after a restart. A store without token
+    /// pool notes keeps nothing.
+    fn note_spend_scan_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let _ = height;
+        Ok(())
+    }
 
     /// Reserve `id`'s note with `nullifier` against an in-flight
     /// spend so concurrent callers can't pick the same note.
@@ -816,6 +934,12 @@ pub trait ShieldedStore: Send + Sync + 'static {
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error>;
 
     /// Create a tree checkpoint at the given identifier.
+    ///
+    /// An identifier not above the current maximum is a no-op that returns
+    /// `Ok(())`: the latest checkpoint stays where it is. Sync calls this on
+    /// every pass with the tree size as the identifier, including passes
+    /// that appended nothing, so a store must not fail or add a checkpoint
+    /// for a repeated identifier.
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error>;
 
     /// Return the current tree root (Sinsemilla anchor, 32 bytes).
@@ -823,10 +947,23 @@ pub trait ShieldedStore: Send + Sync + 'static {
 
     /// Generate a Merkle authentication path for `position` as of the
     /// checkpoint at `depth` (0 = current tree state, 1 = the previous
-    /// checkpoint, and so on). Returns `Ok(None)` when no witness is
-    /// available at that depth — the position is unmarked/pruned, the
-    /// requested checkpoint depth doesn't exist, or the position was
-    /// appended after that checkpoint.
+    /// checkpoint, and so on). Returns `Ok(None)` only when the tree holds
+    /// the position and no checkpoint at that depth covers it: the requested
+    /// checkpoint depth doesn't exist, or the position was appended after
+    /// that checkpoint. A later checkpoint covers it, so this is the case a
+    /// sync resolves, and the spend path reports it as retryable
+    /// (`ShieldedMerkleWitnessUnavailable`).
+    ///
+    /// Every other failure is `Err`: the store could not read, the tree does
+    /// not hold the position at all, or the tree cannot produce a path for a
+    /// position a checkpoint covers (unmarked or pruned). Sync marks every
+    /// position it appends, so the last means a damaged tree or one an older
+    /// build wrote. No sync repairs any of these.
+    ///
+    /// Implementor migration: this contract used to allow `Ok(None)` for an
+    /// unmarked or pruned position. A store that still returns `Ok(None)`
+    /// there makes the spend path tell the user to wait for a sync that will
+    /// not help; return `Err` instead.
     ///
     /// Building a spend against an older-but-recorded checkpoint is how the
     /// wallet keeps its anchor consistent with a root Platform actually
@@ -840,8 +977,9 @@ pub trait ShieldedStore: Send + Sync + 'static {
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
 
     /// Generate a Merkle authentication path for `position` against the
-    /// current tree state. Returns `Ok(None)` if no witness is available
-    /// (position not marked, or pruned).
+    /// current tree state. Returns `Ok(None)` only when the tree holds the
+    /// position and no checkpoint covers it yet; see
+    /// [`Self::witness_at_depth`] for the full contract.
     ///
     /// Delegates to [`Self::witness_at_depth`] at depth 0.
     fn witness(
@@ -998,6 +1136,11 @@ pub(super) struct SubwalletState {
     /// (mark_spent / clear_pending) drops the whole record — a
     /// transition lands or dies atomically for all its nullifiers.
     pub redrives: BTreeMap<[u8; 32], PendingRedrive>,
+    /// Records whose saved spend context did not read back, by activity id, with the
+    /// nullifiers they carry. Their reservations are held like an armed record's, but they
+    /// are never armed: no recovery pass can see them, so none re-broadcasts them. They go
+    /// as an armed record does, when any of their nullifiers resolves.
+    pub quarantined_redrives: BTreeMap<[u8; 32], Vec<[u8; 32]>>,
     /// Notes this subwallet SENT, recovered via OVK during the scan.
     /// Append-only send history in recording order.
     pub outgoing_notes: Vec<ShieldedOutgoingNote>,
@@ -1016,10 +1159,15 @@ impl SubwalletState {
     /// Re-saving a note with a known nullifier overwrites the
     /// existing entry instead of appending a duplicate — Orchard
     /// nullifiers are globally unique, so a re-scan of the same
-    /// chunk shouldn't double-count.
+    /// chunk shouldn't double-count. A re-save never clears
+    /// `is_spent`: a spend is final, and a stale copy saved after it
+    /// must not offer the note again.
     pub(super) fn save_note(&mut self, note: &ShieldedNote) {
         if let Some(&existing_idx) = self.nullifier_index.get(&note.nullifier) {
-            self.notes[existing_idx] = note.clone();
+            let existing = &mut self.notes[existing_idx];
+            let was_spent = existing.is_spent;
+            *existing = note.clone();
+            existing.is_spent |= was_spent;
             return;
         }
         let idx = self.notes.len();
@@ -1047,6 +1195,18 @@ impl SubwalletState {
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
         self.notes.clone()
+    }
+
+    pub(super) fn note(&self, nullifier: &[u8; 32]) -> Option<&ShieldedNote> {
+        self.nullifier_index
+            .get(nullifier)
+            .map(|&idx| &self.notes[idx])
+    }
+
+    pub(super) fn is_spent(&self, nullifier: &[u8; 32]) -> bool {
+        self.nullifier_index
+            .get(nullifier)
+            .is_some_and(|&idx| self.notes[idx].is_spent)
     }
 
     pub(super) fn mark_spent(&mut self, nullifier: &[u8; 32]) -> MarkSpentOutcome {
@@ -1088,6 +1248,14 @@ impl SubwalletState {
         for id in &dropped {
             self.redrives.remove(id);
         }
+        let mut dropped = dropped;
+        self.quarantined_redrives.retain(|id, nullifiers| {
+            let hit = nullifiers.contains(nullifier);
+            if hit {
+                dropped.push(*id);
+            }
+            !hit
+        });
         dropped
     }
 
@@ -1223,6 +1391,22 @@ impl SubwalletState {
         removed
     }
 
+    /// Hold the reservation of a record whose spend context is unreadable, without arming
+    /// it: its notes stay out of selection and the balance, and it is never re-broadcast.
+    pub(super) fn quarantine_redrive(&mut self, redrive: &PendingRedrive) {
+        for n in &redrive.nullifiers {
+            self.mark_pending(n);
+            self.set_pending_spend(
+                n,
+                redrive.anchor,
+                redrive.activity_id,
+                redrive.anchor_height,
+            );
+        }
+        self.quarantined_redrives
+            .insert(redrive.activity_id, redrive.nullifiers.clone());
+    }
+
     /// Arm (or overwrite by activity id) a re-drivable record.
     pub(super) fn arm_redrive(&mut self, redrive: PendingRedrive) {
         self.redrives.insert(redrive.activity_id, redrive);
@@ -1352,6 +1536,12 @@ impl InMemoryShieldedStore {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// The checkpoint identifiers taken so far, oldest first.
+    #[cfg(test)]
+    pub(crate) fn checkpoint_ids(&self) -> &[u32] {
+        &self.checkpoints
+    }
 }
 
 impl ShieldedStore for InMemoryShieldedStore {
@@ -1383,6 +1573,25 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(SubwalletState::all_notes)
             .unwrap_or_default())
+    }
+
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .is_some_and(|state| state.is_spent(nullifier)))
+    }
+
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note(nullifier))
+            .cloned())
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -1729,6 +1938,14 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
+        // An identifier not above the latest is a no-op (the trait contract).
+        if self
+            .checkpoints
+            .last()
+            .is_some_and(|&last| checkpoint_id <= last)
+        {
+            return Ok(());
+        }
         self.checkpoints.push(checkpoint_id);
         Ok(())
     }
@@ -1849,6 +2066,35 @@ mod tests {
         );
         state.clear_pending(&[2; 32]);
         assert_eq!(state.spendable_balance(), Some(700));
+    }
+
+    #[test]
+    fn should_report_spent_state_by_nullifier() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        store.save_note(id, &note_with_nullifier([1; 32])).unwrap();
+        assert!(!store.is_note_spent(id, &[1; 32]).unwrap());
+        store.mark_pending(id, &[1; 32]).unwrap();
+        assert!(
+            !store.is_note_spent(id, &[1; 32]).unwrap(),
+            "a reservation is not a spend"
+        );
+        store.mark_spent(id, &[1; 32]).unwrap();
+        assert!(store.is_note_spent(id, &[1; 32]).unwrap());
+        assert!(!store.is_note_spent(id, &[2; 32]).unwrap());
+        assert!(!store.is_note_spent(test_id(1), &[1; 32]).unwrap());
+    }
+
+    #[test]
+    fn should_keep_a_note_spent_when_a_stale_copy_is_re_saved() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let stale = note_with_nullifier([1; 32]);
+        store.save_note(id, &stale).unwrap();
+        store.mark_spent(id, &[1; 32]).unwrap();
+        store.save_note(id, &stale).unwrap();
+        assert!(store.is_note_spent(id, &[1; 32]).unwrap());
+        assert!(store.get_unspent_notes(id).unwrap().is_empty());
     }
 
     #[test]
@@ -2034,6 +2280,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
 
@@ -2431,6 +2678,7 @@ mod tests {
             attempts: 7,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let note_spend = PendingRedrive {
@@ -2441,6 +2689,7 @@ mod tests {
             attempts: 1,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();

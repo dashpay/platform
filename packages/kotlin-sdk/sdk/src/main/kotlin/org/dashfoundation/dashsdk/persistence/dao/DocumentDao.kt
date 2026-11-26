@@ -228,6 +228,11 @@ interface DocumentDao {
     @Query("DELETE FROM pending_inputs WHERE id IN (:ids)")
     suspend fun deletePendingInputsByIds(ids: List<Long>)
 
+    /** Every pending-input row on any of [outpoints] — the reconcile's
+     *  flipped coins; chunked by the caller. */
+    @Query("DELETE FROM pending_inputs WHERE outpoint IN (:outpoints)")
+    suspend fun deletePendingInputsByOutpoints(outpoints: List<ByteArray>)
+
     /**
      * Delete every wallet's tombstones on [outpoints] — outputs of a
      * transaction swept in this round, dead coins nobody may hold a claim

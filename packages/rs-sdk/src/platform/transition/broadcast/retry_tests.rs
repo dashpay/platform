@@ -23,7 +23,7 @@ use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
 };
 use rs_dapi_client::DapiRequestExecutor;
-use rs_dapi_client::{ConnectionPool, DapiClient, Uri};
+use rs_dapi_client::{ConnectionPool, DapiClient, DapiClientError, Uri};
 use secp256k1::{PublicKey, SecretKey};
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
@@ -278,19 +278,29 @@ fn consensus_refusal() -> Status {
     status
 }
 
+/// The status of an attempt that never connected to its node. tonic wraps failures from
+/// its connector before mapping them to Unavailable.
+fn connect_failure() -> Status {
+    connect_failure_to("a node")
+}
+
+/// A [`connect_failure`] whose text names the node, to tell one attempt's from another's.
+fn connect_failure_to(node: &str) -> Status {
+    let status = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+        io::ErrorKind::NetworkUnreachable,
+        format!("Network is unreachable ({node})"),
+    )))));
+    assert_eq!(status.code(), Code::Unavailable);
+    status
+}
+
 #[tokio::test(start_paused = true)]
 async fn should_return_consensus_rejection_after_connection_establishment_fails() {
-    // tonic wraps failures from its connector before mapping them to Unavailable.
-    // Preserve that source through real inner retries and SDK error conversion.
-    let connect_error = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
-        io::ErrorKind::ConnectionRefused,
-        "connection refused",
-    )))));
-    assert_eq!(connect_error.code(), Code::Unavailable);
+    // Preserve the connector's source through real inner retries and SDK error conversion.
     let (outcome, sent, executions) = retrying_broadcast(
         &signed_transition(),
         vec![
-            Attempt::Error(connect_error),
+            Attempt::Error(connect_failure()),
             Attempt::Error(consensus_refusal()),
         ],
         1,
@@ -307,6 +317,76 @@ async fn should_return_consensus_rejection_after_connection_establishment_fails(
         Err(Error::Protocol(ProtocolError::ConsensusError(error)))
             if matches!(*error, ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(_)))
     ));
+}
+
+/// No attempt connected, so no node saw the transition: a plain failure the caller may
+/// retry, and nothing to wait for.
+#[tokio::test(start_paused = true)]
+async fn should_fail_plainly_when_every_attempt_fails_to_connect() {
+    let (outcome, sent, executions) = retrying_broadcast(
+        &signed_transition(),
+        (0..4).map(|_| Attempt::Error(connect_failure())).collect(),
+        3,
+    )
+    .await;
+    assert_eq!(sent.len(), 4);
+    assert_eq!(executions, 1);
+    let error = outcome.as_ref().unwrap_err();
+    assert!(!error.is_state_transition_result_unconfirmed());
+    assert!(error.to_string().contains("Network is unreachable"));
+    let result: Result<(), Error> = wait_after_broadcast(outcome, async {
+        panic!("no attempt connected, so there is no submission to check")
+    })
+    .await;
+    assert!(matches!(
+        result,
+        Err(Error::DapiClientError(DapiClientError::Transport(_)))
+    ));
+}
+
+/// A transfer sent on an open connection that then broke, with every later node
+/// unreachable (the palmatum upgrade rehearsal, dashpay/platform#6020 item 7). The first
+/// node may have received the transition, so the outcome is unconfirmed. The error still
+/// ends on the last failure, a failure to connect, so its text says a node may have
+/// received the transition and marks that failure as the last error: on its own it reads
+/// as if nothing had been sent.
+///
+/// The result check that follows is not replayed: its error is given, as the bare
+/// transport error it ended on in the rehearsal, to show how it is wrapped.
+#[tokio::test(start_paused = true)]
+async fn should_say_a_node_may_have_received_a_transition_whose_last_error_is_a_connect_failure() {
+    const UNCONFIRMED: &str = "state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: ";
+    let transport =
+        |status| Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)));
+    let (outcome, sent, executions) = retrying_broadcast(
+        &signed_transition(),
+        vec![
+            Attempt::Error(Status::unknown("transport error")),
+            Attempt::Error(connect_failure_to("second node")),
+            Attempt::Error(connect_failure_to("third node")),
+            Attempt::Error(connect_failure_to("fourth node")),
+        ],
+        3,
+    )
+    .await;
+    assert_eq!(sent.len(), 4);
+    assert_eq!(executions, 1);
+    let broadcast_error = outcome.as_ref().unwrap_err();
+    assert!(broadcast_error.is_state_transition_result_unconfirmed());
+    assert_eq!(
+        broadcast_error.to_string(),
+        format!(
+            "{UNCONFIRMED}{}",
+            transport(connect_failure_to("fourth node"))
+        )
+    );
+
+    let wait_error = transport(connect_failure_to("result check"));
+    let expected = format!("{UNCONFIRMED}{wait_error}");
+    let result: Result<(), Error> = wait_after_broadcast(outcome, async { Err(wait_error) }).await;
+    let error = result.unwrap_err();
+    assert!(error.is_state_transition_result_unconfirmed());
+    assert_eq!(error.to_string(), expected);
 }
 
 #[tokio::test(start_paused = true)]

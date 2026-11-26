@@ -1374,9 +1374,9 @@ mod tests {
             .iter()
             .map(|e| (e.key.clone(), e.count))
             .collect();
-        let sum_by_key: BTreeMap<Vec<u8>, Option<i64>> =
+        let sum_by_key: BTreeMap<Vec<u8>, Option<i128>> =
             sum_entries.iter().map(|e| (e.key.clone(), e.sum)).collect();
-        let joint_by_key: BTreeMap<Vec<u8>, (Option<u64>, Option<i64>)> = joint_entries
+        let joint_by_key: BTreeMap<Vec<u8>, (Option<u64>, Option<i128>)> = joint_entries
             .iter()
             .map(|e| (e.key.clone(), (e.count, e.sum)))
             .collect();

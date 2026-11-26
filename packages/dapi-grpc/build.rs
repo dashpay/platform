@@ -417,6 +417,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
             "GetDocumentsRequest.WhereClause.integer_range",
             SERDE_DEFAULT,
         )
+        // Waits recorded before the flag existed carry no
+        // `prove_state_before_block` key; they did not ask for it.
+        .field_attribute(
+            "WaitForStateTransitionResultRequestV0.prove_state_before_block",
+            SERDE_DEFAULT,
+        )
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)

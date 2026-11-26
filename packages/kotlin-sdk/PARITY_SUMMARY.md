@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **32**
+Capabilities tracked: **58**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 19 | 11 | 1 | 1 |
-| Swift | Example app | 5 | 14 | 4 | 9 |
-| Kotlin | SDK | 16 | 14 | 1 | 1 |
-| Kotlin | Example app | 6 | 13 | 3 | 10 |
+| Swift | SDK | 37 | 18 | 2 | 1 |
+| Swift | Example app | 6 | 37 | 5 | 10 |
+| Kotlin | SDK | 31 | 22 | 4 | 1 |
+| Kotlin | Example app | 7 | 35 | 5 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 20 |
-| Kotlin | 5 | 8 | 19 |
+| Swift | 2 | 20 | 36 |
+| Kotlin | 9 | 18 | 31 |
 
 ## Capability status
 
@@ -31,6 +31,7 @@ Capabilities tracked: **32**
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
 | `dashpay.invitations` | supported / partial / required | supported / partial / required |
+| `dashpay.invitation_claim_status_for_identity` | supported / not-applicable / not_applicable | unsupported / not-applicable / not_applicable |
 | `core.provider_restore` | supported / partial / required | partial / partial / required |
 | `dashpay.deferred_contact_crypto` | partial / partial / required | partial / partial / required |
 | `dashpay.private_contact_requests` | partial / partial / required | partial / partial / required |
@@ -38,6 +39,7 @@ Capabilities tracked: **32**
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
+| `dpns.give_up_name` | supported / partial / required | supported / partial / required |
 | `persistence.sync_fault_latch` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
@@ -45,16 +47,40 @@ Capabilities tracked: **32**
 | `identity.external_top_up_from_addresses` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
+| `tokens.identity_balance_sync` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `documents.private_document_entries_read` | partial / partial / not_applicable | supported / partial / not_applicable |
+| `documents.private_document_entry_create` | partial / partial / required | partial / partial / required |
+| `tokens.config_update_refreshed_contract` | unsupported / unsupported / not_applicable | supported / partial / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |
 | `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
-| `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
+| `shielded.core_wallet_drain` | supported / partial / tested | supported / partial / tested |
+| `shielded.spend_plan` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
+| `contracts.moderation_reads` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `contracts.fee_claim` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `contracts.moderation_writes` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / tested |
+| `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / tested |
+| `identity.load_shared_masternode_for_voting` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `shielded.shield_from_identity` | supported / partial / required | supported / partial / required |
+| `shielded.identity_top_up_from_pool` | supported / partial / required | supported / partial / required |
+| `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
+| `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `identity.key_limits_update` | supported / partial / required | supported / partial / required |
+| `shielded.token_pool_balances` | partial / partial / required | partial / partial / required |
+| `shielded.token_shielded_transfer` | partial / partial / required | partial / partial / required |
+| `shielded.token_unshield` | partial / partial / required | partial / partial / required |
+| `dashpay.profile_payment_addresses` | partial / partial / not_applicable | partial / partial / tested |
+| `dashpay.shielded_tips` | supported / partial / required | supported / partial / required |
 | `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).

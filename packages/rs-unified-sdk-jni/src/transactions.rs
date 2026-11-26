@@ -19,8 +19,10 @@
 //!   * document purchase / set-price ->
 //!     `platform_wallet_document_purchase` / `platform_wallet_document_set_price`
 //!     (`ManagedPlatformWallet.purchaseDocument`),
-//!   * cast vote -> `dash_sdk_contested_resource_cast_vote`
-//!     (`SDK.castContestedResourceVote` behind `ContestDetailView`).
+//!   * cast vote -> `dash_sdk_contested_resource_cast_vote`, or
+//!     `dash_sdk_contested_resource_cast_vote_with_signer` for a voting key
+//!     the host's signer holds (`SDK.castContestedResourceVote` behind
+//!     `ContestDetailView`).
 //!
 //! ## Result convention
 //!
@@ -38,6 +40,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::decision_proposals::{c_ptr, read_fixed_bytes, read_optional_cstring, to_unsigned};
 use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use dpp::platform_value::string_encoding::Encoding;
@@ -340,7 +343,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
 /// `platform_wallet_document_purchase` (buyer = `actorId`); `false` routes
 /// to `platform_wallet_document_set_price` (owner = `actorId`). Both FFIs
 /// have an identical parameter shape and write the confirmed document's
-/// 32-byte id + canonical JSON via out-params.
+/// 32-byte id + canonical JSON via out-params. Neither takes a key id: the
+/// Rust side selects the actor's AUTHENTICATION key that the document
+/// type's security level allows and the signer can sign with.
 ///
 /// Returns the confirmed document's canonical JSON (carrying the new
 /// `$price` / owner) as a JVM string; the 32-byte confirmed id is embedded
@@ -356,18 +361,13 @@ fn document_price_op<'l>(
     document_type: JString,
     document_id: JByteArray,
     price: jlong,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
-    // Reject negatives at the boundary rather than clamping: a silently
-    // clamped-to-zero price would post a document anyone can buy for free,
-    // and a negative key id would bit-cast to a bogus huge key index.
+    // Reject a negative price at the boundary rather than clamping: a
+    // silently clamped-to-zero price would post a document anyone can buy
+    // for free.
     if price < 0 {
         throw_sdk_exception(env, 1, "price must be non-negative");
-        return ptr::null_mut();
-    }
-    if signing_key_id < 0 {
-        throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
         return ptr::null_mut();
     }
 
@@ -396,7 +396,6 @@ fn document_price_op<'l>(
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 price as u64,
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -409,7 +408,6 @@ fn document_price_op<'l>(
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 price as u64,
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -441,7 +439,7 @@ fn document_price_op<'l>(
 
 /// Purchase for-sale `documentId` on `contractId`'s `documentType` for
 /// `price` credits, with `purchaserId` as the buyer — signed via
-/// `signerHandle` with key `signingKeyId`. Mirrors
+/// `signerHandle` with a purchaser key the Rust side selects. Mirrors
 /// `ManagedPlatformWallet.purchaseDocument` (Swift `DocumentWithPriceView`
 /// purchase flow). Returns the confirmed document's canonical JSON.
 #[no_mangle]
@@ -455,7 +453,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     price: jlong,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -468,7 +465,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             document_type,
             document_id,
             price,
-            signing_key_id,
             signer_handle,
         )
     })
@@ -476,7 +472,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 
 /// Set (update) the trade price of `documentId` on `contractId`'s
 /// `documentType`, owned by `ownerId`, to `price` credits — signed via
-/// `signerHandle` with key `signingKeyId`. Mirrors the set-price flow
+/// `signerHandle` with an owner key the Rust side selects. Mirrors the set-price flow
 /// behind Swift `DocumentWithPriceView`. Returns the confirmed document's
 /// canonical JSON (now carrying `$price`).
 #[no_mangle]
@@ -490,7 +486,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     price: jlong,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -503,7 +498,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             document_type,
             document_id,
             price,
-            signing_key_id,
             signer_handle,
         )
     })
@@ -516,7 +510,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// `platform_wallet_create_document_with_signer` (Swift
 /// `ManagedPlatformWallet.createDocument`, behind `CreateDocumentView`).
 ///
-/// Unlike purchase / set-price, the create FFI takes NO `signingKeyId`:
+/// Like every document write here, the create FFI takes no key id:
 /// the Rust side selects an AUTHENTICATION + ECDSA key from the wallet's
 /// in-process `IdentityManager` whose security level satisfies the
 /// document type's requirement, so key selection never crosses JNI.
@@ -604,15 +598,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 
 /// Replace + broadcast the full property set of `documentId` on
 /// `contractId`'s `documentType`, owned by `ownerId`, signed via
-/// `signerHandle` with key `signingKeyId` — the JNI bridge over
+/// `signerHandle` — the JNI bridge over
 /// `platform_wallet_document_replace` (Swift
 /// `ManagedPlatformWallet.replaceDocument`, behind the DOC-03 menu).
 ///
 /// The revision is bumped on the Rust side — the caller does NOT pass a
 /// revision. `propertiesJson` is the FULL replacement property object
-/// (same hex/base58 encoding rules as create); unlike create the replace
-/// FFI takes an explicit `signingKeyId` (an AUTHENTICATION + ECDSA key on
-/// the owner). Returns the confirmed document's canonical query-side JSON
+/// (same hex/base58 encoding rules as create); as for create, the Rust
+/// side selects the owner's AUTHENTICATION key that the document type's
+/// security level allows and the signer can sign with. Returns the confirmed document's canonical query-side JSON
 /// (with the 32-byte id as the base58 `$id` field); null after throwing on
 /// error.
 #[no_mangle]
@@ -626,14 +620,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     properties_json: JString,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        if signing_key_id < 0 {
-            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
-            return ptr::null_mut();
-        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -660,7 +649,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 props.as_ptr(),
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -691,8 +679,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 }
 
 /// Delete + broadcast `documentId` on `contractId`'s `documentType`,
-/// owned by `ownerId`, signed via `signerHandle` with key `signingKeyId`
-/// — the JNI bridge over `platform_wallet_document_delete` (Swift
+/// owned by `ownerId`, signed via `signerHandle` with an owner key the
+/// Rust side selects — the JNI bridge over `platform_wallet_document_delete` (Swift
 /// `ManagedPlatformWallet.deleteDocument`, behind the DOC-04 menu).
 ///
 /// Delete returns no document body (there is no canonical JSON), so this
@@ -708,14 +696,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     contract_id: JByteArray,
     document_type: JString,
     document_id: JByteArray,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jni::sys::jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        if signing_key_id < 0 {
-            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
-            return ptr::null_mut();
-        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -737,7 +720,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 contract.as_ptr(),
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
             )
@@ -849,8 +831,8 @@ fn erase_outcome_to_json(
 }
 
 /// Transfer + broadcast `documentId` on `contractId`'s `documentType`,
-/// from `ownerId` to `recipientId`, signed via `signerHandle` with key
-/// `signingKeyId` — the JNI bridge over `platform_wallet_document_transfer`
+/// from `ownerId` to `recipientId`, signed via `signerHandle` with an
+/// owner key the Rust side selects — the JNI bridge over `platform_wallet_document_transfer`
 /// (Swift `ManagedPlatformWallet.transferDocument`, behind the DOC-05
 /// menu). Only valid for document types whose schema is `transferable`
 /// (gated by the caller).
@@ -869,14 +851,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     recipient_id: JByteArray,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        if signing_key_id < 0 {
-            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
-            return ptr::null_mut();
-        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -903,7 +880,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 recipient.as_ptr(),
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -1053,6 +1029,129 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+/// Cast a masternode contested-resource vote with the host's signer and wait
+/// for the response: the JNI bridge over
+/// `dash_sdk_contested_resource_cast_vote_with_signer` (Swift
+/// `SDK.castContestedResourceVote(..., votingAddress:, signer:)` in
+/// `PlatformQueryExtensions.swift`).
+///
+/// The vote of [`Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_castContestedResourceVote`],
+/// signed by `signerHandle` with the voting key Rust builds from
+/// `votingAddress` (an `ECDSA_HASH160` key whose data is the address); the
+/// private key stays with the host.
+///
+/// * `voteChoice` - `0` TowardsIdentity (requires `contenderIdentityId`),
+///   `1` Abstain, `2` Lock. A value outside `u8` is refused here rather than
+///   wrapped onto a valid choice.
+/// * `contenderIdentityId` - base58 contender id; required only when
+///   `voteChoice == 0`, else may be null.
+/// * `voterProTxHash` - 32-byte pro_tx_hash in wire order.
+/// * `votingAddress` - 20-byte voting address (hash160 of the compressed
+///   voting public key).
+/// * `signerHandle` - a live `SignerHandle` the caller keeps alive for the
+///   call; rs-sdk-ffi refuses 0.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_castContestedResourceVoteWithSigner(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk_handle: jlong,
+    contract_id: JString,
+    document_type: JString,
+    index_name: JString,
+    index_values_json: JString,
+    vote_choice: jint,
+    contender_identity_id: JString,
+    voter_pro_tx_hash: JByteArray,
+    voting_address: JByteArray,
+    signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(contract) = read_cstring(env, &contract_id, "contractId") else {
+            return;
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return;
+        };
+        let Some(idx_name) = read_cstring(env, &index_name, "indexName") else {
+            return;
+        };
+        let Some(idx_values) = read_cstring(env, &index_values_json, "indexValuesJson") else {
+            return;
+        };
+        let Some(choice) = to_unsigned::<u8>(env, vote_choice.into(), "voteChoice") else {
+            return;
+        };
+        let Some(contender) =
+            read_optional_cstring(env, &contender_identity_id, "contenderIdentityId")
+        else {
+            return;
+        };
+        let Some(pro_tx_hash) = read_id32(env, &voter_pro_tx_hash, "voterProTxHash") else {
+            return;
+        };
+        let Some(address) = read_fixed_bytes::<20>(env, &voting_address, "votingAddress") else {
+            return;
+        };
+
+        let result = unsafe {
+            rs_sdk_ffi::dash_sdk_contested_resource_cast_vote_with_signer(
+                sdk_handle as *const rs_sdk_ffi::SDKHandle,
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                idx_name.as_ptr(),
+                idx_values.as_ptr(),
+                choice,
+                c_ptr(&contender),
+                pro_tx_hash.as_ptr(),
+                address.as_ptr(),
+                signer_handle as *const SignerHandle,
+            )
+        };
+        // Success carries no payload; take_error throws and frees on error.
+        unsafe { crate::results::take_error(env, &result) };
+    })
+}
+
+#[cfg(test)]
+mod signer_vote_signature_tests {
+    use crate::decision_proposals::tests::kotlin_signature_in;
+
+    const TRANSACTIONS_NATIVE_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/TransactionsNative.kt"
+    ));
+
+    /// JNI binds an export by its name alone, so a Kotlin declaration that drifted from the
+    /// export's parameters would only fail on a device.
+    #[test]
+    fn should_declare_the_contested_signer_vote_as_the_export_takes_it() {
+        assert_eq!(
+            kotlin_signature_in(
+                TRANSACTIONS_NATIVE_KT,
+                "castContestedResourceVoteWithSigner"
+            ),
+            (
+                [
+                    "Long",      // sdk_handle
+                    "String",    // contract_id
+                    "String",    // document_type
+                    "String",    // index_name
+                    "String",    // index_values_json
+                    "Int",       // vote_choice
+                    "String?",   // contender_identity_id
+                    "ByteArray", // voter_pro_tx_hash
+                    "ByteArray", // voting_address
+                    "Long",      // signer_handle
+                ]
+                .map(String::from)
+                .to_vec(),
+                "Unit".to_string()
+            )
+        );
+    }
 }
 
 #[cfg(test)]

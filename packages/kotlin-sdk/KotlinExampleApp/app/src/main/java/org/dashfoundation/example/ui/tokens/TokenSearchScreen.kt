@@ -37,6 +37,7 @@ import androidx.navigation.NavHostController
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.TokenDetail
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.toHex
 
 /**
@@ -57,7 +58,7 @@ fun TokenSearchScreen(navController: NavHostController) {
     val tokensFlow = remember(network) {
         container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
     }
-    val tokens by tokensFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val tokens by tokensFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var searchText by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(TokenCapabilityFilter.ALL.name) }

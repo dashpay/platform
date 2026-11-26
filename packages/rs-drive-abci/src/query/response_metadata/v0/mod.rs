@@ -12,7 +12,7 @@ impl<C> Platform<C> {
     ///
     /// This function should be called with the `GroveDBUsed` returned from `response_proof_v0`
     /// to ensure consistency between the proof and metadata.
-    pub(in crate::query) fn response_metadata_v0(
+    pub(crate) fn response_metadata_v0(
         &self,
         platform_state: &PlatformState,
         grovedb_used: CheckpointUsed,
@@ -38,7 +38,7 @@ impl<C> Platform<C> {
     /// to `response_metadata_v0` for consistency.
     ///
     /// Returns an error if a checkpoint was requested but not found.
-    pub(in crate::query) fn response_proof_v0(
+    pub(crate) fn response_proof_v0(
         &self,
         platform_state: &PlatformState,
         proof: Vec<u8>,

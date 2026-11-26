@@ -19,6 +19,9 @@ internal object QueriesNative {
     /** JSON availability object for a DPNS label. */
     external fun dpnsCheckAvailability(sdk: Long, label: String): String?
 
+    /** Homograph-normalized DPNS label (`oxford` -> `0xf0rd`); no network. */
+    external fun dpnsNormalizeUsername(name: String): String?
+
     /** JSON array of usernames owned by an identity. */
     external fun dpnsGetUsernames(sdk: Long, identityId: String, limit: Int): String?
 

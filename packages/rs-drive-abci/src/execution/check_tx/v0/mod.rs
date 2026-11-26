@@ -1,6 +1,9 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
-use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::validation::state_transition::check_tx_verification::{
+    state_transition_to_execution_event_for_check_tx, CheckTxExecutionEvent,
+};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
     validate_batch_token_pool_nullifiers_unspent, StateTransitionHasShieldedProofValidationV0,
@@ -25,6 +28,9 @@ use crate::execution::types::state_transition_container::v0::{
 };
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::prelude::UserFeeIncrease;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
@@ -114,6 +120,7 @@ where
         let mut check_tx_result = CheckTxResult {
             level: check_tx_level,
             fee_result: None,
+            gas_wanted: 0,
             unique_identifiers: vec![],
             priority: 0,
             state_transition_name: None,
@@ -180,7 +187,11 @@ where
 
         // We should run the execution event in dry run (estimated fees)
         // to see if we would have enough fees for the transition
-        if let Some(execution_event) = validation_result.into_data()? {
+        if let Some(CheckTxExecutionEvent {
+            event: execution_event,
+            reserved_bounds,
+        }) = validation_result.into_data()?
+        {
             let validation_result = self.validate_fees_of_event(
                 &execution_event,
                 platform_ref.state.last_block_info(),
@@ -190,6 +201,12 @@ where
 
             let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
 
+            check_tx_result.gas_wanted = gas_wanted_without_reservations(
+                &estimated_fee_result,
+                &reserved_bounds,
+                state_transition.user_fee_increase(),
+                platform_version,
+            )?;
             check_tx_result.fee_result = Some(estimated_fee_result);
 
             // A batch that spends a token shielded pool note the pool already records can only
@@ -275,6 +292,30 @@ where
             Ok(ValidationResult::new_with_data(check_tx_result))
         }
     }
+}
+
+/// The `gas_wanted` check tx reports for a transition whose estimate, raised by its
+/// `user_fee_increase`, is `estimated_fee_result`: that estimate without the bounds check tx
+/// reserved on top of it (`reserved_bounds`) for state it did not validate, raised as fee
+/// validation raises the estimate. Tenderdash fills a block's gas with what transitions want,
+/// and a bound is what a block may bill, not what it is expected to; the reserved work a block
+/// bills whenever it processes the transition stays in. The increase is rounded down over the
+/// whole processing fee, so this is the estimate without the bounds, or one credit above it.
+/// Tenderdash reads it to reap transactions into a proposal and to refuse one wanting more than
+/// a block's gas (its post-check), so leaving the bounds out also admits a transition only they
+/// made want more than that.
+fn gas_wanted_without_reservations(
+    estimated_fee_result: &FeeResult,
+    reserved_bounds: &[ValidationOperation],
+    user_fee_increase: UserFeeIncrease,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, Error> {
+    let mut reserved = FeeResult::default();
+    ValidationOperation::add_many_to_fee_result(reserved_bounds, &mut reserved, platform_version)?;
+    reserved.apply_user_fee_increase(user_fee_increase);
+    Ok(estimated_fee_result
+        .total_base_fee()
+        .saturating_sub(reserved.total_base_fee()))
 }
 
 #[cfg(test)]
@@ -737,8 +778,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26005987270
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         let check_result = platform
@@ -1415,8 +1457,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26011974540
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26011978620
         );
 
         let check_result = platform
@@ -1904,8 +1947,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26005987270
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         platform
@@ -2005,8 +2049,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            31006811010
+            // contact request's encryptedShieldedAddress, and each compiled document type of the
+            // contract read and of the one stored records the width of its sums (one byte each)
+            31006813300
         );
 
         let check_result = platform
@@ -2603,8 +2648,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26005987270
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         platform
@@ -4150,6 +4196,108 @@ mod tests {
         // we shouldn't have any errors
 
         assert_eq!(validation_result.errors.len(), 0);
+    }
+
+    /// The fee estimate reads the stored keys an update disables; a key id the identity does
+    /// not have must be refused with the consensus error before it, not fail as a Drive
+    /// internal error, while a key it has passes the check and gets its fee estimated.
+    /// Checked at protocol version 14 and the latest version.
+    #[tokio::test]
+    async fn should_refuse_identity_update_disabling_a_missing_key_with_a_consensus_error() {
+        for (protocol_version, disable_key_id) in [14, PlatformVersion::latest().protocol_version]
+            .into_iter()
+            .flat_map(|version| [(version, 42), (version, 1)])
+        {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a platform version");
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, _, key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![disable_key_id],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut update_transition: StateTransition = update_transition.into();
+
+            let data = update_transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            update_transition.set_signature(
+                signer
+                    .sign(&key, data.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let update_transition_bytes = update_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let validation_result = platform
+                .check_tx(
+                    update_transition_bytes.as_slice(),
+                    FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected a consensus error, not an internal error");
+
+            if disable_key_id == 42 {
+                assert_matches!(
+                    validation_result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::MissingIdentityPublicKeyIdsError(error)
+                    )] if error.ids() == &vec![42],
+                    "protocol version {protocol_version}"
+                );
+            } else {
+                assert!(
+                    validation_result.errors.is_empty(),
+                    "protocol version {protocol_version}: {:?}",
+                    validation_result.errors
+                );
+                assert!(
+                    validation_result
+                        .data
+                        .as_ref()
+                        .and_then(|result| result.fee_result.as_ref())
+                        .is_some(),
+                    "protocol version {protocol_version}: expected a fee estimate"
+                );
+            }
+        }
     }
 
     #[tokio::test]

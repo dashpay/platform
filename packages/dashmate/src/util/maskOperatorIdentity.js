@@ -1,3 +1,5 @@
+import os from 'os';
+import process from 'process';
 import hideString from './hideString.js';
 
 /**
@@ -34,6 +36,45 @@ function wholeWord(name) {
 }
 
 /**
+ * Who is running dashmate, so their name can be masked out of collected data.
+ *
+ * A report is the artefact an operator hands to whoever is helping them, and
+ * the paths in it are absolute, so they carry a home directory. The paths stay
+ * - they are what makes a problem actionable - and the name in them does not.
+ *
+ * The name is read from the operating system rather than the environment.
+ * Doctor runs unattended often enough - from cron, from a service manager -
+ * that USER cannot be relied on, and replacing an undefined needle silently
+ * masks nothing at all. When no name can be determined there is nothing to
+ * mask and the data is left alone rather than having "undefined" replaced in
+ * it.
+ *
+ * The home directory the account is registered with and the one HOME names
+ * can differ, and dashmate keeps its files under the second, so both are
+ * masked.
+ *
+ * @return {{username: string|null, homePath: string|null, homePaths: string[]}}
+ */
+export function getOperatorIdentity() {
+  let username = null;
+  let homePath = null;
+
+  try {
+    ({ username, homedir: homePath } = os.userInfo());
+  } catch {
+    // A process running under a uid with no passwd entry has no name to read.
+  }
+
+  const homePaths = [...new Set([homePath, os.homedir()].filter(Boolean))];
+
+  return {
+    username: username || process.env.USER || process.env.USERNAME || null,
+    homePath: homePaths[0] ?? null,
+    homePaths,
+  };
+}
+
+/**
  * Remove the operator's identity from text that may leave the machine.
  *
  * The home directory becomes `~`, so the part of a path that makes a problem
@@ -45,16 +86,34 @@ function wholeWord(name) {
  * @param {Object} identity
  * @param {string|null} identity.username
  * @param {string|null} identity.homePath
+ * @param {string[]} [identity.homePaths] - every home directory to mask
+ * @param {Object} [options]
+ * @param {string} [options.homeReplacement] - what the home directory is
+ *   written as, `~` unless the result has to stay an absolute path
  * @return {*}
  */
-export default function maskOperatorIdentity(value, { username, homePath }) {
+export default function maskOperatorIdentity(
+  value,
+  { username, homePath, homePaths },
+  { homeReplacement = '~' } = {},
+) {
   if (typeof value !== 'string') {
     return value;
   }
 
   let masked = value;
 
-  if (homePath) {
+  // Longest first, so a home directory inside another is masked whole. A
+  // trailing separator is not part of the directory, and the root of the file
+  // system - the home of some service accounts - names nobody: masking it
+  // would rewrite every path and URL in the text.
+  const homes = [...new Set([...(homePaths ?? []), homePath]
+    .filter(Boolean)
+    .map((home) => home.replace(/[\\/]+$/, ''))
+    .filter((home) => home !== '' && !/^[A-Za-z]:$/.test(home)))]
+    .sort((a, b) => b.length - a.length);
+
+  for (const home of homes) {
     // Written home-relative rather than blanked out. A masked segment removes
     // the name but also removes the operator's ability to paste the path back;
     // `~` removes the name and still resolves.
@@ -65,8 +124,8 @@ export default function maskOperatorIdentity(value, { username, homePath }) {
     // because macOS and Windows resolve paths that way, so the same directory
     // arrives in more than one spelling.
     masked = masked.replace(
-      new RegExp(`${escapeForRegExp(homePath)}(?![A-Za-z0-9_.-])`, 'gi'),
-      '~',
+      new RegExp(`${escapeForRegExp(home)}(?![A-Za-z0-9_.-])`, 'gi'),
+      homeReplacement,
     );
   }
 
