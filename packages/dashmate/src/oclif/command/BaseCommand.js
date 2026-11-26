@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import createDIContainer from '../../createDIContainer.js';
 import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
 import getFunctionParams from '../../util/getFunctionParams.js';
+import killContainersSynchronously from '../../docker/killContainersSynchronously.js';
 
 /**
  * @abstract
@@ -111,6 +112,12 @@ export default class BaseCommand extends Command {
 
       process.on('unhandledRejection', () => {});
       process.on('uncaughtException', () => {});
+
+      // listr2 exits the process on SIGINT straight after this returns, before
+      // the request below is sent, so the containers are killed synchronously
+      // first. Otherwise a Core started for the command (setup starts one to
+      // read a masternode's registration) is left running after Ctrl-C.
+      killContainersSynchronously(startedContainers.getContainers());
 
       // stop and remove all started containers
       await stopAllContainers(startedContainers.getContainers());
