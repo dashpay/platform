@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
 import hasbin from 'hasbin';
-import quoteShellArgument from '../../../src/util/quoteShellArgument.js';
+import quoteShellArgument, { isShellQuotable } from '../../../src/util/quoteShellArgument.js';
 
 describe('quoteShellArgument', () => {
   /**
@@ -27,21 +27,30 @@ describe('quoteShellArgument', () => {
     expect(evaluateIn('sh', quoted)).to.equal(value);
   });
 
+  // The printed commands are pasted into whatever shell the operator has,
+  // dash (Debian's and Ubuntu's /bin/sh) included, which knows no quoting
+  // beyond POSIX.
+  ['sh', 'dash'].forEach((shell) => {
+    it(`should keep a value one argument for ${shell}`, function test() {
+      if (!hasbin.sync(shell)) {
+        this.skip();
+      }
+
+      const value = "/home/o'brien/my node/$HOME `id` \\n !x ~ * ü";
+
+      expect(evaluateIn(shell, quoteShellArgument(value))).to.equal(value);
+    });
+  });
+
   // A line break inside single quotes is kept, so the printed command would
-  // take two lines, the second reading as a command of its own.
-  it('should keep a value with control characters on one line', function test() {
-    // Harmless if it ever ran: the shell evaluates it below.
-    const value = "/home/user/locked\nprintf injected\u001b[2K'\\";
+  // take two lines, the second reading as a command of its own. Dollar-single
+  // quotes escape it, but dash reads them as a dollar sign and a quoted
+  // string, and the command would act on another path.
+  it('should refuse a value with control characters', () => {
+    const value = '/home/user/locked\nprintf injected\u001b[2K';
 
-    const quoted = quoteShellArgument(value);
-
-    expect(quoted).to.equal("$'/home/user/locked\\012printf injected\\033[2K\\'\\\\'");
-    expect(quoted).to.not.include('\n').and.not.include('\u001b');
-
-    if (!hasbin.sync('bash')) {
-      this.skip();
-    }
-
-    expect(evaluateIn('bash', quoted)).to.equal(value);
+    expect(isShellQuotable(value)).to.be.false();
+    expect(isShellQuotable("/home/o'brien")).to.be.true();
+    expect(() => quoteShellArgument(value)).to.throw('control characters');
   });
 });

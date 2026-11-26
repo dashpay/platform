@@ -16,8 +16,9 @@ describe('getPlatformArtefacts', () => {
 
     dockerCompose = {
       throwErrorIfNotInstalled: this.sinon.stub().resolves(),
-      // Only the volumes that exist and that Compose created for the project
-      getVolumeNames: this.sinon.stub().resolves([]),
+      getVolumeCandidates: this.sinon.stub().resolves([]),
+      // Docker has it, and Compose created it for the project
+      isVolumeOwned: this.sinon.stub().resolves(true),
       getContainersList: this.sinon.stub().resolves([]),
     };
 
@@ -49,8 +50,10 @@ describe('getPlatformArtefacts', () => {
   it('should look at every Platform service, with every profile enabled', async () => {
     await getPlatformArtefacts(config);
 
-    expect(dockerCompose.getVolumeNames).to.have.been.calledOnceWithExactly(config, {
+    // The volumes the reset removes: it removes the helper too.
+    expect(dockerCompose.getVolumeCandidates).to.have.been.calledOnceWithExactly(config, {
       serviceNames: ['drive_abci', 'quorum_list'],
+      removedServiceNames: ['drive_abci', 'quorum_list', 'dashmate_helper'],
       profiles: ['core', 'platform', 'platform-quorum'],
     });
     expect(dockerCompose.getContainersList).to.have.been.calledOnceWithExactly(config, {
@@ -69,9 +72,13 @@ describe('getPlatformArtefacts', () => {
     expect(certificateFiles).to.deep.equal([path.join(sslDir, 'bundle.crt')]);
   });
 
-  // A reset that kept data leaves them; one that did not removed them.
+  // A reset that kept data leaves them; one that did not removed them. A
+  // volume Docker does not have, or another project's, is neither.
   it('should report the Platform volumes the project created', async () => {
-    dockerCompose.getVolumeNames.resolves(['p_drive_tenderdash']);
+    const owned = { name: 'p_drive_tenderdash', project: 'p', keys: ['drive_tenderdash'] };
+    const foreign = { name: 'shared_drive_abci_data', project: 'p', keys: ['drive_abci_data'] };
+    dockerCompose.getVolumeCandidates.resolves([owned, foreign]);
+    dockerCompose.isVolumeOwned.callsFake(async (candidate) => candidate === owned);
 
     const { dataVolumes } = await getPlatformArtefacts(config);
 
@@ -99,8 +106,15 @@ describe('getPlatformArtefacts', () => {
   });
 
   it('should fail when the volumes cannot be read', async () => {
-    dockerCompose.getVolumeNames.rejects(new Error('permission denied'));
+    dockerCompose.getVolumeCandidates.rejects(new Error('permission denied'));
 
     await expect(getPlatformArtefacts(config)).to.be.rejectedWith('permission denied');
+  });
+
+  it('should fail when Docker cannot say whose a volume is', async () => {
+    dockerCompose.getVolumeCandidates.resolves([{ name: 'p_drive_tenderdash', project: 'p', keys: ['drive_tenderdash'] }]);
+    dockerCompose.isVolumeOwned.rejects(new Error('connect ECONNREFUSED'));
+
+    await expect(getPlatformArtefacts(config)).to.be.rejectedWith('ECONNREFUSED');
   });
 });

@@ -85,7 +85,8 @@ export default function createPlatformSetupConfigs(homeDir) {
       {
         isNodeRunning: async () => false,
         rm: async () => {},
-        getVolumeNames: async () => [],
+        getVolumeCandidates: async () => [],
+        isVolumeOwned: async () => false,
       },
       {},
       null,

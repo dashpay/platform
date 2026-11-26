@@ -7,6 +7,10 @@ const STOPPED_STATES = ['exited', 'created'];
 
 const CERTIFICATE_FILE_NAMES = ['bundle.crt', 'private.key'];
 
+// A Platform-only reset removes the helper with the Platform services, so a
+// volume they share with it is one the reset removes.
+const HELPER_SERVICE_NAME = 'dashmate_helper';
+
 /**
  * The gateway certificate files of a config that exist
  *
@@ -78,10 +82,23 @@ export default function getPlatformArtefactsFactory(
 
     const certificateFiles = findCertificateFiles(homeDir, config.getName());
 
-    // The volumes that exist and that Compose created for this project: what
-    // a reset that kept data leaves, and what a Platform-only reset removes.
-    // An external volume, or another project's, is neither.
-    const dataVolumes = await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
+    // The volumes a Platform-only reset removes, found the way it finds them:
+    // what a reset that kept data leaves, and what `reset --platform` then
+    // clears. An external volume, one that Core uses too, or another
+    // project's is none of these.
+    const candidates = await dockerCompose.getVolumeCandidates(config, {
+      serviceNames,
+      removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
+      profiles,
+    });
+
+    const ownership = await Promise.all(
+      candidates.map((candidate) => dockerCompose.isVolumeOwned(candidate)),
+    );
+
+    const dataVolumes = candidates
+      .filter((candidate, index) => ownership[index])
+      .map(({ name }) => name);
 
     const activeServices = await getActivePlatformServices(config);
 

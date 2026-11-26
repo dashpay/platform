@@ -134,7 +134,23 @@ describe('DockerCompose service selection', () => {
 
   afterEach(() => sandbox.restore());
 
-  describe('getVolumeNames', () => {
+  describe('volume lookup', () => {
+    /**
+     * The volumes a reset of the given services removes: the candidates that
+     * Docker, asked just before, labels as the project's
+     *
+     * @param {Object} options
+     * @return {Promise<string[]>}
+     */
+    async function getOwnedVolumeNames(options) {
+      const candidates = await dockerCompose.getVolumeCandidates({}, options);
+      const isOwned = await Promise.all(
+        candidates.map((candidate) => dockerCompose.isVolumeOwned(candidate)),
+      );
+
+      return candidates.filter((_, index) => isOwned[index]).map(({ name }) => name);
+    }
+
     /**
      * Docker's labels on a volume Compose created for a project
      *
@@ -177,7 +193,7 @@ describe('DockerCompose service selection', () => {
         }),
       });
 
-      const volumeNames = await dockerCompose.getVolumeNames({}, {
+      const volumeNames = await getOwnedVolumeNames({
         serviceNames: ['drive_tenderdash', 'quorum_list'],
         profiles: ['core', 'platform'],
       });
@@ -187,7 +203,9 @@ describe('DockerCompose service selection', () => {
         .to.deep.equal(['--profile', 'core', '--profile', 'platform']);
       expect(compose.execCompose).to.have.been.calledOnce();
       expect(compose.execCompose.firstCall.args[0]).to.equal('config');
-      expect(compose.execCompose.firstCall.args[1]).to.deep.equal(['drive_tenderdash', 'quorum_list']);
+      // Given names, Compose describes only them and what they depend on, and
+      // a service that mounts the same volume would go unseen.
+      expect(compose.execCompose.firstCall.args[1]).to.deep.equal([]);
     });
 
     /**
@@ -216,7 +234,7 @@ describe('DockerCompose service selection', () => {
         { operator_logs: { name: 'operator_logs', external: true } },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal([]);
     });
 
@@ -243,7 +261,7 @@ describe('DockerCompose service selection', () => {
       );
       dockerVolumeLabels.unlabeled = {};
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
     });
 
@@ -256,7 +274,7 @@ describe('DockerCompose service selection', () => {
         { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal([]);
     });
 
@@ -276,8 +294,104 @@ describe('DockerCompose service selection', () => {
         },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    /**
+     * @param {Object<string, Object[]>} serviceMounts - each service's volumes
+     * @param {Object} volumes - the project's volume definitions
+     */
+    function describeServices(serviceMounts, volumes) {
+      sandbox.stub(compose, 'execCompose').resolves({
+        exitCode: 0,
+        err: '',
+        out: JSON.stringify({
+          name: 'dashmate_project_node',
+          services: Object.fromEntries(Object.entries(serviceMounts)
+            .map(([name, mounts]) => [name, { volumes: mounts }])),
+          volumes,
+        }),
+      });
+    }
+
+    // Docker knows a volume by its name, and two keys can give the same one.
+    // Declaring it external under one key says the operator manages it, even
+    // though the other key is a plain one Compose created it for.
+    it('should leave out a volume one of its keys declares external', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeServices(
+        {
+          drive_abci: [
+            { type: 'volume', source: 'drive_abci_data', target: '/data' },
+            { type: 'volume', source: 'drive_abci_managed', target: '/managed' },
+          ],
+        },
+        {
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+          drive_abci_managed: { name: 'dashmate_project_node_drive_abci_data', external: true },
+        },
+      );
+
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
+    });
+
+    // Removing a volume a service outside the reset also mounts would take
+    // that service's data, Core's included, once nothing holds it in use.
+    it('should leave out a volume a service it does not reset mounts too', async () => {
+      dockerVolumeLabels.dashmate_project_node_shared_data = composeLabels('dashmate_project_node', 'shared_data');
+      // Compose created it for the Platform key, starting that service first.
+      dockerVolumeLabels.dashmate_project_node_shared_cache = composeLabels('dashmate_project_node', 'drive_abci_cache');
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeServices(
+        {
+          core: [
+            { type: 'volume', source: 'shared_data', target: '/shared' },
+            { type: 'volume', source: 'core_cache', target: '/cache' },
+          ],
+          drive_abci: [
+            { type: 'volume', source: 'shared_data', target: '/shared' },
+            { type: 'volume', source: 'drive_abci_cache', target: '/cache' },
+            { type: 'volume', source: 'drive_abci_data', target: '/data' },
+          ],
+        },
+        {
+          shared_data: { name: 'dashmate_project_node_shared_data' },
+          // Two keys for one volume, one for each service
+          core_cache: { name: 'dashmate_project_node_shared_cache' },
+          drive_abci_cache: { name: 'dashmate_project_node_shared_cache' },
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+        },
+      );
+
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
+        .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    // Docker labels a volume with the key Compose created it for. Created for
+    // a key no Platform service mounts, it was made for something else that
+    // may still use it, even if that is not in the model the reset sees.
+    it('should accept only the label of a key a given service mounts', async () => {
+      dockerVolumeLabels.dashmate_project_node_archive = composeLabels('dashmate_project_node', 'archive_data');
+
+      describeServices(
+        {
+          dashmate_helper: [{ type: 'volume', source: 'archive_data', target: '/archive' }],
+          drive_abci: [{ type: 'volume', source: 'drive_alias', target: '/archive' }],
+        },
+        {
+          archive_data: { name: 'dashmate_project_node_archive' },
+          drive_alias: { name: 'dashmate_project_node_archive' },
+        },
+      );
+
+      expect(await getOwnedVolumeNames({
+        serviceNames: ['drive_abci'],
+        removedServiceNames: ['drive_abci', 'dashmate_helper'],
+      })).to.deep.equal([]);
     });
 
     // Only a missing volume means there is nothing to remove.
@@ -291,19 +405,31 @@ describe('DockerCompose service selection', () => {
         { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
       );
 
-      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.be.rejectedWith('Docker unavailable');
     });
 
-    // Nothing to remove for a volume that was never created.
-    it('should leave out a volume Docker does not have', async () => {
+    // Nothing to remove for a volume that was never created, unless it is
+    // created by the time it would be removed: whether Docker has it is
+    // asked then, not when the candidates are listed.
+    it('should leave out a volume Docker does not have when asked', async () => {
       describeDriveAbci(
         [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
         { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
-        .to.deep.equal([]);
+      const candidates = await dockerCompose.getVolumeCandidates({}, { serviceNames: ['drive_abci'] });
+
+      expect(candidates).to.deep.equal([{
+        name: 'dashmate_project_node_drive_abci_data',
+        project: 'dashmate_project_node',
+        keys: ['drive_abci_data'],
+      }]);
+      expect(await dockerCompose.isVolumeOwned(candidates[0])).to.be.false();
+
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      expect(await dockerCompose.isVolumeOwned(candidates[0])).to.be.true();
     });
 
     // A service missing from the description has volumes nobody would remove.
@@ -314,14 +440,28 @@ describe('DockerCompose service selection', () => {
         out: JSON.stringify({ name: 'dashmate_project_node', services: { core: {} } }),
       });
 
-      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.be.rejectedWith("did not describe service 'drive_abci'");
+    });
+
+    // The lookup can be the reset's first contact with Docker, before any
+    // running-services check and always with --force. Docker's own guidance
+    // (not installed, not started, no permission) must show there too, not
+    // the raw error of the Compose command or the socket.
+    it('should check Docker is available before it asks Compose', async () => {
+      dockerCompose.throwErrorIfNotInstalled.rejects(new Error("Can't connect to Docker Engine: permission denied"));
+      sandbox.stub(compose, 'execCompose').rejects(new Error('unexpected call'));
+
+      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
+        .to.be.rejectedWith("Can't connect to Docker Engine");
+
+      expect(compose.execCompose).to.not.have.been.called();
     });
 
     it('should not ask Compose about an empty selection', async () => {
       sandbox.stub(compose, 'execCompose').rejects(new Error('unexpected call'));
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: [] })).to.deep.equal([]);
+      expect(await dockerCompose.getVolumeCandidates({}, { serviceNames: [] })).to.deep.equal([]);
     });
   });
 
@@ -355,6 +495,41 @@ describe('DockerCompose service selection', () => {
       compose.ps.resolves({ data: { json: [{ Service: 'drive_abci', State: 'running' }] } });
 
       expect(await dockerCompose.isNodeRunning({}, { serviceNames: ['drive_abci'] })).to.be.true();
+    });
+
+    // Stop, reindex and the full reset ask about the services the config
+    // enables. Passed to Compose by name, one with no container (a sidecar
+    // never started) made Compose before 2.15 fail, which read as nothing
+    // running while Core was up, and each caller would have to know that.
+    it('should find a running Core next to an enabled service with no container', async () => {
+      const nodeCompose = new DockerCompose(docker, null, null, () => ({
+        COMPOSE_PROJECT_NAME: 'dashmate_project_node',
+      }), () => [
+        { name: 'core', profiles: ['core'] },
+        { name: 'core_tor', profiles: ['core'] },
+        { name: 'drive_abci', profiles: ['platform'] },
+      ]);
+      sandbox.stub(nodeCompose, 'throwErrorIfNotInstalled').resolves();
+
+      sandbox.stub(compose, 'ps').callsFake(async ({ commandOptions }) => {
+        const namedServices = commandOptions.flat().filter((option) => ['core', 'core_tor', 'drive_abci'].includes(option));
+        if (namedServices.includes('core_tor')) {
+          // eslint-disable-next-line prefer-promise-reject-errors
+          return Promise.reject({ exitCode: 1, out: '', err: 'no such service: core_tor\n' });
+        }
+
+        return { data: { json: [{ Service: 'core', State: 'running' }] } };
+      });
+
+      expect(await nodeCompose.isNodeRunning({})).to.be.true();
+
+      // A profile filter picks services and enables no profile: the config's
+      // own make up the model, which without Core can be invalid.
+      expect(await nodeCompose.isNodeRunning({}, { profiles: ['platform'] })).to.be.false();
+      expect(await nodeCompose.isNodeRunning({}, { profiles: ['core'] })).to.be.true();
+      compose.ps.getCalls().forEach(({ args: [{ composeOptions }] }) => {
+        expect(composeOptions).to.deep.equal([]);
+      });
     });
 
     it('should report nothing running for an empty selection', async () => {

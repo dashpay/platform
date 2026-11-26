@@ -6,7 +6,7 @@ import wait from '../../util/wait.js';
 import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 import selectPlatformServices from '../../docker/selectPlatformServices.js';
-import quoteShellArgument from '../../util/quoteShellArgument.js';
+import quoteShellArgument, { isShellQuotable } from '../../util/quoteShellArgument.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 // More paths than this are counted rather than listed.
@@ -56,6 +56,29 @@ function formatPath(shownPath) {
 }
 
 /**
+ * Lines that give commands to run on a path
+ *
+ * A path that holds a control character cannot be given to every POSIX shell
+ * on one line, so no command is printed for it to paste: the commands are
+ * named, and the path is shown escaped, for reading.
+ *
+ * @param {string[]} commands - each without the path, which goes last
+ * @param {string} targetPath
+ * @return {string[]}
+ */
+function formatPathCommands(commands, targetPath) {
+  if (isShellQuotable(targetPath)) {
+    return commands.map((command) => `  ${command} ${quoteShellArgument(targetPath)}`);
+  }
+
+  return [
+    `  ${commands.map((command) => `'${command}'`).join(' and then ')} on the path below.`,
+    '  It holds control characters, so it is shown escaped, to read rather than paste:',
+    `  ${formatPath(targetPath)}`,
+  ];
+}
+
+/**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
@@ -85,29 +108,27 @@ export default function resetNodeTaskFactory(
   }
 
   /**
-   * Remove a path and everything under it, as far as permissions allow
+   * Find the paths under a target that this user cannot remove, removing
+   * nothing
    *
-   * Removal goes on past what it may not remove, so one run removes all it can
-   * and returns every path left behind. The entries of a directory this user
-   * cannot write cannot be removed, so such a directory is returned once rather
-   * than entry by entry, unless it is empty: removing an empty directory needs
-   * only its parent to be writable. Symbolic links are removed, never followed.
-   * A dry run removes nothing and returns what a removal would leave, as far as
-   * permissions show it.
+   * The entries of a directory this user cannot write cannot be removed, so
+   * such a directory is named once rather than entry by entry, unless it is
+   * empty: removing an empty directory needs only its parent to be writable.
+   * The target itself goes only if its parent directory is writable, and is
+   * not even found if the parent cannot be searched. Symbolic links are never
+   * followed: a link is removed, wherever it points.
    *
    * @param {string} targetPath
-   * @param {Object} [options]
-   * @param {boolean} [options.dryRun=false]
-   * @return {string[]} paths left in place for lack of permission
+   * @return {string[]}
    */
-  function removePathAsFarAsPermitted(targetPath, { dryRun = false } = {}) {
+  function findUnremovablePaths(targetPath) {
     const deniedPaths = [];
 
     /**
      * @param {string} currentPath
-     * @return {boolean} whether the path is gone
+     * @return {boolean} whether this user can remove the path
      */
-    function remove(currentPath) {
+    function canRemove(currentPath) {
       let stats;
       try {
         stats = fs.lstatSync(currentPath);
@@ -126,104 +147,61 @@ export default function resetNodeTaskFactory(
         throw e;
       }
 
-      const isDirectory = stats.isDirectory();
-      let canRemoveEntries = true;
-
-      if (isDirectory) {
-        try {
-          // eslint-disable-next-line no-bitwise
-          fs.accessSync(currentPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
-        } catch (e) {
-          if (!isPermissionError(e)) {
-            throw e;
-          }
-
-          canRemoveEntries = false;
-        }
-
-        if (canRemoveEntries) {
-          const isEmptied = fs.readdirSync(currentPath)
-            .map((entry) => remove(path.join(currentPath, entry)))
-            .every((isRemoved) => isRemoved);
-
-          if (!isEmptied) {
-            return false;
-          }
-        } else if (dryRun) {
-          let isEmpty;
-          try {
-            isEmpty = fs.readdirSync(currentPath).length === 0;
-          } catch (e) {
-            if (!isPermissionError(e)) {
-              throw e;
-            }
-
-            isEmpty = false;
-          }
-
-          if (!isEmpty) {
-            deniedPaths.push(currentPath);
-
-            return false;
-          }
-        }
-      }
-
-      if (dryRun) {
+      if (!stats.isDirectory()) {
         return true;
       }
 
       try {
-        if (isDirectory) {
-          fs.rmdirSync(currentPath);
-        } else {
-          fs.unlinkSync(currentPath);
-        }
-      } catch (e) {
-        if (e.code === 'ENOENT') {
-          return true;
-        }
-
-        // A directory whose entries it could not remove still has them.
-        const isLockedDirectory = !canRemoveEntries
-          && (e.code === 'ENOTEMPTY' || e.code === 'EEXIST');
-
-        if (isPermissionError(e) || isLockedDirectory) {
-          deniedPaths.push(currentPath);
-
-          return false;
-        }
-
-        throw e;
-      }
-
-      return true;
-    }
-
-    // The target itself goes only if its parent directory is writable, and
-    // it is not even found if the parent cannot be searched. A link is the
-    // target here, wherever it points.
-    if (dryRun) {
-      const parentPath = path.dirname(targetPath);
-
-      try {
-        fs.lstatSync(targetPath);
         // eslint-disable-next-line no-bitwise
-        fs.accessSync(parentPath, fs.constants.W_OK | fs.constants.X_OK);
+        fs.accessSync(currentPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
       } catch (e) {
-        if (e.code === 'ENOENT') {
-          return [];
-        }
-
         if (!isPermissionError(e)) {
           throw e;
         }
 
-        return [parentPath];
+        let isEmpty;
+        try {
+          isEmpty = fs.readdirSync(currentPath).length === 0;
+        } catch (readError) {
+          if (!isPermissionError(readError)) {
+            throw readError;
+          }
+
+          isEmpty = false;
+        }
+
+        if (!isEmpty) {
+          deniedPaths.push(currentPath);
+        }
+
+        return isEmpty;
       }
+
+      // Every entry is checked, so that each one left is named.
+      return fs.readdirSync(currentPath)
+        .map((entry) => canRemove(path.join(currentPath, entry)))
+        .every((isRemovable) => isRemovable);
     }
 
-    remove(targetPath);
+    const parentPath = path.dirname(targetPath);
+
+    try {
+      fs.lstatSync(targetPath);
+      // eslint-disable-next-line no-bitwise
+      fs.accessSync(parentPath, fs.constants.W_OK | fs.constants.X_OK);
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return [];
+      }
+
+      if (!isPermissionError(e)) {
+        throw e;
+      }
+
+      return [parentPath];
+    }
+
+    canRemove(targetPath);
 
     return deniedPaths;
   }
@@ -293,7 +271,7 @@ export default function resetNodeTaskFactory(
 
     let deniedPaths;
     try {
-      deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
+      deniedPaths = findUnremovablePaths(targetPath);
     } catch (e) {
       throw new Error([
         `Cannot reset config '${config.getName()}': could not inspect ${formatPath(targetPath)}:`
@@ -312,14 +290,8 @@ export default function resetNodeTaskFactory(
     // holds.
     const parentPath = path.dirname(targetPath);
     const remedy = deniedPaths.includes(parentPath)
-      ? [
-        `  sudo chown ${uid}:${gid} ${quoteShellArgument(parentPath)}`,
-        `  chmod u+rwx ${quoteShellArgument(parentPath)}`,
-      ]
-      : [
-        `  sudo chown -R ${uid}:${gid} ${quoteShellArgument(targetPath)}`,
-        `  chmod -R u+rwX ${quoteShellArgument(targetPath)}`,
-      ];
+      ? formatPathCommands([`sudo chown ${uid}:${gid}`, 'chmod u+rwx'], parentPath)
+      : formatPathCommands([`sudo chown -R ${uid}:${gid}`, 'chmod -R u+rwX'], targetPath);
 
     throw new Error([
       `Cannot reset config '${config.getName()}': this user cannot remove`
@@ -364,26 +336,44 @@ export default function resetNodeTaskFactory(
 
     recovery.push('Do not start the node before the reset has completed.');
 
-    let deniedPaths;
+    // Node's own recursive removal: its native implementation can remove
+    // entries relative to the directories it holds open, which a walk by path
+    // name cannot.
+    let removalError;
     try {
-      deniedPaths = removePathAsFarAsPermitted(targetPath);
+      fs.rmSync(targetPath, { recursive: true, force: true });
+
+      return;
     } catch (e) {
-      throw new Error([
-        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(e.message)}`,
-        'Fix the cause,',
-        ...recovery,
-      ].join('\n'));
+      removalError = e;
     }
 
+    // Node's error names the target at most, so what is left is walked for
+    // the paths this user cannot remove.
+    let deniedPaths = [];
+    try {
+      deniedPaths = findUnremovablePaths(targetPath);
+    } catch {
+      // The removal's own error is what is reported then.
+    }
+
+    // A permission error the walk does not see, such as for a file in a
+    // sticky directory, still yields to a removal that has the rights.
     if (deniedPaths.length === 0) {
-      return;
+      throw new Error([
+        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(removalError.message)}`,
+        ...(isPermissionError(removalError)
+          ? ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)]
+          : ['Fix the cause,']),
+        ...recovery,
+      ].join('\n'));
     }
 
     throw new Error([
       `Could not remove ${deniedPaths.length} path(s) under ${formatPath(targetPath)} for lack of permission:`,
       ...formatDeniedPaths(deniedPaths),
       'Remove them with sufficient rights, for example:',
-      `  sudo rm -rf ${quoteShellArgument(targetPath)}`,
+      ...formatPathCommands(['sudo rm -rf'], targetPath),
       ...recovery,
     ].join('\n'));
   }
@@ -457,7 +447,8 @@ export default function resetNodeTaskFactory(
    * @property {string[]} [serviceNames] - the Platform services a Platform-only
    *  reset checks and removes
    * @property {string[]} [profiles] - the profiles to enable next to them
-   * @property {string[]} [volumeNames] - the volumes it removes after them
+   * @property {VolumeCandidate[]} [volumes] - the volumes it removes after
+   *  them, if Docker still labels them as Platform's by then
    */
 
   /**
@@ -479,11 +470,20 @@ export default function resetNodeTaskFactory(
 
     // Compose fails to describe the project when service files are missing.
     // Looked up now, that failure comes while nothing has been removed.
-    const volumeNames = ctx.keepData
+    const volumes = ctx.keepData
       ? []
-      : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
+      : await dockerCompose.getVolumeCandidates(config, {
+        serviceNames,
+        removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
+        profiles,
+      });
 
-    return { serviceNames, profiles, volumeNames };
+    // Whose a volume is counts only when it is removed, but asking Docker now
+    // too means a Docker that cannot answer stops the reset while nothing has
+    // been removed.
+    await Promise.all(volumes.map((candidate) => dockerCompose.isVolumeOwned(candidate)));
+
+    return { serviceNames, profiles, volumes };
   }
 
   /**
@@ -495,12 +495,11 @@ export default function resetNodeTaskFactory(
    * @return {Promise<void>}
    */
   async function assertServicesAreStopped(config, ctx, plan) {
-    // Named services are picked from the project's container list rather than
-    // passed to Compose, which before 2.15 fails for a service with no
-    // container, and that failure reads as nothing running.
+    // A Platform-only reset asks about every Platform service, whether the
+    // config enables it or not.
     const options = ctx.isPlatformOnlyReset
       ? { serviceNames: plan.serviceNames, profiles: plan.profiles }
-      : { serviceNames: getServiceList(config).map(({ name }) => name) };
+      : undefined;
 
     if (await dockerCompose.isNodeRunning(config, options)) {
       throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -575,7 +574,7 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const { serviceNames, profiles, volumeNames } = plan;
+          const { serviceNames, profiles, volumes } = plan;
 
           const removeOptions = {
             serviceNames: [...serviceNames, HELPER_SERVICE_NAME],
@@ -594,8 +593,9 @@ export default function resetNodeTaskFactory(
           // Remove volumes
           if (!ctx.keepData) {
             await Promise.all(
-              volumeNames
-                .map(async (volumeName) => {
+              volumes
+                .map(async (candidate) => {
+                  const volumeName = candidate.name;
                   const volume = await docker.getVolume(volumeName);
 
                   let attempts = 0;
@@ -603,6 +603,15 @@ export default function resetNodeTaskFactory(
                   do {
                     isRetry = false;
                     attempts += 1;
+
+                    // Asked before each attempt rather than when the reset was
+                    // planned: a group reset plans every member before it
+                    // resets any, and meanwhile, or while the volume is in
+                    // use, it can be created, or replaced by one that is not
+                    // Platform's.
+                    if (!await dockerCompose.isVolumeOwned(candidate)) {
+                      break;
+                    }
 
                     try {
                       await volume.remove({ force: true });

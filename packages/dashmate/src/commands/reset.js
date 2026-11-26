@@ -4,6 +4,7 @@ import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 import renderNodeKeyBackup from '../config/renderNodeKeyBackup.js';
+import { PLATFORM_ONLY_RENDER_SCOPE } from '../constants.js';
 
 export default class ResetCommand extends ConfigBaseCommand {
   // Reconfigures the node: changes configuration repeatedly while doing long,
@@ -21,6 +22,12 @@ export default class ResetCommand extends ConfigBaseCommand {
     return ({ name, configFileData }) => (
       name === (config ?? configFileData.defaultConfigName)
     );
+  }
+
+  // A Platform-only reset changes no Core option, so Core's service files are
+  // left as they are rather than written again after Platform is gone.
+  static getRenderScope({ platform } = {}) {
+    return platform ? PLATFORM_ONLY_RENDER_SCOPE : undefined;
   }
 
   static description = 'Reset node data';

@@ -196,11 +196,15 @@ export default class BaseCommand extends Command {
              */
             const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
 
+            // A command that changes only part of the options can leave the
+            // service files that read none of them as they are.
+            const renderScope = this.constructor.getRenderScope?.(this.parsedFlags);
+
             // JSON is authoritative. If rendering fails or the process is killed
             // next, an explicit config render repairs the stale service files.
             configFileRepository.write(configFile);
 
-            changedConfigs.forEach(writeConfigTemplates);
+            changedConfigs.forEach((config) => writeConfigTemplates(config, renderScope));
           }
         }
       } catch (e) {
