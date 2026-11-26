@@ -256,6 +256,8 @@ describe('assertPlatformCanStart', () => {
     [
       ['a member of a custom group', 'testnet_1', 'production'],
       ['a config that is not a preset', 'evo-1', null],
+      // `setup local` builds only local_1 to local_N and local_seed.
+      ['a config of the local group that setup local does not build', 'custom', 'local'],
     ].forEach(([description, name, group]) => {
       it(`should name the setting to fix for ${description}, and advise no reset`, async () => {
         const config = await keyless(name, group);

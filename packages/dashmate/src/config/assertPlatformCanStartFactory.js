@@ -10,6 +10,9 @@ import { PRESET_LOCAL, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
 
 const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 
+// The configs `setup local` builds
+const LOCAL_GROUP_MEMBER_NAME = /^local_(seed|[1-9][0-9]*)$/;
+
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
@@ -129,8 +132,10 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
       const groupName = config.get('group');
 
       // The local group's identities, ports and peers belong to the whole
-      // group, which `setup local` builds again.
-      if (groupName === PRESET_LOCAL) {
+      // group, which `setup local` builds again: local_1 to local_N and
+      // local_seed. A config of another name in that group would be removed
+      // by the group's reset and not built again.
+      if (groupName === PRESET_LOCAL && LOCAL_GROUP_MEMBER_NAME.test(name)) {
         refuse(name, problem, [
           `Set the ${groupName} group up again with:`,
           `  dashmate group reset --group ${groupName} --hard`,
