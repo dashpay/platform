@@ -1,12 +1,30 @@
 import { Listr } from 'listr2';
 
 import {
-  PRESET_MAINNET,
   SSL_PROVIDERS,
   NODE_TYPE_FULLNODE,
 } from '../../../../constants.js';
 
 import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
+
+/**
+ * The certificate providers a node of this type may be set up with
+ *
+ * A self-signed certificate is not publicly trusted, and `update` refuses one
+ * on any masternode, mainnet or testnet, so only fullnodes are offered it.
+ *
+ * @param {string} nodeType
+ * @return {string[]}
+ */
+export function getCertificateProviders(nodeType) {
+  const providers = [SSL_PROVIDERS.ZEROSSL, SSL_PROVIDERS.LETSENCRYPT, SSL_PROVIDERS.FILE];
+
+  if (nodeType === NODE_TYPE_FULLNODE) {
+    providers.push(SSL_PROVIDERS.SELF_SIGNED);
+  }
+
+  return providers;
+}
 
 /**
  * @param {installCertificateFilesTask} installCertificateFilesTask
@@ -87,14 +105,13 @@ export default function configureSSLCertificateTaskFactory(
           // tasks read it to decide whether they may prompt.
           ctx.interactive = true;
 
+          const providers = getCertificateProviders(ctx.nodeType);
+
           const choices = [
             { name: SSL_PROVIDERS.ZEROSSL, message: 'ZeroSSL' },
             { name: SSL_PROVIDERS.LETSENCRYPT, message: "Let's Encrypt" },
             { name: SSL_PROVIDERS.FILE, message: 'File on disk' },
           ];
-
-          const isSelfSignedEnabled = ctx.preset !== PRESET_MAINNET
-            || ctx.nodeType === NODE_TYPE_FULLNODE;
 
           let header = `  Evonodes are required use TLS encryption on the DAPI
   endpoint through which they service the network. This encryption is achieved
@@ -108,7 +125,7 @@ export default function configureSSLCertificateTaskFactory(
     Let's Encrypt  - Free certificates for your IP address, no account needed
     File on disk   - Provide your own certificate to dashmate\n`;
 
-          if (isSelfSignedEnabled) {
+          if (providers.includes(SSL_PROVIDERS.SELF_SIGNED)) {
             header += '    Self-signed    - Generate your own self-signed certificate\n';
 
             choices.push({ name: SSL_PROVIDERS.SELF_SIGNED, message: 'Self-signed' });
@@ -122,6 +139,12 @@ export default function configureSSLCertificateTaskFactory(
               choices,
               initial: SSL_PROVIDERS.ZEROSSL,
             });
+          }
+
+          // An answer given in advance is held to the same rule as the prompt.
+          if (!providers.includes(ctx.certificateProvider)) {
+            throw new Error(`The ${ctx.certificateProvider} certificate provider cannot be used for`
+              + ` a ${ctx.nodeType}. Choose one of: ${providers.join(', ')}`);
           }
 
           ctx.config.set('platform.gateway.ssl.provider', ctx.certificateProvider);

@@ -1,3 +1,4 @@
+import sinon from 'sinon';
 import { SSL_PROVIDERS } from '../../../src/constants.js';
 import configureSSLCertificateTaskFactory
   from '../../../src/listr/tasks/setup/regular/configureSSLCertificateTaskFactory.js';
@@ -69,6 +70,67 @@ describe('configureSSLCertificateTaskFactory', () => {
     await configureSSLCertificateTask().tasks[0].task(context, { prompt: this.sinon.stub() });
 
     expect(context.interactive).to.be.true();
+  });
+
+  // update refuses a self-signed certificate on any masternode, so offering
+  // one would set up a node that cannot be updated.
+  describe('providers', () => {
+    /**
+     * @param {Object} context
+     * @return {Promise<Object>} the provider prompt's options
+     */
+    async function providerPromptFor(context) {
+      const configureSSLCertificateTask = configureSSLCertificateTaskFactory(
+        sinon.stub(),
+        sinon.stub(),
+        sinon.stub(),
+        sinon.stub().returns('obtain-task'),
+        { setConfig: sinon.stub() },
+        { write: sinon.stub() },
+      );
+      const prompt = sinon.stub().resolves(SSL_PROVIDERS.LETSENCRYPT);
+
+      await configureSSLCertificateTask().tasks[0].task(
+        { config: { set: sinon.stub() }, ...context },
+        { prompt },
+      );
+
+      return prompt.firstCall.args[0];
+    }
+
+    ['mainnet', 'testnet'].forEach((preset) => {
+      it(`should not offer self-signed to a ${preset} masternode`, async () => {
+        const { choices } = await providerPromptFor({ nodeType: 'masternode', preset });
+
+        expect(choices.map(({ name }) => name)).to.deep.equal(['zerossl', 'letsencrypt', 'file']);
+      });
+    });
+
+    it('should offer self-signed to a fullnode', async () => {
+      const { choices } = await providerPromptFor({ nodeType: 'fullnode', preset: 'mainnet' });
+
+      expect(choices.map(({ name }) => name)).to.include('self-signed');
+    });
+
+    it('should hold a provider given in advance to the same rule', async function it() {
+      const configureSSLCertificateTask = configureSSLCertificateTaskFactory(
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        { setConfig: this.sinon.stub() },
+        { write: this.sinon.stub() },
+      );
+      const context = {
+        config: { set: this.sinon.stub() },
+        certificateProvider: SSL_PROVIDERS.SELF_SIGNED,
+        nodeType: 'masternode',
+        preset: 'testnet',
+      };
+
+      await expect(configureSSLCertificateTask().tasks[0].task(context, {}))
+        .to.be.rejectedWith('cannot be used for a masternode');
+    });
   });
 
   // Nothing asks for a contact address any more. Let's Encrypt stopped sending
