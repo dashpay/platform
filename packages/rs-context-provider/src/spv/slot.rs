@@ -138,6 +138,8 @@ pub struct SpvSourceLease {
 
 impl SpvSourceLease {
     /// Serve `provider`'s quorum keys while `is_ready` reports it synced.
+    /// `provider` must serve only SPV-verified keys; no change to how it
+    /// verifies them is tracked.
     pub fn publish(&self, provider: Arc<dyn ContextProvider>, is_ready: Readiness) {
         if let Some(slot) = self.slot.upgrade() {
             slot.publish(self.lease_id, SpvContextSource { provider, is_ready });

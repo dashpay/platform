@@ -77,7 +77,7 @@ fun RecipientPicker(
     val identitiesFlow = remember(networkRaw) {
         container.database.identityDao().observeWalletOwnedByNetwork(networkRaw)
     }
-    val identities by identitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by identitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val candidates = identities.filter { it.identityId.toHex() != excludeIdentityIdHex }
 
     // Debounced DPNS resolution — mirrors RecipientPickerView.swift's

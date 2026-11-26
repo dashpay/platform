@@ -1,10 +1,9 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
 
@@ -24,7 +23,8 @@ impl SingleDocumentDriveQuery {
         let document = retained
             .map(|retained| {
                 let document =
-                    Document::from_bytes(&retained.bytes, document_type, platform_version)?;
+                    Document::from_bytes_bounded(&retained.bytes, document_type, platform_version)
+                        .map_err(|error| with_proved_root_on_budget_exceeded(root, error.into()))?;
                 if document.id().as_slice() != self.document_id
                     || document_type.requires_revision()
                         && document.revision() != Some(retained.revision)

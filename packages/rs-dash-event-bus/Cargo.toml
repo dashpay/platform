@@ -15,7 +15,7 @@ default = []
 metrics = ["dep:metrics"]
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
 tracing = "0.1"
 
 
@@ -23,7 +23,7 @@ tracing = "0.1"
 metrics = { version = "0.24.2", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = [
+tokio = { workspace = true, features = [
     "rt-multi-thread",
     "macros",
     "sync",

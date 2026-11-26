@@ -172,7 +172,6 @@ pub unsafe extern "C" fn platform_wallet_core_wallet_state(
     *out_state = CoreWalletStateFFI {
         synced_height: snap.synced_height,
         last_processed_height: snap.last_processed_height,
-        monitor_revision: snap.monitor_revision,
     };
     PlatformWalletFFIResult::ok()
 }
@@ -402,7 +401,6 @@ pub unsafe extern "C" fn platform_wallet_account_metadata(
     *out_meta = AccountMetadataFFI {
         total_transactions: snap.total_transactions,
         total_utxos: snap.total_utxos,
-        monitor_revision: snap.monitor_revision,
     };
     PlatformWalletFFIResult::ok()
 }

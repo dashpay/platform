@@ -7,6 +7,9 @@
 //! enough to blow past that — we've seen `EXC_BAD_ACCESS` at
 //! `verify_state_transition_was_executed_with_proof`'s function
 //! prologue, which is the classic fingerprint of a stack-guard hit.
+//! Android is the same case: a Kotlin `Dispatchers.IO` thread has about
+//! 1 MiB, and an unoptimized wallet create polled on one overflowed it
+//! (dashpay/platform#6020).
 //!
 //! Two mitigations together:
 //!
@@ -18,10 +21,31 @@
 //!    on the caller, but it parks almost immediately — all the
 //!    compute happens on the tokio worker.
 
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+
 /// Worker thread stack size for the shared runtime. 8 MB gives proof
 /// verification + GroveDB comfortable headroom without meaningfully
 /// affecting memory footprint (we spin up a small number of workers).
 const WORKER_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+/// Refuse `operation` when the calling thread is already inside a tokio
+/// runtime, as it is in a callback the wallet invokes (the shielded
+/// balance, sync progress and persistence callbacks run on this crate's
+/// runtime). An export that blocks on the runtime would panic there, and
+/// the iOS profiles build with `panic = "abort"`. The caller moves the call
+/// to another thread.
+pub(crate) fn ensure_not_on_runtime(operation: &str) -> Result<(), PlatformWalletFFIResult> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!(
+                "{operation} was called from inside a wallet callback; call it from another \
+                 thread"
+            ),
+        ));
+    }
+    Ok(())
+}
 
 /// Get the shared tokio runtime.
 ///
@@ -87,6 +111,19 @@ pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> 
             .spawn_scoped(scope, f)?;
         Ok(handle.join().expect("big-stack FFI thread panicked"))
     })
+}
+
+/// What an export returns when [`run_on_big_stack_thread`] could not spawn
+/// its thread: `ErrorWalletOperation`, as the startup and asset-lock resume
+/// exports report it.
+pub(crate) fn big_stack_spawn_failed(
+    operation: &str,
+    error: std::io::Error,
+) -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        format!("failed to spawn the big-stack thread for {operation}: {error}"),
+    )
 }
 
 #[cfg(test)]

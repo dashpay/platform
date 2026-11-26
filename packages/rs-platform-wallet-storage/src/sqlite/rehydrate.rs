@@ -5,23 +5,33 @@
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
 use key_wallet::account::account_collection::AccountCollection;
+use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::bip32::ChildNumber;
+use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::address_pool::{
-    AddressInfo, AddressPool, AddressPoolType, AddressState, PublicKeyType,
+    AddressInfo, AddressPool, AddressPoolType, AddressState, KeySource, PublicKeyType,
 };
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
+
+use dashcore::transaction::special_transaction::TransactionPayload;
 
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
-use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{
+    AccountAddressPoolEntry, AccountRegistrationEntry, CoreChangeSet,
+};
+use platform_wallet::manager::restore_account_address_pools;
 use platform_wallet::registered_collaterals;
+use platform_wallet::wallet::address_pool_restore::derive_through;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -157,36 +167,30 @@ pub(crate) fn restore_provider_platform_node_pool(
                 continue;
             }
         };
-        insert_platform_node_pool_entry(
-            wallet_info,
-            network,
-            index,
-            address,
-            script_pubkey,
-            public_key,
-            used,
-        )
-        .map_err(|error| match error {
-            PlatformNodePoolError::NoManagedAccount => {
-                WalletStorageError::blob_decode("provider platform account is not managed")
-            }
-            PlatformNodePoolError::InvalidAccountPath { source } => {
-                WalletStorageError::AccountRecordInvalid { e: source }
-            }
-            PlatformNodePoolError::MissingHardenedPool => WalletStorageError::blob_decode(
-                "provider platform account has no AbsentHardened pool",
-            ),
-            PlatformNodePoolError::InvalidChildIndex { source, .. } => {
-                WalletStorageError::AccountRecordInvalid { e: source }
-            }
-        })?;
+        insert_platform_node_pool_entry(wallet_info, network, index, address, public_key, used)
+            .map_err(|error| match error {
+                PlatformNodePoolError::NoManagedAccount => {
+                    WalletStorageError::blob_decode("provider platform account is not managed")
+                }
+                PlatformNodePoolError::InvalidAccountPath { source } => {
+                    WalletStorageError::AccountRecordInvalid { e: source }
+                }
+                PlatformNodePoolError::MissingHardenedPool => WalletStorageError::blob_decode(
+                    "provider platform account has no AbsentHardened pool",
+                ),
+                PlatformNodePoolError::InvalidChildIndex { source, .. }
+                | PlatformNodePoolError::PoolRefused { source, .. } => {
+                    WalletStorageError::AccountRecordInvalid { e: source }
+                }
+            })?;
     }
     Ok(())
 }
 
 /// Restore the address pools of the asset-lock funding key accounts
 /// (identity registration, bound and unbound identity top-up, invitation,
-/// address and shielded-address top-up) from their stored rows.
+/// address and shielded-address top-up) from their stored rows, and return
+/// the issuance floor of each pool that could not reach its rows.
 ///
 /// These accounts fund OP_RETURN-payload credit outputs that never appear as
 /// on-chain UTXOs, so no scan rediscovers their used indices: the stored pool
@@ -194,91 +198,53 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// generated. Without it a restart rebuilds each account with its initial
 /// window only, all unused: a lock built on a later index could not be signed
 /// on resume (its key is not in the pool), and an index already handed out
-/// could be handed out again. Rows are merged into the freshly built pools:
-/// an index beyond the window is added from its stored script and public
-/// key, at the pool's base path, and a stored used mark is applied.
+/// could be handed out again.
+///
+/// The rows go through the wallet's shared restore
+/// ([`restore_account_address_pools`]), the one the FFI loader uses: rows
+/// stored without a public key (older writers stored the addresses sync
+/// derived that way) take it from the pool, an index missing below a stored
+/// one is derived from the account xpub and marked used, since its key may
+/// have been handed out, and a pool that cannot reach its highest row gets an
+/// issuance floor instead of failing the wallet's load.
+///
+/// A pool's window then moves past each address a lock stored on chain pays,
+/// as sync moved it on seeing the lock (`extend_past_funding_locks_on_chain`):
+/// older writers dropped the addresses sync derived, so a pool stored before
+/// [`core_pool::insert_derived_funding_address`] existed may hold only used
+/// addresses. Used marks alone do not move it. An index marked used by a lock
+/// that never reached the chain is cleared when the wallet hands it back
+/// ([`core_pool::release_unsent_address`]); one that stays marked is left so,
+/// and a pool used up that way refuses the next lock rather than build it past
+/// the addresses a recovery from scratch scans, where it could not be found
+/// again.
 pub(crate) fn restore_asset_lock_funding_pools(
+    wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
+    records: &[TransactionRecord],
     conn: &rusqlite::Connection,
     wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
     network: Network,
     ctx: &LoadCtx,
-) -> Result<(), WalletStorageError> {
-    let accounts_collection = &mut wallet_info.accounts;
-    let mut targets: Vec<(AccountType, &mut ManagedAccountType)> = Vec::new();
-    if let Some(account) = accounts_collection.identity_registration.as_mut() {
-        targets.push((
-            AccountType::IdentityRegistration,
-            account.managed_account_type_mut(),
-        ));
-    }
-    for (registration_index, account) in accounts_collection.identity_topup.iter_mut() {
-        targets.push((
-            AccountType::IdentityTopUp {
-                registration_index: *registration_index,
-            },
-            account.managed_account_type_mut(),
-        ));
-    }
-    if let Some(account) = accounts_collection.identity_topup_not_bound.as_mut() {
-        targets.push((
-            AccountType::IdentityTopUpNotBoundToIdentity,
-            account.managed_account_type_mut(),
-        ));
-    }
-    if let Some(account) = accounts_collection.identity_invitation.as_mut() {
-        targets.push((
-            AccountType::IdentityInvitation,
-            account.managed_account_type_mut(),
-        ));
-    }
-    if let Some(account) = accounts_collection.asset_lock_address_topup.as_mut() {
-        targets.push((
-            AccountType::AssetLockAddressTopUp,
-            account.managed_account_type_mut(),
-        ));
-    }
-    if let Some(account) = accounts_collection
-        .asset_lock_shielded_address_topup
-        .as_mut()
-    {
-        targets.push((
-            AccountType::AssetLockShieldedAddressTopUp,
-            account.managed_account_type_mut(),
-        ));
-    }
-    for (account_type, managed) in targets {
-        for pool in managed.address_pools_mut() {
-            let rows =
-                core_pool::load_typed_pool_entries(conn, wallet_id, &account_type, pool.pool_type)?;
-            restore_pool_rows(pool, rows, &account_type, wallet_id, network, ctx)?;
-        }
-    }
-    Ok(())
-}
-
-/// Merge stored rows into `pool` (see [`restore_asset_lock_funding_pools`]).
-fn restore_pool_rows(
-    pool: &mut AddressPool,
-    rows: Vec<core_pool::TypedPoolEntry>,
-    account_type: &AccountType,
-    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
-    network: Network,
-    ctx: &LoadCtx,
-) -> Result<(), WalletStorageError> {
-    for (index, script_bytes, public_key, used) in rows {
-        if !pool.addresses.contains_key(&index) {
-            let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes);
+) -> Result<BTreeMap<AccountType, u32>, WalletStorageError> {
+    let mut entries = Vec::new();
+    for (account_type, pool_type, base_path) in funding_pools(wallet_info) {
+        let rows = core_pool::load_funding_pool_rows(conn, wallet_id, &account_type, pool_type)?;
+        let account = wallet.accounts.account_of_type(account_type);
+        let mut addresses = Vec::with_capacity(rows.len());
+        for (index, script, public_key, mut used) in rows {
+            let script_pubkey = dashcore::ScriptBuf::from_bytes(script);
             let address = match dashcore::Address::from_script(&script_pubkey, network) {
                 Ok(address) => address,
                 Err(e) => {
+                    // Skipped, the restore derives the index in its place.
                     ctx.tolerate_at(
                         LoadSite::UndecodableAddressScript,
                         SiteCoords {
                             wallet_id: Some(*wallet_id),
-                            account_type,
+                            account_type: &account_type,
                             affected: 1,
-                            detail: Some(&pool.pool_type),
+                            detail: Some(&pool_type),
                         },
                         WalletStorageError::from(e),
                     )?;
@@ -290,35 +256,202 @@ fn restore_pool_rows(
                     "core_address_pool.address_index is not a normal child index",
                 )
             })?;
-            let mut path = pool.base_path.clone();
+            // A lock is paid to the stored address and signed with the key at
+            // the index's path: a row whose address that key does not derive
+            // would fund a lock the wallet cannot spend on Platform. The
+            // account's own derivation is kept instead, used, since the key
+            // the damaged row stood for may have been handed out.
+            let (address, public_key) = match account
+                .and_then(|account| account.derive_address_at(pool_type, index, None).ok())
+            {
+                Some(derived) if derived.script_pubkey() != address.script_pubkey() => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        ?account_type,
+                        ?pool_type,
+                        index,
+                        "load: stored funding address does not match its derivation; \
+                         restoring the derived address as used"
+                    );
+                    used = true;
+                    (derived, None)
+                }
+                _ => (address, public_key),
+            };
+            let mut path = base_path.clone();
             path.push(child);
-            pool.address_index.insert(address.clone(), index);
-            pool.script_pubkey_index
-                .insert(script_pubkey.clone(), index);
-            pool.highest_generated = Some(pool.highest_generated.map_or(index, |h| h.max(index)));
-            pool.addresses.insert(
+            addresses.push(AddressInfo {
+                address,
+                public_key: public_key.map(PublicKeyType::ECDSA),
                 index,
-                AddressInfo {
-                    address,
-                    script_pubkey,
-                    public_key: Some(public_key),
-                    index,
-                    path,
-                    state: AddressState::Available,
-                    tx_count: 0,
-                    total_received: 0,
-                    total_sent: 0,
-                    balance: 0,
-                    label: None,
-                    metadata: Default::default(),
+                path,
+                state: if used {
+                    AddressState::Used
+                } else {
+                    AddressState::Available
                 },
-            );
+            });
         }
-        if used {
-            pool.mark_index_used(index);
+        if !addresses.is_empty() {
+            entries.push(AccountAddressPoolEntry {
+                account_type,
+                pool_type,
+                addresses,
+            });
         }
     }
-    Ok(())
+    let floors =
+        restore_account_address_pools(wallet, wallet_info, entries).funding_issuance_floors;
+    let paid_on_chain = funding_scripts_on_chain(records);
+    if !paid_on_chain.is_empty() {
+        let pools: Vec<_> = funding_pools(wallet_info)
+            .into_iter()
+            .map(|(account_type, ..)| account_type)
+            .collect();
+        for account_type in pools {
+            let key_source = wallet.key_source_for_account(account_type);
+            let Some(managed) = funding_account_mut(wallet_info, &account_type) else {
+                continue;
+            };
+            for pool in managed.address_pools_mut() {
+                extend_past_funding_locks_on_chain(
+                    pool,
+                    &key_source,
+                    &paid_on_chain,
+                    &account_type,
+                    wallet_id,
+                    ctx,
+                )?;
+            }
+        }
+    }
+    Ok(floors)
+}
+
+/// Every pool of the asset-lock funding accounts `wallet_info` holds, as
+/// `(account, pool type, base path)`.
+fn funding_pools(
+    wallet_info: &mut ManagedWalletInfo,
+) -> Vec<(AccountType, AddressPoolType, DerivationPath)> {
+    let accounts = &wallet_info.accounts;
+    let mut account_types = Vec::new();
+    if accounts.identity_registration.is_some() {
+        account_types.push(AccountType::IdentityRegistration);
+    }
+    account_types.extend(accounts.identity_topup.keys().map(|registration_index| {
+        AccountType::IdentityTopUp {
+            registration_index: *registration_index,
+        }
+    }));
+    if accounts.identity_topup_not_bound.is_some() {
+        account_types.push(AccountType::IdentityTopUpNotBoundToIdentity);
+    }
+    if accounts.identity_invitation.is_some() {
+        account_types.push(AccountType::IdentityInvitation);
+    }
+    if accounts.asset_lock_address_topup.is_some() {
+        account_types.push(AccountType::AssetLockAddressTopUp);
+    }
+    if accounts.asset_lock_shielded_address_topup.is_some() {
+        account_types.push(AccountType::AssetLockShieldedAddressTopUp);
+    }
+    let mut pools = Vec::new();
+    for account_type in account_types {
+        if let Some(managed) = funding_account_mut(wallet_info, &account_type) {
+            for pool in managed.address_pools_mut() {
+                pools.push((account_type, pool.pool_type(), pool.base_path().clone()));
+            }
+        }
+    }
+    pools
+}
+
+/// The managed account of one asset-lock funding account type.
+fn funding_account_mut<'a>(
+    wallet_info: &'a mut ManagedWalletInfo,
+    account_type: &AccountType,
+) -> Option<&'a mut ManagedAccountType> {
+    let accounts = &mut wallet_info.accounts;
+    match account_type {
+        AccountType::IdentityRegistration => accounts.identity_registration.as_mut(),
+        AccountType::IdentityTopUp { registration_index } => {
+            accounts.identity_topup.get_mut(registration_index)
+        }
+        AccountType::IdentityTopUpNotBoundToIdentity => accounts.identity_topup_not_bound.as_mut(),
+        AccountType::IdentityInvitation => accounts.identity_invitation.as_mut(),
+        AccountType::AssetLockAddressTopUp => accounts.asset_lock_address_topup.as_mut(),
+        AccountType::AssetLockShieldedAddressTopUp => {
+            accounts.asset_lock_shielded_address_topup.as_mut()
+        }
+        _ => None,
+    }
+    .map(|account| account.managed_account_type_mut())
+}
+
+/// The credit-output scripts of the asset locks among `records` that reached
+/// the network: in a block or InstantSend-locked. A mempool-only record may be
+/// a lock that was never accepted.
+fn funding_scripts_on_chain(records: &[TransactionRecord]) -> HashSet<dashcore::ScriptBuf> {
+    records
+        .iter()
+        .filter(|record| !matches!(record.context, TransactionContext::Mempool))
+        .filter_map(
+            |record| match &record.transaction.special_transaction_payload {
+                Some(TransactionPayload::AssetLockPayloadType(payload)) => {
+                    Some(payload.credit_outputs.iter())
+                }
+                _ => None,
+            },
+        )
+        .flatten()
+        .map(|output| output.script_pubkey.clone())
+        .collect()
+}
+
+/// Mark used each address of `pool` that a lock on chain pays, and derive the
+/// pool's gap past the highest of them, as sync did on seeing the lock;
+/// repeated until no newly derived address is paid. The window never moves
+/// past addresses that only a stored used mark says were handed out.
+fn extend_past_funding_locks_on_chain(
+    pool: &mut AddressPool,
+    key_source: &KeySource,
+    paid_on_chain: &HashSet<dashcore::ScriptBuf>,
+    account_type: &AccountType,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    let mut scanned_from = 0;
+    loop {
+        let paid: Vec<(u32, dashcore::Address)> = pool
+            .addresses()
+            .range(scanned_from..)
+            .filter(|(_, info)| paid_on_chain.contains(&info.address.script_pubkey()))
+            .map(|(index, info)| (*index, info.address.clone()))
+            .collect();
+        let Some(highest_paid) = paid.iter().map(|(index, _)| *index).max() else {
+            return Ok(());
+        };
+        for (_, address) in &paid {
+            pool.mark_used(address);
+        }
+        scanned_from = pool.highest_generated().map_or(0, |highest| highest + 1);
+        let target = highest_paid.saturating_add(pool.gap_limit());
+        if let Err(e) = derive_through(pool, key_source, target) {
+            return ctx.tolerate_at(
+                LoadSite::RehydrationMaintainGapLimit,
+                SiteCoords {
+                    wallet_id: Some(*wallet_id),
+                    account_type,
+                    affected: 1,
+                    detail: Some(&pool.pool_type()),
+                },
+                WalletStorageError::RehydrationGapLimitFailed { source: e },
+            );
+        }
+        if pool.highest_generated().map_or(0, |highest| highest + 1) == scanned_from {
+            return Ok(());
+        }
+    }
 }
 
 /// Apply the keyless persisted core-state projection onto a
@@ -795,16 +928,16 @@ fn restore_owned_utxos(
             let seen = &mut looked_up[slot];
             slot += 1;
             let from = seen.map_or(0, |seen| seen.saturating_add(1));
-            *seen = pool.highest_generated;
-            let Some(to) = pool.highest_generated.filter(|to| from <= *to) else {
+            *seen = pool.highest_generated();
+            let Some(to) = pool.highest_generated().filter(|to| from <= *to) else {
                 return false;
             };
-            let hits: Vec<u32> = (pool.addresses.range(from..=to))
+            let hits: Vec<key_wallet::Address> = (pool.addresses().range(from..=to))
                 .filter(|(_, info)| wanted.contains(&info.address))
-                .map(|(index, _)| *index)
+                .map(|(_, info)| info.address.clone())
                 .collect();
             hits.into_iter()
-                .fold(false, |marked, index| pool.mark_index_used(index) | marked)
+                .fold(false, |marked, address| pool.mark_used(&address) | marked)
         };
         for funds in wallet_info.accounts.all_funding_accounts_mut() {
             for pool in funds.managed_account_type_mut().address_pools_mut() {
@@ -874,7 +1007,7 @@ fn derived_past(wallet_info: &ManagedWalletInfo, looked_up: &[Option<u32>]) -> b
         .flat_map(|account| account.managed_account_type().address_pools());
     pools
         .zip(looked_up)
-        .any(|(pool, seen)| pool.highest_generated > *seen)
+        .any(|(pool, seen)| pool.highest_generated() > *seen)
 }
 
 /// Pools, by account and pool type, whose gap refill was refused and
@@ -901,23 +1034,23 @@ fn gap_refills_bounded(
         let account_type = account.managed_account_type().to_account_type();
         for pool in account.managed_account_type().address_pools() {
             let (site, error) = match ImpliedRefill::of(
-                pool.highest_used,
-                pool.highest_generated,
-                pool.gap_limit,
+                pool.highest_used(),
+                pool.highest_generated(),
+                pool.gap_limit(),
             ) {
                 Ok(refill) if refill.implied <= MAX_REHYDRATION_GAP_REFILL => continue,
                 Ok(refill) => (LoadSite::RehydrationGapLimit, refill.too_large()),
                 Err(error) => (LoadSite::RehydrationMaintainGapLimit, error),
             };
             bounded = false;
-            if refused.insert((account_type, pool.pool_type)) {
+            if refused.insert((account_type, pool.pool_type())) {
                 ctx.tolerate_at(
                     site,
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
                         affected: 1,
-                        detail: Some(&pool.pool_type),
+                        detail: Some(&pool.pool_type()),
                     },
                     error,
                 )?;
@@ -982,11 +1115,11 @@ fn discover_in_funds_accounts(
             if wanted.is_empty() {
                 break;
             }
-            if pool.pool_type == AddressPoolType::AbsentHardened {
+            if pool.pool_type() == AddressPoolType::AbsentHardened {
                 continue;
             }
-            let gap = pool.gap_limit;
-            let start = pool.highest_generated.map_or(0, |h| h.saturating_add(1));
+            let gap = pool.gap_limit();
+            let start = pool.highest_generated().map_or(0, |h| h.saturating_add(1));
             let mut horizon = start.max(gap);
             let mut index = start;
             let mut probe = pool.clone();
@@ -1010,7 +1143,7 @@ fn discover_in_funds_accounts(
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     account_type = ?account_type,
-                    pool_type = ?pool.pool_type,
+                    pool_type = ?pool.pool_type(),
                     scanned_to = index.saturating_sub(1),
                     "rehydration: discovery past the pool scanned abnormally deep — \
                      likely a foreign-heavy or sparse UTXO set"
@@ -1026,7 +1159,7 @@ fn discover_in_funds_accounts(
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
                         affected: 1,
-                        detail: Some(&pool.pool_type),
+                        detail: Some(&pool.pool_type()),
                     },
                     WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
                 )?;
@@ -1107,9 +1240,10 @@ const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 #[cfg(not(test))]
 const MAX_REHYDRATION_GAP_REFILL: u32 = 250_000;
 /// The same bound, smaller in unit tests, so a test that crosses it derives
-/// little on the way.
+/// little on the way, and below key-wallet's `MAX_GAP_LIMIT` so a pool's own
+/// gap limit can cross it.
 #[cfg(test)]
-const MAX_REHYDRATION_GAP_REFILL: u32 = 2_000;
+const MAX_REHYDRATION_GAP_REFILL: u32 = 500;
 
 /// Highest BIP-32 non-hardened child index. A derivation target at or past
 /// `2^31` names a hardened child, which no address pool can derive from a
@@ -1183,10 +1317,10 @@ fn extend_pools_for_restored_addresses(
         .map(|p| {
             (
                 AddressPool::new_without_generation(
-                    p.base_path.clone(),
-                    p.pool_type,
-                    p.gap_limit,
-                    p.network,
+                    p.base_path().clone(),
+                    p.pool_type(),
+                    p.gap_limit(),
+                    p.network(),
                 ),
                 None,
             )
@@ -1213,7 +1347,7 @@ fn extend_pools_for_restored_addresses(
             if unresolved.is_empty() {
                 break;
             }
-            let chain_gap = probe.gap_limit;
+            let chain_gap = probe.gap_limit();
             let mut index: u32 = 0;
 
             loop {
@@ -1248,7 +1382,7 @@ fn extend_pools_for_restored_addresses(
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     account_type = ?account_type,
-                    pool_type = ?probe.pool_type,
+                    pool_type = ?probe.pool_type(),
                     deepest_resolved = ?deepest_resolved,
                     scanned_to = index.saturating_sub(1),
                     "rehydration: chain discovery scanned abnormally deep — \
@@ -1290,11 +1424,11 @@ fn extend_pools_for_restored_addresses(
         // Runtime fail-closed guard (a release build compiles out a
         // `debug_assert!`): applying a probe's depth to a pool of a different
         // chain would misattribute derivation to the wrong pool by position.
-        if pool.pool_type != probe.pool_type {
+        if pool.pool_type() != probe.pool_type() {
             return Err(WalletStorageError::RehydrationPoolTypeMismatch {
                 position,
-                expected: probe.pool_type,
-                found: pool.pool_type,
+                expected: probe.pool_type(),
+                found: pool.pool_type(),
             });
         }
 
@@ -1313,7 +1447,7 @@ fn extend_pools_for_restored_addresses(
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
                             affected: 1,
-                            detail: Some(&pool.pool_type),
+                            detail: Some(&pool.pool_type()),
                         },
                         WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
                     )?;
@@ -1358,23 +1492,23 @@ fn extend_pools_for_restored_addresses(
             // meaningful cost to weigh against the cap, and upstream panics
             // computing it (debug) or wraps it into a bogus one (release).
             let refusal = match ImpliedRefill::of(
-                pool.highest_used,
-                pool.highest_generated,
-                pool.gap_limit,
+                pool.highest_used(),
+                pool.highest_generated(),
+                pool.gap_limit(),
             ) {
                 Ok(refill) if refill.implied <= MAX_REHYDRATION_GAP_REFILL => None,
                 Ok(refill) => Some((LoadSite::RehydrationGapLimit, refill.too_large())),
                 Err(error) => Some((LoadSite::RehydrationMaintainGapLimit, error)),
             };
             if let Some((site, error)) = refusal {
-                if refused.insert((account_type, pool.pool_type)) {
+                if refused.insert((account_type, pool.pool_type())) {
                     ctx.tolerate_at(
                         site,
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
                             affected: 1,
-                            detail: Some(&pool.pool_type),
+                            detail: Some(&pool.pool_type()),
                         },
                         error,
                     )?;
@@ -1395,7 +1529,7 @@ fn extend_pools_for_restored_addresses(
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
                         affected: 1,
-                        detail: Some(&pool.pool_type),
+                        detail: Some(&pool.pool_type()),
                     },
                     WalletStorageError::RehydrationGapLimitFailed { source: e },
                 )?;
@@ -1476,21 +1610,14 @@ fn ensure_derived(
     key_source: &key_wallet::managed_account::address_pool::KeySource,
     index: u32,
 ) -> Option<key_wallet::Address> {
-    let needs_more = match pool.highest_generated {
-        Some(highest) => highest < index,
-        None => true,
-    };
-    if needs_more {
-        let start = pool.highest_generated.map(|h| h + 1).unwrap_or(0);
-        pool.generate_addresses(index - start + 1, key_source, true)
-            .ok()?;
-    }
+    derive_through(pool, key_source, index).ok()?;
     pool.address_at_index(index)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use key_wallet::managed_account::address_pool::MAX_GAP_LIMIT;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
     fn manifest_for(w: &Wallet) -> Vec<AccountRegistrationEntry> {
@@ -1655,7 +1782,7 @@ mod tests {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -1697,7 +1824,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+            p.generate_addresses(index + 1, &KeySource::Public(xpub))
                 .unwrap();
             p.address_at_index(index).unwrap()
         };
@@ -1770,7 +1897,7 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .iter()
-            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
+            .flat_map(|p| p.addresses().values().map(|i| i.address.clone()))
             .collect();
         let visible: u64 = funds
             .utxos
@@ -1796,10 +1923,10 @@ mod tests {
         // Deepest external resolved = idx 50; gap window must reach >= 50+30=80.
         let expected_min_gen = 50 + DEFAULT_EXTERNAL_GAP_LIMIT;
         assert!(
-            external.highest_generated >= Some(expected_min_gen),
+            external.highest_generated() >= Some(expected_min_gen),
             "maintain_gap_limit must extend external pool to >= {} (got {:?})",
             expected_min_gen,
-            external.highest_generated,
+            external.highest_generated(),
         );
     }
 
@@ -1814,7 +1941,7 @@ mod tests {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -1861,8 +1988,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(1, &KeySource::Public(xpub), true)
-                .unwrap();
+            p.generate_addresses(1, &KeySource::Public(xpub)).unwrap();
             p.address_at_index(0).unwrap()
         };
 
@@ -1972,7 +2098,7 @@ mod tests {
     #[test]
     fn rehydration_routes_used_address_to_owning_account() {
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2010,8 +2136,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(1, &KeySource::Public(xpub), true)
-                .unwrap();
+            p.generate_addresses(1, &KeySource::Public(xpub)).unwrap();
             p.address_at_index(0).unwrap()
         };
 
@@ -2045,7 +2170,7 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .into_iter()
-            .find(|p| p.pool_type == AddressPoolType::External)
+            .find(|p| p.pool_type() == AddressPoolType::External)
             .expect("CoinJoin External pool");
         assert!(
             cj_external
@@ -2197,7 +2322,7 @@ mod tests {
         index: u32,
     ) -> key_wallet::Address {
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
@@ -2220,7 +2345,7 @@ mod tests {
             DEFAULT_EXTERNAL_GAP_LIMIT,
             Network::Testnet,
         );
-        pool.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+        pool.generate_addresses(index + 1, &KeySource::Public(xpub))
             .unwrap();
         pool.address_at_index(index).unwrap()
     }
@@ -2235,7 +2360,7 @@ mod tests {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2273,8 +2398,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(4, &KeySource::Public(xpub), true)
-                .unwrap();
+            p.generate_addresses(4, &KeySource::Public(xpub)).unwrap();
             p.address_at_index(3).unwrap()
         };
 
@@ -2367,7 +2491,7 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .iter()
-            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
+            .flat_map(|p| p.addresses().values().map(|i| i.address.clone()))
             .collect();
         let visible: u64 = funds
             .utxos
@@ -2436,9 +2560,9 @@ mod tests {
             // test targets the External side specifically.
             let p = pools
                 .iter()
-                .find(|p| p.pool_type == AddressPoolType::External)
+                .find(|p| p.pool_type() == AddressPoolType::External)
                 .expect("CoinJoin topology: must have an External pool");
-            (ft, p.base_path.clone(), p.pool_type, p.gap_limit)
+            (ft, p.base_path().clone(), p.pool_type(), p.gap_limit())
         };
 
         let xpub = manifest
@@ -2456,7 +2580,7 @@ mod tests {
             Network::Testnet,
         );
         probe
-            .generate_addresses(31, &KeySource::Public(xpub), true)
+            .generate_addresses(31, &KeySource::Public(xpub))
             .unwrap();
         let deep_cj_addr = probe.address_at_index(30).unwrap();
 
@@ -2514,7 +2638,7 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .into_iter()
-            .find(|p| p.pool_type == AddressPoolType::External)
+            .find(|p| p.pool_type() == AddressPoolType::External)
             .expect("CoinJoin topology: must have an External pool");
         assert_eq!(
             cj_pool.address_at_index(30).as_ref(),
@@ -2533,7 +2657,7 @@ mod tests {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2569,8 +2693,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(4, &KeySource::Public(xpub), true)
-                .unwrap();
+            p.generate_addresses(4, &KeySource::Public(xpub)).unwrap();
             p.address_at_index(3).unwrap()
         };
 
@@ -2623,11 +2746,11 @@ mod tests {
             "in-window restored UTXO address must be marked used"
         );
         assert!(
-            external.used_indices.contains(&3),
+            external.addresses()[&3].is_used(),
             "used_indices must record the in-window slot"
         );
         assert_eq!(
-            external.highest_used,
+            external.highest_used(),
             Some(3),
             "highest_used must reflect the in-window slot"
         );
@@ -2647,7 +2770,7 @@ mod tests {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2682,7 +2805,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+            p.generate_addresses(index + 1, &KeySource::Public(xpub))
                 .unwrap();
             p.address_at_index(index).unwrap()
         };
@@ -2792,7 +2915,7 @@ mod tests {
                 .is_used(),
             "in-window spent-out address must be restored as used"
         );
-        assert!(external.used_indices.contains(&5), "idx 5 recorded used");
+        assert!(external.addresses()[&5].is_used(), "idx 5 recorded used");
         assert!(
             external
                 .address_info(&deep_used)
@@ -2800,9 +2923,9 @@ mod tests {
                 .is_used(),
             "deep spent-out address must be derived + restored as used"
         );
-        assert!(external.used_indices.contains(&30), "idx 30 recorded used");
+        assert!(external.addresses()[&30].is_used(), "idx 30 recorded used");
         assert_eq!(
-            external.highest_used,
+            external.highest_used(),
             Some(30),
             "highest_used must reflect the deepest restored used slot"
         );
@@ -2823,7 +2946,7 @@ mod tests {
     #[test]
     fn rehydration_wedge_zone_used_address_marked_after_refill() {
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2858,7 +2981,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+            p.generate_addresses(index + 1, &KeySource::Public(xpub))
                 .unwrap();
             p.address_at_index(index).unwrap()
         };
@@ -2912,17 +3035,17 @@ mod tests {
             "wedge-zone previously-used address must be re-marked used, \
              not left pool-visible as fresh"
         );
-        assert!(external.used_indices.contains(&45), "idx 45 recorded used");
+        assert!(external.addresses()[&45].is_used(), "idx 45 recorded used");
         assert_eq!(
-            external.highest_used,
+            external.highest_used(),
             Some(45),
             "highest_used must reflect the wedge-zone slot"
         );
         // And the window is refilled past the re-marked slot.
         assert!(
-            external.highest_generated >= Some(45 + DEFAULT_EXTERNAL_GAP_LIMIT),
+            external.highest_generated() >= Some(45 + DEFAULT_EXTERNAL_GAP_LIMIT),
             "gap window must extend past the re-marked wedge slot (got {:?})",
-            external.highest_generated,
+            external.highest_generated(),
         );
     }
 
@@ -2937,7 +3060,7 @@ mod tests {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2975,8 +3098,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            p.generate_addresses(46, &KeySource::Public(xpub), true)
-                .unwrap();
+            p.generate_addresses(46, &KeySource::Public(xpub)).unwrap();
             p.address_at_index(45).unwrap()
         };
 
@@ -3044,7 +3166,7 @@ mod tests {
         // Per-address view: the deep-sparse UTXO is not pool-visible yet.
         let pool_addresses: HashSet<Address> = pools
             .iter()
-            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
+            .flat_map(|p| p.addresses().values().map(|i| i.address.clone()))
             .collect();
         let visible: u64 = funds
             .utxos
@@ -3227,9 +3349,9 @@ mod tests {
         );
     }
 
-    /// A `Default` watch-only wallet with its first funds account's external
-    /// pool high-water marks overwritten (both fields are `pub` upstream), as
-    /// a pool whose persisted state implies an oversized refill would look.
+    /// A `Default` watch-only wallet whose first funds account's external
+    /// pool is rebuilt with `gap_limit` (its own when `None`) and, given
+    /// `used_through`, derived through that index with its address used.
     struct GapRefillFixture {
         wallet_info: key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
         manifest: Vec<AccountRegistrationEntry>,
@@ -3241,12 +3363,30 @@ mod tests {
         gap_limit: u32,
     }
 
+    /// `pool`'s rows in a pool of the same derivation with `gap_limit`.
+    fn with_gap_limit(
+        pool: &key_wallet::managed_account::address_pool::AddressPool,
+        gap_limit: u32,
+    ) -> key_wallet::managed_account::address_pool::AddressPool {
+        let mut rebuilt =
+            key_wallet::managed_account::address_pool::AddressPool::new_without_generation(
+                pool.base_path().clone(),
+                pool.pool_type(),
+                gap_limit,
+                pool.network(),
+            );
+        for info in pool.addresses().values() {
+            rebuilt.insert(info.clone()).expect("contiguous pool rows");
+        }
+        rebuilt
+    }
+
     fn gap_refill_fixture(
         seed: u8,
-        highest_used: u32,
-        highest_generated: Option<u32>,
+        gap_limit: Option<u32>,
+        used_through: Option<u32>,
     ) -> GapRefillFixture {
-        use key_wallet::managed_account::address_pool::AddressPool;
+        use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
@@ -3263,44 +3403,6 @@ mod tests {
         let (generated_before, gap_limit) = {
             let mut funding = wallet_info.accounts.all_funding_accounts_mut();
             let account = funding.first_mut().expect("a funds account");
-            let mut pools = account.managed_account_type_mut().address_pools_mut();
-            let pool: &mut AddressPool = pools
-                .iter_mut()
-                .find(|p| p.is_external())
-                .expect("an external pool");
-            pool.highest_used = Some(highest_used);
-            if let Some(generated) = highest_generated {
-                pool.highest_generated = Some(generated);
-            }
-            (pool.highest_generated, pool.gap_limit)
-        };
-
-        GapRefillFixture {
-            wallet_info,
-            manifest,
-            marked,
-            generated_before,
-            gap_limit,
-        }
-    }
-
-    fn ensure_derived_failure_fixture(seed: u8) -> GapRefillFixture {
-        use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-
-        let wallet = Wallet::from_seed_bytes(
-            [seed; 64],
-            Network::Testnet,
-            WalletAccountCreationOptions::Default,
-        )
-        .unwrap();
-        let manifest = manifest_for(&wallet);
-        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
-
-        let (marked, generated_before, gap_limit) = {
-            let mut funding = wallet_info.accounts.all_funding_accounts_mut();
-            let account = funding.first_mut().expect("a funds account");
             let account_type = account.managed_account_type().to_account_type();
             let key_source = KeySource::Public(
                 manifest
@@ -3312,17 +3414,19 @@ mod tests {
             let mut pools = account.managed_account_type_mut().address_pools_mut();
             let pool: &mut AddressPool = pools
                 .iter_mut()
-                .find(|pool| pool.is_external())
+                .find(|p| p.is_external())
                 .expect("an external pool");
-            let mut probe = pool.clone();
-            let marked = probe
-                .generate_addresses(1, &key_source, true)
-                .expect("derive the next address")
-                .pop()
-                .expect("one derived address");
-            let missing_index = probe.highest_generated.expect("derived index");
-            pool.highest_generated = Some(missing_index);
-            (marked, pool.highest_generated, pool.gap_limit)
+            if let Some(gap_limit) = gap_limit {
+                *pool = with_gap_limit(pool, gap_limit);
+            }
+            if let Some(used) = used_through {
+                let held = pool.highest_generated().map_or(0, |h| h + 1);
+                pool.generate_addresses((used + 1).saturating_sub(held), &key_source)
+                    .expect("derive through the used index");
+                let address = pool.address_at_index(used).expect("derived address");
+                pool.mark_used(&address);
+            }
+            (pool.highest_generated(), pool.gap_limit())
         };
 
         GapRefillFixture {
@@ -3332,18 +3436,6 @@ mod tests {
             generated_before,
             gap_limit,
         }
-    }
-
-    /// A pool poised at the non-hardened child-index boundary (`2^31`): the
-    /// implied cost stays tiny (a handful of addresses), so the size cap
-    /// would wave it through, but the target it implies is deeper than any
-    /// index derivable from a public xpub.
-    fn gap_limit_boundary_fixture(seed: u8) -> GapRefillFixture {
-        gap_refill_fixture(
-            seed,
-            MAX_NORMAL_CHILD_INDEX - 5,
-            Some(MAX_NORMAL_CHILD_INDEX - 10),
-        )
     }
 
     /// The first funds account's external pool.
@@ -3362,7 +3454,7 @@ mod tests {
             .into_iter()
             .find(|p| p.is_external())
             .expect("an external pool")
-            .highest_generated
+            .highest_generated()
     }
 
     fn rehydrate_fixture(
@@ -3383,12 +3475,12 @@ mod tests {
         )
     }
 
-    /// A pool whose `highest_used` sits far past `highest_generated` implies a
-    /// refill of that whole span. Rehydration must reject it on arithmetic
-    /// alone rather than let `maintain_gap_limit` allocate its way to an OOM.
+    /// A pool whose gap limit implies a refill past the cap must be rejected
+    /// on arithmetic alone rather than let `maintain_gap_limit` allocate its
+    /// way to an OOM.
     #[test]
     fn gap_refill_over_cap_is_fatal_under_strict() {
-        let mut fixture = gap_refill_fixture(21, MAX_REHYDRATION_GAP_REFILL + 1_000, None);
+        let mut fixture = gap_refill_fixture(21, Some(MAX_GAP_LIMIT), None);
         let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
             .expect_err("an over-cap refill must fail a strict load");
 
@@ -3409,7 +3501,7 @@ mod tests {
     /// the pre-flight placement, generates nothing at all on the way out.
     #[test]
     fn gap_refill_over_cap_is_deferred_under_recovery() {
-        let mut fixture = gap_refill_fixture(22, MAX_REHYDRATION_GAP_REFILL + 1_000, None);
+        let mut fixture = gap_refill_fixture(22, Some(MAX_GAP_LIMIT), None);
         let generated_before = fixture.generated_before;
         let ctx = LoadCtx::recovery();
         rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
@@ -3426,132 +3518,6 @@ mod tests {
             external_pool_state(&fixture.wallet_info),
             generated_before,
             "a rejected refill must derive nothing"
-        );
-    }
-
-    #[test]
-    fn ensure_derived_failure_is_strictly_fatal_and_recovery_is_deferred() {
-        let mut strict_fixture = ensure_derived_failure_fixture(24);
-        let missing_index = strict_fixture.generated_before.expect("missing index");
-        let err = rehydrate_fixture(&mut strict_fixture, &LoadCtx::strict())
-            .expect_err("strict must reject the inconsistent pool high-water mark");
-        assert!(matches!(
-            err,
-            WalletStorageError::RehydrationEnsureDerivedFailed { index }
-                if index == missing_index
-        ));
-
-        let mut recovery_fixture = ensure_derived_failure_fixture(25);
-        let generated_before = recovery_fixture.generated_before;
-        let ctx = LoadCtx::recovery();
-        rehydrate_fixture(&mut recovery_fixture, &ctx)
-            .expect("recovery must defer the inconsistent pool");
-        let degradation = ctx.degradation();
-        assert_eq!(
-            degradation.by_site.get(&LoadSite::RehydrationEnsureDerived),
-            Some(&1)
-        );
-        assert_eq!(degradation.by_site.len(), 1);
-        assert_eq!(
-            external_pool_state(&recovery_fixture.wallet_info),
-            generated_before
-        );
-    }
-
-    /// A pool whose refill target crosses the `2^31` non-hardened
-    /// child-index boundary clears the size cap — the implied span is a
-    /// handful of addresses — so only the validity pre-flight refuses it.
-    #[test]
-    fn gap_refill_target_past_normal_child_boundary_is_fatal_under_strict() {
-        let mut fixture = gap_limit_boundary_fixture(26);
-        let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
-            .expect_err("an out-of-range refill target must fail a strict load");
-
-        assert!(
-            matches!(
-                err,
-                WalletStorageError::RehydrationGapLimitTargetOutOfRange {
-                    highest_used: Some(highest),
-                    ..
-                } if highest == MAX_NORMAL_CHILD_INDEX - 5
-            ),
-            "the guard must name the pool state it refused: {err:?}"
-        );
-    }
-
-    /// Recovery defers the same pool instead of failing, and — the point of
-    /// refusing before the call rather than after it — derives nothing on
-    /// the way out instead of walking up to the boundary first.
-    #[test]
-    fn gap_refill_target_past_normal_child_boundary_is_deferred_under_recovery() {
-        let mut fixture = gap_limit_boundary_fixture(27);
-        let generated_before = fixture.generated_before;
-        let ctx = LoadCtx::recovery();
-        rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
-
-        let degradation = ctx.degradation();
-        assert!(degradation.degraded);
-        assert_eq!(
-            degradation
-                .by_site
-                .get(&LoadSite::RehydrationMaintainGapLimit),
-            Some(&1),
-            "the deferred refill failure must be counted at its own site: {:?}",
-            degradation.by_site
-        );
-        assert_eq!(
-            external_pool_state(&fixture.wallet_info),
-            generated_before,
-            "a refused refill must derive nothing"
-        );
-    }
-
-    /// A pool whose `highest_used` sits within one gap window of `u32::MAX`
-    /// drives upstream's raw `highest + gap_limit` over the end of the type.
-    /// The implied span is a handful of addresses, so the size cap passes it
-    /// through; only a checked pre-flight stops it, and it must stop it as an
-    /// error rather than the panic no load policy can catch.
-    #[test]
-    fn gap_refill_target_overflow_is_fatal_under_strict() {
-        let mut fixture = gap_refill_fixture(28, u32::MAX - 5, Some(u32::MAX - 10));
-        let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
-            .expect_err("an unrepresentable refill target must fail a strict load");
-
-        assert!(
-            matches!(
-                err,
-                WalletStorageError::RehydrationGapLimitTargetOutOfRange {
-                    highest_used: Some(highest),
-                    ..
-                } if highest == u32::MAX - 5
-            ),
-            "the guard must name the pool state it refused: {err:?}"
-        );
-    }
-
-    /// Recovery defers the same pool instead of failing — the contract that
-    /// an upstream panic would have broken outright — and derives nothing.
-    #[test]
-    fn gap_refill_target_overflow_is_deferred_under_recovery() {
-        let mut fixture = gap_refill_fixture(29, u32::MAX - 5, Some(u32::MAX - 10));
-        let generated_before = fixture.generated_before;
-        let ctx = LoadCtx::recovery();
-        rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
-
-        let degradation = ctx.degradation();
-        assert!(degradation.degraded);
-        assert_eq!(
-            degradation
-                .by_site
-                .get(&LoadSite::RehydrationMaintainGapLimit),
-            Some(&1),
-            "the refused refill must be counted at the gap-maintenance site: {:?}",
-            degradation.by_site
-        );
-        assert_eq!(
-            external_pool_state(&fixture.wallet_info),
-            generated_before,
-            "a refused refill must derive nothing"
         );
     }
 
@@ -3633,8 +3599,9 @@ mod tests {
     /// implies one gap window of work and must refill normally.
     #[test]
     fn deep_but_shallow_span_gap_refill_is_not_capped() {
-        let mut fixture = gap_refill_fixture(23, 50_000, Some(49_990));
-        let expected = 50_000 + fixture.gap_limit;
+        let used = MAX_REHYDRATION_GAP_REFILL + 100;
+        let mut fixture = gap_refill_fixture(23, None, Some(used));
+        let expected = used + fixture.gap_limit;
         let ctx = LoadCtx::strict();
         rehydrate_fixture(&mut fixture, &ctx).expect("a one-window refill must not be capped");
 
@@ -3659,7 +3626,7 @@ mod tests {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -3694,7 +3661,7 @@ mod tests {
                 DEFAULT_EXTERNAL_GAP_LIMIT,
                 Network::Testnet,
             );
-            pool.generate_addresses(1, &KeySource::Public(xpub), true)
+            pool.generate_addresses(1, &KeySource::Public(xpub))
                 .unwrap();
             pool.address_at_index(0).unwrap()
         };
@@ -3818,13 +3785,13 @@ mod tests {
             let info = ManagedWalletInfo::from_wallet(wallet, 1);
             let pool = external_pool(&info, account);
             let mut probe = AddressPool::new_without_generation(
-                pool.base_path.clone(),
-                pool.pool_type,
-                pool.gap_limit,
+                pool.base_path().clone(),
+                pool.pool_type(),
+                pool.gap_limit(),
                 Network::Testnet,
             );
             probe
-                .generate_addresses(index + 1, &wallet.key_source_for_account(*account), true)
+                .generate_addresses(index + 1, &wallet.key_source_for_account(*account))
                 .unwrap();
             probe.address_at_index(index).unwrap()
         }
@@ -3836,7 +3803,7 @@ mod tests {
                 .managed_account_type()
                 .address_pools()
                 .into_iter()
-                .find(|p| p.pool_type == AddressPoolType::External)
+                .find(|p| p.pool_type() == AddressPoolType::External)
                 .unwrap()
                 .clone()
         }
@@ -3961,13 +3928,13 @@ mod tests {
                 let info = ManagedWalletInfo::from_wallet(&wallet, 1);
                 let pool = external_pool(&info, &cj());
                 let mut probe = AddressPool::new_without_generation(
-                    pool.base_path.clone(),
-                    pool.pool_type,
-                    pool.gap_limit,
+                    pool.base_path().clone(),
+                    pool.pool_type(),
+                    pool.gap_limit(),
                     Network::Testnet,
                 );
                 probe
-                    .generate_addresses(deepest + 1, &wallet.key_source_for_account(cj()), true)
+                    .generate_addresses(deepest + 1, &wallet.key_source_for_account(cj()))
                     .unwrap();
                 probe
             };
@@ -3986,8 +3953,8 @@ mod tests {
                 assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
             }
             let pool = external_pool(&info, &cj());
-            assert_eq!(pool.highest_used, Some(deepest));
-            assert!(pool.highest_generated >= Some(deepest + pool.gap_limit));
+            assert_eq!(pool.highest_used(), Some(deepest));
+            assert!(pool.highest_generated() >= Some(deepest + pool.gap_limit()));
             assert_eq!(info.balance.total(), VALUE * coins.len() as u64);
         }
 
@@ -4064,7 +4031,7 @@ mod tests {
                             .managed_account_type()
                             .address_pools()
                             .iter()
-                            .map(|p| (p.highest_generated, p.highest_used))
+                            .map(|p| (p.highest_generated(), p.highest_used()))
                             .collect();
                         (a.utxos.keys().copied().collect::<Vec<_>>(), pools)
                     })
@@ -4341,7 +4308,8 @@ mod tests {
         fn a_lone_coinjoin_coin_one_past_its_pool_restores_into_coinjoin() {
             let (wallet, manifest) = fixture(34);
             assert_eq!(
-                external_pool(&ManagedWalletInfo::from_wallet(&wallet, 1), &cj()).highest_generated,
+                external_pool(&ManagedWalletInfo::from_wallet(&wallet, 1), &cj())
+                    .highest_generated(),
                 Some(99)
             );
             let coin = utxo(1, &coinjoin_address(&wallet, 100));
@@ -4361,8 +4329,8 @@ mod tests {
             assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, cj());
         }
 
-        /// A wallet whose DashPay contact pool has a gap limit of 0, a pool
-        /// no gap refill can be computed for, with one shallow BIP44 coin.
+        /// A wallet whose DashPay contact pool has a gap limit whose refill
+        /// exceeds the budget, with one shallow BIP44 coin.
         fn unrefillable_contact_fixture() -> (Wallet, Vec<AccountRegistrationEntry>, Utxo) {
             let (mut wallet, _) = fixture(36);
             let contact = AccountType::DashpayExternalAccount {
@@ -4384,7 +4352,7 @@ mod tests {
                 .managed_account_type_mut()
                 .address_pools_mut()
             {
-                pool.gap_limit = 0;
+                *pool = with_gap_limit(pool, MAX_GAP_LIMIT);
             }
             info
         }
@@ -4407,7 +4375,7 @@ mod tests {
             assert!(
                 matches!(
                     err,
-                    WalletStorageError::RehydrationGapLimitTargetOutOfRange { gap_limit: 0, .. }
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
                 ),
                 "{err:?}"
             );
@@ -4431,9 +4399,7 @@ mod tests {
             .expect("recovery tolerates the refusal");
             let degradation = ctx.degradation();
             assert_eq!(
-                degradation
-                    .by_site
-                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                degradation.by_site.get(&LoadSite::RehydrationGapLimit),
                 Some(&1),
                 "{:?}",
                 degradation.by_site
@@ -4483,7 +4449,7 @@ mod tests {
             assert_eq!(
                 ctx.degradation()
                     .by_site
-                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                    .get(&LoadSite::RehydrationGapLimit),
                 Some(&1)
             );
             (info, ctx)
@@ -4624,15 +4590,11 @@ mod tests {
                         .managed_account_type_mut()
                         .address_pools_mut();
                     let pool = &mut pools[0];
-                    let index = pool.highest_generated.map_or(0, |h| h + 1);
+                    let index = pool.highest_generated().map_or(0, |h| h + 1);
                     held.index = index;
-                    pool.address_index.insert(held.address.clone(), index);
-                    pool.script_pubkey_index
-                        .insert(held.script_pubkey.clone(), index);
-                    pool.addresses.insert(index, held);
-                    pool.highest_generated = Some(index);
-                    // Unrefillable whether or not the coin marks it.
-                    pool.gap_limit = u32::MAX;
+                    // Its gap limit keeps it unrefillable whether or not the
+                    // coin marks it.
+                    pool.insert(held).expect("append the held address");
                 },
             );
             assert_held_by_coinjoin(&info, &coin);
@@ -4665,7 +4627,7 @@ mod tests {
             (info.accounts.all_funding_accounts().into_iter())
                 .chain(info.accounts.dashpay_external_accounts.values())
                 .flat_map(|a| a.managed_account_type().address_pools())
-                .map(|p| p.highest_generated)
+                .map(|p| p.highest_generated())
                 .collect()
         }
 
@@ -4734,7 +4696,7 @@ mod tests {
                 wallet.add_account(account, None).unwrap();
             }
             let manifest = manifest_for(&wallet);
-            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT;
+            let past = key_wallet::managed_account::address_pool::DEFAULT_DASHPAY_GAP_LIMIT;
             let shared = first_pool_address(&wallet, &receiving, past);
             assert_eq!(first_pool_address(&wallet, &reverse, past), shared);
             (wallet, manifest, receiving, reverse, shared)
@@ -4748,9 +4710,9 @@ mod tests {
             reverse: &AccountType,
         ) -> ManagedWalletInfo {
             let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
-            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT;
+            let past = key_wallet::managed_account::address_pool::DEFAULT_DASHPAY_GAP_LIMIT;
             let funds = info.accounts.funds_account(receiving).unwrap();
-            let window = funds.managed_account_type().address_pools()[0].highest_generated;
+            let window = funds.managed_account_type().address_pools()[0].highest_generated();
             assert_eq!(window, Some(past - 1));
             let contact = info.accounts.dashpay_external_accounts.values_mut().next();
             let mut pools = contact
@@ -4881,7 +4843,7 @@ mod tests {
                 .managed_account_type_mut()
                 .address_pools_mut();
             let pool = &mut *pools[0];
-            pool.gap_limit = MAX_REHYDRATION_GAP_REFILL + 1;
+            *pool = with_gap_limit(pool, MAX_REHYDRATION_GAP_REFILL + 1);
             if let Some(index) = through {
                 let key_source = wallet.key_source_for_account(contact());
                 ensure_derived(pool, &key_source, index).unwrap();
@@ -4915,7 +4877,7 @@ mod tests {
                 ),
                 "{err:?}"
             );
-            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+            assert_eq!(contact_pool(&info).highest_generated(), Some(budget));
         }
 
         /// Under recovery the same refusal is counted once, the contact pool
@@ -4943,7 +4905,7 @@ mod tests {
                     .get(&LoadSite::RehydrationGapLimit),
                 Some(&1)
             );
-            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+            assert_eq!(contact_pool(&info).highest_generated(), Some(budget));
             assert_eq!(every_holder(&info, &own.outpoint), vec![bip44()]);
             assert_eq!(every_holder(&info, &theirs.outpoint), vec![contact()]);
             assert_eq!(info.balance.total(), VALUE);
@@ -4959,7 +4921,7 @@ mod tests {
             let (wallet, manifest, _) = unrefillable_contact_fixture();
             let budget = MAX_REHYDRATION_GAP_REFILL;
             let mut info = with_wide_contact_pool(&wallet, None);
-            assert_eq!(contact_pool(&info).highest_generated, Some(9));
+            assert_eq!(contact_pool(&info).highest_generated(), Some(9));
             let theirs = utxo(2, &first_pool_address(&wallet, &contact(), budget));
             let err = load_into(
                 &mut info,
@@ -4977,7 +4939,7 @@ mod tests {
                 ),
                 "{err:?}"
             );
-            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+            assert_eq!(contact_pool(&info).highest_generated(), Some(budget));
         }
 
         /// A coin whose stored address (BIP44's at 5) differs from the one
@@ -4992,9 +4954,9 @@ mod tests {
             let funds = info.accounts.funds_account_mut(&cj()).unwrap();
             let mut pools = funds.managed_account_type_mut().address_pools_mut();
             let pool = (pools.iter_mut())
-                .find(|p| p.pool_type == AddressPoolType::External)
+                .find(|p| p.pool_type() == AddressPoolType::External)
                 .unwrap();
-            pool.gap_limit = budget + 1;
+            **pool = with_gap_limit(pool, budget + 1);
             let key_source = wallet.key_source_for_account(cj());
             let paid = ensure_derived(pool, &key_source, budget).unwrap();
             let mut coin = utxo(1, &paid);
@@ -5015,7 +4977,10 @@ mod tests {
                 ),
                 "{err:?}"
             );
-            assert_eq!(external_pool(&info, &cj()).highest_generated, Some(budget));
+            assert_eq!(
+                external_pool(&info, &cj()).highest_generated(),
+                Some(budget)
+            );
         }
 
         /// A coin on a contact address within the pool (9, its last) still
@@ -5035,7 +5000,7 @@ mod tests {
             )
             .unwrap();
             let pool = contact_pool(&info);
-            assert_eq!(pool.highest_generated, Some(9 + pool.gap_limit));
+            assert_eq!(pool.highest_generated(), Some(9 + pool.gap_limit()));
             assert!(pool.address_info(&theirs.address).unwrap().is_used());
             assert_eq!(every_holder(&info, &theirs.outpoint), vec![contact()]);
         }
@@ -5052,8 +5017,8 @@ mod tests {
             let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
             let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
             for pool in funds.managed_account_type_mut().address_pools_mut() {
-                if pool.pool_type == AddressPoolType::External {
-                    pool.gap_limit = MAX_REHYDRATION_GAP_REFILL + 1_000;
+                if pool.pool_type() == AddressPoolType::External {
+                    *pool = with_gap_limit(pool, MAX_GAP_LIMIT);
                 }
             }
             let ctx = LoadCtx::recovery();
@@ -5264,16 +5229,16 @@ mod tests {
             let pools = funds.managed_account_type().address_pools();
             let pool = pools
                 .into_iter()
-                .find(|p| p.pool_type == pool_type)
+                .find(|p| p.pool_type() == pool_type)
                 .unwrap();
             let mut probe = AddressPool::new_without_generation(
-                pool.base_path.clone(),
-                pool.pool_type,
-                pool.gap_limit,
+                pool.base_path().clone(),
+                pool.pool_type(),
+                pool.gap_limit(),
                 Network::Testnet,
             );
             probe
-                .generate_addresses(through + 1, &wallet.key_source_for_account(account), true)
+                .generate_addresses(through + 1, &wallet.key_source_for_account(account))
                 .unwrap();
             probe
         }
@@ -5292,7 +5257,7 @@ mod tests {
             last: u32,
         ) {
             let (wallet, manifest) = fixture(seed);
-            let gap = pool_through(&wallet, account, pool_type, 0).gap_limit;
+            let gap = pool_through(&wallet, account, pool_type, 0).gap_limit();
             let probe = pool_through(&wallet, account, pool_type, last + 2 * gap);
             let at = |i: u32| probe.address_at_index(i).unwrap();
             let mut spent: Vec<Address> = (gap..=last).step_by(gap as usize).map(at).collect();

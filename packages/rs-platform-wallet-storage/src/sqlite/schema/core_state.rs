@@ -17,7 +17,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
-use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
+use crate::sqlite::schema::core_pool::{self, owning_account_for_script, OwningAccount};
 use crate::sqlite::schema::{blob, core_history};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
@@ -114,9 +114,38 @@ pub fn apply(
             core_history::index_record(tx, wallet_id, &record)?;
         }
     }
-    // `addresses_derived` is intentionally NOT persisted here — the pool
+    // `addresses_derived` is otherwise NOT persisted here — the pool
     // snapshot (`account_address_pools`) is the derived-address source used
-    // to resolve UTXO ownership during rehydration.
+    // to resolve UTXO ownership during rehydration. Only asset-lock funding
+    // accounts' derivations are kept, as unused rows: their pools are
+    // restored from stored rows alone, and the window a seen lock moved would
+    // otherwise be lost (`core_pool::insert_derived_funding_address`).
+    for derived in &cs.addresses_derived {
+        core_pool::insert_derived_funding_address(
+            tx,
+            wallet_id,
+            &derived.account_type,
+            derived.pool_type,
+            derived.derivation_index,
+            derived.address.script_pubkey().as_bytes(),
+            &derived.public_key.inner.to_compressed(),
+        )?;
+    }
+    // After the derived rows, so a mark lands on the row its derivation added.
+    // The other accounts' marks reach `core_address_pool` through the pool
+    // snapshots and their UTXOs; a funding address has no UTXO, and sync can
+    // mark it used with no snapshot following before the wallet closes.
+    for marked in &cs.addresses_marked_used {
+        core_pool::mark_funding_address_used(
+            tx,
+            wallet_id,
+            &marked.account_type,
+            marked.pool_type,
+            marked.info.index,
+            marked.info.address.script_pubkey().as_bytes(),
+            marked.info.public_key.as_ref(),
+        )?;
+    }
     if !cs.new_utxos.is_empty() {
         // Blob-bearing records always win; height-only writes never overwrite them.
         // Placeholder confirmation is `height IS NOT NULL`; `finalized` stays 0.
@@ -1421,7 +1450,7 @@ pub fn list_unspent_utxos(
 mod tests {
     use super::*;
     use crate::sqlite::config::LoadPolicy;
-    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v021, wallet_db};
+    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v022, wallet_db};
     use dashcore::address::Payload;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
     use key_wallet::account::{AccountType, StandardAccountType};
@@ -1466,7 +1495,7 @@ mod tests {
             conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
                 params![wallet.as_slice(), txid.as_byte_array().as_slice(), bytes]).unwrap();
         }
-        rewind_v021(&conn);
+        rewind_v022(&conn);
         migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
         for (txid, bytes, original) in &rows {
             let loaded = get_tx_record(&conn, &wallet, txid, &LoadCtx::strict())
@@ -1557,7 +1586,7 @@ mod tests {
                 get_tx_record(&conn, &wallet, &key, &LoadCtx::strict()).is_err(),
                 "{mutation}"
             );
-            rewind_v021(&conn);
+            rewind_v022(&conn);
             assert!(
                 migrations::run_for_open(&mut conn, LoadPolicy::Strict).is_err(),
                 "{mutation}"
@@ -1569,7 +1598,7 @@ mod tests {
                     |r| r.get(0),
                 )
                 .unwrap();
-            assert_eq!(version, 20, "{mutation}: failed migration is atomic");
+            assert_eq!(version, 21, "{mutation}: failed migration is atomic");
         }
     }
 
@@ -1756,7 +1785,7 @@ mod tests {
                 (coin, sync)
             };
             let before = snapshot(&conn);
-            rewind_v021(&conn);
+            rewind_v022(&conn);
 
             migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
 
@@ -1809,7 +1838,7 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        rewind_v021(&conn);
+        rewind_v022(&conn);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery).unwrap();
 
@@ -1853,7 +1882,7 @@ mod tests {
         let tx = conn.transaction().unwrap();
         apply(&tx, &wallet_id, &round(vec![spending.clone()], vec![])).unwrap();
         tx.commit().unwrap();
-        rewind_v021(&conn);
+        rewind_v022(&conn);
         migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
 
         let tx = conn.transaction().unwrap();
@@ -1958,7 +1987,7 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        rewind_v021(&conn);
+        rewind_v022(&conn);
         conn.execute(
             "UPDATE core_transactions SET record_blob = x'00' WHERE txid = ?1",
             [pending.txid.as_byte_array().to_vec()],
@@ -1976,37 +2005,37 @@ mod tests {
         .unwrap()
     }
 
-    /// Under `Strict`, a kept pending record V021 cannot decode fails the
+    /// Under `Strict`, a kept pending record V022 cannot decode fails the
     /// upgrade instead of being skipped: a skipped body leaves its inputs
     /// unindexed with no signal, so a record-codec regression would only
     /// show up as coins stuck later. The failed upgrade rolls back to V019.
     #[test]
-    fn should_fail_v021_under_strict_on_a_kept_record_it_cannot_decode() {
+    fn should_fail_v022_under_strict_on_a_kept_record_it_cannot_decode() {
         let mut conn = v019_store_with_undecodable_kept_record(&[0xB8u8; 32]);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Strict)
-            .expect_err("an undecodable kept record must fail V021 under Strict");
+            .expect_err("an undecodable kept record must fail V022 under Strict");
 
         assert_eq!(
             schema_version(&conn),
-            20,
+            21,
             "the failed upgrade must roll back"
         );
     }
 
-    /// Under `Recovery`, V021 skips a kept record it cannot read and the
+    /// Under `Recovery`, V022 skips a kept record it cannot read and the
     /// upgrade completes; that wallet degrades at load instead.
     #[test]
-    fn should_skip_an_undecodable_kept_record_in_v021_under_recovery() {
+    fn should_skip_an_undecodable_kept_record_in_v022_under_recovery() {
         let mut conn = v019_store_with_undecodable_kept_record(&[0xB9u8; 32]);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
-            .expect("Recovery must complete V021 past an undecodable kept record");
+            .expect("Recovery must complete V022 past an undecodable kept record");
 
-        // Every later migration runs too, so the version is at least V021's.
+        // Every later migration runs too, so the version is at least V022's.
         assert!(
-            schema_version(&conn) >= 21,
-            "the upgrade must complete V021"
+            schema_version(&conn) >= 22,
+            "the upgrade must complete V022"
         );
     }
 

@@ -87,6 +87,10 @@ export DASH_GRADLE_BUILD_ROOT=/Volumes/DashBuild/gradle-build
 # Live-testnet integration tests are opt-in (skipped otherwise via the
 # @TestnetTest guard in sdk/src/androidTest/.../testnet/):
 ./gradlew :sdk:connectedDebugAndroidTest -Ptestnet=true
+
+# Tests that drive a test-only JNI hook skip unless the library was built with
+# ./build_android.sh --test-hooks; -PrequireTestHooks=true (as CI) fails them instead:
+./gradlew :sdk:connectedDebugAndroidTest -PrequireTestHooks=true
 ```
 
 ## Emulator setup

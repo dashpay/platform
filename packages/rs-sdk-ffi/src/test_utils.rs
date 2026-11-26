@@ -23,6 +23,17 @@ pub mod test_utils {
         Box::into_raw(wrapper) as *mut SDKHandle
     }
 
+    /// A mock SDK handle pinned to the latest protocol version, for calls that need a feature
+    /// the default mock's version does not have yet.
+    pub fn create_mock_sdk_handle_at_latest_version() -> *mut SDKHandle {
+        let mut wrapper = SDKWrapper::new_mock();
+        wrapper.sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dash_sdk::dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("a mock SDK at the latest version");
+        Box::into_raw(Box::new(wrapper)) as *mut SDKHandle
+    }
+
     /// A current SPV provider that resolves local contracts without a trusted-provider cache.
     pub fn create_mock_sdk_handle_with_current_contracts(
         contracts: Vec<DataContract>,

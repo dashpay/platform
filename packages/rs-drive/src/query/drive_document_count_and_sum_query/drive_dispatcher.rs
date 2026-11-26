@@ -272,7 +272,7 @@ impl Drive {
                                 in_key: None,
                                 key: Vec::new(),
                                 count: Some(count),
-                                sum: Some(sum),
+                                sum: Some(i128::from(sum)),
                             },
                         ]))
                     }

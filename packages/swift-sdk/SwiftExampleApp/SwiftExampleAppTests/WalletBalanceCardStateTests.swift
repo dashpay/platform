@@ -25,4 +25,16 @@ final class WalletBalanceCardStateTests: XCTestCase {
             )
         )
     }
+
+    func testShouldNotCallAWalletEmptyWhileItsShieldedBalanceIsNotKnown() {
+        XCTAssertFalse(
+            WalletBalanceCardState.isEmpty(
+                confirmedCore: 0,
+                unconfirmedCore: 0,
+                immatureCore: 0,
+                platform: 0,
+                shielded: nil
+            )
+        )
+    }
 }

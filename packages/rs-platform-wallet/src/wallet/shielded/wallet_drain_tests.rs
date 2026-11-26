@@ -93,6 +93,10 @@ struct RecoveryPersistence {
     staged: Mutex<BTreeMap<OutPoint, AssetLockEntry>>,
     fail_store: AtomicBool,
     fail_flush: AtomicBool,
+    /// Fails the next store that carries an asset-lock row, and only it.
+    fail_next_lock_store: AtomicBool,
+    /// Fails the next flush only.
+    fail_next_flush: AtomicBool,
     commits_inline: AtomicBool,
     fail_load: AtomicBool,
     records_recipients: AtomicBool,
@@ -115,7 +119,13 @@ impl PlatformWalletPersistence for RecoveryPersistence {
         _wallet_id: [u8; 32],
         cs: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        if self.fail_store.load(Ordering::SeqCst) {
+        if self.fail_store.load(Ordering::SeqCst)
+            || (cs
+                .asset_locks
+                .as_ref()
+                .is_some_and(|locks| !locks.asset_locks.is_empty())
+                && self.fail_next_lock_store.swap(false, Ordering::SeqCst))
+        {
             return Err(PersistenceError::backend("store failed"));
         }
         if let Some(cs) = cs.asset_locks {
@@ -133,7 +143,9 @@ impl PlatformWalletPersistence for RecoveryPersistence {
         Ok(())
     }
     fn flush(&self, _wallet_id: [u8; 32]) -> Result<(), PersistenceError> {
-        if self.fail_flush.load(Ordering::SeqCst) {
+        if self.fail_flush.load(Ordering::SeqCst)
+            || self.fail_next_flush.swap(false, Ordering::SeqCst)
+        {
             return Err(PersistenceError::backend("flush failed"));
         }
         self.commit_staged();
@@ -172,6 +184,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                 self.wallet.compute_wallet_id(),
                 ClientWalletStartState {
                     dashpay_backfill: Default::default(),
+                    funding_issuance_floors: Default::default(),
                     wallet: self.wallet.clone(),
                     wallet_info: self.info.clone(),
                     identity_manager: Default::default(),
@@ -243,6 +256,8 @@ async fn signed_wallet_fixture(
         staged: Mutex::new(BTreeMap::new()),
         fail_store: AtomicBool::new(false),
         fail_flush: AtomicBool::new(false),
+        fail_next_lock_store: AtomicBool::new(false),
+        fail_next_flush: AtomicBool::new(false),
         // Drains admit inline-committing backends only; the buffered mode
         // exists for `should_refuse_drain_on_a_buffered_persistence_backend`.
         commits_inline: AtomicBool::new(true),
@@ -346,7 +361,7 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let operation = Arc::new(AssetLockOperationContext::new([0x78; 16]));
     for failed_load in [true, false] {
         persistence.fail_load.store(failed_load, Ordering::SeqCst);
@@ -360,7 +375,7 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
                 },
                 vec![],
                 &signer,
-                &prover,
+                prover,
                 None,
                 0,
                 None,
@@ -398,7 +413,7 @@ async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
     let (wallet, _, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let operation = Arc::new(AssetLockOperationContext::new([0x77; 16]));
     let blocker = wallet.shield_guard.lock().await;
     let mut future = Box::pin(wallet.shielded_fund_from_asset_lock(
@@ -410,7 +425,7 @@ async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
         },
         vec![],
         &signer,
-        &prover,
+        prover,
         None,
         0,
         None,
@@ -459,7 +474,8 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
         *wallet.shielded_keys.write().await = empty_binding.then(BTreeMap::new);
         let coordinator = Arc::new(coordinator);
         let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-        let prover = super::prover::CachedOrchardProver::new();
+        let prover: &'static super::prover::CachedOrchardProver =
+            &super::prover::CachedOrchardProver;
         let operation = Arc::new(AssetLockOperationContext::new([0x97; 16]));
         let error = wallet
             .shielded_fund_from_asset_lock(
@@ -471,7 +487,7 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
                 },
                 vec![(recipient, None)],
                 &signer,
-                &prover,
+                prover,
                 None,
                 0,
                 None,
@@ -843,7 +859,7 @@ async fn should_report_a_fresh_shield_lock_to_the_caller() {
     let (wallet, _persistence, coordinator, _dir, signer) =
         signed_wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let seen = Mutex::new(Vec::new());
     let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
 
@@ -856,7 +872,7 @@ async fn should_report_a_fresh_shield_lock_to_the_caller() {
             },
             vec![(recipient, None)],
             &signer,
-            &prover,
+            prover,
             None,
             0,
             None,
@@ -888,7 +904,7 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     let (wallet, _persistence, coordinator, _dir, signer) =
         signed_wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let operation = Arc::new(AssetLockOperationContext::new([0x5a; 16]));
     let seen = Mutex::new(Vec::new());
     let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
@@ -903,7 +919,7 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
             },
             vec![(recipient, None)],
             &signer,
-            &prover,
+            prover,
             None,
             0,
             None,
@@ -934,7 +950,7 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
 
     let error = wallet
         .shielded_fund_from_asset_lock(
@@ -945,7 +961,7 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
             },
             vec![(other, None)],
             &signer,
-            &prover,
+            prover,
             None,
             0,
             None,
@@ -989,7 +1005,7 @@ async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recor
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
 
     let error = wallet
@@ -1002,7 +1018,7 @@ async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recor
             },
             vec![(other, None)],
             &signer,
-            &prover,
+            prover,
             None,
             0,
             None,
@@ -1048,7 +1064,7 @@ async fn should_accept_the_callers_recipient_for_a_legacy_row_without_one() {
     let (wallet, _persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
 
     let error = wallet
         .shielded_fund_from_asset_lock(
@@ -1059,7 +1075,7 @@ async fn should_accept_the_callers_recipient_for_a_legacy_row_without_one() {
             },
             vec![(recipient, None)],
             &signer,
-            &prover,
+            prover,
             None,
             0,
             None,
@@ -1090,7 +1106,8 @@ async fn should_record_the_recipient_with_the_lock_before_dispatch() {
             signed_wallet_fixture(&lock, keys).await;
         persistence.commits_inline.store(drain, Ordering::SeqCst);
         let coordinator = Arc::new(coordinator);
-        let prover = super::prover::CachedOrchardProver::new();
+        let prover: &'static super::prover::CachedOrchardProver =
+            &super::prover::CachedOrchardProver;
         let operation = Arc::new(AssetLockOperationContext::new([0x57; 16]));
         let seen = Mutex::new(Vec::new());
         let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
@@ -1112,7 +1129,7 @@ async fn should_record_the_recipient_with_the_lock_before_dispatch() {
                 funding,
                 vec![(recipient, None)],
                 &signer,
-                &prover,
+                prover,
                 None,
                 0,
                 None,
@@ -1147,7 +1164,7 @@ async fn fund_typed_amount(
     signer: &WalletSigner,
     recipient: dpp::address_funds::OrchardAddress,
 ) -> (PlatformWalletError, Vec<OutPoint>) {
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let seen = Mutex::new(Vec::new());
     let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
     let error = wallet
@@ -1159,7 +1176,7 @@ async fn fund_typed_amount(
             },
             vec![(recipient, None)],
             signer,
-            &prover,
+            prover,
             None,
             0,
             None,
@@ -1173,22 +1190,70 @@ async fn fund_typed_amount(
 
 /// A typed-amount funding whose recipient cannot be made durable stops before
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
-/// both fail the call and leave the lock untracked and uncommitted. The
-/// abandoned row's removal must be durable before the inputs are released,
-/// and on this buffered backend neither case can make it so: a refused store
-/// refuses the removal too, and a failed flush leaves the removal only
-/// buffered, while another flush may already have committed the row, so a
-/// crash would bring the lock back resumable after the inputs funded a retry.
-/// The inputs therefore stay reserved in both cases, and the call reports the
-/// unknown outcome (do not retry) rather than a retry-safe persistence error.
-/// After the failed flush the removal is still stored behind the row, so the
-/// next successful flush does not commit the abandoned row.
+/// both fail the call with a persistence error, leave the lock untracked and
+/// uncommitted, and, once the abandoned row's removal is on disk, hand the
+/// inputs and the funding index back so the next attempt builds the same
+/// lock again.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
         let (mut lock, keys) = drain_lock_fixture();
         lock.operation_id = None;
         let recipient = crate::test_support::orchard_address_fixture(0x58);
+        let (wallet, persistence, coordinator, _dir, signer) =
+            signed_wallet_fixture(&lock, keys).await;
+        let coordinator = Arc::new(coordinator);
+        persistence.commits_inline.store(false, Ordering::SeqCst);
+        // The row's own store or flush fails; its removal's goes through.
+        let switch = if fail_flush {
+            &persistence.fail_next_flush
+        } else {
+            &persistence.fail_next_lock_store
+        };
+
+        switch.store(true, Ordering::SeqCst);
+        let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        assert!(
+            matches!(&error, PlatformWalletError::Persistence(message)
+                if message.contains("shielded recipient was not made durable")),
+            "fail_flush={fail_flush}: {error}"
+        );
+        assert_eq!(seen.len(), 1, "fail_flush={fail_flush}");
+        assert!(!wallet
+            .asset_locks
+            .list_tracked_locks()
+            .await
+            .iter()
+            .any(|tracked| tracked.out_point == seen[0]));
+        assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
+
+        // The inputs and the funding index were handed back: the retry builds
+        // the same lock again, from the same inputs to the same key, and gets
+        // as far as the broadcaster with its row stored this time.
+        let (error, retried) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        assert!(
+            !matches!(error, PlatformWalletError::Persistence(_)),
+            "fail_flush={fail_flush}: {error}"
+        );
+        assert_eq!(retried, seen, "fail_flush={fail_flush}");
+        assert_eq!(
+            persistence.committed.lock().unwrap()[&retried[0]].shielded_recipient,
+            Some(recipient.to_raw_bytes())
+        );
+    }
+}
+
+/// Where the backend keeps failing, so the abandoned row's removal cannot be
+/// confirmed either, the funding is not reported as failed: a store or flush
+/// that failed is no proof the row is on no disk, and a restart that finds
+/// it resumes and sends it. The outcome is unknown, for a rejected store and
+/// for a rejected flush alike, and nothing is sent or tracked.
+#[tokio::test]
+async fn should_report_a_typed_amount_funding_as_unconfirmed_when_its_row_removal_fails_too() {
+    for fail_flush in [false, true] {
+        let (mut lock, keys) = drain_lock_fixture();
+        lock.operation_id = None;
+        let recipient = crate::test_support::orchard_address_fixture(0x5a);
         let (wallet, persistence, coordinator, _dir, signer) =
             signed_wallet_fixture(&lock, keys).await;
         let coordinator = Arc::new(coordinator);
@@ -1203,8 +1268,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
             matches!(&error, PlatformWalletError::TransactionBroadcastUnconfirmed(message)
-                if message.contains("shielded recipient was not made durable")
-                    && message.contains("inputs stay reserved")),
+                if message.contains("a restart may still resume it")),
             "fail_flush={fail_flush}: {error}"
         );
         assert_eq!(seen.len(), 1, "fail_flush={fail_flush}");
@@ -1215,18 +1279,6 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             .iter()
             .any(|tracked| tracked.out_point == seen[0]));
         assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
-        if !fail_flush {
-            continue;
-        }
-
-        switch.store(false, Ordering::SeqCst);
-        persistence
-            .flush(wallet.wallet_id())
-            .expect("the backend flushes again");
-        assert!(
-            !persistence.committed.lock().unwrap().contains_key(&seen[0]),
-            "the abandoned row was committed by a later flush"
-        );
     }
 }
 

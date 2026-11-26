@@ -758,4 +758,27 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             await manager.shutdown()
         }
     }
+
+    func testShouldDeliverTheSnapshotWhenAClearIsRefusedDuringAShieldedOperation() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
+        let manager = makeManager(fixture)
+        let syncGeneration = manager.shieldedSyncGeneration.current()
+        let localGeneration = manager.shieldedLocalBalanceGeneration.current()
+        let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
+        defer { gate.signal() }
+        try await waitForRead(fixture)
+
+        // Rust refused the Clear before touching anything, so the read in
+        // flight still describes the wallet's notes.
+        XCTAssertThrowsError(try manager.withShieldedLocalBalanceMutation {
+            throw PlatformWalletError.shieldedOperationInProgress("A shielded operation is in progress")
+        })
+        XCTAssertEqual(manager.shieldedLocalBalanceGeneration.current(), localGeneration)
+        gate.signal()
+        _ = try await read.value
+        XCTAssertEqual(manager.shieldedSyncGeneration.current(), syncGeneration)
+        XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
+        await manager.shutdown()
+    }
 }

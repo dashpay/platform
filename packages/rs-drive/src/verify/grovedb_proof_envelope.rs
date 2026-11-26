@@ -9,9 +9,11 @@ use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 /// V0 payload safe. GroveDB emits V1 from grove version 3, which Platform
 /// selects from protocol version 12, so every live network serves V1.
 ///
-/// This is client policy, not consensus: no node reads it, so it holds for
-/// every protocol version a client verifies with and is not a version-table
-/// entry.
+/// This is client policy, not consensus, so it holds for every protocol
+/// version a client verifies with and is not a version-table entry. A node
+/// reads it only to skip the optional before/after proofs of a registered
+/// state transition that clients would refuse; no block's acceptance, fees,
+/// results or state depend on it.
 pub const MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION: u32 = 1;
 
 /// Reject a GroveDB proof envelope older than

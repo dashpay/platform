@@ -171,6 +171,23 @@ struct TransitionCategoryView: View {
                 }
             }
 
+            // Key limits update (protocol 14) uses its own wallet-signed sheet,
+            // not the generic TransitionDetailView. Drives QA test ID-17.
+            if category == .identity {
+                NavigationLink(destination: KeyLimitsKeysListView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Update Key Limits")
+                            .font(.headline)
+                        Text("Raise a key's budget or extend its expiry")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("transition.identity.updateKeyLimits")
+            }
+
             // Read-only COUNT aggregation query lives alongside the Document
             // builders so it's discoverable next to the document operations,
             // but routes to its own query view (it neither signs nor

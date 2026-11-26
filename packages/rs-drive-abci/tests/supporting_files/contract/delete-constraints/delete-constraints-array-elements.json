@@ -1,0 +1,71 @@
+{
+  "$formatVersion": "1",
+  "id": "2oguNdqiNnwzo9AjXspmJj4TWCnfyEYpntynPv1QtArR",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "pinnedTag": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "tag": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{1,61}$",
+          "maxLength": 61,
+          "position": 0
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "indices": [
+        {
+          "name": "byTag",
+          "properties": [
+            {
+              "tag": "asc"
+            }
+          ],
+          "countable": "countable"
+        }
+      ],
+      "additionalProperties": false
+    },
+    "post": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,61}$",
+            "maxLength": 61
+          },
+          "maxItems": 4,
+          "position": 0
+        }
+      },
+      "deleteConstraints": {
+        "noPinnedTag": {
+          "equal": [
+            {
+              "countOf": [
+                "pinnedTag",
+                {
+                  "tag": {
+                    "in": "tags"
+                  }
+                }
+              ]
+            },
+            0
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

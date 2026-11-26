@@ -593,6 +593,38 @@ do {
 
 ---
 
+## Shielded balances pushed by Rust
+
+Rust reads each wallet's shielded balance state at points such as a first
+bind, a scan ending (also when it fails), a spend, a rebind, a Clear or
+unregister, and emits an update when what it read differs from what it last
+emitted. Rust counts an update as emitted once it has called the host
+callback; it does not know whether the host accepted it, and it does not
+resend an unchanged state. An update carries the latest state Rust read, not
+every transition: a spend that reserves notes and releases them again before
+Rust next reads produces no update. `manager.shieldedBalances[walletId]`
+holds the latest `ShieldedBalanceUpdate` the manager accepted for each
+wallet. Its `revision` identifies an emitted state, not a ledger change; the
+manager accepts an update only when its revision is higher than the held
+one's, and drops updates once shutdown has started. Hosts show this and hold no
+balance of their own; do not add up `PersistentShieldedNote` rows or
+snapshot accounts.
+
+- `update.ordinaryBalance` is what the wallet holds (its ordinary accounts;
+  identity accounts left out), or `nil` when it is not a known balance: the
+  state is `unbound` or `restoreIncomplete`, or the ready ledger is not
+  established yet (a wallet restored without history reads 0 before its
+  first scan).
+- `update.accountBalance(account)` is what one account can spend, or `nil`
+  when the account is not bound or Rust did not establish its amount. Rust
+  sends that decision per account (`ShieldedBalanceAccount.established`);
+  the account's `source` is for diagnostics only. A screen that spends from
+  one account shows this.
+- `unbound` means Rust read nothing for the wallet; it is not a known zero.
+
+Stopping shielded sync and Clear do not touch the dictionary (Clear's outcome
+arrives as an update). Shutdown empties it and drops any update still queued.
+
 ## Local shielded balance snapshots
 
 After configuring and binding shielded state, call
@@ -611,6 +643,82 @@ failed bind, and task cancellation discard obsolete delivery with
 Retain the last usable amount when a read fails. Starting shutdown rejects
 new reads, including caller-requested retries, and drains admitted reads before
 releasing the native handle.
+
+## Identity shielded accounts
+
+Each wallet-owned identity has a dedicated shielded account that Rust derives
+from the identity's index. After `bindShielded`, call
+`await manager.prepareShieldedIdentityAddress(walletId:identityId:resolver:)`
+to prove the identity's slot with the seed, bind its account and receive the
+account's default 43-byte raw Orchard address. The call publishes nothing and
+moves no funds, and repeating it is harmless. A contact request sent from that
+identity carries the sender's per-contact shielded address only once the
+identity was prepared in the session. Pass only ordinary accounts to
+`bindShielded`: Rust adds identity accounts itself and refuses one requested
+by number.
+
+The call throws `identityNotFound` when the wallet holds no such identity,
+`shieldedRecoveryCorrupted` or `shieldedRecoveryKeysRequired` when the bind
+meets unusable persisted shielded state, and `walletOperation` for every other
+failure, such as a wallet that was not bound or a seed that does not derive the
+identity's key.
+
+## Shielded tips
+
+A shielded tip pays a DashPay username at the shielded address its profile
+publishes. Rust decides everything; the screen only shows what it returns.
+
+1. Parse the typed amount with
+   `PlatformWalletManager.parseShieldedTipAmount(_:)`, which returns credits.
+   Show the parsed amount in the confirmation, not the typed text.
+2. Call `await manager.reviewShieldedTip(walletId:username:)`. Show the
+   recipient and the change: `.new` when no recipient was confirmed for the
+   name from this wallet before, `.unchanged`, or `.changed(previous:)` when
+   the name now pays another identity or address. A recipient is confirmed when
+   a send to it is admitted, so none of these says a tip was paid. `unresolved` means an earlier payment to the recipient
+   may still execute, so a send would be refused.
+3. Send with `await manager.sendShieldedTip(walletId:source:username:expectedRecipient:amount:memo:resolver:)`,
+   passing the review's `recipient` back unchanged. `source` is
+   `.identity(id)` to pay from an identity's own shielded account, or
+   `.account(n)` for an account by number. Rust resolves the name again and
+   refuses a recipient that changed, so the user reviews again.
+
+`shieldedSpendUnconfirmed` means the tip may have left the wallet and may still
+execute: never send it again; a shielded sync resolves it. Read
+`transactionBroadcastUnconfirmed` the same way.
+
+`shieldedTipPending` means this call sent nothing, because another tip is being
+sent or an earlier payment to the recipient is unresolved. It says nothing
+about that earlier payment, which may be this same tip submitted twice and may
+pay the recipient. A shielded sync resolves it as executed or as unable to
+execute, and the refusal ends either way, so do not send the tip again because
+the refusal ended or a new review says `unresolved == false`. Send it again
+only once the earlier payment is known to have failed: its shielded activity
+entry reads failed, not confirmed. The send returns no id for that entry, and
+entries with the same account, recipient, amount and memo can have different
+outcomes, so an entry that merely looks like the payment is not that evidence.
+When the exact attempt cannot be identified, treat its outcome as unknown and
+do not send again.
+
+A tip started from a saved contact passes the contact's identity id as
+`contactIdentityId` to both `reviewShieldedTip` and `sendShieldedTip`. When
+the contact's name now belongs to another identity, Rust refuses with
+`shieldedTipRecipientMismatch` and nothing is sent: the user picks the
+recipient again, and a tip to the name's new owner starts from the name. Pass
+`nil` when the user typed the name.
+
+Any error other than these means the call sent nothing.
+
+To show what an identity can tip from, call
+`await manager.shieldedIdentityBalance(walletId:identityId:)` and show its
+state instead of summing notes: `.unverified` until
+`prepareShieldedIdentityAddress` proves the identity's account in this session,
+`.unavailable(account:)` while the account's ledger is not established (not
+known, which is not zero), and `.available(account:credits:)`. The read is
+local and is given 100 ms as a whole. `shieldedBalanceBusy` means it did not
+finish in that time (the wallet's state or its shielded store was held), or a
+shielded Clear was running: it is the only error that means keep the last state
+and read again later. Any other error is a failure to show.
 
 ## Identity-funded shield recovery
 
@@ -680,6 +788,27 @@ Limits only ever go up, and at least one of the two must be given. The
 transition is signed by the identity's MASTER key or by a CRITICAL
 authentication key that carries no limits and no contract bounds. No identity
 revision is claimed.
+
+**Ask first what a raise would do:**
+```swift
+func previewIdentityKeyLimitsUpdate(
+    identityId: Identifier,
+    keyId: UInt32,
+    addBudget: UInt64? = nil,
+    expiresAt: UInt64? = nil,
+    signer: KeychainSigner
+) async throws -> IdentityKeyLimitsUpdatePreview
+```
+
+Signs and sends nothing. The result carries `signingKeyId`, the limits the key
+carries now (`currentTotalBudget` / `currentExpiresAt`) and the ones the update
+would set (`newTotalBudget` / `newExpiresAt`). With neither argument it answers
+whether the key can be raised at all; a refusal is thrown with Rust's reason as
+its `localizedDescription`. `updateIdentityKeyLimits` runs the same preview.
+`updateIdentityKeyLimits(asReviewed:signer:)` signs exactly
+what a preview showed, or throws before signing when the wallet's identity moved
+since. `refreshIdentity(identityId:)` folds a proved fetch of the identity into
+the wallet first, so a key added on another client is known.
 
 **Read what is left of a key's budget:**
 ```swift

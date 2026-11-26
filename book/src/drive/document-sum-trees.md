@@ -430,9 +430,15 @@ dash_sdk_document_sum(
     sum_property,                      // name of the integer property to sum
     where_json,                        // null or JSON [{field, operator, value}]
     order_by_json,                     // null or JSON [{field, direction}]
-    return_distinct_sums_in_range,     // bool
-    limit,                             // i64; -1 = server default, >= 0 = explicit cap
-) -> JSON {"sums": {"<hex-key>": <i64>, ...}}
+    group_by_json,                     // null or JSON ["<field>", ...]
+    limit,                             // i64; -1 = server default, > 0 = explicit cap
+) -> JSON {"grouped": <bool>, "sums": {"<hex-key>": "<signed decimal>", ...}}
+
+dash_sdk_document_average(
+    /* same parameters */
+) -> JSON {"grouped": <bool>,
+            "averages": {"<hex-key>": {"count": <u64>, "sum": "<signed decimal>",
+                                      "average": "<decimal, 4 places>" | null}, ...}}
 ```
 
-Single FFI entry covers every sum mode — the result is always `{"sums": {...}}` with hex-encoded keys. For total sums (no `where`/`In`, distinct flag off), the map carries a single entry with the empty-string key. `where_json` is the same JSON shape `dash_sdk_document_search` already accepts. The endpoint returns its result as a JSON-encoded C string allocated on the heap — caller frees it via the standard SDK string-free routine.
+One FFI entry per operation covers every mode. Without `group_by_json` (`"grouped": false`) the map carries a single entry with the empty-string key, the total folded over every matched branch; with it (`"grouped": true`), one entry per group, keyed by the hex-encoded group value. In a grouped result the empty key is a real group, the documents missing an optional range value, and never the total. Each sum is a base-10 string, not a JSON number: a type that keeps its sums in 128 bits can hold a sum past 64 bits, and most JSON readers round a number that large. `average` is `sum / count`, computed in Rust on integers (`drive_proof_verifier::average_to_decimal_string`) to four places and rounded half away from zero, or `null` when `count` is 0; callers display it and do not divide. For example, two listings at `9223372036854775807` give `{"grouped": false, "sums": {"": "18446744073709551614"}}` and `{"grouped": false, "averages": {"": {"count": 2, "sum": "18446744073709551614", "average": "9223372036854775807.0000"}}}`. The gRPC answer to a request without a proof still carries `sint64` sums. `where_json` is the same JSON shape `dash_sdk_document_search` already accepts. The endpoint returns its result as a JSON-encoded C string allocated on the heap — caller frees it via the standard SDK string-free routine.

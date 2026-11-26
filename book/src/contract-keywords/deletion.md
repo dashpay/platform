@@ -77,6 +77,63 @@ A preorder stays until the name registration that reveals it consumes it (the `p
 - Fixed on update: an update may neither set nor remove it (`DocumentTypeUpdateError`, 40212). Setting it would let documents leave state under the `permanentDocument` references made to a type that promised they never would; removing it would leave the references that consume its documents nothing to delete.
 - Before protocol version 14 the meta-schemas accept only a boolean, so a contract carrying the string is refused (`JsonSchemaError`, 10101).
 
+### A tombstone: deleted for good
+
+A consume also lets a type offer two ways out for a document: a plain delete, after which its unique values are free for anybody, and one that leaves a marker keeping them taken. DPNS v3 (protocol version 15) does this for names. Its `domain` sets `canBeDeleted: true`, and a second type, `tombstone`, consumes the domain it names:
+
+```json
+"tombstone": {
+  "type": "object",
+  "documentsMutable": false,
+  "canBeDeleted": false,
+  "transferable": 0,
+  "tradeMode": 0,
+  "indices": [
+    {
+      "name": "parentNameAndLabel",
+      "properties": [{ "normalizedParentDomainName": "asc" }, { "normalizedLabel": "asc" }],
+      "countable": "countable"
+    }
+  ],
+  "properties": {
+    "normalizedLabel": {
+      "type": "string",
+      "maxLength": 63,
+      "refersTo": {
+        "type": "deletableDocument",
+        "documentType": "domain",
+        "findBy": { "normalizedParentDomainName": "normalizedParentDomainName", "normalizedLabel": "." },
+        "where": { "$ownerId": "$ownerId" },
+        "consume": true
+      },
+      "position": 0
+    },
+    "normalizedParentDomainName": { "type": "string", "maxLength": 63, "position": 1 }
+  },
+  "required": ["$createdAt", "normalizedLabel", "normalizedParentDomainName"],
+  "additionalProperties": false
+}
+```
+
+and the `domain` refuses a create while a tombstone of its name exists, a [`countOf`](property-constraints.md#totals-of-other-documents) rule over the tombstone's countable index:
+
+```json
+"propertyConstraints": {
+  "nameIsNotTombstoned": {
+    "equal": [
+      { "countOf": ["tombstone", { "normalizedParentDomainName": "normalizedParentDomainName", "normalizedLabel": "normalizedLabel" }] },
+      0
+    ]
+  }
+}
+```
+
+- The tombstone is created by the identity holding the name, and only by it: the `where` entry holds the domain found to the creator's own (`ReferencedDocumentPropertyMismatchError` for anyone else's, `ReferencedEntityNotFoundError`, 40120, for a name that is not registered). The create and the delete of the domain are one write, as a batch carries one document transition.
+- A tombstone is immutable, can not be deleted and can not be transferred, so the name stays unregistrable for as long as the protocol keeps the document. The type's `description` says what may undo it: a tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO. Nothing does so at protocol version 15.
+- The rule is judged on every create of a `domain`, one that opens a [contest](contested.md) included, and no tombstone can appear while a contest runs, since there is no domain to consume until it ends.
+- A contested name can only be tombstoned. A value a contest awarded is never contested again (its vote's record stays), so a delete would leave it registrable by nobody without saying so; the DPNS `domain` delete trigger refuses it (`DataTriggerConditionError`). A consume is no delete transition and runs no trigger.
+- The tombstone's index is countable and not unique, as a unique index keeps no total. It holds one tombstone per name all the same: a second tombstone would need a second domain of the name to consume.
+
 ## `canBeErased`
 
 Whether the retained history of a deleted document may be removed, from protocol version 15.

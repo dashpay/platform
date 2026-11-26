@@ -1,0 +1,420 @@
+//! Verification of the state a state transition's keys held at the block before the one the
+//! node reports executed it.
+//!
+//! A node that was asked for a state transition's proof before the transition's block was
+//! finalized can answer a wait with two proofs of the same keys: the response's own proof, of
+//! the state one block left, and `state_before_block`, of the state the block before it left.
+//! Both are signed by the same chain's quorums, and the blocks follow one another, so together
+//! they show what that one block changed.
+//!
+//! What is verified is that pair of adjacent snapshots. That the transition is in the later
+//! block is what the node reports, not something these proofs show: neither proof covers the
+//! transition's hash or its result. A client that needs it proves the transaction's inclusion
+//! and result in that block separately, with the block proofs of `getBlocks`.
+//!
+//! The pair shows the change of the block, not of one transition: another transition of the
+//! same block that touched the same keys is part of it.
+
+use super::{proof_query_platform_version, verify_state_transition_proof_outcome};
+use crate::error::MapGroveDbError;
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::{ContextProvider, Error};
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version;
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, Proof, ResponseMetadata, WaitForStateTransitionResultResponse,
+};
+use dpp::serialization::PlatformDeserializableUntrusted;
+use dpp::state_transition::proof_result::{
+    StateTransitionProofOutcome, StateTransitionProofResult,
+};
+use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
+use drive::drive::Drive;
+
+/// The verified state of a state transition's keys at the block before the one the node reports
+/// executed the transition.
+#[derive(Debug)]
+pub struct StateBeforeBlock {
+    /// The state of the keys in that block: `VerifiedBalanceTransfer` for a credit transfer,
+    /// `VerifiedPartialIdentity` for a top-up or a credit withdrawal. A balance that did not exist
+    /// yet is `None`.
+    pub state: StateTransitionProofResult,
+    /// The block the state is of: the one right before the block the response's own proof is
+    /// of, on the same chain. The quorum signature covers its height, time, protocol version,
+    /// Core chain locked height and chain id; `epoch` is what the node reports, not signed.
+    pub metadata: ResponseMetadata,
+    /// The proof the state was verified with.
+    pub proof: Proof,
+}
+
+/// What a wait's response says about the state before the transition's block.
+#[derive(Debug)]
+pub enum StateBeforeBlockVerification {
+    /// The response carries no state before the block: the client did not ask for it, or the
+    /// node was not asked before the transition's block was finalized, or did not prove it.
+    NotInResponse,
+    /// The response carries a proof of the state before the block, and this kind of state
+    /// transition has no reader for the state before it
+    /// (`Drive::state_transition_prior_state_is_readable`). Nothing of that proof was verified.
+    NotReadable,
+    /// The state before the block, verified against the quorum signature of its own block.
+    Verified(Box<StateBeforeBlock>),
+}
+
+/// The verified answer of a wait for a state transition, with the state before the block the
+/// node reports executed it when the response carries it.
+#[derive(Debug)]
+pub struct StateTransitionResultAroundBlock {
+    /// The state the response's own proof holds, as [`FromProof`](super::FromProof) returns it
+    /// for [`StateTransitionProofOutcome`].
+    pub outcome: StateTransitionProofOutcome,
+    /// The block the response's own proof is of. When `state_before_block` is present, it is the
+    /// block the node reports executed the transition. The quorum signature covers its height,
+    /// time, protocol version, Core chain locked height and chain id; `epoch` is what the node
+    /// reports, not signed.
+    pub metadata: ResponseMetadata,
+    /// The state before that block.
+    pub state_before_block: StateBeforeBlockVerification,
+}
+
+/// Verifies a wait's response as [`FromProof`](super::FromProof) does for
+/// [`StateTransitionProofOutcome`], and the state before the response's block when the response
+/// carries it. The state transition is decoded once for both proofs.
+///
+/// Both proofs are verified against the quorum signature of their own block, the two blocks
+/// must be of the same chain, and they must follow one another. The transition's inclusion in
+/// the later block is not verified: see the module documentation.
+///
+/// The state before the block is read for credit transfers, top-ups and credit withdrawals of
+/// an identity. For the other kinds the answer is [`StateBeforeBlockVerification::NotReadable`],
+/// and the response's own proof is still verified and returned.
+///
+/// The network is the one `provider` answers quorum keys for: the two blocks are checked to be
+/// of one chain, and each signature against the key `provider` gives for its quorum, so a
+/// caller scopes `provider` to the network it means, as for [`FromProof`](super::FromProof).
+pub fn verify_state_transition_result_around_block<I, O>(
+    request: I,
+    response: O,
+    provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
+) -> Result<StateTransitionResultAroundBlock, Error>
+where
+    I: Into<BroadcastStateTransitionRequest>,
+    O: Into<WaitForStateTransitionResultResponse>,
+{
+    let request: BroadcastStateTransitionRequest = request.into();
+    let mut response: WaitForStateTransitionResultResponse = response.into();
+
+    // What can be refused without verifying a proof is refused first. The response's own proof
+    // is verified without the state before the block, so it is taken out rather than copied.
+    let before = match &mut response.version {
+        Some(Version::V0(v0)) => v0.state_before_block.take(),
+        None => return Err(Error::EmptyVersion),
+    };
+    let before = match before {
+        Some(before) => {
+            let proof = before.proof.ok_or(Error::NoProofInResult)?;
+            let metadata = before.metadata.ok_or(Error::EmptyResponseMetadata)?;
+            let block_metadata = response_metadata(&response)?;
+            if metadata.chain_id != block_metadata.chain_id {
+                return Err(Error::ResponseDecodeError {
+                    error: format!(
+                        "the state before the block is of chain {:?}, and the response's proof \
+                         of chain {:?}",
+                        metadata.chain_id, block_metadata.chain_id
+                    ),
+                });
+            }
+            if metadata.height.checked_add(1) != Some(block_metadata.height) {
+                return Err(Error::ResponseDecodeError {
+                    error: format!(
+                        "the state before the block is of block {}, which is not the block \
+                         before block {}, the one the response's proof is of",
+                        metadata.height, block_metadata.height
+                    ),
+                });
+            }
+            Some((proof, metadata))
+        }
+        None => None,
+    };
+
+    let state_transition = StateTransition::deserialize_from_bytes_untrusted(
+        &request.state_transition,
+    )
+    .map_err(|e| Error::ProtocolError {
+        error: e.to_string(),
+    })?;
+
+    // Decoded once, for the response's own proof and for the state before the block. The
+    // response's proof is lent, not copied: only its metadata is kept.
+    let (outcome, metadata, _) = verify_state_transition_proof_outcome(
+        &state_transition,
+        &response,
+        provider,
+        platform_version,
+    )?;
+    let metadata = metadata.clone();
+
+    let state_before_block = match before {
+        None => StateBeforeBlockVerification::NotInResponse,
+        Some((proof, before_metadata)) => verify_state_before_block(
+            &state_transition,
+            proof,
+            before_metadata,
+            provider,
+            platform_version,
+        )?,
+    };
+
+    Ok(StateTransitionResultAroundBlock {
+        outcome,
+        metadata,
+        state_before_block,
+    })
+}
+
+/// The metadata of the response's own proof.
+fn response_metadata(
+    response: &WaitForStateTransitionResultResponse,
+) -> Result<&ResponseMetadata, Error> {
+    match &response.version {
+        Some(Version::V0(v0)) => v0.metadata.as_ref().ok_or(Error::EmptyResponseMetadata),
+        None => Err(Error::EmptyVersion),
+    }
+}
+
+/// Verifies the proof of the state before the response's block against the signature of the
+/// block it names. The caller has checked that block is the one before the response's, on the
+/// same chain.
+fn verify_state_before_block(
+    state_transition: &StateTransition,
+    proof: Proof,
+    metadata: ResponseMetadata,
+    provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
+) -> Result<StateBeforeBlockVerification, Error> {
+    if !Drive::state_transition_prior_state_is_readable(state_transition, platform_version)
+        .map_drive_error(&proof, &metadata)?
+    {
+        return Ok(StateBeforeBlockVerification::NotReadable);
+    }
+
+    // The same refusal as for the response's own proof: a producer version this build does not
+    // have is refused unless it is newer than the newest one, which is read with the newest
+    // tables. The proof of the state before the block needs no producer's tables: it reads an
+    // identity's balance and revision at paths no protocol version has moved. That is what
+    // makes it sound, not the signed root alone: the balance query accepts an absence proof,
+    // so a balance moved elsewhere would prove absent at its old path under a genuine root.
+    // Moving either path needs a client that reads the new one first.
+    proof_query_platform_version(&metadata)?;
+
+    let Some((root_hash, state)) = Drive::verify_state_transition_prior_state_with_proof(
+        state_transition,
+        supported_grovedb_proof_bytes(&proof)?,
+        platform_version,
+    )
+    .map_drive_error(&proof, &metadata)?
+    else {
+        return Ok(StateBeforeBlockVerification::NotReadable);
+    };
+
+    verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+
+    Ok(StateBeforeBlockVerification::Verified(Box::new(
+        StateBeforeBlock {
+            state,
+            metadata,
+            proof,
+        },
+    )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as V0Result;
+    use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
+        StateBeforeBlock as StateBeforeBlockInResponse, WaitForStateTransitionResultResponseV0,
+    };
+    use dash_context_provider::ContextProviderError;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use dpp::prelude::{CoreBlockHeight, Identifier};
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use std::sync::Arc;
+
+    /// A provider no test here may reach: each one is refused, or answered, before a proof is
+    /// verified.
+    struct UnreachableContextProvider;
+
+    impl ContextProvider for UnreachableContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            panic!("the context provider must not be reached")
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            panic!("the context provider must not be reached")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            panic!("the context provider must not be reached")
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            panic!("the context provider must not be reached")
+        }
+    }
+
+    fn credit_transfer() -> BroadcastStateTransitionRequest {
+        let state_transition: StateTransition =
+            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default())
+                .into();
+        BroadcastStateTransitionRequest {
+            state_transition: state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize"),
+        }
+    }
+
+    fn metadata_at(height: u64) -> ResponseMetadata {
+        ResponseMetadata {
+            height,
+            protocol_version: PlatformVersion::latest().protocol_version,
+            ..Default::default()
+        }
+    }
+
+    fn response(
+        height: u64,
+        state_before_block: Option<StateBeforeBlockInResponse>,
+    ) -> WaitForStateTransitionResultResponse {
+        WaitForStateTransitionResultResponse {
+            version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(metadata_at(height)),
+                state_before_block,
+            })),
+        }
+    }
+
+    fn state_before(height: u64) -> StateBeforeBlockInResponse {
+        StateBeforeBlockInResponse {
+            proof: Some(Proof::default()),
+            metadata: Some(metadata_at(height)),
+        }
+    }
+
+    fn verify(
+        request: BroadcastStateTransitionRequest,
+        response: WaitForStateTransitionResultResponse,
+    ) -> Result<StateTransitionResultAroundBlock, Error> {
+        verify_state_transition_result_around_block(
+            request,
+            response,
+            &UnreachableContextProvider,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn should_refuse_a_state_before_block_without_a_proof_or_metadata() {
+        let mut no_proof = state_before(9);
+        no_proof.proof = None;
+        let mut no_metadata = state_before(9);
+        no_metadata.metadata = None;
+
+        assert!(matches!(
+            verify(credit_transfer(), response(10, Some(no_proof))),
+            Err(Error::NoProofInResult)
+        ));
+        assert!(matches!(
+            verify(credit_transfer(), response(10, Some(no_metadata))),
+            Err(Error::EmptyResponseMetadata)
+        ));
+    }
+
+    #[test]
+    fn should_refuse_a_state_before_block_that_is_not_of_the_block_before() {
+        // The same block, the block two before, a later block, and a height that has no next
+        for before_height in [10, 8, 11, u64::MAX] {
+            let result = verify(
+                credit_transfer(),
+                response(10, Some(state_before(before_height))),
+            );
+
+            assert!(
+                matches!(result, Err(Error::ResponseDecodeError { .. })),
+                "block {before_height}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_response_without_metadata_when_it_carries_a_state_before_block() {
+        let mut response = response(10, Some(state_before(9)));
+        let Some(Version::V0(v0)) = &mut response.version else {
+            unreachable!()
+        };
+        v0.metadata = None;
+
+        assert!(matches!(
+            verify(credit_transfer(), response),
+            Err(Error::EmptyResponseMetadata)
+        ));
+    }
+
+    #[test]
+    fn should_refuse_a_state_before_block_of_another_chain() {
+        let mut other_chain = state_before(9);
+        other_chain.metadata.as_mut().unwrap().chain_id = "another-chain".to_string();
+
+        let result = verify(credit_transfer(), response(10, Some(other_chain)));
+
+        assert!(
+            matches!(result, Err(Error::ResponseDecodeError { ref error }) if error.contains("chain")),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn should_not_read_the_state_before_block_of_a_kind_without_a_reader() {
+        // An identity create's proof is checked against the identity it creates, which the
+        // state before its block does not hold
+        let state_transition: StateTransition =
+            IdentityCreateTransition::V0(IdentityCreateTransitionV0 {
+                identity_id: Identifier::from([7; 32]),
+                ..Default::default()
+            })
+            .into();
+
+        let verification = verify_state_before_block(
+            &state_transition,
+            Proof::default(),
+            metadata_at(9),
+            &UnreachableContextProvider,
+            PlatformVersion::latest(),
+        )
+        .expect("expected an answer without verifying a proof");
+
+        assert!(matches!(
+            verification,
+            StateBeforeBlockVerification::NotReadable
+        ));
+    }
+}

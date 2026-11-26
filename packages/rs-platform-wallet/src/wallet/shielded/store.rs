@@ -151,7 +151,9 @@ pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>)
 /// byte-identical transition is fund-safe (identical nullifiers cannot be
 /// spent twice) and converts silence into a confirmation (next scan sees the
 /// nullifiers spent); a spend that never lands keeps its notes held until its
-/// anchor is proven pruned.
+/// anchor is proven pruned, or until the note scan reads another transition's
+/// action spending one of them, which the saved transition's own actions tell
+/// apart (`sync::SavedSpendInput`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRedrive {
     /// Activity-entry id of the spend (sha256 of visible output cmxs);
@@ -505,6 +507,17 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
 
+    /// Keep, durably, that a credit pool scan proven at `height` is about to
+    /// mark notes spent, before it does: marking a fee note spent drops the
+    /// saved record of the spend it paid for, and the token note sweep must
+    /// not judge that spend's token notes from a token pool scan below the
+    /// height that dropped it, even after a restart. A store without token
+    /// pool notes keeps nothing.
+    fn note_spend_scan_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let _ = height;
+        Ok(())
+    }
+
     /// Reserve `id`'s note with `nullifier` against an in-flight
     /// spend so concurrent callers can't pick the same note.
     /// Returns `true` if the nullifier was newly added to the
@@ -816,6 +829,12 @@ pub trait ShieldedStore: Send + Sync + 'static {
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error>;
 
     /// Create a tree checkpoint at the given identifier.
+    ///
+    /// An identifier not above the current maximum is a no-op that returns
+    /// `Ok(())`: the latest checkpoint stays where it is. Sync calls this on
+    /// every pass with the tree size as the identifier, including passes
+    /// that appended nothing, so a store must not fail or add a checkpoint
+    /// for a repeated identifier.
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error>;
 
     /// Return the current tree root (Sinsemilla anchor, 32 bytes).
@@ -823,10 +842,23 @@ pub trait ShieldedStore: Send + Sync + 'static {
 
     /// Generate a Merkle authentication path for `position` as of the
     /// checkpoint at `depth` (0 = current tree state, 1 = the previous
-    /// checkpoint, and so on). Returns `Ok(None)` when no witness is
-    /// available at that depth — the position is unmarked/pruned, the
-    /// requested checkpoint depth doesn't exist, or the position was
-    /// appended after that checkpoint.
+    /// checkpoint, and so on). Returns `Ok(None)` only when the tree holds
+    /// the position and no checkpoint at that depth covers it: the requested
+    /// checkpoint depth doesn't exist, or the position was appended after
+    /// that checkpoint. A later checkpoint covers it, so this is the case a
+    /// sync resolves, and the spend path reports it as retryable
+    /// (`ShieldedMerkleWitnessUnavailable`).
+    ///
+    /// Every other failure is `Err`: the store could not read, the tree does
+    /// not hold the position at all, or the tree cannot produce a path for a
+    /// position a checkpoint covers (unmarked or pruned). Sync marks every
+    /// position it appends, so the last means a damaged tree or one an older
+    /// build wrote. No sync repairs any of these.
+    ///
+    /// Implementor migration: this contract used to allow `Ok(None)` for an
+    /// unmarked or pruned position. A store that still returns `Ok(None)`
+    /// there makes the spend path tell the user to wait for a sync that will
+    /// not help; return `Err` instead.
     ///
     /// Building a spend against an older-but-recorded checkpoint is how the
     /// wallet keeps its anchor consistent with a root Platform actually
@@ -840,8 +872,9 @@ pub trait ShieldedStore: Send + Sync + 'static {
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
 
     /// Generate a Merkle authentication path for `position` against the
-    /// current tree state. Returns `Ok(None)` if no witness is available
-    /// (position not marked, or pruned).
+    /// current tree state. Returns `Ok(None)` only when the tree holds the
+    /// position and no checkpoint covers it yet; see
+    /// [`Self::witness_at_depth`] for the full contract.
     ///
     /// Delegates to [`Self::witness_at_depth`] at depth 0.
     fn witness(
@@ -1352,6 +1385,12 @@ impl InMemoryShieldedStore {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// The checkpoint identifiers taken so far, oldest first.
+    #[cfg(test)]
+    pub(crate) fn checkpoint_ids(&self) -> &[u32] {
+        &self.checkpoints
+    }
 }
 
 impl ShieldedStore for InMemoryShieldedStore {
@@ -1729,6 +1768,14 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
+        // An identifier not above the latest is a no-op (the trait contract).
+        if self
+            .checkpoints
+            .last()
+            .is_some_and(|&last| checkpoint_id <= last)
+        {
+            return Ok(());
+        }
         self.checkpoints.push(checkpoint_id);
         Ok(())
     }

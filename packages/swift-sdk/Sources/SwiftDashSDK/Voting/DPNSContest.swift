@@ -19,14 +19,19 @@ public enum DPNSVotePoll {
   /// First index value — the parent domain every DPNS username sits under.
   public static let parentDomain = "dash"
 
-  /// Index values addressing one label's poll: `["dash", <normalized label>]`.
+  /// Index values addressing one label's poll: `["dash", <normalized label>]`,
+  /// each encoded with ``ContestedIndexValue/text(_:)``.
+  ///
+  /// The encoding keeps a normalized label that starts with `0x` (`oxford`
+  /// normalizes to `0xf0rd`) from being read as hex bytes by the FFI; such a
+  /// label is sent as `\0xf0rd`. Other labels are sent unchanged.
   ///
   /// - Important: `normalizedLabel` must already be homograph-normalized
   ///   (`alice` → `a11ce`). Platform indexes polls under the normalized form
   ///   only, so passing a raw label silently addresses a poll that does not
   ///   exist. Use ``SDK/dpnsNormalizeLabel(_:)``.
   public static func indexValues(normalizedLabel: String) -> [String] {
-    [parentDomain, normalizedLabel]
+    [ContestedIndexValue.text(parentDomain), ContestedIndexValue.text(normalizedLabel)]
   }
 }
 

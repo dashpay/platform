@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
 #[cfg(feature = "validation")]
@@ -8,12 +8,14 @@ use crate::prelude::DataContract;
 
 use crate::ProtocolError;
 
+use crate::document::id_and_revision_from_bytes::read_document_header_prefix;
 use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDeserializationMethodsV0;
 use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use integer_encoding::VarIntReader;
+use platform_value::Identifier;
 
 use platform_version::version::FeatureVersion;
 
@@ -107,6 +109,95 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, DataContractError> {
         DocumentV0::from_bytes_v3(serialized_document, document_type, platform_version)
+    }
+}
+
+impl DocumentV0 {
+    /// Reads only the document `$id` from the header of a serialized document
+    /// (formats 0 through 3) without decoding any document properties.
+    pub fn id_from_bytes(serialized_document: &[u8]) -> Result<Identifier, ProtocolError> {
+        let (_, id, _) =
+            read_document_header_prefix(serialized_document, "Document::id_from_bytes")?;
+        Ok(id)
+    }
+
+    /// Reads a serialized document while enforcing `budget` on decoded property
+    /// values. Used by client-side proof verification and private-document
+    /// payload decoding so zero-width typed-array elements on protocol-version-14
+    /// contracts cannot expand a small byte slice into unbounded memory.
+    pub fn from_bytes_with_budget(
+        mut serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let serialized_version = serialized_document.read_varint().map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading revision from serialized document for revision".to_string(),
+            ))
+        })?;
+        match serialized_version {
+            0 => {
+                let saved_budget = *budget;
+                match DocumentV0::from_bytes_v0_with_budget(
+                    serialized_document,
+                    document_type,
+                    Some(budget),
+                    platform_version,
+                ) {
+                    Ok(document) => Ok(document),
+                    // Budget exhaustion is terminal: retrying format 1 could parse
+                    // legacy format-0 integer bytes at narrower widths and return an
+                    // altered document instead of a budget error.
+                    Err(first_err @ DataContractError::DecodedValueBudgetExceeded(_)) => {
+                        Err(ProtocolError::DataContractError(first_err))
+                    }
+                    Err(first_err) => {
+                        *budget = saved_budget;
+                        match DocumentV0::from_bytes_v1_with_budget(
+                            serialized_document,
+                            document_type,
+                            Some(budget),
+                            platform_version,
+                        ) {
+                            Ok(document_from_version_1_deserialization) => {
+                                Ok(document_from_version_1_deserialization)
+                            }
+                            Err(budget_err @ DataContractError::DecodedValueBudgetExceeded(_)) => {
+                                Err(ProtocolError::DataContractError(budget_err))
+                            }
+                            Err(_) => Err(ProtocolError::DataContractError(first_err)),
+                        }
+                    }
+                }
+            }
+            1 => DocumentV0::from_bytes_v1_with_budget(
+                serialized_document,
+                document_type,
+                Some(budget),
+                platform_version,
+            )
+            .map_err(ProtocolError::DataContractError),
+            2 => DocumentV0::from_bytes_v2_with_budget(
+                serialized_document,
+                document_type,
+                Some(budget),
+                platform_version,
+            )
+            .map_err(ProtocolError::DataContractError),
+            3 => DocumentV0::from_bytes_v3_with_budget(
+                serialized_document,
+                document_type,
+                Some(budget),
+                platform_version,
+            )
+            .map_err(ProtocolError::DataContractError),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::from_bytes (deserialization)".to_string(),
+                known_versions: vec![0, 1, 2, 3],
+                received: version,
+            }),
+        }
     }
 }
 

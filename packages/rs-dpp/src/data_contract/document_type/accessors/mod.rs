@@ -1002,6 +1002,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn uses_big_sums(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.uses_big_sums(),
+        }
+    }
+
     fn index_only(&self) -> bool {
         match self {
             DocumentType::V0(_) => false,
@@ -1284,6 +1292,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn uses_big_sums(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.uses_big_sums(),
+        }
+    }
+
     fn index_only(&self) -> bool {
         match self {
             DocumentTypeRef::V0(_) => false,
@@ -1529,6 +1545,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.range_summable(),
+        }
+    }
+
+    fn uses_big_sums(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.uses_big_sums(),
         }
     }
 

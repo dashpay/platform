@@ -3,6 +3,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPMethodVersions {
@@ -27,4 +28,18 @@ pub struct DPPMethodVersions {
     /// `credit_pool_bundle_binding_should_agree_with_the_selected_shield_verifiers_at_every_protocol_version`
     /// holds them and this field together.
     pub credit_pool_bundle_binding: OptionalFeatureVersion,
+    /// What the token bundle of `TokenShieldedTransferWithShieldedFee`,
+    /// `TokenUnshieldWithShieldedFee` and `TokenPurchaseFromShieldedPool` binds into its Orchard
+    /// sighash after its own layout. `None` on versions where it binds no fee bundle: only its
+    /// type, its token and the transition's transparent fields, which is what
+    /// `validate_shielded_proof` v1 rebuilds. `Some(0)`: it also binds the Orchard commitment of
+    /// the transition's fee bundle, which binds a digest of the token bundle's actions in turn,
+    /// so neither bundle can be paired with a bundle of different effects.
+    ///
+    /// The client builders read this field through
+    /// `dpp::shielded::token_pool_paid_fee_binding_extra_sighash_data`; `validate_shielded_proof`
+    /// v2 verifies version 0 as a constant of its generation, and
+    /// `token_pool_paid_fee_binding_should_agree_with_the_selected_verifier_at_every_protocol_version`
+    /// holds the field and the selected verifier together.
+    pub token_pool_paid_fee_binding: OptionalFeatureVersion,
 }

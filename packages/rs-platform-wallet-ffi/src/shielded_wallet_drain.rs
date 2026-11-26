@@ -8,6 +8,12 @@ use platform_wallet::wallet::asset_lock::{
 use platform_wallet::wallet::shielded::wallet_drain::{
     WalletDrainPreview, WalletDrainPreviewStatus,
 };
+use platform_wallet::wallet::shielded::wallet_drain_recovery::{
+    wallet_drain_attempt_finished, wallet_drain_lock_listing, wallet_drain_marker_decision,
+    wallet_drain_preview_allows_start, wallet_drain_recovery_action, wallet_drain_start_offered,
+    wallet_drain_status_during_host_call, WalletDrainLockListing, WalletDrainMarkerDecision,
+    WalletDrainRecoveryAction, WalletDrainStatusRead,
+};
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 
@@ -15,8 +21,10 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::Handle;
+use crate::persistence::{funding_type_from_u8, status_from_u8};
 use crate::runtime::block_on_worker;
 use crate::shielded_send::{catch_funding_panic, resolve_wallet_and_coordinator};
+use crate::types::FFINetwork;
 
 use std::sync::Arc;
 
@@ -159,6 +167,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_wallet_drain_preview(
 
 /// Drain the permitted transparent accounts into one shielded recipient.
 ///
+/// This export does not ask [`platform_wallet_wallet_drain_start_offered`]:
+/// a host that starts a new drain asks it first and does not call this where
+/// it answers `false` (mainnet, until dashpay/platform#5580).
+///
 /// The caller persists its UUID before calling. Reusing a UUID must never
 /// create another lock. The result's error and `out_outcome` are complementary:
 /// a typed error does not erase the outpoint or authorize another fresh drain.
@@ -233,7 +245,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                         },
                         vec![(recipient, None)],
                         &signer,
-                        &CachedOrchardProver::new(),
+                        &CachedOrchardProver,
                         None,
                         0,
                         None,
@@ -292,6 +304,248 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_wallet_drain_status(
             Err(error) => error.into(),
         }
     })
+}
+
+// ── Recovery rules ────────────────────────────────────────────────────
+//
+// Pure projections of `platform_wallet::wallet::shielded::wallet_drain_recovery`,
+// which holds the rules. A host gathers the facts it owns and does what these
+// return; none of them reads a wallet or touches the network.
+
+/// Decode the `state` byte of a [`WalletDrainOutcomeFFI`].
+fn operation_state_from_u8(state: u8) -> Result<AssetLockOperationState, PlatformWalletFFIResult> {
+    match state {
+        0 => Ok(AssetLockOperationState::NotSent),
+        1 => Ok(AssetLockOperationState::Pending),
+        2 => Ok(AssetLockOperationState::Completed),
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("unknown wallet drain outcome state {other}"),
+        )),
+    }
+}
+
+/// One status read as a host passes it: `read_succeeded` false is a failed
+/// read, and `reported_state` is then ignored.
+fn status_read_from_ffi(
+    read_succeeded: bool,
+    reported_state: u8,
+) -> Result<WalletDrainStatusRead, PlatformWalletFFIResult> {
+    if read_succeeded {
+        operation_state_from_u8(reported_state).map(WalletDrainStatusRead::Reported)
+    } else {
+        Ok(WalletDrainStatusRead::Failed)
+    }
+}
+
+/// Whether a host keeps the operation id it stored, after one status read:
+/// `wallet_drain_marker_decision`.
+///
+/// `read_succeeded` says whether `platform_wallet_manager_shielded_wallet_drain_status`
+/// returned success; `reported_state` is then its `state` and is ignored
+/// otherwise. `attempt_overlapped_read` says whether one of the host's attempts
+/// for this operation id ran or started while that read was in progress.
+/// `out_keep` receives `true` to keep the stored id and `false` to remove it;
+/// it is `true` whenever the call fails.
+///
+/// # Safety
+/// `out_keep` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_marker_decision(
+    read_succeeded: bool,
+    reported_state: u8,
+    attempt_overlapped_read: bool,
+    out_keep: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_keep);
+    *out_keep = true;
+    let read = match status_read_from_ffi(read_succeeded, reported_state) {
+        Ok(read) => read,
+        Err(error) => return error,
+    };
+    *out_keep = match wallet_drain_marker_decision(read, attempt_overlapped_read) {
+        WalletDrainMarkerDecision::Keep => true,
+        WalletDrainMarkerDecision::Forget => false,
+    };
+    PlatformWalletFFIResult::ok()
+}
+
+/// What a host offers for a stored operation id: `wallet_drain_recovery_action`.
+///
+/// `attempt_in_flight` says whether one of the host's attempts for the
+/// operation is running. `has_read` is false before any status read has
+/// finished; `read_succeeded` and `reported_state` then describe the last one
+/// as in [`platform_wallet_wallet_drain_marker_decision`], and
+/// `read_named_asset_lock` is its `has_out_point`. `out_action` receives
+/// 0 = in progress, 1 = resume the named outpoint, 2 = check again (read the
+/// status, send nothing); it is 2 whenever the call fails.
+///
+/// # Safety
+/// `out_action` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_recovery_action(
+    attempt_in_flight: bool,
+    has_read: bool,
+    read_succeeded: bool,
+    reported_state: u8,
+    read_named_asset_lock: bool,
+    out_action: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_action);
+    *out_action = 2;
+    let last_read = if has_read {
+        match status_read_from_ffi(read_succeeded, reported_state) {
+            Ok(read) => Some(read),
+            Err(error) => return error,
+        }
+    } else {
+        None
+    };
+    *out_action =
+        match wallet_drain_recovery_action(attempt_in_flight, last_read, read_named_asset_lock) {
+            WalletDrainRecoveryAction::InProgress => 0,
+            WalletDrainRecoveryAction::Resume => 1,
+            WalletDrainRecoveryAction::CheckAgain => 2,
+        };
+    PlatformWalletFFIResult::ok()
+}
+
+/// Whether a returned drain attempt needs nothing more, from the `state` of
+/// its [`WalletDrainOutcomeFFI`]: `wallet_drain_attempt_finished`. An attempt
+/// that is not finished is shown as failed, with the error its call returned.
+/// `out_finished` is `false` whenever the call fails.
+///
+/// # Safety
+/// `out_finished` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_attempt_finished(
+    state: u8,
+    out_finished: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_finished);
+    *out_finished = false;
+    match operation_state_from_u8(state) {
+        Ok(state) => {
+            *out_finished = wallet_drain_attempt_finished(state);
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => error,
+    }
+}
+
+/// Whether a host may start a drain after a preview with this
+/// [`WalletDrainPreviewFFI::status`]: `wallet_drain_preview_allows_start`.
+/// `out_allowed` is `false` whenever the call fails.
+///
+/// # Safety
+/// `out_allowed` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_preview_allows_start(
+    preview_status: u8,
+    out_allowed: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_allowed);
+    *out_allowed = false;
+    let status = match preview_status {
+        0 => WalletDrainPreviewStatus::Ready,
+        1 => WalletDrainPreviewStatus::InsufficientFunds,
+        2 => WalletDrainPreviewStatus::InputLimitMayBeExceeded,
+        other => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("unknown wallet drain preview status {other}"),
+            )
+        }
+    };
+    *out_allowed = wallet_drain_preview_allows_start(status);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Whether a host offers to start a new drain on `network`:
+/// `wallet_drain_start_offered`. Recovering an existing drain is offered on
+/// every network and does not ask this. `false` if the rule panics.
+#[no_mangle]
+pub extern "C" fn platform_wallet_wallet_drain_start_offered(network: FFINetwork) -> bool {
+    std::panic::catch_unwind(|| wallet_drain_start_offered(network.into())).unwrap_or(false)
+}
+
+/// The state a host reports for an operation while one of its own drain
+/// calls for the same id may not have reached the wallet yet:
+/// `wallet_drain_status_during_host_call`.
+///
+/// `reported_state` is the `state` a successful
+/// `platform_wallet_manager_shielded_wallet_drain_status` returned, and
+/// `host_call_active` says whether the host has a
+/// `platform_wallet_manager_shielded_fund_from_wallet_drain` call for the
+/// same operation id that has not returned. `out_state` receives the state to
+/// report, in the same encoding; it is 1 (pending) whenever the call fails.
+///
+/// # Safety
+/// `out_state` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_status_during_host_call(
+    reported_state: u8,
+    host_call_active: bool,
+    out_state: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_state);
+    *out_state = 1;
+    match operation_state_from_u8(reported_state) {
+        Ok(reported) => {
+            *out_state = match wallet_drain_status_during_host_call(reported, host_call_active) {
+                AssetLockOperationState::NotSent => 0,
+                AssetLockOperationState::Pending => 1,
+                AssetLockOperationState::Completed => 2,
+            };
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => error,
+    }
+}
+
+/// Where a host lists a tracked asset lock, as far as drains are concerned:
+/// `wallet_drain_lock_listing`.
+///
+/// `funding_type` and `status` are the row's `AssetLockEntryFFI` bytes.
+/// `has_operation_id` says whether the row carries an operation id, and
+/// `host_holds_stored_id` whether the host holds a stored id equal to it.
+/// `out_listing` receives 0 = not decided here (the host's own rule for
+/// resumable locks applies), 1 = hidden (the stored operation's row owns it),
+/// 2 = offered with the resumable locks; it is 0 whenever the call fails.
+///
+/// # Safety
+/// `out_listing` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_lock_listing(
+    funding_type: u8,
+    status: u8,
+    has_operation_id: bool,
+    host_holds_stored_id: bool,
+    out_listing: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_listing);
+    *out_listing = 0;
+    let (funding_type, status) = match (funding_type_from_u8(funding_type), status_from_u8(status))
+    {
+        (Ok(funding_type), Ok(status)) => (funding_type, status),
+        (Err(error), _) | (_, Err(error)) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                error.to_string(),
+            )
+        }
+    };
+    *out_listing = match wallet_drain_lock_listing(
+        funding_type,
+        status,
+        has_operation_id,
+        host_holds_stored_id,
+    ) {
+        WalletDrainLockListing::Unaffected => 0,
+        WalletDrainLockListing::Hidden => 1,
+        WalletDrainLockListing::Offered => 2,
+    };
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]
@@ -379,6 +633,133 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
         );
         assert_eq!(result.code as i32, 60);
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_project_the_recovery_rules_and_fail_closed_on_an_unknown_state() {
+        let mut keep = false;
+        let mut result =
+            unsafe { platform_wallet_wallet_drain_marker_decision(true, 2, true, &mut keep) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!keep, "completed: forget");
+        result = unsafe { platform_wallet_wallet_drain_marker_decision(true, 0, true, &mut keep) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(keep, "not sent, overlapped by an attempt: keep");
+        // A failed read ignores the state byte, even an undeclared one.
+        keep = false;
+        result =
+            unsafe { platform_wallet_wallet_drain_marker_decision(false, 9, false, &mut keep) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(keep);
+        keep = false;
+        result = unsafe { platform_wallet_wallet_drain_marker_decision(true, 9, false, &mut keep) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert!(keep, "an undecodable state keeps the stored id");
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        let mut action = 9;
+        result = unsafe {
+            platform_wallet_wallet_drain_recovery_action(false, true, true, 1, true, &mut action)
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(action, 1, "pending with a named lock: resume");
+        result = unsafe {
+            platform_wallet_wallet_drain_recovery_action(false, false, true, 1, true, &mut action)
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(action, 2, "no read yet: check again");
+        result = unsafe {
+            platform_wallet_wallet_drain_recovery_action(true, false, false, 9, false, &mut action)
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(action, 0, "a running attempt wins");
+        result = unsafe {
+            platform_wallet_wallet_drain_recovery_action(false, true, true, 9, true, &mut action)
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(action, 2, "an undecodable state never offers a spend");
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        let mut state = 9;
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(0, true, &mut state) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(state, 1, "not sent while a host call is active: pending");
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(0, false, &mut state) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(state, 0);
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(2, true, &mut state) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(state, 2, "the wallet's own answer stands");
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(9, true, &mut state) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(state, 1, "an undecodable state is reported as pending");
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        let mut finished = true;
+        result = unsafe { platform_wallet_wallet_drain_attempt_finished(1, &mut finished) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!finished);
+        result = unsafe { platform_wallet_wallet_drain_attempt_finished(2, &mut finished) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(finished);
+
+        let mut allowed = true;
+        result = unsafe { platform_wallet_wallet_drain_preview_allows_start(1, &mut allowed) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!allowed, "insufficient funds");
+        result = unsafe { platform_wallet_wallet_drain_preview_allows_start(2, &mut allowed) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(allowed, "the input limit warning does not refuse");
+        result = unsafe { platform_wallet_wallet_drain_preview_allows_start(3, &mut allowed) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert!(!allowed);
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        assert!(!platform_wallet_wallet_drain_start_offered(
+            FFINetwork::Mainnet
+        ));
+        assert!(platform_wallet_wallet_drain_start_offered(
+            FFINetwork::Testnet
+        ));
+
+        let mut listing = 9;
+        // Shielded top-up (5), Built (0), with an id the host holds no marker for.
+        result =
+            unsafe { platform_wallet_wallet_drain_lock_listing(5, 0, true, false, &mut listing) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(listing, 2);
+        result =
+            unsafe { platform_wallet_wallet_drain_lock_listing(5, 1, true, true, &mut listing) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(listing, 1);
+        result =
+            unsafe { platform_wallet_wallet_drain_lock_listing(5, 0, false, false, &mut listing) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(listing, 0);
+        result =
+            unsafe { platform_wallet_wallet_drain_lock_listing(5, 99, true, true, &mut listing) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(listing, 0);
         unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
     }
 }

@@ -4,7 +4,7 @@ import XCTest
 @testable import SwiftDashSDK
 
 /// The Swift side of topping up an identity this wallet does not manage:
-/// code 81, the built-outpoint report of the external top-up, and the
+/// code 89, the built-outpoint report of the external top-up, and the
 /// argument checks of the three wrappers. The wrappers run against an
 /// unknown wallet handle, so the native side answers before building
 /// anything.
@@ -21,10 +21,10 @@ final class IdentityTopUpRecipientTests: XCTestCase {
         var all: [AssetLockBuiltOutPoint] { lock.withLock { values } }
     }
 
-    // MARK: - Code 81
+    // MARK: - Code 89
 
     func testShouldMapCode81ToAssetLockRecipientUnknown() {
-        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockRecipientUnknown.rawValue, 81)
+        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockRecipientUnknown.rawValue, 89)
         XCTAssertEqual(
             PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN),
             .errorAssetLockRecipientUnknown)
@@ -40,10 +40,10 @@ final class IdentityTopUpRecipientTests: XCTestCase {
         }
     }
 
-    // MARK: - Code 82
+    // MARK: - Code 90
 
     func testShouldMapCode82ToAssetLockConsumptionUnknown() {
-        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockConsumptionUnknown.rawValue, 82)
+        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockConsumptionUnknown.rawValue, 90)
         XCTAssertEqual(
             PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN),
             .errorAssetLockConsumptionUnknown)

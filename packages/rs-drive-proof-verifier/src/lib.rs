@@ -73,9 +73,10 @@ pub use drive::query::{RankedEntry, RankedEntryValue, RankedPage, RANKED_AVG_SCA
 /// recovers from grovedb PR 670's `AggregateCountAndSumOnRange`
 /// primitive. Client computes `avg = sum / count`.
 pub use proof::document_average::{
-    verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
-    verify_distinct_count_and_sum_proof, verify_point_lookup_count_and_sum_proof,
-    verify_primary_key_count_sum_tree_proof, DocumentAverage,
+    average_to_decimal_string, verify_aggregate_count_and_sum_proof,
+    verify_carrier_aggregate_count_and_sum_proof, verify_distinct_count_and_sum_proof,
+    verify_point_lookup_count_and_sum_proof, verify_primary_key_count_sum_tree_proof,
+    DocumentAverage,
 };
 pub use proof::document_split_average::{DocumentSplitAverages, SplitAverageEntry};
 /// Verified sum result types. Sum-side analogs of `DocumentCount` /
@@ -91,6 +92,10 @@ pub use proof::document_sum::{
 // the per-shape verifier helpers above all return these types.
 pub use drive::query::drive_document_average_query::AverageEntry;
 pub use drive::query::SumEntry;
+pub use proof::state_before_block::{
+    verify_state_transition_result_around_block, StateBeforeBlock, StateBeforeBlockVerification,
+    StateTransitionResultAroundBlock,
+};
 pub use proof::{FromProof, Length};
 
 // Re-export context provider types from dash-context-provider

@@ -116,12 +116,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| TrackedResumeMetadata {
-                funding_type: lock.funding_type,
-                identity_index: lock.identity_index,
-                status: lock.status.clone(),
-                identity_recipient: lock.identity_recipient,
-            })
+            .map(TrackedResumeMetadata::of)
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.
@@ -174,9 +169,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// rather than written back. Only once it is committed is it recorded in
     /// memory, where a resume reads it, and only on a lock that is still
     /// tracked and assignable: a lock swept meanwhile is
-    /// [`PlatformWalletError::AssetLockNotTracked`]. A failed assignment left
-    /// nothing behind, in memory or in the backend, so any identity may be
-    /// assigned afterwards.
+    /// [`PlatformWalletError::AssetLockNotTracked`]. A refused backend write
+    /// ([`PlatformWalletError::Persistence`]) left nothing behind, in memory
+    /// or in the backend, so any identity may be assigned afterwards. An error
+    /// after the commit (the lock swept, consumed, or recording another
+    /// recipient by then) leaves the recipient stored: the caller reads the
+    /// tracked lock before offering another identity.
     ///
     /// `generation` is the caller's handle's wallet generation. A wallet
     /// removed, or re-created under its id, since the handle was taken is
@@ -220,22 +218,57 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                      stored: {error}"
                 ))
             })?;
-        // Still under the lifecycle gate, so the generation checked above is
-        // still the wallet's; the serial gate keeps any other assignment out,
-        // and nothing else sets a recipient on a tracked lock. Sync may have
-        // moved the lock meanwhile: it is published only where it still
-        // applies.
-        let mut wm = self.wallet_manager.write().await;
-        let lock = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .filter(|info| Arc::ptr_eq(&info.generation, generation))
-            .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
-            .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
-        if lock.status.is_consumed() {
-            return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
-        }
-        lock.identity_recipient = Some(identity);
-        Ok(())
+        // The backend has committed the recipient, so it is published even if
+        // this call is dropped while it waits for the manager lock: memory
+        // would otherwise show no recipient where the store holds one, and a
+        // resume would refuse the lock until a reload. A spawned task runs to
+        // its end whatever happens to this future. While this call is not
+        // dropped it is still under the lifecycle gate, so the generation
+        // checked above is still the wallet's, and the serial gate keeps any
+        // other assignment out; once dropped, the generation check below
+        // still keeps a replacement wallet from taking the recipient. Nothing
+        // else sets a recipient on a tracked lock but a build, which records
+        // it with the row. Sync may have moved the lock meanwhile, or the row
+        // may have been recreated for another recipient: it is published
+        // only where it still applies.
+        let wallet_manager = Arc::clone(&self.wallet_manager);
+        let wallet_id = self.wallet_id;
+        let generation = Arc::clone(generation);
+        let out_point = *out_point;
+        tokio::spawn(async move {
+            let mut wm = wallet_manager.write().await;
+            let lock = wm
+                .get_wallet_info_mut(&wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, &generation))
+                .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
+                .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+            if lock.status.is_consumed() {
+                return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+            }
+            // The row may not be the one assigned: rejection cleanup can
+            // remove that one and a build for another identity recreate the
+            // same outpoint (same inputs and key, deterministic signing) with
+            // its own recipient, which the store keeps. Never overwrite it.
+            match lock.identity_recipient {
+                Some(recorded) if recorded != identity => {
+                    Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                        out_point,
+                        recorded,
+                        requested: identity,
+                    })
+                }
+                _ => {
+                    lock.identity_recipient = Some(identity);
+                    Ok(())
+                }
+            }
+        })
+        .await
+        .map_err(|error| {
+            PlatformWalletError::AssetLockTransaction(format!(
+                "the committed identity recipient of {out_point} was not published: {error}"
+            ))
+        })?
     }
 
     /// Track a new asset lock in memory, returning a changeset describing
@@ -891,3 +924,19 @@ pub(crate) struct TrackedResumeMetadata {
     pub status: AssetLockStatus,
     pub identity_recipient: Option<Identifier>,
 }
+
+impl TrackedResumeMetadata {
+    pub(crate) fn of(lock: &TrackedAssetLock) -> Self {
+        Self {
+            funding_type: lock.funding_type,
+            identity_index: lock.identity_index,
+            status: lock.status.clone(),
+            identity_recipient: lock.identity_recipient,
+        }
+    }
+}
+
+/// Approves or refuses a resume of the tracked row it is shown
+/// ([`AssetLockManager::resume_authorized_asset_lock`]).
+pub(crate) type ResumeAuthorization<'a> =
+    dyn Fn(&TrackedResumeMetadata) -> Result<(), PlatformWalletError> + Send + Sync + 'a;

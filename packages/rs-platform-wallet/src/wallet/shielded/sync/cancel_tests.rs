@@ -20,7 +20,7 @@ use super::{sync_notes_from_stream, MultiSyncNotesResult};
 use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
-use crate::wallet::shielded::store::{ShieldedStore, SubwalletId};
+use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
 type BatchItem = Result<ShieldedChunkBatch, dash_sdk::Error>;
 
@@ -98,6 +98,7 @@ async fn run(
     .await
     .expect("a cancelled pass must return promptly")
     .expect("pass must succeed")
+    .finished()
 }
 
 #[tokio::test]
@@ -160,7 +161,8 @@ async fn should_return_empty_without_touching_store_when_cancelled_before_scan()
         },
     )
     .await
-    .expect("pass must succeed");
+    .expect("pass must succeed")
+    .finished();
 
     assert_eq!(result.total_scanned, 0);
     assert!(result.per_subwallet_new_notes.is_empty());
@@ -341,7 +343,8 @@ async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), pass.as_mut())
         .await
         .expect("a cancelled pass returns without the guard")
-        .expect("pass must succeed");
+        .expect("pass must succeed")
+        .finished();
     assert_eq!(result.total_scanned, 0);
     assert!(crate::changeset::merge::Merge::is_empty(&result.changeset));
 
@@ -409,4 +412,331 @@ async fn should_report_the_height_a_completed_scan_covers() {
         assert_eq!(result.covered_height, covered, "{case}");
         let _ = std::fs::remove_file(&path);
     }
+}
+
+/// A pass that sees a saved spend's fee note spent keeps, durably and
+/// before the mark drops the spend's record, the highest height any of its
+/// batches was proven at, even when a later batch was proven lower: the
+/// token note sweep must not judge that spend from a token pool scan below
+/// it, after a restart too.
+#[tokio::test]
+async fn should_keep_the_highest_batch_height_before_a_spend_drops_its_record() {
+    use crate::wallet::shielded::store::{PendingRedrive, ShieldedNote};
+    use crate::wallet::shielded::token_pool::{raise_sweep_height, TokenPoolConnection};
+
+    let path = temp_tree_path("spend_floor");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let sub = subwallets[0].0;
+    // Every note of the synthetic batches reveals this nullifier.
+    let fee_nf = [0xAA; 32];
+    {
+        let mut store = store.write().await;
+        store
+            .save_note(
+                sub,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: [0x11; 32],
+                    nullifier: fee_nf,
+                    block_height: 10,
+                    is_spent: false,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                },
+            )
+            .unwrap();
+        store
+            .arm_redrive(
+                sub,
+                PendingRedrive {
+                    activity_id: [0xA1; 32],
+                    anchor: [0xA2; 32],
+                    nullifiers: vec![fee_nf],
+                    st_bytes: vec![0],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: Some(1),
+                },
+            )
+            .unwrap();
+    }
+    let mut first = batch(0, 4, 8);
+    first.block_height = 1_011;
+    let mut last = batch(4, 4, 8);
+    last.block_height = 1_010;
+    let cancel = CancellationToken::new();
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![Ok(first), Ok(last)]),
+    )
+    .await;
+
+    let floor = |store: &FileBackedShieldedStore| {
+        store
+            .with_token_pool_conn(|conn| raise_sweep_height(conn, 0))
+            .unwrap()
+    };
+    {
+        let store = store.read().await;
+        assert!(
+            store.pending_redrives(sub).unwrap().is_empty(),
+            "the fee note seen spent dropped the record"
+        );
+        assert_eq!(
+            floor(&store),
+            1_011,
+            "the highest batch height, not the last"
+        );
+    }
+    drop(store);
+    let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert_eq!(floor(&reopened), 1_011, "kept across a restart");
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The spend-scan height is kept before anything the pass marks: when that
+/// write fails, the pass fails with the fee note still unspent and the saved
+/// spend's record still there, so a retry sees the spend again.
+#[tokio::test]
+async fn should_mark_nothing_spent_when_the_spend_scan_height_is_not_kept() {
+    use crate::wallet::shielded::store::{PendingRedrive, ShieldedNote};
+    use crate::wallet::shielded::token_pool::TokenPoolConnection;
+
+    let path = temp_tree_path("spend_floor_fails");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let sub = subwallets[0].0;
+    let fee_nf = [0xAA; 32];
+    {
+        let mut store = store.write().await;
+        store
+            .save_note(
+                sub,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: [0x11; 32],
+                    nullifier: fee_nf,
+                    block_height: 10,
+                    is_spent: false,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                },
+            )
+            .unwrap();
+        store
+            .arm_redrive(
+                sub,
+                PendingRedrive {
+                    activity_id: [0xA1; 32],
+                    anchor: [0xA2; 32],
+                    nullifiers: vec![fee_nf],
+                    st_bytes: vec![0],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: Some(1),
+                },
+            )
+            .unwrap();
+        // The height write fails from here on.
+        store
+            .with_token_pool_conn(|conn| {
+                conn.execute("DROP TABLE shielded_token_pool_sweep", [])
+                    .expect("drop the sweep table");
+                Ok(())
+            })
+            .unwrap();
+    }
+    let cancel = CancellationToken::new();
+    let pass = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+        futures::stream::iter(vec![Ok(batch(0, 4, 4))])
+    })
+    .await;
+    assert!(pass.is_err(), "the pass fails when the height is not kept");
+
+    let store = store.read().await;
+    assert!(
+        store
+            .get_unspent_notes(sub)
+            .unwrap()
+            .iter()
+            .any(|note| note.nullifier == fee_nf),
+        "the fee note is not marked spent"
+    );
+    assert_eq!(
+        store
+            .pending_redrives(sub)
+            .unwrap()
+            .into_iter()
+            .map(|record| record.activity_id)
+            .collect::<Vec<_>>(),
+        vec![[0xA1; 32]],
+        "the saved spend's record is still there"
+    );
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A pass that appended leaves and then failed before its checkpoint (a
+/// batch error here; a process killed at the same point leaves the same
+/// tree) must not leave those leaves past the latest checkpoint for good.
+/// The next pass, after a relaunch, gate-skips them and appends nothing;
+/// it still checkpoints, so a note saved at one of them can be witnessed
+/// at depth 0 instead of failing the spend with
+/// `ShieldedMerkleWitnessUnavailable`.
+#[tokio::test]
+async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
+    let path = temp_tree_path("failed_then_resume");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+
+    // Pass 1: a fully checkpointed first batch, then a pass that appends a
+    // second batch and fails on the next one, before its checkpoint.
+    let cancel = CancellationToken::new();
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
+    )
+    .await;
+    let failed = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+        futures::stream::iter(vec![
+            Ok(batch(0, 4, 12)),
+            Ok(batch(4, 4, 12)),
+            Err(dash_sdk::Error::Generic("transport failed".to_string())),
+        ])
+    })
+    .await;
+    assert!(failed.is_err(), "the batch error fails the pass");
+    {
+        let store = store.read().await;
+        assert_eq!(store.tree_size().unwrap(), 8, "the appends are persisted");
+        assert!(
+            matches!(store.witness(7), Ok(None)),
+            "no checkpoint covers the leaves the failed pass appended"
+        );
+    }
+
+    // Relaunch: reopen the same file, then run a pass that re-delivers only
+    // positions the tree already holds.
+    drop(store);
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("reopen store"),
+    ));
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
+    )
+    .await;
+
+    let store = store.read().await;
+    assert_eq!(store.tree_size().unwrap(), 8, "nothing is re-appended");
+    assert!(
+        matches!(store.witness(7), Ok(Some(_))),
+        "a pass that appended nothing still checkpoints the tree's leaves"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A pass over a tree whose latest checkpoint already sits at its size
+/// keeps that checkpoint: the witnesses at depth 0 and depth 1 are the ones
+/// before the pass.
+#[tokio::test]
+async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
+    let path = temp_tree_path("no_new_leaves");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let cancel = CancellationToken::new();
+    for stream in [vec![batch(0, 4, 4)], vec![batch(0, 4, 8), batch(4, 4, 8)]] {
+        run(
+            &store,
+            &subwallets,
+            &cancel,
+            futures::stream::iter(stream.into_iter().map(Ok)),
+        )
+        .await;
+    }
+    let before = {
+        let store = store.read().await;
+        (
+            store
+                .witness_at_depth(3, 0)
+                .unwrap()
+                .map(|p| format!("{p:?}")),
+            store
+                .witness_at_depth(3, 1)
+                .unwrap()
+                .map(|p| format!("{p:?}")),
+        )
+    };
+
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
+    )
+    .await;
+
+    let store = store.read().await;
+    let after = (
+        store
+            .witness_at_depth(3, 0)
+            .unwrap()
+            .map(|p| format!("{p:?}")),
+        store
+            .witness_at_depth(3, 1)
+            .unwrap()
+            .map(|p| format!("{p:?}")),
+    );
+    assert!(before.0.is_some() && before.1.is_some());
+    assert_eq!(before, after, "no checkpoint is added or moved");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The in-memory store honours the same `checkpoint_tree` contract as the
+/// file-backed one: a pass that appends nothing re-uses the tree size as its
+/// checkpoint identifier, and that adds no checkpoint.
+#[tokio::test]
+async fn should_add_no_checkpoint_on_an_idle_pass_over_the_in_memory_store() {
+    let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+    let subwallets = one_subwallet();
+    let cancel = CancellationToken::new();
+    for _ in 0..2 {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+                futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
+            }),
+        )
+        .await
+        .expect("the pass returns")
+        .expect("pass must succeed")
+        .finished();
+    }
+
+    let store = store.read().await;
+    assert_eq!(store.tree_size().unwrap(), 4);
+    assert_eq!(
+        store.checkpoint_ids(),
+        &[4],
+        "the idle second pass adds no checkpoint"
+    );
 }

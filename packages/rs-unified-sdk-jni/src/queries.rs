@@ -26,8 +26,9 @@ use rs_sdk_ffi::{
     dash_sdk_data_contract_json_expand_property_type_shorthands,
     dash_sdk_data_contracts_fetch_by_range, dash_sdk_document_average, dash_sdk_document_count,
     dash_sdk_document_fetch_history, dash_sdk_document_search, dash_sdk_document_sum,
-    dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames, dash_sdk_dpns_resolve,
-    dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
+    dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
+    dash_sdk_dpns_normalize_username, dash_sdk_dpns_resolve, dash_sdk_dpns_search,
+    dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
     dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_identities_fetch_balances,
     dash_sdk_identities_fetch_contract_keys, dash_sdk_identity_fetch,
@@ -149,7 +150,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
 /// What is left of the budgets of the given keys of an identity (protocol version
 /// 14), as a JSON object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key
 /// maps to the credits left, as a decimal string; a key without a budget, or that the
-/// identity does not have, maps to null. `keyIds` is a JVM `int[]` of at least one id.
+/// identity does not have, maps to null. `keyIds` is a JVM `int[]` of at least one id,
+/// each the bit pattern of a `u32` key id.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identityFetchKeysRemainingBudgets(
     mut env: JNIEnv,
@@ -168,10 +170,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
                     throw_sdk_exception(env, 1, "keyIds could not be read");
                     return ptr::null_mut();
                 }
-                if buf.iter().any(|&i| i < 0) {
-                    throw_sdk_exception(env, 1, "keyIds must be non-negative");
-                    return ptr::null_mut();
-                }
+                // Each id is the `u32` key id's bit pattern, as Room stores it, so an id past
+                // `i32::MAX` arrives negative and is read back as the same `u32`.
                 buf.into_iter().map(|i| i as u32).collect()
             }
             _ => {
@@ -223,6 +223,23 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsChe
         let label = require_cstr!(env, label);
         let result =
             unsafe { dash_sdk_dpns_check_availability(sdk as *const SDKHandle, label.as_ptr()) };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Homograph-normalize a DPNS label (`oxford` -> `0xf0rd`), the form
+/// Platform indexes names and contests under. No SDK handle, no network.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsNormalizeUsername(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let name = require_cstr!(env, name);
+        let result = unsafe { dash_sdk_dpns_normalize_username(name.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())

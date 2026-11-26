@@ -55,7 +55,7 @@ serde_json = "1.0"
 bincode = { workspace = true, features = ["serde"] }
 
 # Async runtime
-tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-metrics = { workspace = true, optional = true }
 
 # Error handling

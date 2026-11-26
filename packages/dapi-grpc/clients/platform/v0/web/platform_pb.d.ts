@@ -7475,6 +7475,9 @@ export namespace WaitForStateTransitionResultRequest {
     getRequestUserBalance(): boolean;
     setRequestUserBalance(value: boolean): void;
 
+    getProveStateBeforeBlock(): boolean;
+    setProveStateBeforeBlock(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: WaitForStateTransitionResultRequestV0): WaitForStateTransitionResultRequestV0.AsObject;
@@ -7490,6 +7493,7 @@ export namespace WaitForStateTransitionResultRequest {
       stateTransitionHash: Uint8Array | string,
       prove: boolean,
       requestUserBalance: boolean,
+      proveStateBeforeBlock: boolean,
     }
   }
 
@@ -7562,6 +7566,11 @@ export namespace WaitForStateTransitionResultResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
+    hasStateBeforeBlock(): boolean;
+    clearStateBeforeBlock(): void;
+    getStateBeforeBlock(): WaitForStateTransitionResultResponse.StateBeforeBlock | undefined;
+    setStateBeforeBlock(value?: WaitForStateTransitionResultResponse.StateBeforeBlock): void;
+
     getResultCase(): WaitForStateTransitionResultResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultResponseV0.AsObject;
@@ -7579,6 +7588,7 @@ export namespace WaitForStateTransitionResultResponse {
       proof?: Proof.AsObject,
       successWithOwnerBalance?: WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.AsObject,
       metadata?: ResponseMetadata.AsObject,
+      stateBeforeBlock?: WaitForStateTransitionResultResponse.StateBeforeBlock.AsObject,
     }
 
     export enum ResultCase {
@@ -7586,6 +7596,34 @@ export namespace WaitForStateTransitionResultResponse {
       ERROR = 1,
       PROOF = 2,
       SUCCESS_WITH_OWNER_BALANCE = 4,
+    }
+  }
+
+  export class StateBeforeBlock extends jspb.Message {
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): StateBeforeBlock.AsObject;
+    static toObject(includeInstance: boolean, msg: StateBeforeBlock): StateBeforeBlock.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: StateBeforeBlock, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): StateBeforeBlock;
+    static deserializeBinaryFromReader(message: StateBeforeBlock, reader: jspb.BinaryReader): StateBeforeBlock;
+  }
+
+  export namespace StateBeforeBlock {
+    export type AsObject = {
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
     }
   }
 

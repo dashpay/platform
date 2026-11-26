@@ -266,6 +266,8 @@ mod tests {
     use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    use dpp::data_contract::document_type::property_constraints::AggregateRead;
     use dpp::fee::Credits;
     use dpp::platform_value::Value;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -273,6 +275,7 @@ mod tests {
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
+    use drive::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
     use dpp::moderation_charter::ELECTED_CHARTER_DOCUMENT_TYPE_NAME;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
     use std::collections::BTreeMap;
@@ -350,6 +353,24 @@ mod tests {
             (vote_poll, required_amount(platform_version))
         });
 
+        // The totals the type's rules read, as the transformer reads them: none stored. From
+        // DPNS v3 a domain counts the tombstones of its name (`nameIsNotTombstoned`)
+        let aggregates: BTreeMap<AggregateRead, i128> = contract_fetch_info
+            .contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type")
+            .property_constraints()
+            .values()
+            .flat_map(|rule| rule.aggregate_reads())
+            .map(|read| (read.clone(), 0))
+            .collect();
+        let property_constraint_reads = (!aggregates.is_empty()).then(|| {
+            Box::new(PropertyConstraintReads {
+                aggregates,
+                stored_system_values: None,
+            })
+        });
+
         DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
             base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
                 id: Identifier::from([0xAA; 32]),
@@ -367,7 +388,7 @@ mod tests {
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
-            property_constraint_reads: Default::default(),
+            property_constraint_reads,
             moderated: false,
             consumed_documents: Vec::new(),
             derived_index_values: None,

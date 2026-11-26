@@ -27,7 +27,7 @@ use crate::spv::SpvRuntime;
 ///
 /// The classification decides whether the transaction's reserved inputs are
 /// safe to release for an immediate retry (see
-/// `wallet::reservations::broadcast_releasing_on_rejection`).
+/// `wallet::reservations::release_reservation_after_rejected_broadcast`).
 #[derive(Debug, thiserror::Error)]
 pub enum BroadcastError {
     /// The network definitively did not take the transaction — a rejection
