@@ -396,13 +396,25 @@ export default function resetNodeTaskFactory(
     }
 
     // A permission error the walk does not see, such as for a file in a
-    // sticky directory, still yields to a removal that has the rights.
+    // sticky directory, yields to a removal that has the rights. EPERM also
+    // comes from a filesystem protection, such as an immutable file, which
+    // no rights get past until it is cleared.
     if (deniedPaths.length === 0) {
+      let remedy = ['Fix the cause,'];
+      if (removalError.code === 'EACCES') {
+        remedy = ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)];
+      } else if (removalError.code === 'EPERM') {
+        remedy = [
+          'More rights help only when access rights are what stop the removal, for example:',
+          ...formatPathCommands(['sudo rm -rf'], targetPath),
+          'If that fails with EPERM too, a filesystem protection such as the immutable flag stops it'
+            + ' (lsattr and chattr on Linux, ls -lO and chflags on macOS): find it and clear it,',
+        ];
+      }
+
       throw new Error([
         `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(removalError.message)}`,
-        ...(isPermissionError(removalError)
-          ? ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)]
-          : ['Fix the cause,']),
+        ...remedy,
         ...recovery,
       ].join('\n'));
     }

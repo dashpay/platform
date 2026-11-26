@@ -830,11 +830,12 @@ describe('resetNodeTaskFactory', () => {
       expect(error.message.split('\n').filter((line) => /^\s*sudo\b/.test(line))).to.be.empty();
     });
 
-    // What the check cannot foresee, such as a file in a sticky directory or
-    // one marked immutable, fails once removal has begun, and permissions do
-    // not show it. Node's error is shown with a removal that has the rights,
-    // and Compose then needs the service files rendered again before the
-    // reset can run.
+    // What the check cannot foresee fails once removal has begun, and
+    // permissions do not show it. EPERM comes from an access restriction, such
+    // as a file in a sticky directory, which more rights get past, or from a
+    // filesystem protection, such as an immutable file, which they do not.
+    // Node's error is shown, and Compose then needs the service files
+    // rendered again before the reset can run.
     it('should show the removal\'s error for a failure the check cannot foresee', async function test() {
       failRemoval(
         this.sinon,
@@ -847,11 +848,35 @@ describe('resetNodeTaskFactory', () => {
         (e) => e,
       );
 
+      const lines = error.message.split('\n');
       expect(error.message).to.include('EPERM: operation not permitted, rm');
-      expect(error.message.split('\n'))
-        .to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
+      expect(lines).to.include('More rights help only when access rights are what stop the removal, for example:');
+      expect(lines).to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
+      expect(lines.find((line) => line.startsWith('If that fails with EPERM too')))
+        .to.include('such as the immutable flag').and.include('find it and clear it,');
       expect(error.message).to.include('dashmate config render --config testnet');
       expect(dockerCompose.rm).to.have.been.calledOnce();
+    });
+
+    // EACCES is an access restriction only, which more rights get past.
+    it('should give a removal with more rights for an access error the check cannot foresee', async function test() {
+      failRemoval(
+        this.sinon,
+        homeDir.joinPath('testnet', 'platform'),
+        fsError('EACCES', 'EACCES: permission denied, rm'),
+      );
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+      expect(error.message).to.include('EACCES: permission denied, rm');
+      expect(lines).to.include('Remove it with sufficient rights, for example:');
+      expect(lines).to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
+      expect(error.message).to.not.include('immutable');
+      expect(error.message).to.include('dashmate config render --config testnet');
     });
 
     // Node's recursive removal is what the reset used before it could report
