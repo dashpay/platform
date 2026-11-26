@@ -3,8 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import { create } from 'tar';
 import createSecretScrubber from './createSecretScrubber.js';
+import getSampleFreeTextFields from './getSampleFreeTextFields.js';
 
 function writeSampleFile(archiveDir, service, filename, data, scrub) {
+  const freeTextFields = service ? getSampleFreeTextFields(service, filename) : null;
+
   if (data === undefined || data === null) {
     return;
   }
@@ -21,10 +24,15 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
     filetype = '.txt';
   } else {
     // Scrubbed value by value rather than as text, so keys, numbers and the
-    // structure are left alone and doctor can still read the sample back
+    // structure are left alone and doctor can still read the sample back. In
+    // a sample whose fields are facts doctor decides on, only its free text.
     buffer = JSON.stringify(
       data,
-      (_key, value) => (typeof value === 'string' ? scrub(value) : value),
+      (key, value) => (
+        typeof value === 'string' && (freeTextFields === null || freeTextFields.includes(key))
+          ? scrub(value)
+          : value
+      ),
       2,
     );
     filetype = '.json';

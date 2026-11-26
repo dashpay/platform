@@ -5,6 +5,7 @@ import process from 'process';
 import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import createSecretScrubber from '../../../doctor/createSecretScrubber.js';
+import getSampleFreeTextFields from '../../../doctor/getSampleFreeTextFields.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
@@ -48,14 +49,19 @@ async function fetchTextOrError(url) {
 /**
  * @param {Object} data - mutated in place
  * @param {function(string): string} scrub - masks the config's secrets
+ * @param {string[]|null} [freeTextFields] - the only fields to rewrite, for
+ *   a sample whose other fields are facts doctor decides on
  */
-function obfuscateOperatorName(data, scrub) {
+function obfuscateOperatorName(data, scrub, freeTextFields = null) {
   const identity = getOperatorIdentity();
 
-  obfuscateObjectRecursive(data, (_field, value) => maskOperatorIdentity(
-    typeof value === 'string' ? scrub(value) : value,
-    identity,
-  ));
+  obfuscateObjectRecursive(data, (field, value) => {
+    if (freeTextFields !== null && !freeTextFields.includes(field)) {
+      return value;
+    }
+
+    return maskOperatorIdentity(typeof value === 'string' ? scrub(value) : value, identity);
+  });
 }
 
 /**
@@ -453,7 +459,11 @@ export default function collectSamplesTaskFactory(
                   // Same treatment as the certificate above: the path is what
                   // makes a problem actionable and stays, the operator's name
                   // in it does not.
-                  obfuscateOperatorName(sample, scrub);
+                  obfuscateOperatorName(
+                    sample,
+                    scrub,
+                    getSampleFreeTextFields('gateway', 'certificateRenewal'),
+                  );
 
                   ctx.samples.setServiceInfo('gateway', 'certificateRenewal', sample);
                 },

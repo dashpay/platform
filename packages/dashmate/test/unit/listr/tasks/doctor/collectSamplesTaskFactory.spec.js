@@ -20,6 +20,7 @@ import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
+import RenewalRecord from '../../../../../src/ssl/renewalRecord/RenewalRecord.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 
 const EXTERNAL_IP = '198.51.100.7';
@@ -782,6 +783,37 @@ describe('collectSamplesTaskFactory', () => {
 
       expect(archived).to.not.contain('loggedToken7Qx');
       expect(archived).to.contain('starting app --token=');
+    });
+
+    // Doctor decides on the facts of a renewal record - which provider, what
+    // outcome, when - live and when it reads a report back. A secret spelled
+    // like one of them must not change them; the record's free text is
+    // still scrubbed.
+    it('should keep the facts of a renewal record when a secret is spelled like one', async () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      config.set('core.rpc.users.dapi.password', 'letsencrypt');
+
+      new RenewalRecordRepository(homeDir).write(config.getName(), RenewalRecord.fromObject({
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'PORT_80_UNREACHABLE',
+        detail: 'challenge failed with letsencrypt in the way',
+        attemptedAt: new Date().toISOString(),
+      }));
+
+      const archivePath = await collectAndArchive();
+
+      const live = samples.getServiceInfo('gateway', 'certificateRenewal');
+      const restored = (await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'certificateRenewal');
+
+      [live, restored].forEach((sample) => {
+        const record = RenewalRecord.fromObject(sample);
+
+        expect(record.isFailed()).to.be.true();
+        expect(record.appliesTo({ provider: 'letsencrypt' })).to.be.true();
+        expect(sample.detail).to.equal(`challenge failed with ${'*'.repeat('letsencrypt'.length)} in the way`);
+      });
     });
 
     // A password can be spelled like a value the config schema requires
