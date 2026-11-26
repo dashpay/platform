@@ -1,9 +1,15 @@
 import fs from 'fs';
+import path from 'path';
 import graceful from 'node-graceful';
+import { asValue } from 'awilix';
+import { Listr } from 'listr2';
+import createDIContainer from '../../../../src/createDIContainer.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import BaseCommand from '../../../../src/oclif/command/BaseCommand.js';
 import ResetCommand from '../../../../src/commands/reset.js';
 import GroupResetCommand from '../../../../src/commands/group/reset.js';
+import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
 
 class MutatingCommand extends BaseCommand {
   static mutatesConfig = true;
@@ -297,6 +303,136 @@ describe('BaseCommand', () => {
 
       expect(configFileRepository.write).to.not.have.been.called();
       expect(writeConfigTemplates).to.not.have.been.called();
+    });
+  });
+
+  // A Platform-only reset changes no Core option. Writing Core's service files
+  // again when the command saves the config would throw away an operator's
+  // edit, or fail on a file the host protects, after Platform is already gone.
+  describe('#saveConfigAndStopContainers after a reset', () => {
+    let homeDir;
+    let container;
+    let configFile;
+
+    beforeEach(async () => {
+      homeDir = HomeDir.createTemp();
+      container = await createDIContainer({ DASHMATE_HOME_DIR: homeDir.getPath() });
+      configFile = container.resolve('createConfigFile')();
+      container.register({
+        configFile: asValue(configFile),
+        configFileRepository: asValue({ write: () => {}, isExclusive: () => true }),
+      });
+    });
+
+    afterEach(() => {
+      homeDir.remove();
+    });
+
+    /**
+     * @param {...string} segments - a directory under the home directory
+     * @return {Object<string, Buffer>} every file under it, by path
+     */
+    function readFiles(...segments) {
+      const root = homeDir.joinPath(...segments);
+
+      return Object.fromEntries(fs.readdirSync(root, { recursive: true })
+        .filter((entry) => fs.statSync(path.join(root, entry)).isFile())
+        .map((entry) => [entry, fs.readFileSync(path.join(root, entry))]));
+    }
+
+    /**
+     * Render every service file, as the command that set the config up did,
+     * and edit Core's configuration the way an operator might
+     *
+     * @param {Config} config
+     */
+    function renderAndEditCore(config) {
+      container.resolve('writeConfigTemplates')(config);
+
+      fs.appendFileSync(homeDir.joinPath(config.getName(), 'core', 'dash.conf'), '# operator edit\n');
+      fs.rmSync(homeDir.joinPath(config.getName(), 'dynamic-compose.yml'));
+    }
+
+    /**
+     * Run the command's own save-and-render hook, as it does when it ends
+     *
+     * @param {typeof BaseCommand} Command
+     * @param {Object} flags
+     */
+    async function finish(Command, flags) {
+      const command = new Command();
+      command.container = container;
+      command.parsedFlags = flags;
+
+      await command.saveConfigAndStopContainers();
+    }
+
+    it('should leave Core\'s files as they are after a hard Platform reset', async () => {
+      const config = configFile.getConfig('testnet');
+      renderAndEditCore(config);
+      const coreFiles = readFiles('testnet', 'core');
+
+      // What the reset leaves: Platform options from the defaults and no
+      // Platform directory
+      config.set('platform', container.resolve('defaultConfigs').get('testnet').getStored('platform'));
+      fs.rmSync(homeDir.joinPath('testnet', 'platform'), { recursive: true });
+
+      await finish(ResetCommand, { platform: true, hard: true, config: 'testnet' });
+
+      expect(readFiles('testnet', 'core')).to.deep.equal(coreFiles);
+      expect(Object.keys(readFiles('testnet', 'platform')))
+        .to.include(path.join('drive', 'tenderdash', 'config.toml'));
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'dynamic-compose.yml'))).to.be.true();
+    });
+
+    it('should leave Core\'s files as they are after a Platform reset of the local group', async () => {
+      const members = ['local_seed', 'local_1', 'local_2'].map((name) => {
+        const member = configFile.createConfig(name, 'local');
+        member.set('group', 'local');
+
+        // As the local setup gives each node
+        member.set('externalIp', '127.0.0.1');
+        const key = generateTenderdashNodeKey();
+        member.set('platform.drive.tenderdash.node.key', key);
+        member.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(key));
+
+        return member;
+      });
+      members[0].set('platform.enable', false);
+      members.forEach(renderAndEditCore);
+      const coreFiles = members.map((member) => readFiles(member.getName(), 'core'));
+
+      // What the soft reset of the local group changes
+      await new Listr(
+        [{ task: () => container.resolve('configureTenderdashTask')(members) }],
+        { renderer: 'silent' },
+      ).run();
+
+      await finish(GroupResetCommand, { platform: true, hard: false, group: 'local' });
+
+      members.forEach((member, index) => {
+        expect(readFiles(member.getName(), 'core')).to.deep.equal(coreFiles[index]);
+      });
+      members.slice(1).forEach((member) => {
+        const genesis = fs.readFileSync(homeDir.joinPath(member.getName(), 'platform', 'drive', 'tenderdash', 'genesis.json'), 'utf8');
+
+        expect(genesis).to.include(member.get('platform.drive.tenderdash.genesis.chain_id'));
+        expect(fs.existsSync(homeDir.joinPath(member.getName(), 'dynamic-compose.yml'))).to.be.true();
+      });
+    });
+
+    // A reset of the whole node is the operator's way to get Core's files
+    // back from the config.
+    it('should write Core\'s files again after a full reset', async () => {
+      const config = configFile.getConfig('testnet');
+      renderAndEditCore(config);
+
+      config.setOptions(container.resolve('defaultConfigs').get('testnet').getStoredOptions());
+
+      await finish(ResetCommand, { platform: false, hard: true, config: 'testnet' });
+
+      expect(fs.readFileSync(homeDir.joinPath('testnet', 'core', 'dash.conf'), 'utf8'))
+        .to.not.include('# operator edit');
     });
   });
 });
