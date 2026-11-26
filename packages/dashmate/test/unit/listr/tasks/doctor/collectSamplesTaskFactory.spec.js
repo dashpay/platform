@@ -17,6 +17,8 @@ import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../
 import providers from '../../../../../src/status/providers.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import { PACKAGE_ROOT_DIR } from '../../../../../src/constants.js';
+import deriveTenderdashNodeId from '../../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../../../src/tenderdash/generateTenderdashNodeKey.js';
 
 const EXTERNAL_IP = '198.51.100.7';
 
@@ -429,6 +431,31 @@ describe('collectSamplesTaskFactory', () => {
       expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
         'Platform Node ID doesn\'t match the one found in the ProReg transaction',
       );
+    });
+
+    // Tenderdash takes its ID from the key, not from the saved ID, and
+    // `config set` can change the key alone
+    it('should report an evonode whose node key is not the registered one, even when its saved node ID is', async () => {
+      config.set('platform.drive.tenderdash.node.key', generateTenderdashNodeKey());
+      config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
+
+      await collectSamples();
+
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // The key is redacted from the report, so the ID it gives is collected
+    // instead. The ID is public: Tenderdash announces it to every peer.
+    it('should collect the node ID derived from the node key', async () => {
+      const nodeKey = generateTenderdashNodeKey();
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey'))
+        .to.equal(deriveTenderdashNodeId(nodeKey));
     });
   });
 
