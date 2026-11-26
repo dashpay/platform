@@ -24,20 +24,42 @@ Install the new version of dashmate the same way you installed it originally (se
 #### Debian package
 
 On Debian and Ubuntu, update dashmate with apt from Dash's apt repository. dashmate packages from 5.1.0-rc.2 on add the repository when they are installed, so it is configured whether you installed dashmate from the repository or from a downloaded package (see [A host without the repository](#a-host-without-the-repository) for older ones).
-Download the new package before you stop the node, so a failed download never leaves the node stopped:
+Download the new package before you stop the node, so a failed download never leaves the node stopped. This block refreshes apt's indexes, compares the installed version with the one apt would install, and downloads that version only if it is newer:
 
 ```bash
-sudo apt update && sudo apt install --only-upgrade --download-only dashmate
+DASHMATE_VERSION=""
+if sudo apt update --error-on=any; then
+  DASHMATE_INSTALLED="$(dpkg-query -W -f='${Version}' dashmate)"
+  DASHMATE_CANDIDATE="$(apt-cache policy dashmate | awk '$1 == "Candidate:" { print $2 }')"
+  if [ -n "$DASHMATE_INSTALLED" ] && [ -n "$DASHMATE_CANDIDATE" ] \
+    && dpkg --compare-versions "$DASHMATE_CANDIDATE" gt "$DASHMATE_INSTALLED"; then
+    if sudo apt install --only-upgrade --download-only "dashmate=$DASHMATE_CANDIDATE"; then
+      DASHMATE_VERSION="$DASHMATE_CANDIDATE"
+      echo "Downloaded dashmate $DASHMATE_VERSION"
+    else
+      echo "Could not download dashmate $DASHMATE_CANDIDATE. Leave the node running and try again later." >&2
+    fi
+  else
+    echo "Nothing to update: apt offers no dashmate newer than ${DASHMATE_INSTALLED:-the installed one}. Leave the node running."
+  fi
+else
+  echo "apt update failed. Leave the node running, fix the error and try again." >&2
+fi
 ```
 
-apt keeps the downloaded package in its cache. After stopping the node with `dashmate stop` (see the examples below), install it:
+apt keeps the downloaded package in its cache. After stopping the node with `dashmate stop` (see the examples below), install that version in the same shell. `--no-download` makes apt use the cached package only, so the install never downloads anything while the node is stopped:
 
 ```bash
-sudo apt install --only-upgrade dashmate
+if [ -n "$DASHMATE_VERSION" ]; then
+  sudo apt install --only-upgrade --no-download "dashmate=$DASHMATE_VERSION"
+else
+  echo "No downloaded dashmate version found, so nothing was installed. Run the download step again in this shell." >&2
+fi
 ```
 
 Use these commands rather than `sudo apt upgrade`, which installs the new dashmate as well, but while the node is still running.
-If the download step prints `dashmate is already the newest version`, apt has nothing newer to install: a prerelease is installed only if you [follow prereleases](installation.md#prereleases).
+If the download step prints `Nothing to update`, there is no new dashmate to install, so leave the node running: a prerelease is offered only if you [follow prereleases](installation.md#prereleases).
+Without `--error-on=any`, `apt update` succeeds even when it cannot reach a repository and goes on with the indexes it already has, so the block could miss a new release or report one apt can no longer download. With it, an error in any configured repository stops the block, so fix or disable a failing repository of another vendor before you update.
 
 ##### A host without the repository
 
@@ -57,7 +79,7 @@ npm install -g dashmate
 
 Run the steps one at a time in the same shell, and stop at the first one that fails:
 
-* With the Debian package, run `dashmate stop` only after the download step finished without an error.
+* With the Debian package, run `dashmate stop` only after the download step printed `Downloaded`. If it printed `Nothing to update`, there is nothing to do: leave the node running.
 * Before `dashmate update`, check that `dashmate --version` shows the new version.
 * If a step after `dashmate stop` fails, run `dashmate start` to bring the node back on the version it has, then fix the problem and start over.
 
@@ -143,7 +165,7 @@ A node that does not run Platform (`platform.enable` is `false`) can skip the re
 
 As with any update, run the steps one at a time in the same shell, and stop at the first one that fails:
 
-* With the Debian package, run `dashmate stop` only after the download step finished without an error.
+* With the Debian package, run `dashmate stop` only after the download step printed `Downloaded`. If it printed `Nothing to update`, leave the node running, unless `dashmate --version` already shows the release the restart needs: then skip the install step.
 * Check that `dashmate --version` shows the new version before you reset Platform data.
 * If a step fails before `dashmate reset --platform`, nothing has been removed: run `dashmate start` to bring the node back on the version it has, then fix the problem and start over.
 * If `dashmate reset --platform` or a later step fails, fix the problem, run that step again and finish the remaining steps in order. Running the reset again is safe. The node starts with an empty Platform chain, which is what the restarted network needs.
