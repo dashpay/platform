@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { Listr } from 'listr2';
+import promptOrThrow from '../../../../util/promptOrThrow.js';
 
 /**
  *
@@ -55,19 +56,27 @@ export default function verifySystemRequirementsTaskFactory(
 
     ${message}\n`;
 
-            // This option is used for tests
+            // Set by tests, and by `setup --platform --accept-unmet-requirements`
             if (ctx.acceptUnmetSystemRequirements) {
               // eslint-disable-next-line no-console
               console.warn(header);
             } else {
-              const proceed = await task.prompt({
+              if (ctx.interactive !== true) {
+                // eslint-disable-next-line no-console
+                console.warn(header);
+
+                throw new Error('System requirements have not been met. To proceed anyway,'
+                  + ' run again with --accept-unmet-requirements');
+              }
+
+              const proceed = await promptOrThrow(task, {
                 type: 'toggle',
                 header,
                 message: ' Are you sure you want to proceed?',
                 enabled: 'Yes',
                 disabled: 'No',
                 initial: false,
-              });
+              }, { interactive: ctx.interactive });
 
               if (!proceed) {
                 throw new Error('System requirements have not been met');

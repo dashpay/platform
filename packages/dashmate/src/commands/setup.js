@@ -169,6 +169,10 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         minerInterval,
         enableTor,
         isVerbose,
+        // Setup asks the operator a question at every step, so it cannot run
+        // unattended and states this rather than detecting it. The tasks read
+        // it to decide whether they may prompt.
+        interactive: true,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

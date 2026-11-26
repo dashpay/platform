@@ -6,6 +6,7 @@ import {
 } from '../../../../constants.js';
 
 import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
+import promptOrThrow from '../../../../util/promptOrThrow.js';
 
 /**
  * The certificate providers a node of this type may be set up with
@@ -27,6 +28,20 @@ export function getCertificateProviders(nodeType) {
 }
 
 /**
+ * @param {string} apiKey
+ * @return {Promise<boolean>}
+ */
+async function isZeroSslApiKeyAccepted(apiKey) {
+  try {
+    await listCertificates(apiKey);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {installCertificateFilesTask} installCertificateFilesTask
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
@@ -44,6 +59,12 @@ export default function configureSSLCertificateTaskFactory(
   configFileRepository,
 ) {
   /**
+   * Choose how the gateway gets its certificate, and get it
+   *
+   * Answers may come from the context (ctx.certificateProvider,
+   * ctx.zeroSslApiKey, ctx.fileCertificateProviderForm) instead of prompts.
+   * Whether it may prompt is ctx.interactive, which the caller states.
+   *
    * @typedef configureSSLCertificateTask
    * @returns {Listr}
    */
@@ -52,26 +73,25 @@ export default function configureSSLCertificateTaskFactory(
       [SSL_PROVIDERS.FILE]: {
         title: 'Set SSL certificate file',
         enabled: (ctx) => ctx.certificateProvider === SSL_PROVIDERS.FILE,
-        task: async (ctx) => installCertificateFilesTask(ctx.config, { interactive: true }),
+        task: async (ctx) => installCertificateFilesTask(ctx.config, {
+          interactive: ctx.interactive,
+        }),
       },
       [SSL_PROVIDERS.ZEROSSL]: {
         title: 'Obtain ZeroSSL certificate',
         task: async (ctx, task) => {
-          const apiKey = await task.prompt({
-            type: 'input',
-            message: 'Enter ZeroSSL API key',
-            validate: async (key) => {
-              try {
-                await listCertificates(key);
+          let apiKey = ctx.zeroSslApiKey;
 
-                return true;
-              } catch (e) {
-                // do nothing
-              }
-
-              return 'Please enter a valid ZeroSSL API key';
-            },
-          });
+          if (apiKey === undefined) {
+            apiKey = await promptOrThrow(task, {
+              type: 'password',
+              message: 'Enter ZeroSSL API key',
+              validate: async (key) => (await isZeroSslApiKeyAccepted(key))
+                || 'Please enter a valid ZeroSSL API key',
+            }, { interactive: ctx.interactive });
+          } else if (!(await isZeroSslApiKeyAccepted(apiKey))) {
+            throw new Error('ZeroSSL did not accept the API key');
+          }
 
           ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', apiKey);
 
@@ -79,6 +99,9 @@ export default function configureSSLCertificateTaskFactory(
             onCertificateCreated: () => {
               configFile.setConfig(ctx.config);
               configFileRepository.write(configFile);
+
+              // A failure from here on leaves the answers saved.
+              ctx.isZeroSslCertificateRecorded = true;
             },
           });
         },
@@ -96,22 +119,18 @@ export default function configureSSLCertificateTaskFactory(
       },
     };
 
+    const choiceMessages = {
+      [SSL_PROVIDERS.ZEROSSL]: 'ZeroSSL',
+      [SSL_PROVIDERS.LETSENCRYPT]: "Let's Encrypt",
+      [SSL_PROVIDERS.FILE]: 'File on disk',
+      [SSL_PROVIDERS.SELF_SIGNED]: 'Self-signed',
+    };
+
     return new Listr([
       {
         title: 'Configure SSL certificate',
         task: async (ctx, task) => {
-          // Setup asks the operator a question at every step, so it cannot run
-          // unattended and states this rather than detecting it. The obtain
-          // tasks read it to decide whether they may prompt.
-          ctx.interactive = true;
-
           const providers = getCertificateProviders(ctx.nodeType);
-
-          const choices = [
-            { name: SSL_PROVIDERS.ZEROSSL, message: 'ZeroSSL' },
-            { name: SSL_PROVIDERS.LETSENCRYPT, message: "Let's Encrypt" },
-            { name: SSL_PROVIDERS.FILE, message: 'File on disk' },
-          ];
 
           let header = `  Evonodes are required use TLS encryption on the DAPI
   endpoint through which they service the network. This encryption is achieved
@@ -127,18 +146,16 @@ export default function configureSSLCertificateTaskFactory(
 
           if (providers.includes(SSL_PROVIDERS.SELF_SIGNED)) {
             header += '    Self-signed    - Generate your own self-signed certificate\n';
-
-            choices.push({ name: SSL_PROVIDERS.SELF_SIGNED, message: 'Self-signed' });
           }
 
           if (!ctx.certificateProvider) {
-            ctx.certificateProvider = await task.prompt({
+            ctx.certificateProvider = await promptOrThrow(task, {
               type: 'select',
               header,
               message: 'How do you want to configure SSL?',
-              choices,
+              choices: providers.map((name) => ({ name, message: choiceMessages[name] })),
               initial: SSL_PROVIDERS.ZEROSSL,
-            });
+            }, { interactive: ctx.interactive });
           }
 
           // An answer given in advance is held to the same rule as the prompt.
