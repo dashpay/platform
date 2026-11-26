@@ -69,7 +69,8 @@ function exportSubjectPublicKeyInfo(publicKey) {
  *
  * @param {string} bundlePem
  * @param {string} privateKeyPem
- * @return {{leaf: crypto.X509Certificate}|{error: string, detail: string}}
+ * @return {{leaf: crypto.X509Certificate, certificates: crypto.X509Certificate[]}
+ *   |{error: string, detail: string}} certificates are every block, in order
  */
 export default function selectLeafCertificate(bundlePem, privateKeyPem) {
   if (ENCRYPTED_KEY.test(privateKeyPem)) {
@@ -142,5 +143,5 @@ export default function selectLeafCertificate(bundlePem, privateKeyPem) {
     };
   }
 
-  return { leaf: certificates[0] };
+  return { leaf: certificates[0], certificates };
 }
