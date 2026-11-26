@@ -143,6 +143,18 @@ describe('findReusableZeroSslCertificate', () => {
     });
   });
 
+  it('should not reuse a certificate ZeroSSL does not know', async () => {
+    getCertificate.rejects(Object.assign(
+      new Error('Your ZeroSSL certificate ID (hash) could not be found'),
+      { code: 2803 },
+    ));
+
+    const reusable = await findReusableZeroSslCertificate(config);
+
+    expect(reusable.isReusable).to.be.false();
+    expect(reusable.reason).to.include('could not be found');
+  });
+
   it('should not know when ZeroSSL answers with an error', async () => {
     getCertificate.rejects(Object.assign(new Error('Internal error'), { code: 2900 }));
 
