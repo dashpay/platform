@@ -1,12 +1,14 @@
 import selectLeafCertificate from './selectLeafCertificate.js';
+import { isSelfSigned, readValidityWindow } from './leafCertificateChecks.js';
 
 /**
  * Why the gateway cannot serve TLS from a certificate bundle and its private
  * key, if it cannot
  *
  * The pair has to load and match the way the gateway loads it, with the key's
- * certificate first, and that certificate must not have expired: clients
- * refuse an expired one. Unless it is self-signed, the bundle must also hold
+ * certificate first, and that certificate must be inside its validity window:
+ * clients refuse one that has expired or is not valid yet. Unless it is
+ * self-signed, the bundle must also hold
  * the certificate that issued it. ZeroSSL writes the key's certificate and
  * then its authority's into one file, and a write a full disk cuts short right
  * after the first block still parses, but clients cannot build a chain from it.
@@ -25,11 +27,17 @@ export default function findCertificatePairProblem(bundlePem, privateKeyPem, now
 
   const [leaf, ...others] = selection.certificates;
 
-  if (new Date(leaf.validTo) <= now) {
+  const validity = readValidityWindow(leaf, now);
+
+  if (validity.isNotYetValid) {
+    return `its certificate is not valid until ${leaf.validFrom}`;
+  }
+
+  if (validity.isExpired) {
     return `its certificate expired on ${leaf.validTo}`;
   }
 
-  const isIssuerPresent = leaf.subject === leaf.issuer
+  const isIssuerPresent = isSelfSigned(leaf)
     || others.some((certificate) => leaf.checkIssued(certificate)
       && leaf.verify(certificate.publicKey));
 
