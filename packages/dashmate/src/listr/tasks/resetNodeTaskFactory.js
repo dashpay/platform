@@ -73,6 +73,27 @@ export default function resetNodeTaskFactory(
           if (!config.get('platform.enable') && ctx.isPlatformOnlyReset) {
             throw new Error('Cannot reset platform only if platform services are not enabled in config');
           }
+
+          // A hard Platform reset restores the Platform options from the defaults
+          // of the config's preset or group. Without them there is nothing to
+          // restore, so refuse before any service is touched rather than fall
+          // back to removing the whole config, Core included.
+          const defaultConfigName = config.get('group') || config.getName();
+
+          if (ctx.isPlatformOnlyReset && ctx.isHardReset && !ctx.removeConfig
+            && !defaultConfigs.has(defaultConfigName)) {
+            const name = config.getName();
+
+            throw new Error([
+              `Cannot reset Platform only for config '${name}': dashmate has no Platform defaults`
+                + ` for '${defaultConfigName}' to restore.`,
+              'To remove Platform services and data and keep the config, run it without --hard:',
+              `  dashmate reset --config ${name} --platform`,
+              'and set Platform options with \'dashmate config set\'.',
+              'To remove the whole config, Core included:',
+              `  dashmate reset --config ${name} --hard`,
+            ].join('\n'));
+          }
         },
       },
       {

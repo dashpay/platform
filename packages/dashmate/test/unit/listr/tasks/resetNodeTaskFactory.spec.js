@@ -1,6 +1,9 @@
+import fs from 'fs';
+import path from 'path';
 import { Listr } from 'listr2';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import DefaultConfigs from '../../../../src/config/DefaultConfigs.js';
+import Config from '../../../../src/config/Config.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getTestnetConfigFactory from '../../../../configs/defaults/getTestnetConfigFactory.js';
@@ -10,30 +13,22 @@ import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashN
 
 describe('resetNodeTaskFactory', () => {
   let homeDir;
+  let getBaseConfig;
+  let getTestnetConfig;
   let config;
+  let configFile;
+  let dockerCompose;
   let resetNodeTask;
 
-  beforeEach(() => {
-    homeDir = HomeDir.createTemp();
+  /**
+   * Make the given configs the config file's contents and reset the first one
+   *
+   * @param {Config[]} configs
+   */
+  function useConfigs(configs) {
+    [config] = configs;
 
-    const getBaseConfig = getBaseConfigFactory(homeDir);
-    const getTestnetConfig = getTestnetConfigFactory(homeDir, getBaseConfig);
-
-    // A testnet Evo fullnode: it runs platform, but no identity is registered
-    // on chain for it, so dashmate is the only source of its node key.
-    config = getTestnetConfig();
-    config.set('core.masternode.enable', false);
-    config.set('platform.enable', true);
-    const key = generateTenderdashNodeKey();
-    config.set('platform.drive.tenderdash.node.key', key);
-    config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(key));
-
-    const dockerCompose = {
-      isNodeRunning: async () => false,
-      down: async () => {},
-      rm: async () => {},
-      getVolumeNames: async () => [],
-    };
+    configFile = new ConfigFile([getBaseConfig(), ...configs], '4.1.0', 'abcdef12', config.getName(), null);
 
     resetNodeTask = resetNodeTaskFactory(
       dockerCompose,
@@ -41,26 +36,67 @@ describe('resetNodeTaskFactory', () => {
       null,
       null,
       new DefaultConfigs([getBaseConfig, getTestnetConfig]),
-      new ConfigFile([getBaseConfig(), config], '4.1.0', 'abcdef12', 'testnet', null),
+      configFile,
       homeDir,
       () => ({}),
       () => [],
     );
+  }
+
+  /**
+   * @param {...string} segments
+   * @return {string}
+   */
+  function writeFile(...segments) {
+    const filePath = homeDir.joinPath(...segments);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, 'content');
+
+    return filePath;
+  }
+
+  beforeEach(function beforeEach() {
+    homeDir = HomeDir.createTemp();
+
+    getBaseConfig = getBaseConfigFactory(homeDir);
+    getTestnetConfig = getTestnetConfigFactory(homeDir, getBaseConfig);
+
+    dockerCompose = {
+      isNodeRunning: this.sinon.stub().resolves(false),
+      down: this.sinon.stub().resolves(),
+      rm: this.sinon.stub().resolves(),
+      getVolumeNames: this.sinon.stub().resolves([]),
+    };
+
+    // A testnet Evo fullnode: it runs platform, but no identity is registered
+    // on chain for it, so dashmate is the only source of its node key.
+    const testnetConfig = getTestnetConfig();
+    testnetConfig.set('core.masternode.enable', false);
+    testnetConfig.set('platform.enable', true);
+    const key = generateTenderdashNodeKey();
+    testnetConfig.set('platform.drive.tenderdash.node.key', key);
+    testnetConfig.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(key));
+
+    useConfigs([testnetConfig]);
   });
 
   afterEach(() => {
     homeDir.remove();
   });
 
-  function hardReset(ctx) {
+  function reset(ctx) {
     return new Listr([{ task: () => resetNodeTask(config) }], { renderer: 'silent' })
       .run({
-        isHardReset: true,
+        isHardReset: false,
         isForce: true,
         keepData: true,
         removeConfig: false,
         ...ctx,
       });
+  }
+
+  function hardReset(ctx) {
+    return reset({ isHardReset: true, ...ctx });
   }
 
   // Resetting platform options clears the node identity while the config stays
@@ -95,5 +131,76 @@ describe('resetNodeTaskFactory', () => {
 
     expect(config.get('core.masternode.enable')).to.be.true();
     expect(config.get('platform.drive.tenderdash.node')).to.deep.equal({ id: null, key: null });
+  });
+
+  describe('a config without defaults', () => {
+    let corePath;
+    let platformPath;
+
+    /**
+     * @param {string} name
+     * @param {string|null} [group]
+     */
+    function useConfigWithoutDefaults(name, group = null) {
+      const options = getTestnetConfig().getStoredOptions();
+      options.group = group;
+
+      useConfigs([new Config(name, options)]);
+
+      corePath = writeFile(name, 'core', 'dash.conf');
+      platformPath = writeFile(name, 'platform', 'drive', 'tenderdash', 'config.toml');
+    }
+
+    // dashmate knows Platform defaults only for its presets. Without them a hard
+    // Platform reset has nothing to restore, and removing the whole config
+    // instead would take Core's settings with it.
+    it('should refuse a hard Platform reset before touching any service', async () => {
+      useConfigWithoutDefaults('devnet-ops');
+
+      await expect(hardReset({ isPlatformOnlyReset: true, isForce: false }))
+        .to.be.rejectedWith(/'devnet-ops'[\s\S]*dashmate reset --config devnet-ops --platform[\s\S]*dashmate reset --config devnet-ops --hard/);
+
+      expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+      expect(dockerCompose.rm).to.not.have.been.called();
+      expect(dockerCompose.down).to.not.have.been.called();
+      expect(dockerCompose.getVolumeNames).to.not.have.been.called();
+      expect(configFile.isConfigExists('devnet-ops')).to.be.true();
+      expect(fs.existsSync(corePath)).to.be.true();
+      expect(fs.existsSync(platformPath)).to.be.true();
+    });
+
+    // Defaults are looked up by group name, so a member of a custom group has
+    // none either.
+    it('should refuse a hard Platform reset of a member of a group without defaults', async () => {
+      useConfigWithoutDefaults('ops_1', 'ops');
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith(/'ops_1'/);
+
+      expect(dockerCompose.rm).to.not.have.been.called();
+      expect(configFile.isConfigExists('ops_1')).to.be.true();
+      expect(fs.existsSync(corePath)).to.be.true();
+    });
+
+    // The soft Platform reset changes no options, so it needs no defaults.
+    it('should still reset Platform services and data without --hard', async () => {
+      useConfigWithoutDefaults('devnet-ops');
+
+      await reset({ isPlatformOnlyReset: true });
+
+      expect(dockerCompose.rm).to.have.been.calledOnce();
+      expect(configFile.isConfigExists('devnet-ops')).to.be.true();
+      expect(fs.existsSync(platformPath)).to.be.true();
+    });
+
+    // A full hard reset removing such a config is what the operator asked for.
+    it('should still remove the whole config on a full hard reset', async () => {
+      useConfigWithoutDefaults('devnet-ops');
+
+      await hardReset({ isPlatformOnlyReset: false });
+
+      expect(configFile.isConfigExists('devnet-ops')).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('devnet-ops'))).to.be.false();
+    });
   });
 });
