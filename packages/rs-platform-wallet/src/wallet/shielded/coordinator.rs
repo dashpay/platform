@@ -1607,14 +1607,19 @@ impl NetworkShieldedCoordinator {
     /// wiped too.
     ///
     /// A host snapshot that cannot be read keeps nothing and lets the Clear
-    /// go on: Clear is how a host recovers from rows it cannot read. A write
-    /// that fails aborts the Clear with nothing reset.
+    /// go on: Clear is how a host recovers from rows it cannot read. One the
+    /// host could not read for now (a busy database) is another matter: a
+    /// retry may read it, and the wipe would delete rows it never saw. That
+    /// failure is returned as the host classified it
+    /// ([`PlatformWalletError::PersisterLoad`]), and the Clear stops with
+    /// nothing reset. So does a write that fails.
     async fn keep_host_identity_accounts(
         &self,
         host: &dyn PlatformWalletPersistence,
     ) -> Result<(), PlatformWalletError> {
         let start = match host.load() {
             Ok(start) => start,
+            Err(e) if e.is_transient() => return Err(PlatformWalletError::from_load_failure(e)),
             Err(e) => {
                 tracing::warn!(
                     error = %e,

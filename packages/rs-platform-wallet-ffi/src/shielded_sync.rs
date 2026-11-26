@@ -702,6 +702,13 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// wipe slot (`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE`),
 /// or when a sync pass or another holder Clear waits for does not finish
 /// within the Clear budget (`ErrorShutdownIncomplete`-class result; retry).
+///
+/// Before anything is reset, the load callbacks are called once: Clear keeps
+/// the identity accounts the viewing key rows record, which the wipe then
+/// deletes. A load that fails as retryable returns
+/// `ErrorPersisterLoadTransient` (49) with nothing reset and the wipe slot
+/// not called; call again. A load that fails otherwise does not stop the
+/// Clear.
 /// A failed native reset returns an error before the host is called. A
 /// failed host wipe after a successful reset returns an error and refuses
 /// binds until a Clear succeeds.
@@ -753,12 +760,17 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
 /// retrying the wipe. A Clear refused while a shielded operation is in flight
 /// (`ErrorShieldedOperationInProgress`) changed nothing, the host's rows
 /// included, so the host keeps everything as it was and offers the Clear
-/// again. Every other failure keeps the generic mapping.
+/// again. A host read that failed before anything was reset
+/// (`ErrorPersisterLoadTransient`: the Clear reads the host's viewing key
+/// rows before it has them wiped, and the host was busy) also changed
+/// nothing, and the host retries the Clear. Every other failure keeps the
+/// generic mapping.
 fn map_clear_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
     if matches!(
         error,
         PlatformWalletError::ShutdownIncomplete(_)
             | PlatformWalletError::ShieldedOperationInProgress
+            | PlatformWalletError::PersisterLoad(_)
     ) {
         return PlatformWalletFFIResult::from(error);
     }
@@ -1142,6 +1154,7 @@ mod sync_result_tests {
 #[cfg(test)]
 mod recovery_error_tests {
     use super::*;
+    use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
     /// The exported Clear reports a refusal during a shielded operation and
     /// an incomplete drain by their own codes, and any other failure as a
@@ -1159,6 +1172,14 @@ mod recovery_error_tests {
                 PlatformWalletError::ShutdownIncomplete("a pass did not drain".into()),
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
                 27,
+            ),
+            (
+                PlatformWalletError::PersisterLoad(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "the host is busy",
+                )),
+                PlatformWalletFFIResultCode::ErrorPersisterLoadTransient,
+                49,
             ),
             (
                 PlatformWalletError::ShieldedStoreError("purge failed".into()),

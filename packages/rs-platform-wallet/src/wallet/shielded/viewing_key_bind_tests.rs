@@ -18,6 +18,7 @@ use grovedb_commitment_tree::Scope;
 use key_wallet::account::StandardAccountType;
 
 use crate::changeset::PersistenceError;
+use crate::changeset::PersistenceErrorKind;
 use crate::changeset::PlatformWalletPersistence;
 use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
 use crate::error::PlatformWalletError;
@@ -54,6 +55,8 @@ pub(crate) struct CapturingPersistence {
     /// gated call itself instead of polling a counter against the clock.
     gated_load_entered: tokio::sync::Notify,
     fail_next_load: Mutex<bool>,
+    /// Fail the next `load()` as a host reports a busy database: retryable.
+    fail_next_load_transiently: Mutex<bool>,
 }
 
 impl CapturingPersistence {
@@ -136,6 +139,17 @@ impl PlatformWalletPersistence for CapturingPersistence {
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        if std::mem::take(
+            &mut *self
+                .fail_next_load_transiently
+                .lock()
+                .expect("failure lock"),
+        ) {
+            return Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "injected busy host",
+            ));
+        }
         if std::mem::take(&mut *self.fail_next_load.lock().expect("failure lock")) {
             return Err(PersistenceError::backend(
                 "injected local restore load failure",
@@ -2109,6 +2123,62 @@ async fn should_keep_a_retired_tip_account_of_a_wallet_not_bound_before_the_clea
             .contains(&retired_id),
         "the retired tip account is scanned again"
     );
+}
+
+/// The read a Clear makes of the host before its wipe can fail two ways. A
+/// host that is busy for now stops the Clear with nothing reset and its rows
+/// in place, as a retry may read them: the retried Clear keeps the retired
+/// account. A host that cannot be read at all does not stop the Clear, which
+/// is how such a host is recovered.
+#[tokio::test]
+async fn should_stop_a_clear_whose_host_is_busy_and_let_one_through_whose_host_cannot_be_read() {
+    let retired = crate::shielded_identity_account_index(7).unwrap();
+    let unbound: WalletId = [0x77; 32];
+    let retired_id = SubwalletId::new(unbound, retired);
+    let persister = Arc::new(CapturingPersistence::default());
+    let rows = || BTreeMap::from([(retired_id, vec![2; 96])]);
+    let dir = temp_dir("retired_tips_busy_host");
+    let coordinator = coordinator_at(&dir);
+    let epoch = coordinator.clear_epoch().await;
+
+    persister.serve_viewing_keys(rows());
+    *persister.fail_next_load_transiently.lock().unwrap() = true;
+    let busy = coordinator.clear(&*persister).await;
+    assert!(
+        matches!(&busy, Err(PlatformWalletError::PersisterLoad(e)) if e.is_transient()),
+        "{busy:?}"
+    );
+    assert_eq!(coordinator.clear_epoch().await, epoch, "nothing was reset");
+    assert!(
+        persister
+            .load()
+            .expect("load")
+            .shielded
+            .viewing_keys
+            .contains_key(&retired_id),
+        "the host was not asked to wipe"
+    );
+
+    coordinator.clear(&*persister).await.expect("the retry");
+    let kept = std::collections::BTreeSet::from([retired]);
+    assert_eq!(coordinator.kept_identity_accounts(unbound).await, kept);
+    drop(coordinator);
+    assert_eq!(
+        coordinator_at(&dir).kept_identity_accounts(unbound).await,
+        kept,
+        "and it survives a reopen"
+    );
+
+    // Unreadable, not busy: the Clear runs and keeps nothing of this host.
+    let other: WalletId = [0x78; 32];
+    let coordinator = coordinator_at(&temp_dir("retired_tips_unreadable_host"));
+    persister.serve_viewing_keys(BTreeMap::from([(
+        SubwalletId::new(other, retired),
+        vec![2; 96],
+    )]));
+    *persister.fail_next_load.lock().unwrap() = true;
+    coordinator.clear(&*persister).await.expect("clear");
+    assert!(coordinator.kept_identity_accounts(other).await.is_empty());
 }
 
 /// A host rebind passes only ordinary accounts (FFI and host SDKs cap the
