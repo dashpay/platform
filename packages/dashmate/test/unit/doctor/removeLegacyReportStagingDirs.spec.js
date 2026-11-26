@@ -1,0 +1,285 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import removeLegacyReportStagingDirs from '../../../src/doctor/removeLegacyReportStagingDirs.js';
+
+describe('removeLegacyReportStagingDirs', () => {
+  const legacyName = 'dashmate-report-2026-01-01T00:00:00.000Z';
+
+  let testRoot;
+  let tempDir;
+  let outsideDir;
+
+  /**
+   * @param {string} name
+   * @param {string} [root]
+   * @return {string}
+   */
+  function makeStagingDir(name, root = tempDir) {
+    const dir = path.join(root, name);
+
+    fs.mkdirSync(path.join(dir, 'core'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'core', 'stdOut.txt'), 'log line\n');
+
+    return dir;
+  }
+
+  /**
+   * Make one path report something else when it is inspected without
+   * following links, the way the cleanup inspects every entry
+   *
+   * @param {Object} sinon
+   * @param {string} target
+   * @param {Object} overrides
+   */
+  function stubLstatOf(sinon, target, overrides) {
+    const lstatSync = fs.lstatSync.bind(fs);
+
+    sinon.stub(fs, 'lstatSync').callsFake((entry, ...rest) => {
+      const stat = lstatSync(entry, ...rest);
+
+      return entry === target ? Object.assign(Object.create(stat), overrides) : stat;
+    });
+  }
+
+  beforeEach(() => {
+    // Resolved, so the paths the cleanup reports compare equal to these
+    testRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-legacy-staging-test-')));
+    tempDir = path.join(testRoot, 'tmp');
+    outsideDir = path.join(testRoot, 'outside');
+
+    fs.mkdirSync(tempDir, { mode: 0o700 });
+    fs.mkdirSync(outsideDir);
+  });
+
+  afterEach(() => {
+    fs.chmodSync(testRoot, 0o700);
+    fs.rmSync(testRoot, { recursive: true, force: true });
+  });
+
+  // Earlier versions staged every report under a fixed name in the temp
+  // directory and never removed it.
+  it('should remove a staging directory an earlier version left behind', () => {
+    const dir = makeStagingDir(legacyName);
+
+    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.deep.equal([dir]);
+    expect(failed).to.be.empty();
+    expect(fs.existsSync(dir)).to.be.false();
+  });
+
+  it('should leave a link under that name, and what it points to, alone', () => {
+    fs.writeFileSync(path.join(outsideDir, 'keep.txt'), 'not ours to remove');
+
+    const link = path.join(tempDir, legacyName);
+    fs.symlinkSync(outsideDir, link);
+
+    const { removed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.be.empty();
+    expect(fs.lstatSync(link).isSymbolicLink()).to.be.true();
+    expect(fs.readFileSync(path.join(outsideDir, 'keep.txt'), 'utf8')).to.equal('not ours to remove');
+  });
+
+  it('should leave a directory another user owns alone', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    stubLstatOf(this.sinon, dir, { uid: process.getuid() + 1 });
+
+    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.be.empty();
+    // Passed over, not refused: it is simply not one of the user's own
+    expect(failed).to.be.empty();
+    expect(fs.existsSync(dir)).to.be.true();
+  });
+
+  it('should leave a directory alone that is on another file system than the temp directory', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    // The staging directory and all it holds on one file system, mounted
+    // where the temp directory is on another
+    stubLstatOf(this.sinon, tempDir, { dev: fs.lstatSync(tempDir).dev + 1 });
+
+    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.be.empty();
+    expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
+    expect(fs.existsSync(dir)).to.be.true();
+  });
+
+  // The current version stages in a directory of its own with a random
+  // suffix, and a report being written right now must not lose its files.
+  it('should only remove names that match the earlier naming exactly', () => {
+    const kept = [
+      makeStagingDir(`${legacyName}-a1B2c3`),
+      makeStagingDir('dashmate-report-latest'),
+      makeStagingDir(`x${legacyName}`),
+      // Shaped like the earlier name, but no collection time is written this way
+      makeStagingDir('dashmate-report-2026-99-01T00:00:00.000Z'),
+    ];
+
+    const file = path.join(tempDir, 'dashmate-report-2026-01-02T00:00:00.000Z');
+    fs.writeFileSync(file, 'a file, not a staging directory');
+
+    const { removed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.be.empty();
+    kept.forEach((dir) => expect(fs.existsSync(dir)).to.be.true());
+    expect(fs.existsSync(file)).to.be.true();
+  });
+
+  // Where the operating system has no user ids to compare, ownership cannot
+  // be told, so nothing is looked at. Earlier versions could not create these
+  // directories there in the first place: the name is not a valid one.
+  it('should do nothing where ownership cannot be told', function it() {
+    this.sinon.stub(process, 'getuid').value(undefined);
+    const readdirSync = this.sinon.spy(fs, 'readdirSync');
+
+    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.be.empty();
+    expect(failed).to.be.empty();
+    expect(readdirSync).to.not.have.been.called();
+  });
+
+  it('should report a directory it could not remove and carry on', function it() {
+    const first = makeStagingDir(legacyName);
+    const second = makeStagingDir('dashmate-report-2026-01-03T00:00:00.000Z');
+
+    const rmSync = fs.rmSync.bind(fs);
+    this.sinon.stub(fs, 'rmSync').callsFake((target, options) => {
+      if (target === first) {
+        throw new Error('permission denied');
+      }
+
+      return rmSync(target, options);
+    });
+
+    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+    expect(removed).to.deep.equal([second]);
+    expect(failed.map(({ dir, error }) => [dir, error.message]))
+      .to.deep.equal([[first, 'permission denied']]);
+  });
+
+  // What is removed is decided by name and owner, and both only hold while
+  // nobody else can swap the directory being looked at for another one.
+  describe('a temp directory others could change', () => {
+    it('should leave everything alone in a directory anyone can rename entries in', () => {
+      const dir = makeStagingDir(legacyName);
+
+      fs.chmodSync(tempDir, 0o777);
+
+      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.be.empty();
+      expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([tempDir]);
+      expect(fs.existsSync(dir)).to.be.true();
+    });
+
+    // That is what a shared temp directory is like: anyone can add entries,
+    // but only their owner can rename or remove them
+    it('should remove from a directory where entries can only be renamed by their owner', () => {
+      const dir = makeStagingDir(legacyName);
+
+      fs.chmodSync(tempDir, 0o1777);
+
+      const { removed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.deep.equal([dir]);
+    });
+
+    it('should leave everything alone when a directory above it can be changed by others', () => {
+      const dir = makeStagingDir(legacyName);
+
+      fs.chmodSync(testRoot, 0o777);
+
+      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.be.empty();
+      expect(failed).to.have.lengthOf(1);
+      expect(fs.existsSync(dir)).to.be.true();
+    });
+
+    // Through a link, `..` leads the operating system to the link target's
+    // parent, while resolving the path as text drops the link instead, so the
+    // same path names two directories. Nothing is removed from either.
+    it('should leave everything alone when the path to it is not a plain one', () => {
+      fs.symlinkSync(tempDir, path.join(outsideDir, 'link'));
+
+      const dir = makeStagingDir(legacyName);
+      const other = makeStagingDir(legacyName, path.join(outsideDir, 'tmp'));
+
+      const { removed, failed } = removeLegacyReportStagingDirs(`${outsideDir}/link/../tmp`);
+
+      expect(removed).to.be.empty();
+      expect(failed).to.have.lengthOf(1);
+      expect(fs.existsSync(dir)).to.be.true();
+      expect(fs.existsSync(other)).to.be.true();
+    });
+
+    it('should work on the directory a link to it leads to', () => {
+      const link = path.join(outsideDir, 'link');
+      fs.symlinkSync(tempDir, link);
+
+      const dir = makeStagingDir(legacyName);
+
+      const { removed } = removeLegacyReportStagingDirs(link);
+
+      expect(removed).to.deep.equal([dir]);
+    });
+  });
+
+  // A directory tree is removed only once nobody else can change it while it
+  // is being removed, and only if all of it is on the same file system.
+  describe('what a staging directory holds', () => {
+    it('should remove a tree that others could write to, once only its owner can', function it() {
+      const dir = makeStagingDir(legacyName);
+      const writable = path.join(dir, 'core');
+
+      fs.chmodSync(writable, 0o777);
+
+      const fchmodSync = this.sinon.spy(fs, 'fchmodSync');
+      const readdirSync = this.sinon.spy(fs, 'readdirSync');
+
+      const { removed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.deep.equal([dir]);
+
+      // Closed to others before what it holds is read, through the directory
+      // itself rather than its path, so a link put in its place is not followed
+      const closed = fchmodSync.withArgs(this.sinon.match.number, 0o755);
+
+      expect(closed).to.have.been.calledOnce();
+      expect(closed.firstCall).to.have.been.calledBefore(readdirSync.withArgs(writable).firstCall);
+    });
+
+    it('should leave a tree alone if another user owns anything in it', function it() {
+      const dir = makeStagingDir(legacyName);
+      const entry = path.join(dir, 'core', 'stdOut.txt');
+
+      stubLstatOf(this.sinon, entry, { uid: process.getuid() + 1 });
+
+      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.be.empty();
+      expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
+      expect(fs.existsSync(entry)).to.be.true();
+    });
+
+    it('should leave a tree alone if part of it is on another file system', function it() {
+      const dir = makeStagingDir(legacyName);
+      const mountPoint = path.join(dir, 'core');
+
+      stubLstatOf(this.sinon, mountPoint, { dev: fs.lstatSync(dir).dev + 1 });
+
+      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+
+      expect(removed).to.be.empty();
+      expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
+      expect(fs.existsSync(path.join(mountPoint, 'stdOut.txt'))).to.be.true();
+    });
+  });
+});
