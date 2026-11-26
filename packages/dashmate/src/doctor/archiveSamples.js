@@ -71,17 +71,17 @@ export default async function archiveSamples(samples, folderPath) {
       create({ cwd: archiveDir, gzip: true }, ['.']),
       fs.createWriteStream(partialFilePath, { flags: 'wx' }),
     );
+
+    fs.renameSync(partialFilePath, archiveFilePath);
   } catch (e) {
     try {
       fs.rmSync(partialFilePath, { force: true });
     } catch {
-      // The packing error is the one to report
+      // The packing or rename error is the one to report
     }
 
     throw e;
   }
-
-  fs.renameSync(partialFilePath, archiveFilePath);
 
   return archiveFilePath;
 }

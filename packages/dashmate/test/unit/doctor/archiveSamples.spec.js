@@ -56,6 +56,17 @@ describe('archiveSamples', () => {
     expect(unarchived.date.toISOString()).to.equal('2026-11-26T10:15:30.123Z');
   });
 
+  // Packing succeeded, but the archive could not be put under its name
+  it('should not leave the packed archive behind when it cannot be renamed into place', async () => {
+    fs.mkdirSync(path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz'));
+
+    const error = await archiveSamples(samples, outputDir).catch((e) => e);
+
+    expect(error).to.be.an('error');
+    expect(error.syscall).to.equal('rename');
+    expect(fs.readdirSync(outputDir).filter((name) => name.endsWith('.partial'))).to.be.empty();
+  });
+
   describe('when packing fails', () => {
     beforeEach(function beforeEach() {
       // Root reads a file whatever its mode, and Windows cannot revoke read
