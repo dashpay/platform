@@ -406,15 +406,53 @@ export default function resetNodeTaskFactory(
   }
 
   /**
+   * What a reset removes besides the config's files, worked out before it
+   * removes anything
+   *
+   * @typedef {Object} ResetPlan
+   * @property {string[]} [serviceNames] - the Platform services a Platform-only
+   *  reset checks and removes
+   * @property {string[]} [profiles] - the profiles to enable next to them
+   * @property {string[]} [volumeNames] - the volumes it removes after them
+   */
+
+  /**
+   * Refuse a reset that cannot be done and work out what it removes, while
+   * nothing has changed
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {Promise<ResetPlan>}
+   */
+  async function planReset(config, ctx) {
+    assertNodeCanBeReset(config, ctx);
+
+    if (!ctx.isPlatformOnlyReset) {
+      return {};
+    }
+
+    const { serviceNames, profiles } = selectPlatformServices(config);
+
+    // Compose fails to describe the project when service files are missing.
+    // Looked up now, that failure comes while nothing has been removed.
+    const volumeNames = ctx.keepData
+      ? []
+      : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
+
+    return { serviceNames, profiles, volumeNames };
+  }
+
+  /**
    * Refuse a reset while the services it removes are running
    *
    * @param {Config} config
    * @param {Object} ctx
+   * @param {ResetPlan} plan
    * @return {Promise<void>}
    */
-  async function assertServicesAreStopped(config, ctx) {
+  async function assertServicesAreStopped(config, ctx, plan) {
     const options = ctx.isPlatformOnlyReset
-      ? selectPlatformServices(config)
+      ? { serviceNames: plan.serviceNames, profiles: plan.profiles }
       : { profiles: [] };
 
     if (await dockerCompose.isNodeRunning(config, options)) {
@@ -424,39 +462,50 @@ export default function resetNodeTaskFactory(
 
   /**
    * Everything the reset checks before it changes anything, the running
-   * services included unless the reset is forced
+   * services included unless the reset is forced, and what it will remove
    *
-   * A group reset runs this for every member before it resets any of them.
+   * A group reset runs this for every member before it resets any of them,
+   * and gives each member's reset its plan.
    *
-   * @typedef {function} assertResetCanStart
+   * @typedef {function} prepareReset
    * @param {Config} config
    * @param {Object} ctx
-   * @return {Promise<void>}
+   * @return {Promise<ResetPlan>}
    */
-  async function assertResetCanStart(config, ctx) {
-    assertNodeCanBeReset(config, ctx);
+  async function prepareReset(config, ctx) {
+    const plan = await planReset(config, ctx);
 
     if (!ctx.isForce) {
-      await assertServicesAreStopped(config, ctx);
+      await assertServicesAreStopped(config, ctx, plan);
     }
+
+    return plan;
   }
 
   /**
    * @typedef {resetNodeTask}
    * @param {Config} config
+   * @param {ResetPlan} [preparedPlan] - from prepareReset, which has already
+   *  checked the reset
    */
-  function resetNodeTask(config) {
+  function resetNodeTask(config, preparedPlan = undefined) {
+    let plan = preparedPlan;
+
     return new Listr([
       {
         // The default renderer shows a failed task's error in place of its
         // title, and nothing for a task without one.
         title: 'Check the reset can be done',
-        task: (ctx) => assertNodeCanBeReset(config, ctx),
+        enabled: () => preparedPlan === undefined,
+        task: async (ctx) => {
+          plan = await planReset(config, ctx);
+        },
       },
       {
         title: 'Check services are not running',
+        enabled: () => preparedPlan === undefined,
         skip: (ctx) => ctx.isForce,
-        task: (ctx) => assertServicesAreStopped(config, ctx),
+        task: (ctx) => assertServicesAreStopped(config, ctx, plan),
       },
       {
         title: 'Remove all services and associated data',
@@ -478,7 +527,7 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const { serviceNames, profiles } = selectPlatformServices(config);
+          const { serviceNames, profiles, volumeNames } = plan;
 
           const removeOptions = {
             serviceNames: [...serviceNames, HELPER_SERVICE_NAME],
@@ -491,12 +540,6 @@ export default function resetNodeTaskFactory(
             // eslint-disable-next-line no-param-reassign
             task.title = 'Remove platform services and keep associated data';
           }
-
-          // Looked up first: Compose fails to describe the project when service
-          // files are missing, and then nothing has been removed yet.
-          const volumeNames = ctx.keepData
-            ? []
-            : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
 
           await dockerCompose.rm(config, removeOptions);
 
@@ -596,7 +639,7 @@ export default function resetNodeTaskFactory(
     ]);
   }
 
-  resetNodeTask.assertCanBeReset = assertResetCanStart;
+  resetNodeTask.prepare = prepareReset;
 
   return resetNodeTask;
 }

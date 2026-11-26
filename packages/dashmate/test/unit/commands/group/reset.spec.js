@@ -12,7 +12,7 @@ describe('GroupResetCommand', () => {
     }));
 
     resetNodeTask = this.sinon.stub().callsFake(() => new Listr([]));
-    resetNodeTask.assertCanBeReset = this.sinon.stub().resolves();
+    resetNodeTask.prepare = this.sinon.stub().resolves();
   });
 
   function runGroupReset(flags) {
@@ -37,12 +37,12 @@ describe('GroupResetCommand', () => {
   // only after the others were leaves them half reset, with service files
   // Compose needs already gone.
   it('should check every member before it resets any', async () => {
-    resetNodeTask.assertCanBeReset.withArgs(members[1]).rejects(new Error('cannot reset local_2'));
+    resetNodeTask.prepare.withArgs(members[1]).rejects(new Error('cannot reset local_2'));
 
     const error = await runGroupReset({ hard: true }).then(() => null, (e) => e);
 
     expect(error.getError().message).to.equal('cannot reset local_2');
-    expect(resetNodeTask.assertCanBeReset).to.have.been.calledTwice();
+    expect(resetNodeTask.prepare).to.have.been.calledTwice();
     expect(resetNodeTask).to.not.have.been.called();
   });
 
@@ -51,11 +51,25 @@ describe('GroupResetCommand', () => {
   it('should tell the check that a hard reset of the local group removes the configs', async () => {
     await runGroupReset({ hard: true, platform: true });
 
-    expect(resetNodeTask.assertCanBeReset.firstCall.args[1]).to.include({
+    expect(resetNodeTask.prepare.firstCall.args[1]).to.include({
       isHardReset: true,
       isPlatformOnlyReset: true,
       removeConfig: true,
     });
     expect(resetNodeTask).to.have.been.calledTwice();
+  });
+
+  // Each member is removed the way its check worked out, rather than asking
+  // Compose again once other members are already gone.
+  it('should reset each member with the plan its check prepared', async () => {
+    const plans = members.map((member) => ({ serviceNames: [`${member.getName()}_service`] }));
+    members.forEach((member, index) => {
+      resetNodeTask.prepare.withArgs(member).resolves(plans[index]);
+    });
+
+    await runGroupReset({ platform: true });
+
+    expect(resetNodeTask).to.have.been.calledWithExactly(members[0], plans[0]);
+    expect(resetNodeTask).to.have.been.calledWithExactly(members[1], plans[1]);
   });
 });

@@ -66,22 +66,26 @@ export default class GroupResetCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
+    let resetPlans;
+
     const tasks = new Listr(
       [
         {
           // Members are reset one after another, so a member that cannot be
           // reset would otherwise be found only after the others were.
           title: 'Check the reset can be done',
-          task: (ctx) => Promise.all(
-            configGroup.map((config) => resetNodeTask.assertCanBeReset(config, ctx)),
-          ),
+          task: async (ctx) => {
+            resetPlans = await Promise.all(
+              configGroup.map((config) => resetNodeTask.prepare(config, ctx)),
+            );
+          },
         },
         {
           title: `Reset ${groupName} nodes`,
           task: () => {
-            const resetTasks = configGroup.map((config) => ({
+            const resetTasks = configGroup.map((config, index) => ({
               title: `Reset ${config.getName()} node`,
-              task: () => resetNodeTask(config),
+              task: () => resetNodeTask(config, resetPlans[index]),
             }));
 
             return new Listr(resetTasks);

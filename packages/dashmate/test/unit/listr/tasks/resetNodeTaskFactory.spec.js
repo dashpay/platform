@@ -13,6 +13,7 @@ import getTestnetConfigFactory from '../../../../configs/defaults/getTestnetConf
 import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
 import getMainnetConfigFactory from '../../../../configs/defaults/getMainnetConfigFactory.js';
 import resetNodeTaskFactory from '../../../../src/listr/tasks/resetNodeTaskFactory.js';
+import GroupResetCommand from '../../../../src/commands/group/reset.js';
 import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
 
@@ -155,20 +156,20 @@ describe('resetNodeTaskFactory', () => {
     it('should refuse while the services the reset removes are running', async () => {
       dockerCompose.isNodeRunning.resolves(true);
 
-      await expect(resetNodeTask.assertCanBeReset(config, { isPlatformOnlyReset: true, isForce: false }))
+      await expect(resetNodeTask.prepare(config, { isPlatformOnlyReset: true, isForce: false }))
         .to.be.rejectedWith('Running services detected');
     });
 
     it('should not look at running services when forced', async () => {
       dockerCompose.isNodeRunning.resolves(true);
 
-      await resetNodeTask.assertCanBeReset(config, { isPlatformOnlyReset: true, isForce: true });
+      await resetNodeTask.prepare(config, { isPlatformOnlyReset: true, isForce: true });
 
       expect(dockerCompose.isNodeRunning).to.not.have.been.called();
     });
 
     it('should refuse what the reset itself refuses', async () => {
-      await expect(resetNodeTask.assertCanBeReset(config, {
+      await expect(resetNodeTask.prepare(config, {
         isPlatformOnlyReset: true, isHardReset: true, removeConfig: true, isForce: true,
       })).to.be.rejectedWith('Cannot reset Platform only and remove config');
     });
@@ -649,6 +650,7 @@ describe('resetNodeTaskFactory', () => {
     let removedVolumes;
     let runningContainers;
     let configFailure;
+    let configFailureConfigName;
     let platformConfig;
     let projectName;
     let diContainer;
@@ -668,6 +670,7 @@ describe('resetNodeTaskFactory', () => {
       removedVolumes = [];
       runningContainers = [];
       configFailure = null;
+      configFailureConfigName = null;
       diContainer.register({
         docker: asValue({
           getVolume: (name) => ({
@@ -702,7 +705,8 @@ describe('resetNodeTaskFactory', () => {
           return { exitCode: 0, err: '', out: runningContainers.map((c) => JSON.stringify(c)).join('\n') };
         }
 
-        if (command === 'config' && configFailure) {
+        if (command === 'config' && configFailure && (configFailureConfigName === null
+          || options.env.CONFIG_NAME === configFailureConfigName)) {
           return Promise.reject(configFailure);
         }
 
@@ -846,6 +850,37 @@ describe('resetNodeTaskFactory', () => {
 
       await expect(platformReset()).to.be.rejectedWith('logger.env');
 
+      expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
+    });
+
+    // A group reset removes its members one after another, so a member whose
+    // project Compose cannot describe would be found only after the members
+    // before it lost their Platform services. Forcing the reset skips the
+    // running-services check only.
+    it('should look up every member\'s volumes before it removes any member\'s services', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      configFailure = { exitCode: 1, out: '', err: 'env file logger.env not found\n' };
+      configFailureConfigName = 'node_2';
+
+      const error = await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      ).then(() => null, (e) => e);
+
+      expect(error.getError().message).to.include('logger.env');
       expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
     });
 
