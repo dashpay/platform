@@ -7,6 +7,7 @@ import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigF
 import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
+import analyseCoreFactory from '../../../../../src/doctor/analyse/analyseCoreFactory.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
@@ -15,8 +16,22 @@ import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayC
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import { PACKAGE_ROOT_DIR } from '../../../../../src/constants.js';
 
 const EXTERNAL_IP = '198.51.100.7';
+
+/**
+ * Read a Core RPC response captured from a real Dash Core node
+ *
+ * @param {string} name
+ * @return {Object}
+ */
+function readCoreRpcFixture(name) {
+  return JSON.parse(fs.readFileSync(
+    path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc/24.0.3', name),
+    'utf8',
+  ));
+}
 
 /**
  * Format a date the way the ZeroSSL API reports certificate dates
@@ -361,6 +376,50 @@ describe('collectSamplesTaskFactory', () => {
     await collectSamples();
 
     expect(samples.getServiceInfo('gateway', 'metrics')).to.equal('metrics_sample 1');
+  });
+
+  describe('Core status', () => {
+    let masternodeStatus;
+    let mnsyncStatus;
+
+    beforeEach(() => {
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+
+      masternodeStatus = readCoreRpcFixture('masternode-status-evonode.json');
+      mnsyncStatus = readCoreRpcFixture('mnsync-status.json');
+
+      config.set('core.masternode.enable', true);
+
+      rpcClient.masternode.withArgs('status').resolves({ result: masternodeStatus });
+      rpcClient.mnsync.withArgs('status').resolves({ result: mnsyncStatus });
+    });
+
+    // The Core analysers judge PoSe state from one response and sync progress
+    // from the other, so each must be stored under the name it is read by.
+    it('should store each RPC response under its own sample', async () => {
+      await collectSamples();
+
+      expect(samples.getServiceInfo('core', 'masternodeStatus')).to.deep.equal(masternodeStatus);
+      expect(samples.getServiceInfo('core', 'masternodeSyncStatus')).to.deep.equal(mnsyncStatus);
+    });
+
+    it('should report a PoSe-banned masternode', async () => {
+      masternodeStatus.state = 'POSE_BANNED';
+
+      await collectSamples();
+
+      const problems = analyseCoreFactory()(samples);
+
+      expect(problems.map((problem) => problem.getDescription())).to.include(
+        'The masternode has been banned due to failing Proof-of-Service checks.',
+      );
+    });
   });
 
   describe('gateway TLS private key permissions', () => {

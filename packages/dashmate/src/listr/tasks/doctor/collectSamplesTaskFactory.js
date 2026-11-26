@@ -456,8 +456,8 @@ export default function collectSamplesTaskFactory(
               quorums,
               getBlockchainInfo,
               getPeerInfo,
-              masternodeStatus,
               masternodeSyncStatus,
+              masternodeStatus,
             ] = (await Promise.allSettled(coreCalls))
               .map((e) => e.value?.result || e.reason);
 
