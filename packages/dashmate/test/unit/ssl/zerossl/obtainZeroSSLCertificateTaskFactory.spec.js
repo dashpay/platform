@@ -494,16 +494,19 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
 
     let generateKeyPair;
     let fingerprint;
+    let zeroSslError;
 
     function buildTask() {
-      const getCertificate = this.sinon.stub().resolves(new Certificate({
-        id: CERTIFICATE_ID,
-        common_name: '1.2.3.4',
-        status: 'issued',
-        created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
-        expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
-        fingerprint_sha1: fingerprint,
-      }));
+      const getCertificate = zeroSslError
+        ? this.sinon.stub().rejects(zeroSslError)
+        : this.sinon.stub().resolves(new Certificate({
+          id: CERTIFICATE_ID,
+          common_name: '1.2.3.4',
+          status: 'issued',
+          created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
+          fingerprint_sha1: fingerprint,
+        }));
 
       return obtainZeroSSLCertificateTaskFactory(
         generateCertificateRequest,
@@ -546,6 +549,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       downloadCertificate = this.sinon.stub().resolves(pair.pem);
       generateKeyPair = this.sinon.stub().rejects(new Error('a new key was generated'));
       fingerprint = null;
+      zeroSslError = null;
     });
 
     afterEach(() => {
@@ -642,6 +646,33 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
 
       expect(downloadCertificate).to.not.have.been.called();
       expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+    });
+
+    // A plain obtain finishes the saved certificate. One ZeroSSL does not
+    // know leaves nothing to finish, and only a new certificate restores TLS.
+    it('should name --force when ZeroSSL does not know the saved certificate', async function it() {
+      zeroSslError = Object.assign(
+        new Error('Your ZeroSSL certificate ID (hash) could not be found'),
+        { code: 2803 },
+      );
+
+      const error = await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS })
+        .then(() => null, (e) => e);
+
+      expect(error.message).to.include('could not be found')
+        .and.include(CERTIFICATE_ID)
+        .and.include('--force');
+      expect(createCertificate).to.not.have.been.called();
+      expect(downloadCertificate).to.not.have.been.called();
+    });
+
+    it('should pass on any other error ZeroSSL answers with', async function it() {
+      zeroSslError = Object.assign(new Error('Internal error'), { code: 2900 });
+
+      const error = await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS })
+        .then(() => null, (e) => e);
+
+      expect(error).to.equal(zeroSslError);
     });
 
     // A response cut short says nothing about the issuance, and the next

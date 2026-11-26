@@ -7,7 +7,10 @@ import path from 'path';
 import lodash from 'lodash';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
-import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
+import {
+  ERRORS,
+  isSavedCertificateNotFound,
+} from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import VerificationServerUnreachableError from '../../../../ssl/errors/VerificationServerUnreachableError.js';
 import findCertificatePairProblem, {
   findCertificateFilesProblem,
@@ -160,6 +163,11 @@ export default function obtainZeroSSLCertificateTaskFactory(
               ctx.certificate = null;
               break;
             case ERRORS.ZERO_SSL_API_ERROR:
+              if (isSavedCertificateNotFound(error, data)) {
+                throw new Error(`ZeroSSL has no certificate with the saved ID ${config.get('platform.gateway.ssl.providerConfigs.zerossl.id')}: ${ctx.error.message}.\n`
+                  + 'Please obtain a new certificate using the obtain command with the --force flag');
+              }
+
               throw ctx.error;
             default:
               throw new Error(`Unknown error: ${error}`);

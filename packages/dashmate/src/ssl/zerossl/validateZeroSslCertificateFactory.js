@@ -35,6 +35,24 @@ export function isSavedCertificateReusable(error) {
 }
 
 /**
+ * ZeroSSL's error code for a certificate ID it does not know
+ */
+const CERTIFICATE_NOT_FOUND = 2803;
+
+/**
+ * Whether ZeroSSL answered that it has no certificate with the saved ID
+ *
+ * Nothing is left to finish then, and only a new certificate restores TLS.
+ *
+ * @param {string|undefined} error - from validateZeroSslCertificate
+ * @param {Object} data - from validateZeroSslCertificate
+ * @return {boolean}
+ */
+export function isSavedCertificateNotFound(error, data) {
+  return error === ERRORS.ZERO_SSL_API_ERROR && data.error?.code === CERTIFICATE_NOT_FOUND;
+}
+
+/**
  * @param {string} filePath
  * @return {boolean}
  */

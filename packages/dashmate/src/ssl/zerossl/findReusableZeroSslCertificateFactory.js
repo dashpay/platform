@@ -1,16 +1,15 @@
 import Certificate from './Certificate.js';
-import { ERRORS, isSavedCertificateReusable } from './validateZeroSslCertificateFactory.js';
+import {
+  ERRORS,
+  isSavedCertificateNotFound,
+  isSavedCertificateReusable,
+} from './validateZeroSslCertificateFactory.js';
 
 /**
  * How long advice waits for ZeroSSL before it is given without ZeroSSL's
  * answer. `start` refuses while it waits.
  */
 const ANSWER_TIMEOUT_MS = 10000;
-
-/**
- * ZeroSSL's error code for a certificate ID it does not know
- */
-const CERTIFICATE_NOT_FOUND = 2803;
 
 /**
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
@@ -60,8 +59,7 @@ export default function findReusableZeroSslCertificateFactory(validateZeroSslCer
       case ERRORS.EXTERNAL_IP_IS_NOT_SET:
         return unknown('externalIp is not set');
       case ERRORS.ZERO_SSL_API_ERROR:
-        // ZeroSSL has no certificate with the saved ID.
-        if (data.error.code === CERTIFICATE_NOT_FOUND) {
+        if (isSavedCertificateNotFound(error, data)) {
           return notReusable(data.error.message);
         }
 
