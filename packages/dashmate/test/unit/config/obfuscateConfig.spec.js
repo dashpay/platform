@@ -249,6 +249,24 @@ describe('obfuscateConfig', () => {
       expect(getConfigSecretValues(config)).to.include('mirrorToken7Qx');
     });
 
+    // Text puts brackets or quotes around a link and can list links with no
+    // space between them; a link's query ends where the link does, and a URL
+    // in that query is hidden with it
+    it('should hide the query values of each URL with credentials in free text, and nothing around them', () => {
+      const config = getBaseConfigFactory()();
+
+      config.set(
+        'description',
+        'mirrors <https://u1:p1@a.example/?sig=tokenOne>,<https://u2:p2@b.example/?sig=tokenTwo#top>,'
+        + ' "https://u3:p3@c.example/x?a=1&b=two" and https://u4:p4@d.example/?next=https://v:q@e.example/&sig=T',
+      );
+
+      expect(obfuscateConfig(config).get('description')).to.equal(
+        'mirrors <https://**:**@a.example/?sig=********>,<https://**:**@b.example/?sig=********#top>,'
+        + ' "https://**:**@c.example/x?a=*&b=***" and https://**:**@d.example/?next=**********************&sig=*',
+      );
+    });
+
     it('should hide them when the URL has extra slashes before them', () => {
       const { config, obfuscatedUrl } = obfuscateUrl(
         'https:///acmeUser:acmePassword7Qx@acme.example.com/directory',

@@ -26,10 +26,10 @@ const NON_SECRET_BUILD_ARGS = ['CARGO_BUILD_PROFILE', 'SDK_TEST_DATA'];
 const URL_USERINFO = /((?:[a-z][a-z0-9+.-]*:[\\/]+)|(?:(?:https?|wss?|ftp):))([^\s/\\?#]+)@/gi;
 
 /**
- * A URL written inside other text with credentials before its host, up to the
- * start of its query, and the query itself
+ * The rest of a URL written inside other text, after its credentials: up to a
+ * space, or a quote or an angle bracket that text puts around a link
  */
-const URL_USERINFO_QUERY = new RegExp(`((?:${URL_USERINFO.source})[^\\s?#]*\\?)([^\\s#]*)`, 'gi');
+const URL_REST = /[^\s"'<>`]*/y;
 
 const VALUE_KIND = {
   PLAIN: 'plain',
@@ -156,23 +156,57 @@ function hideTextUrlCredentials(text) {
 }
 
 /**
+ * @param {string} query - a URL's query, without its `?`
+ * @return {string} the query with the value of each parameter hidden
+ */
+function hideQueryValues(query) {
+  return query.split('&').map((parameter) => {
+    const separatorIndex = parameter.indexOf('=');
+
+    return separatorIndex === -1
+      ? parameter
+      : `${parameter.slice(0, separatorIndex + 1)}${hideString(parameter.slice(separatorIndex + 1))}`;
+  }).join('&');
+}
+
+/**
  * @param {string} text
  * @return {string} the text with the query values hidden in each URL written
- *   in it with credentials: a URL that carries a password can carry a token
- *   in its query too
+ *   in it with credentials, since a URL that carries a password can carry a
+ *   token in its query too. A URL inside such a query is hidden with it.
  */
 function hideTextUrlQueryValues(text) {
-  return text.replace(URL_USERINFO_QUERY, (_match, start, _scheme, _userinfo, query) => {
-    const hiddenQuery = query.split('&').map((parameter) => {
-      const separatorIndex = parameter.indexOf('=');
+  let hidden = '';
+  let copied = 0;
+  let urlEnd = 0;
 
-      return separatorIndex === -1
-        ? parameter
-        : `${parameter.slice(0, separatorIndex + 1)}${hideString(parameter.slice(separatorIndex + 1))}`;
-    });
+  for (const match of text.matchAll(URL_USERINFO)) {
+    // Within the query of a URL already hidden
+    if (match.index < urlEnd) {
+      continue;
+    }
 
-    return `${start}${hiddenQuery.join('&')}`;
-  });
+    const restStart = match.index + match[0].length;
+
+    URL_REST.lastIndex = restStart;
+
+    const [rest] = URL_REST.exec(text);
+
+    urlEnd = restStart + rest.length;
+
+    const queryIndex = rest.indexOf('?');
+
+    if (queryIndex !== -1) {
+      const fragmentIndex = rest.indexOf('#', queryIndex);
+      const queryStart = restStart + queryIndex + 1;
+      const queryEnd = fragmentIndex === -1 ? urlEnd : restStart + fragmentIndex;
+
+      hidden += text.slice(copied, queryStart) + hideQueryValues(text.slice(queryStart, queryEnd));
+      copied = queryEnd;
+    }
+  }
+
+  return hidden + text.slice(copied);
 }
 
 /**
