@@ -208,7 +208,7 @@ export function describePlatformSetupState({ state, markers, certificateId }, co
 
         if (keyBackup) {
           lines.push(
-            '  back the node key up, into a new file only you can read:',
+            '  back the node key up, into a new directory only you can open:',
             `    ${keyBackup.backupCommand}`,
           );
         }

@@ -81,14 +81,14 @@ export default class ResetCommand extends ConfigBaseCommand {
           `This deletes the Platform node key of ${config.getName()}, node ID ${nodeId}. The`
             + ' masternode\'s registration names that node ID, so setting Platform up again needs'
             + ' this key, and dashmate keeps no copy. Unless you have a backup, answer No and back'
-            + ' it up first, into a file only you can read:',
+            + ' it up first, into a new directory only you can open:',
           backup,
         ];
 
       process.stderr.write([
         ...lines,
-        'It refuses to overwrite a file that exists. Check that the file is not empty before you'
-          + ' reset.',
+        'It refuses a directory or file of that name that exists. Check that the backup is not'
+          + ' empty before you reset, and keep it in that directory or another one only you can open.',
         'After the reset, set Platform up again with:',
         `  ${setupCommand}`,
         '',

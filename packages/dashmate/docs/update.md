@@ -101,13 +101,13 @@ $ dashmate start
 
 `dashmate reset --platform --hard` also sets every Platform option back to the preset's defaults: the node key, the Platform ports, the certificate provider and the certificate. Nothing of Platform survives it. On mainnet it also disables Platform, because the mainnet preset does. Set Platform up again with `dashmate setup --platform`, which configures only Platform and leaves Core as it is.
 
-An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a new file only you can read, named after the config. `set -C` makes the shell refuse to overwrite a file that exists, so an earlier backup is never lost, and the parentheses keep the `umask` from staying set in your shell. Check that the file is not empty before you reset:
+An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a new directory in your home directory, named after the config, that only you can open. `mkdir` refuses a directory or file of that name that exists, so an earlier backup is never lost or written into, and the parentheses keep the `umask` from staying set in your shell. Check that the backup is not empty before you reset, and keep it in that directory or another one only you can open:
 
 ```bash
 $ dashmate stop --platform --config testnet            # skip if Platform is not running
-$ (umask 077 && set -C && dashmate config get platform.drive.tenderdash.node.key --config testnet > node-key-testnet)
+$ (umask 077 && mkdir -m 700 "$HOME"/node-key-testnet && set -o noclobber && dashmate config get platform.drive.tenderdash.node.key --config testnet > "$HOME"/node-key-testnet/node-key)
 $ dashmate reset --platform --hard --config testnet
-$ dashmate setup --platform --config testnet --platform-node-key-file node-key-testnet
+$ dashmate setup --platform --config testnet --platform-node-key-file "$HOME"/node-key-testnet/node-key
 $ dashmate update --config testnet                     # now pulls the Platform images
 $ dashmate start --platform --config testnet           # or `dashmate start --config testnet` if Core is stopped
 ```
@@ -124,7 +124,7 @@ Unattended, with the key read from stdin rather than the command line:
 
 ```bash
 $ dashmate setup --platform testnet --non-interactive --ssl-provider letsencrypt \
-    --platform-node-key-file - < node-key-testnet
+    --platform-node-key-file - < "$HOME"/node-key-testnet/node-key
 ```
 
 See [setup](./commands/setup.md#platform-only-setup) for every flag.
