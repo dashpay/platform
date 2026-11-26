@@ -1,8 +1,8 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import forge from 'node-forge';
 import findCertificatePairProblem from '../findCertificatePairProblem.js';
+import loadCertificateRequest from './loadCertificateRequest.js';
 import selectLeafCertificate, { findPrivateKeyProblem } from '../selectLeafCertificate.js';
 
 export const ERRORS = {
@@ -94,11 +94,11 @@ function isPrivateKeyUsable(filePath) {
  * Whether the certificate request on disk can renew the certificate
  *
  * Renewal sends csr.pem to ZeroSSL as it is, so it has to parse, be signed
- * by its own key, and carry the public key of the private key on disk: a
- * full disk can cut it short, and a request for another key asks for a
- * certificate this node cannot serve. A request that is not a regular file,
- * or that this process cannot read, is left as it is, and so is one whose
- * key this process cannot read, once it parses.
+ * by its own key, and carry the public key of the private key on disk, an
+ * RSA or an EC one: a full disk can cut it short, and a request for another
+ * key asks for a certificate this node cannot serve. A request that is not
+ * a regular file, or that this process cannot read, is left as it is, and so
+ * is one whose key this process cannot read, once it parses.
  *
  * @param {string} csrFilePath
  * @param {string} privateKeyFilePath
@@ -127,14 +127,9 @@ function isCsrUsable(csrFilePath, privateKeyFilePath) {
     return true;
   }
 
-  let request;
-  try {
-    request = forge.pki.certificationRequestFromPem(csrPem);
+  const request = loadCertificateRequest(csrPem);
 
-    if (!request.verify()) {
-      return false;
-    }
-  } catch {
+  if (request === null) {
     return false;
   }
 
@@ -150,8 +145,7 @@ function isCsrUsable(csrFilePath, privateKeyFilePath) {
   }
 
   try {
-    return crypto.createPublicKey(forge.pki.publicKeyToPem(request.publicKey))
-      .equals(crypto.createPublicKey(privateKeyPem));
+    return request.publicKey.equals(crypto.createPublicKey(privateKeyPem));
   } catch {
     return false;
   }

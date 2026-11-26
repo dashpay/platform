@@ -7,7 +7,7 @@ import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/z
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import generateCsr from '../../../../src/ssl/zerossl/generateCsr.js';
-import { issueCertificate } from '../../../../src/test/certificateFixtures.js';
+import { createCertificateRequest, issueCertificate } from '../../../../src/test/certificateFixtures.js';
 
 describe('validateZeroSslCertificateFactory', () => {
   let config;
@@ -411,6 +411,63 @@ describe('validateZeroSslCertificateFactory', () => {
         const result = await validateZeroSslCertificate(config, expirationDays);
 
         expect(result.data.isCsrFilePresent).to.be.false();
+      });
+
+      // ZeroSSL issues for EC keys as well as RSA ones, and a pair placed by
+      // hand renews like one Dashmate made.
+      describe('for an EC key', () => {
+        let ecKeyPem;
+
+        beforeEach(() => {
+          ecKeyPem = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+            .privateKey.export({ type: 'sec1', format: 'pem' });
+          fs.writeFileSync(path.join(sslConfigDir, 'private.key'), ecKeyPem);
+        });
+
+        it('should count a request for the key on disk as the request', async () => {
+          fs.writeFileSync(csrFilePath, createCertificateRequest(ecKeyPem));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.true();
+        });
+
+        it('should not count a request for another key as the request', async () => {
+          const otherKeyPem = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+            .privateKey.export({ type: 'sec1', format: 'pem' });
+          fs.writeFileSync(csrFilePath, createCertificateRequest(otherKeyPem));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.false();
+        });
+
+        it('should not count a request its key did not sign as the request', async () => {
+          const otherKeyPem = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+            .privateKey.export({ type: 'sec1', format: 'pem' });
+          fs.writeFileSync(csrFilePath, createCertificateRequest(ecKeyPem, {
+            signingKeyPem: otherKeyPem,
+          }));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.false();
+        });
+
+        it('should renew with the request on disk', async function it() {
+          const ecRequest = createCertificateRequest(ecKeyPem);
+          fs.writeFileSync(csrFilePath, ecRequest);
+          getCertificate.resolves({
+            common_name: '1.2.3.4',
+            status: 'issued',
+            isExpiredInDays: this.sinon.stub().returns(true),
+          });
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.error).to.equal(ERRORS.CERTIFICATE_EXPIRES_SOON);
+          expect(result.data.csr).to.equal(ecRequest);
+        });
       });
 
       // A renewal needs a request it can send; without one only a new

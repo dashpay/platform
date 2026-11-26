@@ -11,7 +11,7 @@ import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/z
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 import generateCertificateRequest from '../../../../src/ssl/zerossl/generateCsr.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
-import { issueCertificate } from '../../../../src/test/certificateFixtures.js';
+import { createCertificateRequest, issueCertificate } from '../../../../src/test/certificateFixtures.js';
 
 describe('obtainZeroSSLCertificateTaskFactory', () => {
   let config;
@@ -626,6 +626,24 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(() => forge.pki.certificationRequestFromPem(fs.readFileSync(csrFilePath, 'utf8')))
         .to.not.throw();
       expect(fs.readdirSync(sslConfigDir)).to.have.members(['bundle.crt', 'csr.pem', 'private.key']);
+    });
+
+    // ZeroSSL issues for EC keys too, and renewal sends their request as it
+    // sends an RSA one.
+    it('should renew with the request on disk for an EC key', async function it() {
+      const ecKeyPem = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+        .privateKey.export({ type: 'sec1', format: 'pem' });
+      const ecRequest = createCertificateRequest(ecKeyPem);
+      fs.writeFileSync(privateKeyFilePath, ecKeyPem);
+      fs.writeFileSync(path.join(sslConfigDir, 'csr.pem'), ecRequest);
+
+      // Renewal starts this many days before the saved certificate expires
+      await expect(buildTask.call(this).run({ expirationDays: 90 }))
+        .to.be.rejectedWith('a new certificate was requested');
+
+      expect(createCertificate).to.have.been.calledOnceWith(ecRequest);
+      expect(generateKeyPair).to.not.have.been.called();
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(ecKeyPem);
     });
 
     // Renewal saves the new certificate's ID before it installs the bundle,

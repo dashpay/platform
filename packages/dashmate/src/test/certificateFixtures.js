@@ -198,3 +198,68 @@ export function issueEd25519Certificate(issuer, { ip = '1.2.3.4', days = 6 } = {
 export function encryptPrivateKey(keys, passphrase) {
   return forge.pki.encryptRsaPrivateKey(keys.privateKey, passphrase);
 }
+
+/**
+ * Make a certificate request for a key of any type, the way OpenSSL makes one
+ *
+ * node-forge makes requests for RSA keys only, so the request is put together
+ * from its ASN.1 parts here and Node signs it.
+ *
+ * @param {string} privateKeyPem - the key the request carries
+ * @param {Object} [options]
+ * @param {string} [options.commonName]
+ * @param {string} [options.signingKeyPem] - signs the request, the key it
+ *  carries when absent
+ * @return {string} PEM
+ */
+export function createCertificateRequest(privateKeyPem, {
+  commonName = '1.2.3.4',
+  signingKeyPem = privateKeyPem,
+} = {}) {
+  const { asn1 } = forge;
+  const spki = crypto.createPublicKey(privateKeyPem).export({ type: 'spki', format: 'der' });
+  const signingKey = crypto.createPrivateKey(signingKeyPem);
+  const isRsa = signingKey.asymmetricKeyType === 'rsa';
+
+  const template = forge.pki.createCertificationRequest();
+  template.setSubject([{ name: 'commonName', value: commonName }]);
+
+  // CertificationRequestInfo ::= SEQUENCE { version, subject,
+  // subjectPKInfo, attributes [0] }
+  const info = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
+    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.INTEGER, false, asn1.integerToDer(0).getBytes()),
+    forge.pki.distinguishedNameToAsn1(template.subject),
+    asn1.fromDer(spki.toString('binary'), { decodeBitStrings: false }),
+    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, []),
+  ]);
+
+  // sha256WithRSAEncryption takes a NULL parameter, ecdsa-with-SHA256 none
+  const algorithm = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
+    asn1.create(
+      asn1.Class.UNIVERSAL,
+      asn1.Type.OID,
+      false,
+      asn1.oidToDer(isRsa ? '1.2.840.113549.1.1.11' : '1.2.840.10045.4.3.2').getBytes(),
+    ),
+    ...(isRsa ? [asn1.create(asn1.Class.UNIVERSAL, asn1.Type.NULL, false, '')] : []),
+  ]);
+
+  const signature = crypto.sign(
+    'sha256',
+    Buffer.from(asn1.toDer(info).getBytes(), 'binary'),
+    signingKey,
+  );
+
+  const request = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
+    info,
+    algorithm,
+    asn1.create(
+      asn1.Class.UNIVERSAL,
+      asn1.Type.BITSTRING,
+      false,
+      String.fromCharCode(0) + signature.toString('binary'),
+    ),
+  ]);
+
+  return forge.pem.encode({ type: 'CERTIFICATE REQUEST', body: asn1.toDer(request).getBytes() });
+}
