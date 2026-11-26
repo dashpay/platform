@@ -655,6 +655,37 @@ describe('collectSamplesTaskFactory', () => {
       expect(restored.getServiceInfo(SERVICE.name, 'stdOut')).to.contain('Command-line arg: masternodeblsprivkey="');
     });
 
+    // An image can bring credentials of its own, which the config does not
+    // know, so the command is masked by its shape: a value given after its
+    // option, and a whole shell command line, which can set anything
+    it('should not archive option values a container command gives apart or in a shell line', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'service',
+        Args: ['serve', '--token', 'containerOnlyToken7Qx', '--verbose'],
+        Config: {
+          Image: 'example/service:test',
+          Env: [],
+          Cmd: ['sh', '-c', 'exec app --password shellPassword7Qx'],
+          Entrypoint: ['/entry.sh', 'run with secret=entrypointSecret7Qx'],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+
+      const archivePath = await collectAndArchive();
+      const archived = readArchivedBytes(archivePath);
+
+      ['containerOnlyToken7Qx', 'shellPassword7Qx', 'entrypointSecret7Qx']
+        .forEach((secret) => expect(archived).to.not.contain(secret));
+
+      const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.Args).to.deep.equal(['serve', '--token', '<redacted>', '--verbose']);
+      expect(inspect.Config.Cmd).to.deep.equal(['sh', '-c', '<redacted>']);
+      expect(inspect.Config.Entrypoint).to.deep.equal(['/entry.sh', '<redacted>']);
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the

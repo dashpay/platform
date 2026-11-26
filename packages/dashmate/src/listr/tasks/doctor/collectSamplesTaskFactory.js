@@ -11,7 +11,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
-import { hideOptionValue } from '../../../util/commandLineOption.js';
+import { getOptionValue, hideOptionValue, isOption } from '../../../util/commandLineOption.js';
 import maskOperatorIdentity, { getOperatorIdentity } from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
@@ -125,6 +125,33 @@ function redactContainerEnvironment(inspect) {
 }
 
 /**
+ * @param {*[]} command
+ * @return {*[]}
+ */
+function redactCommandArguments(command) {
+  return command.map((argument, index) => {
+    if (typeof argument !== 'string') {
+      return REDACTED_VALUE;
+    }
+
+    // A shell command line in one argument, as `sh -c` takes it, can set
+    // anything; it is not taken apart but goes whole
+    if (/\s/.test(argument)) {
+      return REDACTED_VALUE;
+    }
+
+    // The value of an option given as the next argument: `--token value`
+    const previous = command[index - 1];
+
+    if (!isOption(argument) && isOption(previous) && getOptionValue(previous) === null) {
+      return REDACTED_VALUE;
+    }
+
+    return hideOptionValue(argument, () => REDACTED_VALUE);
+  });
+}
+
+/**
  * @param {Object} holder
  * @param {string} field
  */
@@ -136,18 +163,19 @@ function redactCommandField(holder, field) {
   }
 
   // eslint-disable-next-line no-param-reassign
-  holder[field] = Array.isArray(command)
-    ? command.map((argument) => hideOptionValue(argument, () => REDACTED_VALUE))
-    : REDACTED_VALUE;
+  holder[field] = Array.isArray(command) ? redactCommandArguments(command) : REDACTED_VALUE;
 }
 
 /**
  * Keep the command a container was started with and drop the values of its
  * options.
  *
- * Options given as `-name=value` are how some operators pass a service a key
- * or a password, for Core in particular. Which options it runs with stays;
- * what they were set to goes, for the same reason as the environment.
+ * Options are how some operators pass a service a key or a password, for Core
+ * in particular, and an image can bring credentials of its own that the
+ * config does not know. Which options a container runs with stays; what they
+ * were set to goes, for the same reason as the environment: the value of a
+ * `-name=value` option, a value given as the argument after its option, and
+ * a whole shell command line. The executable and plain arguments stay.
  *
  * @param {Object} inspect - mutated in place
  */
