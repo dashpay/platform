@@ -347,8 +347,9 @@ export default function gatewayCertificateTaskFactory(
         const guidance = renewalGuidanceFor(config, verdict);
         const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
 
-        // An outdated helper refuses before it creates an issuance, so unless an
-        // earlier attempt left one outstanding, nothing may have been issued.
+        // This cause is recorded only for a refusal made before an issuance was
+        // created, so unless an earlier attempt left one outstanding, nothing
+        // may have been issued.
         const isHelperRefusalOnly = guidance.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED
           && guidance.issuanceStatus === ISSUANCE_STATUS.NONE;
         const withheld = isHelperRefusalOnly

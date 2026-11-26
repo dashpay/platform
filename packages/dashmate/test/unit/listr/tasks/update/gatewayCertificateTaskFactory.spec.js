@@ -164,9 +164,9 @@ describe('gatewayCertificateTaskFactory', () => {
     // The reason it reached WARN is a fact about this node in its own right and
     // has to survive: it is what tells the operator the certificate is nearly
     // out, which is why the switch is urgent at all.
-    // An outdated helper refuses before it creates an issuance, so nothing can
-    // be outstanding. The request is still withheld, but the reason given has
-    // to be the one that happened.
+    // An outdated helper recorded with this cause refused before it created an
+    // issuance, so nothing can be outstanding. The request is still withheld,
+    // but the reason given has to be the one that happened.
     [
       ['no earlier issuance', {}, 'so none was requested', 'may already have been issued', true],
       ['an earlier result that was never read', {

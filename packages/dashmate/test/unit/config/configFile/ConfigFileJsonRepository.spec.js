@@ -1007,6 +1007,25 @@ describe('ConfigFileJsonRepository', () => {
       expect(newer.read().getConfig('base').get('platform.gateway.docker.image')).to.equal(NEWER_IMAGE);
     });
 
+    // Renewal reports a refusal from acquire() as one that asked the authority
+    // for nothing. A refusal at a later save can follow a certificate request,
+    // so it must not be marked the same way.
+    it('should mark only the refusal made when the lock is taken as before any work', () => {
+      const refusalOf = (fn) => {
+        try {
+          fn();
+        } catch (e) {
+          return e;
+        }
+
+        return null;
+      };
+
+      expect(refusalOf(() => older.acquire())).to.have.property('isBeforeAnyWork', true);
+      expect(refusalOf(() => older.write(older.read()))).to.have.property('isBeforeAnyWork', false);
+      expect(refusalOf(() => older.update(() => {}))).to.have.property('isBeforeAnyWork', false);
+    });
+
     // Diagnostic only. A restart reloads the gateway from the certificate files
     // on disk, which nothing here has checked, so the refusal must not advise one.
     it('should name both versions and the newer dashmate in the refusal, without advising a restart', () => {
