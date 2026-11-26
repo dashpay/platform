@@ -143,6 +143,34 @@ describe('obfuscateConfig', () => {
       expect(getConfigSecretValues(config)).to.include('registryToken7Qx');
     });
 
+    // A service can print any part of the credentials on its own, as it uses
+    // them rather than as the URL escapes them
+    it('should find each part of the credentials, as written and decoded', () => {
+      const { config } = obfuscateUrl(
+        'https://acme%2BUser7Qx:acme%40Password7Qx@acme.example.com/directory',
+      );
+
+      expect(getConfigSecretValues(config)).to.include.members([
+        'acme%2BUser7Qx:acme%40Password7Qx',
+        'acme+User7Qx:acme@Password7Qx',
+        'acme%2BUser7Qx',
+        'acme+User7Qx',
+        'acme%40Password7Qx',
+        'acme@Password7Qx',
+      ]);
+    });
+
+    it('should find a token in a URL inside other text, as written and decoded', () => {
+      const config = getBaseConfigFactory()();
+
+      config.set('description', 'mirror https://mirror%40Token7Qx@mirror.example.com/ for builds');
+
+      expect(getConfigSecretValues(config)).to.include.members([
+        'mirror%40Token7Qx',
+        'mirror@Token7Qx',
+      ]);
+    });
+
     it('should hide them when the URL has extra slashes before them', () => {
       const { config, obfuscatedUrl } = obfuscateUrl(
         'https:///acmeUser:acmePassword7Qx@acme.example.com/directory',

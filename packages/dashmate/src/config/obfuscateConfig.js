@@ -138,6 +138,21 @@ function hideUrlCredentials(value) {
 }
 
 /**
+ * @param {string} userinfo - `user`, or `user:password`, as a URL writes it
+ * @return {string[]} the whole of it and each part, as written and decoded,
+ *   since text can quote any of them on its own
+ */
+function getUserinfoParts(userinfo) {
+  const separatorIndex = userinfo.indexOf(':');
+
+  const parts = separatorIndex === -1
+    ? [userinfo]
+    : [userinfo, userinfo.slice(0, separatorIndex), userinfo.slice(separatorIndex + 1)];
+
+  return parts.flatMap((part) => [part, decodeUrlComponent(part)]);
+}
+
+/**
  * @param {string} value
  * @return {string[]} the credentials of the URLs in the value, in each form
  *   text can quote them in
@@ -146,29 +161,18 @@ function getUrlCredentials(value) {
   const credentials = [];
 
   for (const [, , userinfo] of value.matchAll(URL_USERINFO)) {
-    credentials.push(userinfo);
-
-    // Text that mentions the password on its own, without the user name, and
-    // as it is used rather than as the URL escapes it
-    const separatorIndex = userinfo.indexOf(':');
-
-    if (separatorIndex !== -1) {
-      const password = userinfo.slice(separatorIndex + 1);
-
-      credentials.push(password, decodeUrlComponent(password));
-    }
+    credentials.push(...getUserinfoParts(userinfo));
   }
 
+  // The parser also reads URLs the pattern does not, such as one with no
+  // slashes after the scheme
   const url = parseUrlWithCredentials(value);
 
-  if (url?.password) {
-    credentials.push(url.password, decodeUrlComponent(url.password));
-  } else if (url?.username) {
-    // A user name with no password is how a URL usually carries a token
-    credentials.push(url.username, decodeUrlComponent(url.username));
+  if (url) {
+    credentials.push(...getUserinfoParts(url.password ? `${url.username}:${url.password}` : url.username));
   }
 
-  return credentials;
+  return credentials.filter((credential) => credential.length > 0);
 }
 
 /**
