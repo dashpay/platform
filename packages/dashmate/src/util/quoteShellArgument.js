@@ -14,10 +14,12 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/u;
  * every POSIX shell reads the same way
  *
  * Plain single quotes are that quoting, and they keep a control character as
- * it is: a line break would split the command in two, the second line reading
- * as a command of its own. Dollar-single quotes escape it, but older shells,
- * such as dash (Debian's and Ubuntu's /bin/sh), read them as a dollar sign
- * and a quoted string, and the command would act on another value.
+ * it is: a line break would put the printed command on two lines, and a
+ * terminal control sequence would act on the terminal, so what the operator
+ * sees and copies would not be the command. Dollar-single quotes escape them,
+ * but older shells, such as dash (Debian's and Ubuntu's /bin/sh), read them
+ * as a dollar sign and a quoted string, and the command would act on another
+ * value.
  *
  * @param {string} value
  * @return {boolean}
