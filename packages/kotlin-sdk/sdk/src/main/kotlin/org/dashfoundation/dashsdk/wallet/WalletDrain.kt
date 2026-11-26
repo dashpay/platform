@@ -120,8 +120,13 @@ class WalletDrainOutcome(
     }
 
     internal companion object {
-        /** Bytes of a packed outcome before its error message. */
-        const val HEADER_SIZE = 1 + 1 + 32 + 4 + 4 + 4 + 4
+        /**
+         * Bytes of a packed outcome before its error message: state,
+         * has-outpoint flag, txid, vout, error code, consensus code,
+         * consensus kind, payment delivery, retryable flag, held-lock flag,
+         * held lock (36).
+         */
+        const val HEADER_SIZE = 1 + 1 + 32 + 4 + 4 + 4 + 4 + 4 + 1 + 1 + 36
 
         /**
          * The outcome a failed call leaves when nothing is known about the
@@ -154,6 +159,10 @@ class WalletDrainOutcome(
             val errorCode = buffer.getInt()
             val consensusCode = buffer.getInt()
             val consensusKind = buffer.getInt()
+            val paymentDelivery = buffer.getInt()
+            val retryable = buffer.get().toInt() != 0
+            val hasHeldAssetLock = buffer.get().toInt() != 0
+            val heldAssetLock = ByteArray(36).also { buffer.get(it) }
             val message = String(packed, HEADER_SIZE, packed.size - HEADER_SIZE, Charsets.UTF_8)
 
             var problem: DashSdkError? = null
@@ -172,12 +181,18 @@ class WalletDrainOutcome(
             val returned: DashSdkError? = if (errorCode == 0) {
                 null
             } else {
+                // Everything a thrown exception carries, the payment class
+                // included, so a failed drain reads as it does on Swift.
                 DashSdkError.fromNative(
-                    if (consensusCode == 0) {
-                        DashSDKException(errorCode, message)
-                    } else {
-                        DashSDKException(errorCode, message, consensusCode, consensusKind)
-                    },
+                    DashSDKException(
+                        errorCode,
+                        message,
+                        consensusCode,
+                        consensusKind,
+                        paymentDelivery,
+                        retryable,
+                        heldAssetLock.takeIf { hasHeldAssetLock },
+                    ),
                 )
             }
             val state = State.entries.firstOrNull { it.raw == stateRaw }

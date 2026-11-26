@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **58**
+Capabilities tracked: **59**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 37 | 18 | 2 | 1 |
-| Swift | Example app | 6 | 37 | 5 | 10 |
-| Kotlin | SDK | 31 | 22 | 4 | 1 |
-| Kotlin | Example app | 7 | 35 | 5 | 11 |
+| Swift | SDK | 38 | 18 | 2 | 1 |
+| Swift | Example app | 6 | 38 | 5 | 10 |
+| Kotlin | SDK | 32 | 22 | 4 | 1 |
+| Kotlin | Example app | 7 | 36 | 5 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 20 | 36 |
-| Kotlin | 9 | 18 | 31 |
+| Swift | 2 | 20 | 37 |
+| Kotlin | 9 | 18 | 32 |
 
 ## Capability status
 
@@ -60,6 +60,7 @@ Capabilities tracked: **58**
 | `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
+| `errors.payment_class` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.core_wallet_drain` | supported / partial / tested | supported / partial / tested |
 | `shielded.spend_plan` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |

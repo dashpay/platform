@@ -133,8 +133,7 @@ pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     let code = result.code as i32 + PWFFI_CODE_OFFSET;
     // Consensus codes top out in the 40000s, far inside a `jint`.
     let consensus_code = jint::try_from(result.consensus_code).unwrap_or(jint::MAX);
-    let held_asset_lock = (result.payment_delivery == PlatformWalletFFIPaymentDelivery::LockHeld)
-        .then(|| held_asset_lock_bytes(result));
+    let held_asset_lock = held_asset_lock_of(result);
     throw_built_sdk_exception(env, &message, |env| {
         let jmsg = env.new_string(&message)?;
         let held = match &held_asset_lock {
@@ -157,13 +156,17 @@ pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     });
 }
 
-/// The held asset lock of `result` in the 36-byte raw outpoint form
-/// (`txid_le[32] || vout_le[4]`) Kotlin's `AssetLockBuiltOutPoint` decodes.
-fn held_asset_lock_bytes(result: &PlatformWalletFFIResult) -> [u8; 36] {
+/// The held asset lock of `result` under `LockHeld`, in the 36-byte raw
+/// outpoint form (`txid_le[32] || vout_le[4]`) Kotlin's
+/// `AssetLockBuiltOutPoint` decodes; `None` for any other delivery.
+pub(crate) fn held_asset_lock_of(result: &PlatformWalletFFIResult) -> Option<[u8; 36]> {
+    if result.payment_delivery != PlatformWalletFFIPaymentDelivery::LockHeld {
+        return None;
+    }
     let mut bytes = [0u8; 36];
     bytes[..32].copy_from_slice(&result.held_asset_lock.txid);
     bytes[32..].copy_from_slice(&result.held_asset_lock.vout.to_le_bytes());
-    bytes
+    Some(bytes)
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
