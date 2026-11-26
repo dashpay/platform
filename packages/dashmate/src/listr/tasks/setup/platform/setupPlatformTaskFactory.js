@@ -363,6 +363,8 @@ export default function setupPlatformTaskFactory(
 
           ctx.coreService = await startCore(coreOnlyConfig);
           ctx.isCoreRunning = false;
+          // The command stops it gracefully when the run ends, success or not.
+          ctx.isCoreStartedBySetup = true;
 
           // eslint-disable-next-line no-param-reassign
           task.output = 'Core started; it stops again when setup exits';

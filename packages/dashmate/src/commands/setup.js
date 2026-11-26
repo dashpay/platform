@@ -369,17 +369,56 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
       },
     });
 
+    let failure;
     try {
       await tasks.run(context);
     } catch (e) {
+      failure = e;
+    }
+
+    await SetupCommand.stopStartedCore(context, flags);
+
+    if (failure) {
       SetupCommand.reportPlatformSetupFailure(context, dependencies.homeDir);
 
-      throw new MuteOneLineError(e);
+      throw new MuteOneLineError(failure);
     }
 
     process.exitCode = 0;
 
     return undefined;
+  }
+
+  /**
+   * Stop the Core this command started, the way `dashmate stop` stops it
+   *
+   * The command's cleanup on exit force-removes the containers it started, and
+   * this Core runs on the node's chain database. Docker sends it SIGTERM and
+   * waits for the stop grace period of its service instead. A Core that was
+   * running before setup is left alone. If stopping fails, that cleanup still
+   * removes the container.
+   *
+   * @param {Object} ctx
+   * @param {Object} flags
+   * @return {Promise<void>}
+   */
+  static async stopStartedCore(ctx, flags) {
+    if (!ctx.isCoreStartedBySetup) {
+      return;
+    }
+
+    try {
+      await new Listr([{
+        title: 'Stop the Core that setup started',
+        task: () => ctx.coreService.stop(),
+      }], {
+        renderer: flags.verbose ? 'verbose' : 'default',
+        rendererOptions: { clearOutput: false, collapse: false },
+      }).run();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(`Could not stop Core gracefully (${e.message}); it is stopped by force now.`);
+    }
   }
 
   /**

@@ -215,8 +215,7 @@ describe('setupPlatformTask', () => {
       });
     });
 
-    // The started container is one the command tracks, so it is stopped
-    // again when the command exits, success or not.
+    // The command stops the Core it started when it exits, success or not.
     it('should start Core when it is stopped, and say Core must be started afterwards', async () => {
       dockerCompose.isServiceRunning.resolves(false);
 
@@ -230,6 +229,8 @@ describe('setupPlatformTask', () => {
       expect(waitForCoreSync).to.have.been.calledOnce();
       expect(readPlatformRegistration.firstCall.args[0]).to.deep.equal({ name: 'started Core' });
       expect(ctx.isCoreRunning).to.be.false();
+      // The command stops it gracefully when the run ends.
+      expect(ctx.isCoreStartedBySetup).to.be.true();
     });
 
     // Compose 2.24 creates the volumes of every service its profiles enable,

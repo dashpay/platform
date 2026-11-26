@@ -407,6 +407,63 @@ describe('Setup command', () => {
     expect(fullSetupContext.interactive).to.be.true();
   });
 
+  // The command's cleanup on exit force-removes the containers it started.
+  // The Core setup started runs on the node's chain database, so it is
+  // stopped first the way `dashmate stop` stops it, with its grace period.
+  describe('a Core that setup started', () => {
+    let coreService;
+
+    /**
+     * @param {Error} [failure]
+     */
+    function startCoreInTask(failure = undefined) {
+      setupPlatformTask.callsFake(() => new Listr([{
+        task: (ctx) => {
+          Object.assign(ctx, { coreService, isCoreStartedBySetup: true });
+
+          if (failure) {
+            throw failure;
+          }
+        },
+      }], { renderer: 'silent' }));
+    }
+
+    beforeEach(function beforeEach() {
+      coreService = { stop: this.sinon.stub().resolves(true) };
+    });
+
+    it('should be stopped gracefully when setup succeeds', async () => {
+      startCoreInTask();
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error).to.be.null();
+      expect(coreService.stop).to.have.been.calledOnce();
+    });
+
+    it('should be stopped gracefully when setup fails', async () => {
+      startCoreInTask(new Error('wrong key'));
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.equal('wrong key');
+      expect(coreService.stop).to.have.been.calledOnce();
+    });
+
+    it('should leave a Core that was already running alone', async () => {
+      setupPlatformTask.callsFake(() => new Listr([{
+        task: (ctx) => {
+          Object.assign(ctx, { coreService });
+        },
+      }], { renderer: 'silent' }));
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error).to.be.null();
+      expect(coreService.stop).to.not.have.been.called();
+    });
+  });
+
   describe('a run that fails', () => {
     let sslDir;
 
