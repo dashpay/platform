@@ -140,6 +140,21 @@ export const PORT_80_PERMANENCE = 'Keep inbound port 80 reachable from the inter
   + ' for certificate reissue.';
 
 /**
+ * The command that asks for the certificate again
+ *
+ * The entry point that ran the obtain may give its own. Platform setup does:
+ * `ssl obtain` there would record a provider and enable TLS behind setup's
+ * back, and setup would then refuse to run again.
+ *
+ * @param {Config} config
+ * @param {string} [retryCommand]
+ * @return {string}
+ */
+function renderRetryCommand(config, retryCommand) {
+  return retryCommand ?? `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+}
+
+/**
  * What to tell an operator who has run out of attempts.
  *
  * No claim about when to come back: a long-failing address may be paused rather
@@ -148,9 +163,10 @@ export const PORT_80_PERMANENCE = 'Keep inbound port 80 reachable from the inter
  *
  * @param {Config} config
  * @param {number} attempts
+ * @param {string} [retryCommand]
  * @return {string}
  */
-function renderGiveUpGuidance(config, attempts) {
+function renderGiveUpGuidance(config, attempts, retryCommand) {
   const cfg = renderConfigFlag(config.getName());
 
   return `No certificate after ${attempts} attempt${attempts === 1 ? '' : 's'}.
@@ -161,7 +177,7 @@ Do not keep retrying - Let's Encrypt limits how often this node may fail.
 
 Open inbound port 80, on the machine's firewall and your hosting provider's.
 Then:
-    dashmate ssl obtain ${cfg} --provider letsencrypt
+    ${renderRetryCommand(config, retryCommand)}
 
 ${PORT_80_PERMANENCE}
 
@@ -180,9 +196,10 @@ Still stuck? Send a report to Dash support:
  * @param {Config} config
  * @param {Error} cause
  * @param {boolean} [neverRan] - whether the helper is known not to have run
+ * @param {string} [retryCommand]
  * @return {string}
  */
-function renderHelperDidNotStartGuidance(config, cause, neverRan = true) {
+function renderHelperDidNotStartGuidance(config, cause, neverRan = true, retryCommand = undefined) {
   // Nothing is claimed about this node's allowance unless it is known.
   return `dashmate could not start the certificate helper.${neverRan
     ? " It never contacted Let's Encrypt."
@@ -196,7 +213,7 @@ Common causes: another process already using port 80, Docker not running, or
 this user not permitted to use it.
 
     sudo ss -lntp 'sport = :80'
-    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+    ${renderRetryCommand(config, retryCommand)}`;
 }
 
 /**
@@ -207,9 +224,10 @@ this user not permitted to use it.
  *
  * @param {Config} config
  * @param {string} missingPath
+ * @param {string} [retryCommand]
  * @return {string}
  */
-function renderArtifactsMissingGuidance(config, missingPath) {
+function renderArtifactsMissingGuidance(config, missingPath, retryCommand) {
   return `Let's Encrypt issued a certificate, but dashmate could not find the
 file it should have written:
 
@@ -223,7 +241,7 @@ requests a replacement, which spends the limit a second time.
 So fix the local cause first. Check the disk for space and for permissions, and
 that the helper is allowed to write there. Only then:
 
-    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+    ${renderRetryCommand(config, retryCommand)}`;
 }
 
 /**
@@ -235,9 +253,10 @@ that the helper is allowed to write there. Only then:
  *
  * @param {Config} config
  * @param {Error} cause
+ * @param {string} [retryCommand]
  * @return {string}
  */
-function renderResultNotObservedGuidance(config, cause) {
+function renderResultNotObservedGuidance(config, cause, retryCommand) {
   return `The certificate helper started, but dashmate could not read how it
 finished:
 
@@ -248,7 +267,7 @@ one arrived before trying again - a request that did reach Let's Encrypt
 counts against this node's limits whether or not dashmate saw the answer:
 
     dashmate doctor ${renderConfigFlag(config.getName())}
-    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+    ${renderRetryCommand(config, retryCommand)}`;
 }
 
 const LEGO_CA_CERTIFICATE_MOUNT_PATH = '/acme-ca.pem';
@@ -667,20 +686,28 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // tell us and nothing to retry against - the fix is local.
               if (e instanceof LegoDidNotStartError) {
                 throw new Error(
-                  renderHelperDidNotStartGuidance(config, e.cause, e.neverRan),
+                  renderHelperDidNotStartGuidance(
+                    config,
+                    e.cause,
+                    e.neverRan,
+                    ctx.certificateRetryCommand,
+                  ),
                   { cause: e },
                 );
               }
 
               if (e instanceof LegoResultNotObservedError) {
-                throw new Error(renderResultNotObservedGuidance(config, e.cause), { cause: e });
+                throw new Error(
+                  renderResultNotObservedGuidance(config, e.cause, ctx.certificateRetryCommand),
+                  { cause: e },
+                );
               }
 
               // A certificate exists. Retrying would ask for another one for a
               // problem that is entirely local to this machine.
               if (e instanceof LegoArtifactsMissingError) {
                 throw new Error(
-                  renderArtifactsMissingGuidance(config, e.missingPath),
+                  renderArtifactsMissingGuidance(config, e.missingPath, ctx.certificateRetryCommand),
                   { cause: e },
                 );
               }
@@ -712,7 +739,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               }, { interactive: ctx.interactive });
 
               if (!retry) {
-                throw new Error(`${e.message}\n\n${renderGiveUpGuidance(config, attempt)}`);
+                throw new Error(`${e.message}\n\n${renderGiveUpGuidance(
+                  config,
+                  attempt,
+                  ctx.certificateRetryCommand,
+                )}`);
               }
             }
           }
