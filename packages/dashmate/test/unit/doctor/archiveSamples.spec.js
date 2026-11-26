@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import zlib from 'zlib';
+import { list } from 'tar';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import obfuscateConfig from '../../../src/config/obfuscateConfig.js';
 import archiveSamples from '../../../src/doctor/archiveSamples.js';
@@ -230,6 +231,66 @@ describe('archiveSamples', () => {
       );
 
       expect(fs.readdirSync(archiveRoot)).to.be.empty();
+    });
+  });
+
+  // The samples are written out as files before they are packed. The archive
+  // is the one copy meant to leave the machine, so the staged files are not
+  // left behind for whoever else can read the temp directory, and nothing
+  // already there is packed into the archive with them.
+  describe('staging', () => {
+    it('should leave only the archive behind', async () => {
+      samples.setServiceInfo('core', 'stdOut', 'log line\n');
+
+      await archiveSamples(samples, archiveRoot, config);
+
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal([
+        `dashmate-report-${samples.date.toISOString()}.tar.gz`,
+      ]);
+    });
+
+    it('should not pack files it did not write', async () => {
+      const presetDir = path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}`);
+
+      fs.mkdirSync(presetDir);
+      fs.writeFileSync(path.join(presetDir, 'planted.txt'), 'content from elsewhere');
+
+      samples.setServiceInfo('core', 'stdOut', 'log line\n');
+
+      const archived = await archiveAndRead();
+
+      expect(archived).to.contain('log line');
+      expect(archived).to.not.contain('planted.txt');
+      expect(archived).to.not.contain('content from elsewhere');
+    });
+
+    it('should not leave the staged files behind when packing fails', async () => {
+      samples.setServiceInfo('core', 'stdOut', 'log line\n');
+
+      // Fails where the archive itself is opened, after every sample is staged
+      await expect(
+        archiveSamples(samples, path.join(archiveRoot, 'missing', 'folder'), config),
+      ).to.be.rejectedWith(/ENOENT.*missing/);
+
+      expect(fs.readdirSync(archiveRoot)).to.be.empty();
+    });
+
+    // The staging directory is private, and an entry for it would hand that
+    // mode to the directory the archive is extracted into
+    it('should not pack an entry for the staging directory itself', async () => {
+      samples.setServiceInfo('core', 'stdOut', 'log line\n');
+
+      await archiveSamples(samples, archiveRoot, config);
+
+      const entries = [];
+
+      await list({
+        file: path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`),
+        onReadEntry: (entry) => entries.push(entry.path),
+      });
+
+      expect(entries).to.include('core/stdOut.txt');
+      expect(entries.map((entry) => path.posix.normalize(entry))).to.not.include('.');
     });
   });
 });

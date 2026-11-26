@@ -104,30 +104,39 @@ export default async function archiveSamples(samples, folderPath, config) {
 
   const scrub = createSecretScrubber(config);
 
-  const tempDir = os.tmpdir();
   const archiveName = `dashmate-report-${samples.date.toISOString()}`;
-  const archiveDir = path.join(tempDir, archiveName);
 
-  writeSampleFile(archiveDir, null, 'date', samples.date.toISOString(), scrub);
-  writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo(), scrub);
-  writeSampleFile(archiveDir, null, 'dockerError', samples.getStringifiedDockerError(), scrub);
-  writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig(), scrub);
-  writeSampleFile(archiveDir, null, 'dashmateVersion', samples.getDashmateVersion(), scrub);
+  // Staged in a fresh directory only the operator can read, and removed once
+  // packed: the archive is the one copy meant to leave the machine, and
+  // nothing that was in the temp directory before is packed along with it.
+  const archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), `${archiveName}-`));
 
-  for (const [serviceName, service] of Object.entries(samples.getServices())) {
-    for (const [key, data] of Object.entries(service)) {
-      if (data !== undefined && data !== null) {
-        writeSampleFile(archiveDir, serviceName, key, data, scrub);
+  try {
+    writeSampleFile(archiveDir, null, 'date', samples.date.toISOString(), scrub);
+    writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo(), scrub);
+    writeSampleFile(archiveDir, null, 'dockerError', samples.getStringifiedDockerError(), scrub);
+    writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig(), scrub);
+    writeSampleFile(archiveDir, null, 'dashmateVersion', samples.getDashmateVersion(), scrub);
+
+    for (const [serviceName, service] of Object.entries(samples.getServices())) {
+      for (const [key, data] of Object.entries(service)) {
+        if (data !== undefined && data !== null) {
+          writeSampleFile(archiveDir, serviceName, key, data, scrub);
+        }
       }
     }
-  }
 
-  await create(
-    {
-      cwd: archiveDir,
-      gzip: true,
-      file: path.join(folderPath, `${archiveName}.tar.gz`),
-    },
-    ['.'],
-  );
+    // The staging directory's own entry is left out: it would carry the
+    // private mode onto whatever directory the archive is extracted into
+    await create(
+      {
+        cwd: archiveDir,
+        gzip: true,
+        file: path.join(folderPath, `${archiveName}.tar.gz`),
+      },
+      fs.readdirSync(archiveDir),
+    );
+  } finally {
+    fs.rmSync(archiveDir, { recursive: true, force: true });
+  }
 }
