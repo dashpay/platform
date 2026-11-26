@@ -3,6 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
+import printUnwrapped from '../../oclif/errors/printUnwrapped.js';
 
 export default class ReindexCommand extends ConfigBaseCommand {
   // Reindex temporarily replaces the Core service configuration, so other
@@ -31,6 +32,7 @@ export default class ReindexCommand extends ConfigBaseCommand {
    * @param {Object} flags
    * @param {Config} config
    * @param {reindexNodeTask} reindexNodeTask
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    *
    * @return {Promise<void>}
    */
@@ -43,7 +45,15 @@ export default class ReindexCommand extends ConfigBaseCommand {
     },
     config,
     reindexNodeTask,
+    assertPlatformCanStart,
   ) {
+    // The reindex renders its own Core config and then starts the whole node.
+    try {
+      assertPlatformCanStart(config);
+    } catch (e) {
+      throw printUnwrapped(e);
+    }
+
     const tasks = new Listr(
       [
         {

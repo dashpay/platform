@@ -142,6 +142,7 @@ import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCert
 import validateLetsEncryptCertificateFactory from './ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import setupPlatformTaskFactory from './listr/tasks/setup/platform/setupPlatformTaskFactory.js';
 import getPlatformArtefactsFactory from './config/getPlatformArtefactsFactory.js';
+import assertPlatformCanStartFactory from './config/assertPlatformCanStartFactory.js';
 import readPlatformRegistration from './core/readPlatformRegistration.js';
 
 /**
@@ -329,6 +330,7 @@ export default async function createDIContainer(options = {}) {
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     setupPlatformTask: asFunction(setupPlatformTaskFactory).singleton(),
     getPlatformArtefacts: asFunction(getPlatformArtefactsFactory).singleton(),
+    assertPlatformCanStart: asFunction(assertPlatformCanStartFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
