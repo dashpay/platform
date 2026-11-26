@@ -360,6 +360,46 @@ describe('analyseConfigFactory', () => {
       expect(descriptions).to.include(NODE_ID_PROBLEM);
     });
 
+    describe('while Tenderdash runs with another node ID', () => {
+      let tenderdashStatus;
+
+      beforeEach(() => {
+        // Captured from Tenderdash 2.0.0-dev.3, and stored the way the
+        // collector stores it: as a settled promise
+        tenderdashStatus = JSON.parse(fs.readFileSync(
+          path.join(PACKAGE_ROOT_DIR, 'test/fixtures/tenderdashRpc/2.0.0-dev.3/status.json'),
+          'utf8',
+        ));
+
+        samples.setServiceInfo('drive_tenderdash', 'status', { status: 'fulfilled', value: tenderdashStatus });
+        samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', masternodeStatus.dmnState.platformNodeID);
+      });
+
+      // Tenderdash loads its key at startup, so a key corrected in the config
+      // only takes effect after a restart. Until then peers still see the old ID.
+      it('should say a restart is needed when the configured key is right but not yet loaded', () => {
+        const problems = analyseConfig(samples);
+
+        expect(problems).to.have.lengthOf(1);
+        expect(problems[0].getDescription()).to.not.equal(NODE_ID_PROBLEM);
+        expect(problems[0].getDescription()).to.include('Tenderdash is running with a node ID');
+        expect(problems[0].getSolution()).to.include('dashmate restart --platform');
+        expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+      });
+
+      it('should report nothing when Tenderdash runs with the registered ID', () => {
+        tenderdashStatus.result.node_info.id = masternodeStatus.dmnState.platformNodeID;
+
+        expect(analyseConfig(samples)).to.be.empty();
+      });
+
+      it('should report nothing extra when Tenderdash did not answer', () => {
+        samples.setServiceInfo('drive_tenderdash', 'status', { status: 'rejected', reason: {} });
+
+        expect(analyseConfig(samples)).to.be.empty();
+      });
+    });
+
     // A report collected by an older dashmate has no ID derived from the key
     it('should report nothing when the node ID is the registered one', () => {
       config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);

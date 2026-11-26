@@ -108,6 +108,24 @@ export default function analyseConfigFactory() {
         );
 
         problems.push(problem);
+      } else if (platformNodeId) {
+        // Tenderdash loads its key at startup, so a key corrected in the
+        // config is not in use until it restarts. The running ID is only known
+        // when Tenderdash answered.
+        const runningNodeId = samples.getServiceInfo('drive_tenderdash', 'status')
+          ?.value?.result?.node_info?.id;
+
+        if (runningNodeId && runningNodeId !== platformNodeId) {
+          const problem = new Problem(
+            'Tenderdash is running with a node ID other than the one found in the ProReg transaction',
+            chalk`The configured node key matches the registered node ID, but Tenderdash
+has not loaded it yet. Please restart Platform to apply it:
+  {bold.cyanBright dashmate restart --platform ${renderConfigFlag(config.getName())}}`,
+            SEVERITY.HIGH,
+          );
+
+          problems.push(problem);
+        }
       }
 
       // SSL certificate
