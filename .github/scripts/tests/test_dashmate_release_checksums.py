@@ -117,6 +117,42 @@ def job(name):
     return text[start:start + 1 + end.start()] if end else text[start:]
 
 
+# Each Dashmate matrix job of release.yml has a macOS copy with a one-entry matrix, so the
+# macOS installer is signed as soon as its own build ends rather than the slowest Linux build.
+BUILD_JOBS = ['build-dashmate-packages', 'build-dashmate-macos']
+RELEASE_JOBS = ['release-dashmate-packages', 'release-dashmate-macos']
+DASHMATE_JOBS = BUILD_JOBS + RELEASE_JOBS + ['release-dashmate-checksums']
+
+
+def needs(name):
+    """The jobs a release.yml job needs, in the order they are written."""
+    match = re.search(r'\n    needs:((?:\n      - \S+)+|[^\n]+)', job(name))
+    if not match:
+        return []
+    value = match.group(1).strip()
+    return re.findall(r'- (\S+)', value) if value.startswith('-') else [value]
+
+
+def legs(name):
+    """A matrix job's (package type, os) legs. Only entries that put the package type first
+    match: GitHub names a leg after its matrix values in the order they are written."""
+    return re.findall(r'\n          - package_type: (\S+)\n            os: (\S+)(?=\n)', job(name))
+
+
+def without_legs(name):
+    """A Dashmate job's text without what tells a macOS copy from its Linux job: the job id,
+    the build job it needs and its matrix entries."""
+    lines = job(name).split('\n')
+    # A comment above the next job is part of the text up to that job.
+    while lines and (not lines[-1].strip() or lines[-1].startswith('  #')):
+        lines.pop()
+    text = '\n'.join(lines).replace(f'\n  {name}:\n', '\n  JOB:\n', 1)
+    for build in BUILD_JOBS:
+        text = text.replace(f'\n    needs: {build}\n', '\n    needs: BUILD\n')
+        text = text.replace(f'needs.{build}.result', 'needs.BUILD.result')
+    return re.sub(r'(\n          - package_type: \S+\n            os: \S+)+\n', '\n          LEGS\n', text)
+
+
 def step_block(name):
     """The lines of a step of a release.yml job, from its `- name:` to the next step."""
     lines = RELEASE.read_text().splitlines()
@@ -607,11 +643,14 @@ class ReleaseChecksumsTests(unittest.TestCase):
             self.assertNotEqual(self.run_step(step, assets=[], GH_FAIL='1').returncode, 0)
 
     def test_should_hash_after_signing_and_refuse_a_signed_release_before_uploading(self):
-        legs = job('release-dashmate-packages')
-        order = [legs.index('- name: ' + step) for step in [
-            'Sign and notarize macOS installers', 'Refuse to replace the packages of a signed release',
-            'Require one amd64 and one arm64 deb, from the deb leg only', 'Record package checksums', 'Upload artifacts to release']]
-        self.assertEqual(order, sorted(order))
+        for name in RELEASE_JOBS:
+            with self.subTest(name):
+                text = job(name)
+                order = [text.index('- name: ' + step) for step in [
+                    'Sign and notarize macOS installers', 'Refuse to replace the packages of a signed release',
+                    'Require one amd64 and one arm64 deb, from the deb leg only', 'Record package checksums',
+                    'Upload artifacts to release']]
+                self.assertEqual(order, sorted(order))
 
     def test_should_compare_names_bytewise(self):
         # The C locale keeps the name check to ASCII and the sort order fixed. Set explicitly,
@@ -622,29 +661,71 @@ class ReleaseChecksumsTests(unittest.TestCase):
                 self.assertEqual(step_env(step).get('LC_ALL'), 'C')
 
     def test_should_require_a_record_from_every_package_type_of_the_matrix(self):
-        matrix = re.findall(r'- package_type: (\S+)', job('release-dashmate-packages'))
-        self.assertEqual(sorted(PACKAGES), sorted(matrix))
-        # GitHub names each leg after the job and its matrix values, package type first:
-        # `Release Dashmate packages (deb, ubuntu-24.04)`, the name the checksums job looks for.
-        self.assertIn('\n    name: Release Dashmate packages\n', job('release-dashmate-packages'))
-        self.assertEqual(re.findall(r'- package_type: (\S+)\n +os: (\S+)', job('release-dashmate-packages')),
-                         list(OS.items()))
+        matrix = [leg for name in RELEASE_JOBS for leg in legs(name)]
+        # One release leg per package type, across the two release jobs.
+        self.assertEqual(sorted(matrix), sorted(OS.items()))
+        for name in RELEASE_JOBS:
+            # GitHub names each leg after the job and its matrix values, package type first,
+            # a one-entry matrix too: `Release Dashmate packages (deb, ubuntu-24.04)`, the name
+            # the checksums job looks for.
+            self.assertIn('\n    name: Release Dashmate packages\n', job(name))
         for step in ["Read package checksums from the release legs' logs", 'Generate SHA256SUMS']:
             with self.subTest(step):
                 required = re.search(r'for package_type in ([^;]+); do', step_script(step)).group(1)
-                self.assertEqual(sorted(required.split()), sorted(matrix))
+                self.assertEqual(sorted(required.split()), sorted(package_type for package_type, _ in matrix))
 
     def test_should_publish_checksums_only_after_every_build_and_release_leg_succeeded(self):
         # A release leg also runs after its build failed, and can then publish the packages an
         # earlier attempt built; checksums of those must not be published as the new build's.
         checksums = job('release-dashmate-checksums')
-        needs = re.search(r'\n    needs:((?:\n      - \S+)+|[^\n]+)', checksums).group(1)
-        self.assertIn('build-dashmate-packages', needs)
-        self.assertIn('release-dashmate-packages', needs)
+        self.assertEqual(needs('release-dashmate-checksums'), BUILD_JOBS + RELEASE_JOBS)
         condition = re.search(r'\n    if: >-\n((?:      .*\n)+)', checksums).group(1).split()
-        self.assertEqual(' '.join(condition), "!cancelled() && github.event_name == 'release'"
-                         " && needs.build-dashmate-packages.result == 'success'"
-                         " && needs.release-dashmate-packages.result == 'success'")
+        self.assertEqual(' '.join(condition), "!cancelled() && github.event_name == 'release'" + ''.join(
+            f" && needs.{name}.result == 'success'" for name in BUILD_JOBS + RELEASE_JOBS))
+
+    def test_should_sign_the_macos_installer_as_soon_as_its_own_build_ends(self):
+        # A job that needs a matrix job waits for all of its legs. With macOS as one more leg of
+        # the Linux matrices, its signing and notarization, the longest release leg, started
+        # only after the slowest Linux build.
+        self.assertEqual(legs('build-dashmate-macos'), [('macos', OS['macos'])])
+        self.assertEqual(legs('release-dashmate-macos'), [('macos', OS['macos'])])
+        linux = [(package_type, os) for package_type, os in OS.items() if package_type != 'macos']
+        self.assertEqual(legs('build-dashmate-packages'), linux)
+        self.assertEqual(legs('release-dashmate-packages'), linux)
+        self.assertEqual(needs('release-dashmate-macos'), ['build-dashmate-macos'])
+        self.assertEqual(needs('release-dashmate-packages'), ['build-dashmate-packages'])
+        for name in RELEASE_JOBS:
+            with self.subTest(name):
+                self.assertEqual(re.findall(r'needs\.([a-z-]+)\.result', job(name)), needs(name))
+
+    def test_should_keep_each_macos_job_a_copy_of_its_linux_job(self):
+        # Only the job id, the build it needs and the matrix entry tell them apart. The macOS
+        # installer must be built, checked, recorded and published by the same steps, with the
+        # same permissions and conditions, as the others; the step tests above run only the
+        # first copy of each step.
+        for linux, macos in [BUILD_JOBS, RELEASE_JOBS]:
+            with self.subTest(macos):
+                text = without_legs(macos)
+                self.assertIn('\n  JOB:\n', text)
+                self.assertIn('\n          LEGS\n', text)
+                self.assertEqual(text, without_legs(linux))
+
+    def test_should_build_installers_only_after_release_npm_checked_and_published_their_packages(self):
+        # Before it publishes, release-npm checks the Tenderdash seed snapshot the installers
+        # ship, the tag and the npm tarballs the installers are built from.
+        for name in BUILD_JOBS:
+            with self.subTest(name):
+                self.assertEqual(needs(name), ['release-npm'])
+
+    def test_should_give_no_dashmate_job_an_id_token(self):
+        # The workflow grants id-token: write for npm trusted publishing, which accepts a token
+        # from any job of release.yml. The Dashmate jobs run package code or hold release
+        # credentials, so each declares its own permissions, without it.
+        for name in DASHMATE_JOBS:
+            with self.subTest(name):
+                block = re.search(r'\n    permissions:\n((?:      .*\n)+)', job(name))
+                self.assertIsNotNone(block)
+                self.assertNotIn('id-token', block.group(1))
 
     def test_should_publish_checksums_from_a_job_that_runs_no_repository_code_and_no_action(self):
         # The records come from the release legs' logs, which no other job can write, rather
