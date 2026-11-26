@@ -11,6 +11,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
+import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
 import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
@@ -135,6 +136,18 @@ export default function collectSamplesTaskFactory(
           task: async (ctx) => {
             ctx.samples.setDashmateVersion(DASHMATE_VERSION);
             ctx.samples.setDashmateConfig(obfuscateConfig(config));
+
+            // Tenderdash takes its ID from the node key, which the sampled
+            // config has redacted. The ID itself is public: Tenderdash
+            // announces it to every peer. The schema requires the node object
+            // but not the key in it, so the key is read off the object.
+            const nodeKey = config.get('platform.enable')
+              ? config.get('platform.drive.tenderdash.node').key
+              : null;
+
+            if (typeof nodeKey === 'string') {
+              ctx.samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', deriveTenderdashNodeId(nodeKey));
+            }
 
             return new Listr([
               {
@@ -456,8 +469,8 @@ export default function collectSamplesTaskFactory(
               quorums,
               getBlockchainInfo,
               getPeerInfo,
-              masternodeStatus,
               masternodeSyncStatus,
+              masternodeStatus,
             ] = (await Promise.allSettled(coreCalls))
               .map((e) => e.value?.result || e.reason);
 
