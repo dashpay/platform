@@ -112,8 +112,58 @@ describe('obfuscateConfig', () => {
 
       expect(obfuscatedUrl).to.not.contain('acmePassword7Qx');
       expect(obfuscatedUrl).to.not.contain('innerPassword7Qx');
-      expect(obfuscatedUrl).to.contain('@inner.example.com/');
+      expect(new URL(obfuscatedUrl).searchParams.get('next'))
+        .to.equal('https://*********:****************@inner.example.com/');
       expect(getConfigSecretValues(config)).to.include('innerPassword7Qx');
+    });
+
+    // A URL passed as a query value is percent-encoded, so its credentials
+    // only show once the value is decoded
+    it('should hide the credentials of a URL encoded into a query value', () => {
+      const inner = 'https://innerUser:innerPassword7Qx@inner.example.com/';
+      const { config, obfuscatedUrl } = obfuscateUrl(
+        `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}&mode=strict`,
+      );
+
+      expect(obfuscatedUrl).to.not.contain('innerPassword7Qx');
+      expect(obfuscatedUrl).to.not.contain('innerUser');
+      expect(new URL(obfuscatedUrl).searchParams.get('upstream'))
+        .to.equal('https://*********:****************@inner.example.com/');
+      expect(new URL(obfuscatedUrl).searchParams.get('mode')).to.equal('strict');
+      expect(getConfigSecretValues(config)).to.include.members(['innerUser', 'innerPassword7Qx']);
+    });
+
+    // Decoded, a query value can hold a URL only a parser reads, such as one
+    // with a space in its password
+    it('should read a URL in a query value the way a URL parser does', () => {
+      const inner = 'https://innerUser:inner Password7Qx@inner.example.com/';
+      const { config, obfuscatedUrl } = obfuscateUrl(
+        `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}`,
+      );
+
+      expect(decodeURIComponent(obfuscatedUrl)).to.not.contain('Password7Qx');
+      expect(getConfigSecretValues(config)).to.include('inner Password7Qx');
+    });
+
+    // A log that prints the outer URL prints the inner one's credentials
+    // encoded once more
+    it('should find credentials from a query value as the outer URL writes them', () => {
+      const inner = 'https://innerUser:inner%40Password7Qx@inner.example.com/';
+      const { config } = obfuscateUrl(
+        `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}`,
+      );
+
+      expect(getConfigSecretValues(config)).to.include.members([
+        'inner%40Password7Qx',
+        'inner@Password7Qx',
+        'inner%2540Password7Qx',
+      ]);
+    });
+
+    it('should leave a URL without credentials exactly as written', () => {
+      const url = 'https://acme.example.com/directory?mode=strict&x=a%20b';
+
+      expect(obfuscateUrl(url).obfuscatedUrl).to.equal(url);
     });
 
     // A service logs the password as it uses it, not as the URL escapes it

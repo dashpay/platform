@@ -79,19 +79,29 @@ function forEachStringValue(object, callback, parentField = undefined, grandpare
 }
 
 /**
- * @param {string} value
- * @return {URL|null} the value parsed as a URL, when it is one with credentials
+ * How many URLs deep, through query values, credentials are looked for
  */
-function parseUrlWithCredentials(value) {
-  let url;
+const MAX_URL_NESTING = 3;
 
+/**
+ * @param {string} value
+ * @return {URL|null} the value parsed as a URL, when it is one
+ */
+function parseUrl(value) {
   try {
-    url = new URL(value);
+    return new URL(value);
   } catch {
     return null;
   }
+}
 
-  return url.username || url.password ? url : null;
+/**
+ * @param {URL} url
+ * @return {string[]} the URL's query values, decoded: a URL passed as one is
+ *   percent-encoded, so its credentials only show once it is
+ */
+function getDecodedQueryValues(url) {
+  return [...url.searchParams.values()];
 }
 
 /**
@@ -107,26 +117,13 @@ function decodeUrlComponent(text) {
 }
 
 /**
- * @param {string} value
- * @return {string}
+ * @param {string} text
+ * @return {string} the text with the credentials of the URLs written in it
+ *   hidden
  */
-function hideUrlCredentials(value) {
-  let hidden = value;
-
-  // A value that is a URL is read the way a URL parser reads it, so every
-  // spelling the parser accepts - extra slashes, an unescaped @ - is covered
-  const url = parseUrlWithCredentials(value);
-
-  if (url) {
-    url.username = hideString(url.username);
-    url.password = hideString(url.password);
-
-    hidden = url.href;
-  }
-
-  // URLs inside the rest of it, a query parameter of that URL included. The
-  // user name and the password are hidden apart, as the parser keeps them.
-  return hidden.replace(URL_USERINFO, (_match, scheme, userinfo) => {
+function hideTextUrlCredentials(text) {
+  // The user name and the password are hidden apart, as the parser keeps them
+  return text.replace(URL_USERINFO, (_match, scheme, userinfo) => {
     const separatorIndex = userinfo.indexOf(':');
 
     const hiddenUserinfo = separatorIndex === -1
@@ -135,6 +132,51 @@ function hideUrlCredentials(value) {
 
     return `${scheme}${hiddenUserinfo}@`;
   });
+}
+
+/**
+ * @param {string} value
+ * @param {number} [nesting] - how many query values deep the value is
+ * @return {string}
+ */
+function hideUrlCredentials(value, nesting = 0) {
+  let hidden = value;
+
+  // A value that is a URL is read the way a URL parser reads it, so every
+  // spelling the parser accepts - extra slashes, an unescaped @ - is covered
+  const url = nesting < MAX_URL_NESTING ? parseUrl(value) : null;
+
+  if (url) {
+    let changed = false;
+
+    if (url.username || url.password) {
+      url.username = hideString(url.username);
+      url.password = hideString(url.password);
+
+      changed = true;
+    }
+
+    const query = [...url.searchParams];
+    const hiddenQuery = query.map(([name, queryValue]) => [
+      name,
+      hideUrlCredentials(queryValue, nesting + 1),
+    ]);
+
+    if (hiddenQuery.some(([, queryValue], index) => queryValue !== query[index][1])) {
+      url.search = new URLSearchParams(hiddenQuery).toString();
+
+      changed = true;
+    }
+
+    // Written back only when something was hidden, so a URL with nothing to
+    // hide stays exactly as the operator wrote it
+    if (changed) {
+      hidden = url.href;
+    }
+  }
+
+  // URLs inside the rest of it, a query parameter written out as is included
+  return hideTextUrlCredentials(hidden);
 }
 
 /**
@@ -154,22 +196,33 @@ function getUserinfoParts(userinfo) {
 
 /**
  * @param {string} value
+ * @param {number} [nesting] - how many query values deep the value is
  * @return {string[]} the credentials of the URLs in the value, in each form
  *   text can quote them in
  */
-function getUrlCredentials(value) {
+function getUrlCredentials(value, nesting = 0) {
   const credentials = [];
 
   for (const [, , userinfo] of value.matchAll(URL_USERINFO)) {
     credentials.push(...getUserinfoParts(userinfo));
   }
 
-  // The parser also reads URLs the pattern does not, such as one with no
-  // slashes after the scheme
-  const url = parseUrlWithCredentials(value);
+  const url = nesting < MAX_URL_NESTING ? parseUrl(value) : null;
 
   if (url) {
-    credentials.push(...getUserinfoParts(url.password ? `${url.username}:${url.password}` : url.username));
+    // The parser also reads URLs the pattern does not, such as one with no
+    // slashes after the scheme
+    if (url.username || url.password) {
+      credentials.push(...getUserinfoParts(url.password ? `${url.username}:${url.password}` : url.username));
+    }
+
+    // A URL in a query value is read decoded, and its credentials are also
+    // looked for as the outer URL writes them, encoded once more
+    for (const queryValue of getDecodedQueryValues(url)) {
+      for (const credential of getUrlCredentials(queryValue, nesting + 1)) {
+        credentials.push(credential, encodeURIComponent(credential));
+      }
+    }
   }
 
   return credentials.filter((credential) => credential.length > 0);
