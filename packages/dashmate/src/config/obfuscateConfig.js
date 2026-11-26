@@ -210,6 +210,22 @@ function hideTextUrlQueryValues(text) {
 }
 
 /**
+ * @param {string} text
+ * @param {string[]} maskings - copies of the text, each with some of it
+ *   masked by `*`, character for character
+ * @return {string} the text with everything any of them masks masked
+ */
+function combineMaskings(text, maskings) {
+  let combined = '';
+
+  for (let index = 0; index < text.length; index += 1) {
+    combined += maskings.some((masked) => masked[index] === '*') ? '*' : text[index];
+  }
+
+  return combined;
+}
+
+/**
  * @param {string} value
  * @param {number} [nesting] - how many query values deep the value is
  * @return {string}
@@ -345,8 +361,9 @@ export function getConfigSecretValues(config) {
  * @param {Config} config
  * @param {function(string): string} [scrubFreeText] - masks secrets known
  *   from elsewhere in free text the operator writes, such as the node
- *   description. No other value is passed to it: the copy has to keep the
- *   values the config is made of, which a secret can be spelled like.
+ *   description, replacing each character it masks with `*`. No other value
+ *   is passed to it: the copy has to keep the values the config is made of,
+ *   which a secret can be spelled like.
  * @return {Config}
  */
 export default function obfuscateConfig(
@@ -383,9 +400,11 @@ export default function obfuscateConfig(
     // Before the operator's identity is masked, which could rewrite part of
     // a secret. Nothing reads free text as a value, so a URL's query in it
     // can be hidden too: once its credentials are hidden, a secret the query
-    // shares with a config value no longer matches that value whole.
+    // shares with a config value no longer matches that value whole. Both
+    // are looked for in the same text, so hiding one does not keep the
+    // other from being found.
     if (isFreeText) {
-      value = scrubFreeText(hideTextUrlQueryValues(value));
+      value = combineMaskings(value, [scrubFreeText(value), hideTextUrlQueryValues(value)]);
     }
 
     const namesOperator = isLocalPath(value) || isFreeText;

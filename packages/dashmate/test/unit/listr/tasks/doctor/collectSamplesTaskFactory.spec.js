@@ -1301,6 +1301,20 @@ describe('collectSamplesTaskFactory', () => {
       );
     });
 
+    // A config secret quoted in such a query can run past the value that
+    // holds it, here into the fragment, and is still masked whole
+    it('should mask all of a config secret quoted in the query of a URL with a password', async () => {
+      const secret = 'firstPart123#secondPart456';
+
+      config.set('platform.drive.abci.docker.build.buildArgs', { BUILD_TOKEN: secret });
+      config.set('description', `drive built from https://builder:buildPassword7Qx@builds.example.com/?sig=${secret} for testing`);
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('firstPart123');
+      expect(archived).to.not.contain('secondPart456');
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the
