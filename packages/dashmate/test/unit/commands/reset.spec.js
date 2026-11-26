@@ -1,0 +1,76 @@
+import { Listr } from 'listr2';
+import ResetCommand from '../../../src/commands/reset.js';
+import HomeDir from '../../../src/config/HomeDir.js';
+import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
+
+describe('Reset command', () => {
+  let homeDir;
+  let setUp;
+  let stderr;
+  let resetNodeTask;
+
+  /**
+   * @param {Config} config
+   * @param {Object} flags
+   */
+  async function reset(config, flags) {
+    await new ResetCommand().runWithDependencies(
+      {},
+      {
+        verbose: false,
+        hard: false,
+        force: true,
+        platform: false,
+        'keep-data': false,
+        ...flags,
+      },
+      config,
+      resetNodeTask,
+    );
+  }
+
+  beforeEach(function beforeEach() {
+    homeDir = HomeDir.createTemp();
+    ({ setUp } = createPlatformSetupConfigs(homeDir));
+
+    resetNodeTask = this.sinon.stub().callsFake(() => new Listr([]));
+
+    stderr = '';
+    this.sinon.stub(process.stderr, 'write').callsFake((chunk) => {
+      stderr += chunk;
+
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    homeDir.remove();
+  });
+
+  describe('a hard Platform reset of a masternode', () => {
+    // The registration names the node ID: setting Platform up again needs the
+    // same key, and nothing of it is kept. A scripted reset uses --force and
+    // never sees the confirmation, so this cannot wait for one.
+    it('should name the node ID it deletes and how to back the key up, under --force too', async () => {
+      const config = setUp('testnet', { masternode: true });
+
+      await reset(config, { platform: true, hard: true, force: true });
+
+      // In a subshell: a umask left in the operator's shell would give the
+      // files the reset renders modes the Platform containers cannot read.
+      expect(stderr).to.include(config.get('platform.drive.tenderdash.node.id'))
+        .and.include('(umask 077; dashmate config get platform.drive.tenderdash.node.key --config testnet > node-key)')
+        .and.include('dashmate setup --platform --config testnet --platform-node-key-file node-key');
+      expect(stderr).to.not.include(config.get('platform.drive.tenderdash.node.key'));
+      expect(resetNodeTask).to.have.been.calledOnceWith(config);
+    });
+  });
+
+  it('should say nothing about a key that is not deleted or not registered', async () => {
+    await reset(setUp('testnet', { masternode: true }), { platform: true, hard: false });
+    await reset(setUp('testnet', { masternode: false }), { platform: true, hard: true });
+    await reset(setUp('testnet', { masternode: true, evo: false }), { platform: true, hard: true });
+
+    expect(stderr).to.not.include('node-key');
+  });
+});

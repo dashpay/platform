@@ -3,6 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
+import renderConfigFlag from '../util/renderConfigFlag.js';
 
 export default class ResetCommand extends ConfigBaseCommand {
   // Reconfigures the node: changes configuration repeatedly while doing long,
@@ -53,6 +54,43 @@ export default class ResetCommand extends ConfigBaseCommand {
     config,
     resetNodeTask,
   ) {
+    // A masternode's node key is bound to its registration, and the reset
+    // keeps no copy, so setting Platform up again needs the operator's backup.
+    // Printed under --force too: a scripted reset never sees the confirmation.
+    if (isPlatformOnlyReset && isHardReset && config.get('core.masternode.enable')
+      && config.get('platform.drive.tenderdash.node.key') !== null) {
+      const flag = renderConfigFlag(config.getName());
+      const nodeId = config.get('platform.drive.tenderdash.node.id');
+
+      // The umask stays inside the subshell: left set in the operator's shell,
+      // it would give the files the reset renders next modes the Platform
+      // containers cannot read.
+      const backup = `  (umask 077; dashmate config get platform.drive.tenderdash.node.key ${flag} > node-key)`;
+
+      const lines = isForce
+        ? [
+          `Deleting the Platform node key of ${config.getName()}, node ID ${nodeId}. The masternode's`
+            + ' registration names that node ID, so setting Platform up again needs this key, and'
+            + ' dashmate keeps no copy. A script that resets should back it up before, with:',
+          backup,
+        ]
+        : [
+          `This deletes the Platform node key of ${config.getName()}, node ID ${nodeId}. The`
+            + ' masternode\'s registration names that node ID, so setting Platform up again needs'
+            + ' this key, and dashmate keeps no copy. Unless you have a backup, answer No and back'
+            + ' it up first, into a file only you can read:',
+          backup,
+        ];
+
+      process.stderr.write([
+        ...lines,
+        'After the reset, set Platform up again with:',
+        `  dashmate setup --platform ${flag} --platform-node-key-file node-key`,
+        '',
+        '',
+      ].join('\n'));
+    }
+
     const tasks = new Listr(
       [
         {
