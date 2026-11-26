@@ -1329,7 +1329,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // side, but kept on the code it had as `InvalidIdentityData`, which
             // fell to the catch-all: a dedicated code must be mirrored into the
             // Swift and Kotlin result enums, a separate coordinated change. The
-            // message names the identity, purpose, levels and transition.
+            // message names the identity, accepted purposes, key types, levels and transition.
             PlatformWalletError::NoUsableSigningKey { .. } => {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
