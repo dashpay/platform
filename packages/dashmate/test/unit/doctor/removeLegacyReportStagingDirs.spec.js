@@ -283,6 +283,49 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(fs.existsSync(path.join(dir, 'date.txt'))).to.be.true();
   });
 
+  // A directory that fails its last check is left, and nothing of it is held
+  it('should let go of a directory it cannot check through its handle', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    const openSync = fs.openSync.bind(fs);
+    const fstatSync = fs.fstatSync.bind(fs);
+    const statError = Object.assign(new Error('input/output error'), { code: 'EIO' });
+
+    let held;
+    let heldStats = 0;
+
+    this.sinon.stub(fs, 'openSync').callsFake((target, ...rest) => {
+      const fd = openSync(target, ...rest);
+
+      if (target === dir) {
+        held = fd;
+      }
+
+      return fd;
+    });
+
+    // The first look through the handle is the one that closes the directory
+    // to others; the one after the whole tree is checked fails
+    this.sinon.stub(fs, 'fstatSync').callsFake((fd, ...rest) => {
+      if (fd === held) {
+        heldStats += 1;
+
+        if (heldStats === 2) {
+          throw statError;
+        }
+      }
+
+      return fstatSync(fd, ...rest);
+    });
+
+    const { found, left } = findLegacyReportStagingDirs(tempDir);
+
+    expect(found).to.be.empty();
+    expect(left.map(({ dir: leftDir, error, restricted }) => [leftDir, error, restricted]))
+      .to.deep.equal([[dir, statError, true]]);
+    expect(() => fstatSync(held)).to.throw().with.property('code', 'EBADF');
+  });
+
   // The directory held is the one checked: it is opened once, and checked
   // through that handle, rather than opened again after the check
   it('should hold the handle it checked the directory through', function it() {

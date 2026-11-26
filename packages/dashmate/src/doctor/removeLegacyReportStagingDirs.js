@@ -445,12 +445,17 @@ export function findLegacyReportStagingDirs(tempDir) {
         // once it is deleted, so a directory put at its path later can never
         // pass for it.
         const handle = verifyStagingDir(dir, uid, tempStat.dev, state, { hold: true });
-        const held = fs.fstatSync(handle);
 
-        if (held.dev !== stat.dev || held.ino !== stat.ino) {
+        try {
+          const held = fs.fstatSync(handle);
+
+          if (held.dev !== stat.dev || held.ino !== stat.ino) {
+            throw new Error(`${dir} changed while it was looked at`);
+          }
+        } catch (error) {
           fs.closeSync(handle);
 
-          throw new Error(`${dir} changed while it was looked at`);
+          throw error;
         }
 
         found.push({
