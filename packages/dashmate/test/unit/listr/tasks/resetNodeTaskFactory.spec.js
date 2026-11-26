@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { Listr } from 'listr2';
+import { asValue } from 'awilix';
+import compose from '@dashevo/docker-compose';
+import createDIContainer from '../../../../src/createDIContainer.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import DefaultConfigs from '../../../../src/config/DefaultConfigs.js';
 import Config from '../../../../src/config/Config.js';
@@ -40,8 +43,7 @@ describe('resetNodeTaskFactory', () => {
       new DefaultConfigs([getBaseConfig, getTestnetConfig, getLocalConfig]),
       configFile,
       homeDir,
-      () => ({}),
-      () => [],
+      () => [{ name: 'drive_abci', profiles: ['platform'] }],
     );
   }
 
@@ -322,6 +324,323 @@ describe('resetNodeTaskFactory', () => {
 
       await expect(reset({ isHardReset: true, removeConfig: true }))
         .to.be.rejectedWith(sslPath);
+    });
+  });
+
+  // Run against the real Compose model and DockerCompose, with only the
+  // `docker compose` process replaced by a stand-in that answers as Compose
+  // does: a `--profile` selection that leaves out Core makes the quorum list's
+  // dependency on Core invalid, and a service named explicitly brings the
+  // services it depends on into the model.
+  describe('Compose commands of a Platform reset', () => {
+    const ALL_PROFILES = ['core', 'platform', 'platform-quorum'];
+
+    const PLATFORM_SERVICES = [
+      'drive_abci',
+      'drive_tenderdash',
+      'rs_dapi',
+      'gateway',
+      'quorum_list',
+      'gateway_rate_limiter',
+      'gateway_rate_limiter_redis',
+      'gateway_rate_limiter_metrics',
+    ];
+
+    const SERVICE_VOLUMES = {
+      core: [{ type: 'volume', source: 'core_data', target: '/home/dash' }],
+      drive_abci: [{ type: 'volume', source: 'drive_abci_data', target: '/var/lib/dash/rs-drive-abci/db' }],
+      drive_tenderdash: [
+        { type: 'volume', source: 'drive_tenderdash', target: '/tenderdash' },
+        { type: 'bind', source: '/home/user/.dashmate/testnet/platform/drive/tenderdash', target: '/tenderdash/config' },
+      ],
+      rs_dapi: [{ type: 'volume', source: 'rs-dapi-access-logs', target: '/var/log/rs-dapi' }],
+    };
+
+    let composeCalls;
+    let removedVolumes;
+    let runningContainers;
+    let configFailure;
+    let platformConfig;
+    let projectName;
+    let diContainer;
+
+    beforeEach(async function beforeEach() {
+      diContainer = await createDIContainer({ DASHMATE_HOME_DIR: homeDir.getPath() });
+
+      const diConfigFile = diContainer.resolve('createConfigFile')();
+      diContainer.register({ configFile: asValue(diConfigFile) });
+
+      platformConfig = diConfigFile.getConfig('testnet');
+      platformConfig.set('platform.quorumList.enabled', true);
+      platformConfig.set('platform.gateway.rateLimiter.metrics.enabled', true);
+
+      projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
+
+      removedVolumes = [];
+      runningContainers = [];
+      configFailure = null;
+      diContainer.register({
+        docker: asValue({
+          getVolume: (name) => ({
+            remove: async () => {
+              removedVolumes.push(name);
+            },
+          }),
+        }),
+      });
+
+      this.sinon.stub(diContainer.resolve('dockerCompose'), 'throwErrorIfNotInstalled').resolves();
+
+      composeCalls = [];
+      this.sinon.stub(compose, 'execCompose').callsFake(async (command, args, options) => {
+        const composeOptions = (options.composeOptions ?? []).flat();
+        const commandOptions = (options.commandOptions ?? []).flat();
+        composeCalls.push({
+          command, args, composeOptions, commandOptions,
+        });
+
+        const profiles = composeOptions.filter((_, i) => composeOptions[i - 1] === '--profile');
+        if (profiles.includes('platform-quorum') && !profiles.includes('core')) {
+          // eslint-disable-next-line prefer-promise-reject-errors
+          return Promise.reject({
+            exitCode: 1,
+            out: '',
+            err: 'service "quorum_list" depends on undefined service "core": invalid compose project\n',
+          });
+        }
+
+        if (command === 'ps') {
+          return { exitCode: 0, err: '', out: runningContainers.map((c) => JSON.stringify(c)).join('\n') };
+        }
+
+        if (command === 'config' && configFailure) {
+          return Promise.reject(configFailure);
+        }
+
+        if (command === 'config' && commandOptions.includes('--volumes')) {
+          return { exitCode: 0, err: '', out: Object.values(SERVICE_VOLUMES).flat().map(({ source }) => source).join('\n') };
+        }
+
+        if (command === 'config') {
+          const services = Object.fromEntries(
+            [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
+              .map((name) => [name, { volumes: SERVICE_VOLUMES[name] }]),
+          );
+
+          const volumes = Object.fromEntries(
+            Object.values(SERVICE_VOLUMES).flat()
+              .filter(({ type }) => type === 'volume')
+              .map(({ source }) => [source, { name: `docker_${source}` }]),
+          );
+
+          return {
+            exitCode: 0, err: '', out: JSON.stringify({ name: projectName, services, volumes }),
+          };
+        }
+
+        return { exitCode: 0, err: '', out: '' };
+      });
+    });
+
+    function platformReset(ctx) {
+      return new Listr([{ task: () => diContainer.resolve('resetNodeTask')(platformConfig) }], { renderer: 'silent' })
+        .run({
+          isPlatformOnlyReset: true,
+          isHardReset: false,
+          isForce: true,
+          keepData: false,
+          removeConfig: false,
+          ...ctx,
+        });
+    }
+
+    /**
+     * @param {string[]} composeOptions
+     * @return {string[]}
+     */
+    function selectedProfiles(composeOptions) {
+      return composeOptions.filter((_, i) => composeOptions[i - 1] === '--profile');
+    }
+
+    /**
+     * @return {string[]}
+     */
+    function removedServices() {
+      const rmCalls = composeCalls.filter(({ command }) => command === 'rm');
+      expect(rmCalls).to.have.lengthOf(1);
+
+      return rmCalls[0].args.filter((arg) => !arg.startsWith('-'));
+    }
+
+    // A profile selection that leaves out Core makes Compose fail or act on
+    // the whole project, Core included. The reset names the Platform services
+    // and, where it selects profiles at all, selects every one, so Core stays
+    // in the model and out of the command.
+    it('should name every Platform service and never select profiles without Core', async () => {
+      await platformReset();
+
+      composeCalls.forEach(({ composeOptions }) => {
+        const profiles = selectedProfiles(composeOptions);
+
+        if (profiles.length > 0) {
+          expect(profiles).to.have.members(ALL_PROFILES);
+        }
+      });
+
+      expect(removedServices()).to.have.members([...PLATFORM_SERVICES, 'dashmate_helper']);
+    });
+
+    // Some Compose versions (2.10 to 2.12) skip a named service whose profile
+    // is not enabled, so the removal enables every profile next to the names.
+    it('should enable every profile when it removes Platform services', async () => {
+      await platformReset();
+
+      const [rmCall] = composeCalls.filter(({ command }) => command === 'rm');
+      expect(selectedProfiles(rmCall.composeOptions)).to.have.members(ALL_PROFILES);
+    });
+
+    it('should run no Compose command but the volume lookup and removal', async () => {
+      await platformReset();
+
+      expect(composeCalls.map(({ command }) => command)).to.deep.equal(['config', 'rm']);
+    });
+
+    // Anonymous volumes are data too, and go unless data is kept.
+    it('should remove anonymous volumes with the containers', async () => {
+      await platformReset();
+
+      const [rmCall] = composeCalls.filter(({ command }) => command === 'rm');
+      expect(rmCall.commandOptions).to.include('-v');
+    });
+
+    it('should keep every volume with --keep-data', async () => {
+      await platformReset({ keepData: true });
+
+      const [rmCall] = composeCalls.filter(({ command }) => command === 'rm');
+      expect(rmCall.commandOptions).to.not.include('-v');
+      expect(composeCalls.filter(({ command }) => command === 'config')).to.be.empty();
+      expect(removedVolumes).to.be.empty();
+    });
+
+    // Compose acts on every service of the project when given no names.
+    it('should refuse to remove anything when it finds no Platform service', async () => {
+      diContainer.register({
+        getServiceList: asValue(() => [{ name: 'core', profiles: ['core'] }]),
+      });
+
+      await expect(platformReset()).to.be.rejectedWith('No Platform services found');
+
+      expect(composeCalls).to.be.empty();
+    });
+
+    // Compose brings Core into the model as the quorum list's dependency, so
+    // its volume is there too, and must not be taken for a Platform one. The
+    // names are the ones Compose gives the volumes.
+    it('should remove the volumes of Platform services only', async () => {
+      await platformReset();
+
+      expect(removedVolumes).to.have.members([
+        'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+
+      const [configCall] = composeCalls.filter(({ command }) => command === 'config');
+      expect(selectedProfiles(configCall.composeOptions)).to.have.members(ALL_PROFILES);
+    });
+
+    // Compose cannot describe the project while service files it needs are
+    // missing. Finding that out after the removal would leave the containers
+    // gone and the volumes in place.
+    it('should look the volumes up before it removes anything', async () => {
+      configFailure = { exitCode: 1, out: '', err: 'env file logger.env not found\n' };
+
+      await expect(platformReset()).to.be.rejectedWith('logger.env');
+
+      expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
+    });
+
+    it('should remove the Platform services again the same way while a volume is in use', async () => {
+      let attempts = 0;
+      diContainer.register({
+        docker: asValue({
+          getVolume: (name) => ({
+            remove: async () => {
+              attempts += 1;
+
+              if (name === 'docker_drive_abci_data' && attempts === 1) {
+                // eslint-disable-next-line no-throw-literal
+                throw { statusCode: 409 };
+              }
+
+              removedVolumes.push(name);
+            },
+          }),
+        }),
+      });
+
+      await platformReset();
+
+      const rmCalls = composeCalls.filter(({ command }) => command === 'rm');
+      expect(rmCalls).to.have.lengthOf(2);
+      expect(rmCalls[1].args).to.deep.equal(rmCalls[0].args);
+      expect(rmCalls[1].composeOptions).to.deep.equal(rmCalls[0].composeOptions);
+      expect(rmCalls[1].commandOptions).to.include('-v');
+      expect(removedVolumes).to.include('docker_drive_abci_data');
+    });
+
+    /**
+     * @param {string} service
+     * @return {Object} a container as `docker compose ps --format json` lists it
+     */
+    function runningContainer(service) {
+      return { Service: service, State: 'running' };
+    }
+
+    // A volume held by a container the reset does not remove stays in use
+    // however often the Platform services are removed again.
+    it('should give up on a volume that stays in use', async function test() {
+      const clock = this.sinon.useFakeTimers();
+      diContainer.register({
+        docker: asValue({
+          getVolume: () => ({
+            // eslint-disable-next-line prefer-promise-reject-errors
+            remove: () => Promise.reject({ statusCode: 409 }),
+          }),
+        }),
+      });
+
+      const result = platformReset().then(() => null, (e) => e);
+      await clock.tickAsync(60 * 1000);
+      const error = await result;
+
+      expect(error).to.be.an('error');
+      expect(error.message).to.include("'docker_drive_abci_data' is still in use");
+      expect(composeCalls.filter(({ command }) => command === 'rm').length).to.be.below(40);
+    });
+
+    // Core keeps running through a Platform reset.
+    it('should not count Core as a running service', async () => {
+      runningContainers = [runningContainer('core'), runningContainer('dashmate_helper')];
+
+      await platformReset({ isForce: false });
+
+      expect(removedServices()).to.include('drive_abci');
+    });
+
+    // `docker compose ps <names>` fails before Compose 2.15 when a named
+    // service has no container, and without every profile older versions
+    // leave out the services the config does not enable.
+    it('should refuse while a Platform service is running', async () => {
+      runningContainers = [runningContainer('core'), runningContainer('drive_tenderdash')];
+
+      await expect(platformReset({ isForce: false }))
+        .to.be.rejectedWith('Running services detected');
+
+      const [psCall] = composeCalls.filter(({ command }) => command === 'ps');
+      expect(psCall.commandOptions).to.deep.equal(['--format', 'json']);
+      expect(selectedProfiles(psCall.composeOptions)).to.have.members(ALL_PROFILES);
+      expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
     });
   });
 });

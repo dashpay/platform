@@ -8,6 +8,14 @@ import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js
 // More paths than this are counted rather than listed.
 const MAX_REPORTED_PATHS = 10;
 
+// A volume still in use after this many removals is held by a container the
+// reset does not remove.
+const MAX_VOLUME_REMOVAL_ATTEMPTS = 10;
+
+// The helper keeps certificate renewal state in the Platform directory, so a
+// Platform reset removes it with the Platform services; start brings it back.
+const HELPER_SERVICE_NAME = 'dashmate_helper';
+
 /**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
@@ -16,8 +24,7 @@ const MAX_REPORTED_PATHS = 10;
  * @param {DefaultConfigs} defaultConfigs
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
- * @param {generateEnvs} generateEnvs
- * @param {getConfigProfiles} getConfigProfiles
+ * @param {getServiceList} getServiceList
  * @return {resetNodeTask}
  */
 export default function resetNodeTaskFactory(
@@ -28,12 +35,39 @@ export default function resetNodeTaskFactory(
   defaultConfigs,
   configFile,
   homeDir,
-  generateEnvs,
-  getConfigProfiles,
+  getServiceList,
 ) {
-  function selectPlatformProfiles(config, options) {
-    return getConfigProfiles(config, options)
-      .filter((profile) => profile.startsWith('platform'));
+  /**
+   * Select every Platform service of the config, whether the config enables it
+   * or not
+   *
+   * A Platform-only reset names them rather than selecting their profiles.
+   * A profile selection leaves Core out of the Compose model, and a Platform
+   * service that depends on Core (the quorum list) then makes the project
+   * invalid: Compose fails, or for rm and stop acts on the whole project, Core
+   * included. Every profile is still enabled next to the names, because some
+   * Compose versions (2.10 to 2.12) skip a named service whose profile is not
+   * enabled. With every service in the model, Compose acts on the named ones
+   * only.
+   *
+   * @param {Config} config
+   * @return {{ serviceNames: string[], profiles: string[] }}
+   */
+  function selectPlatformServices(config) {
+    const services = getServiceList(config, { allProfiles: true });
+
+    const serviceNames = services
+      .filter(({ profiles }) => profiles.some((profile) => profile.startsWith('platform')))
+      .map(({ name }) => name);
+
+    // Compose acts on every service of the project when given no names.
+    if (serviceNames.length === 0) {
+      throw new Error('No Platform services found in the Compose files');
+    }
+
+    const profiles = Array.from(new Set(services.flatMap((service) => service.profiles)));
+
+    return { serviceNames, profiles };
   }
 
   /**
@@ -205,14 +239,11 @@ export default function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
-          const profiles = ctx.isPlatformOnlyReset
-            ? selectPlatformProfiles(config, { includeAll: true })
-            : [];
+          const options = ctx.isPlatformOnlyReset
+            ? selectPlatformServices(config)
+            : { profiles: [] };
 
-          if (await dockerCompose.isNodeRunning(
-            config,
-            { profiles },
-          )) {
+          if (await dockerCompose.isNodeRunning(config, options)) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -237,43 +268,57 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const profiles = selectPlatformProfiles(config, { includeAll: true });
+          const { serviceNames, profiles } = selectPlatformServices(config);
+
+          const removeOptions = {
+            serviceNames: [...serviceNames, HELPER_SERVICE_NAME],
+            profiles,
+            // Anonymous volumes go with their containers unless data is kept.
+            removeVolumes: !ctx.keepData,
+          };
 
           if (ctx.keepData) {
             // eslint-disable-next-line no-param-reassign
             task.title = 'Remove platform services and keep associated data';
           }
 
-          await dockerCompose.rm(config, { profiles });
+          // Looked up first: Compose fails to describe the project when service
+          // files are missing, and then nothing has been removed yet.
+          const volumeNames = ctx.keepData
+            ? []
+            : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
+
+          await dockerCompose.rm(config, removeOptions);
 
           // Remove volumes
           if (!ctx.keepData) {
-            const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
-
-            const projectVolumeNames = await dockerCompose.getVolumeNames(
-              config,
-              { profiles },
-            );
-
             await Promise.all(
-              projectVolumeNames
-                .map((volumeName) => `${composeProjectName}_${volumeName}`)
+              volumeNames
                 .map(async (volumeName) => {
                   const volume = await docker.getVolume(volumeName);
 
+                  let attempts = 0;
                   let isRetry;
                   do {
                     isRetry = false;
+                    attempts += 1;
 
                     try {
                       await volume.remove({ force: true });
                     } catch (e) {
                       // volume is in use
                       if (e.statusCode === 409) {
+                        if (attempts >= MAX_VOLUME_REMOVAL_ATTEMPTS) {
+                          throw new Error(`Volume '${volumeName}' is still in use by a container this`
+                            + ' reset does not remove. Find it with'
+                            + ` 'docker ps -a --filter volume=${volumeName}', remove it, and run the`
+                            + ' reset again.');
+                        }
+
                         await wait(1000);
 
                         // Remove containers
-                        await dockerCompose.rm(config, { profiles });
+                        await dockerCompose.rm(config, removeOptions);
 
                         isRetry = true;
 

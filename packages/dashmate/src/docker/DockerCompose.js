@@ -120,13 +120,19 @@ export default class DockerCompose {
    *
    * @param {Config} config
    * @param {Object} [options]
-   * @param {string[]} [options.profiles] - Filter by profiles
+   * @param {string[]} [options.profiles] - Filter by profiles, or with
+   *  serviceNames the profiles to enable
+   * @param {string[]} [options.serviceNames] - Check these services only
    * @return {Promise<boolean>}
    */
   async isNodeRunning(config, options = { profiles: [] }) {
     await this.throwErrorIfNotInstalled();
 
-    let serviceList = this.#getServiceList(config, options);
+    if (options.serviceNames) {
+      return this.#isAnyServiceRunning(config, options.serviceNames, options.profiles);
+    }
+
+    let serviceList = this.#getServiceList(config);
 
     if (options.profiles?.length > 0) {
       serviceList = serviceList.filter((service) => (
@@ -142,6 +148,30 @@ export default class DockerCompose {
 
     return serviceContainers
       .find((container) => container.State === 'running') !== undefined;
+  }
+
+  /**
+   * List the project's running containers and pick the named services here
+   *
+   * `docker compose ps <names>` fails before Compose 2.15 when a named service
+   * has no container, and that read as "not running". Without names, older
+   * Compose versions leave out the containers of services whose profile is not
+   * enabled, so the profiles to enable come with the names.
+   *
+   * @param {Config} config
+   * @param {string[]} serviceNames
+   * @param {string[]} [profiles]
+   * @return {Promise<boolean>}
+   */
+  async #isAnyServiceRunning(config, serviceNames, profiles = []) {
+    if (serviceNames.length === 0) {
+      return false;
+    }
+
+    const containers = await this.getContainersList(config, { profiles });
+
+    return containers.some(({ Service: service, State: state }) => state === 'running'
+      && serviceNames.includes(service));
   }
 
   /**
@@ -407,6 +437,7 @@ export default class DockerCompose {
    * @param {Object} [options={}] optional
    * @param {string|string[]} [options.filterServiceNames] - Filter by service name
    * @param {boolean} [options.all=false] - Return stopped containers as well
+   * @param {string[]} [options.profiles] - Profiles to enable
    * @return {Promise<object[]>}
    */
   async getContainersList(
@@ -414,6 +445,7 @@ export default class DockerCompose {
     {
       filterServiceNames = undefined,
       all = false,
+      profiles = [],
     } = {},
   ) {
     const commandOptions = ['--format', 'json'];
@@ -428,7 +460,7 @@ export default class DockerCompose {
 
     try {
       const { data: { json } } = await dockerCompose.ps({
-        ...this.#createOptions(config),
+        ...this.#createOptions(config, { profiles }),
         commandOptions,
       });
 
@@ -443,23 +475,53 @@ export default class DockerCompose {
   }
 
   /**
-   * Get list of Docker volumes
+   * Get the Docker names of the volumes the given services mount
+   *
+   * Compose also loads the services these depend on, so the project's volume
+   * list would include theirs (Core's data, for a Platform service that depends
+   * on Core). Only the given services' own mounts are read.
    *
    * @param {Config} config
-   * @param {Object} [options]
-   * @param {string[]} [options.profiles] - Filter by profiles
+   * @param {Object} options
+   * @param {string[]} options.serviceNames
+   * @param {string[]} [options.profiles] - Profiles to enable, so that every
+   *  named service is part of the model
    * @return {Promise<string[]>}
    */
-  async getVolumeNames(config, options = {}) {
+  async getVolumeNames(config, { serviceNames, profiles = [] }) {
+    if (serviceNames.length === 0) {
+      return [];
+    }
+
+    let project;
     try {
-      const { data: { volumes } } = await dockerCompose.configVolumes({
-        ...this.#createOptions(config, options),
+      const { out } = await dockerCompose.execCompose('config', serviceNames, {
+        ...this.#createOptions(config, { profiles }),
+        commandOptions: ['--format', 'json'],
       });
 
-      return volumes;
+      project = JSON.parse(out);
     } catch (e) {
       throw new DockerComposeError(e);
     }
+
+    const { services, volumes = {} } = project;
+
+    const mounts = serviceNames.flatMap((serviceName) => {
+      // Without the service its volumes are unknown, and skipping it would
+      // leave them in place unnoticed.
+      if (!services?.[serviceName]) {
+        throw new Error(`Docker Compose did not describe service '${serviceName}' in 'docker compose config'`);
+      }
+
+      return services[serviceName].volumes ?? [];
+    });
+
+    const volumeNames = mounts
+      .filter((mount) => mount.type === 'volume' && mount.source)
+      .map((mount) => volumes[mount.source]?.name ?? `${project.name}_${mount.source}`);
+
+    return Array.from(new Set(volumeNames));
   }
 
   /**

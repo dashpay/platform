@@ -51,4 +51,12 @@ describe('getServiceListFactory', () => {
 
     expect(exporter.profiles).to.deep.equal(['platform']);
   });
+
+  // A Platform reset on a node with Platform disabled still has to reach the
+  // Platform services the node ran before.
+  it('should list services of profiles the config does not enable when asked to', () => {
+    const serviceNames = getServiceList(config, { allProfiles: true }).map(({ name }) => name);
+
+    expect(serviceNames).to.include.members(['core', 'drive_abci', 'drive_tenderdash', 'quorum_list', 'gateway_rate_limiter_metrics']);
+  });
 });
