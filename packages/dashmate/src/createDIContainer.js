@@ -140,6 +140,9 @@ import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFa
 import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
 import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCertificateFactory.js';
 import validateLetsEncryptCertificateFactory from './ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
+import setupPlatformTaskFactory from './listr/tasks/setup/platform/setupPlatformTaskFactory.js';
+import getPlatformArtefactsFactory from './config/getPlatformArtefactsFactory.js';
+import readPlatformRegistration from './core/readPlatformRegistration.js';
 
 /**
  * @param {Object} [options]
@@ -273,6 +276,7 @@ export default async function createDIContainer(options = {}) {
     waitForCoreSync: asValue(waitForCoreSync),
     waitForMasternodesSync: asValue(waitForMasternodesSync),
     startCore: asFunction(startCoreFactory).singleton(),
+    readPlatformRegistration: asValue(readPlatformRegistration),
     waitForBlocks: asValue(waitForBlocks),
     waitForConfirmations: asValue(waitForConfirmations),
     generateBlsKeys: asValue(generateBlsKeys),
@@ -323,6 +327,8 @@ export default async function createDIContainer(options = {}) {
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
     setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
+    setupPlatformTask: asFunction(setupPlatformTaskFactory).singleton(),
+    getPlatformArtefacts: asFunction(getPlatformArtefactsFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),

@@ -21,6 +21,8 @@ const ALLOWED_RAW_READERS = {
   'src/config/Config.js': null,
   // reset restores stored intent
   'src/listr/tasks/resetNodeTaskFactory.js': 2,
+  // Platform setup works on a copy of the config, which it saves in its place
+  'src/commands/setup.js': 1,
   // migrations copy defaults into a config, so they must copy what is recorded:
   // reading effective values here would write a resolved image back into every
   // config that crosses them, undoing the point of storing intent

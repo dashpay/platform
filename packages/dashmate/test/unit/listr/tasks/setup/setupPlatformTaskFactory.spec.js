@@ -1,0 +1,459 @@
+import { Listr } from 'listr2';
+import lodash from 'lodash';
+import HomeDir from '../../../../../src/config/HomeDir.js';
+import Config from '../../../../../src/config/Config.js';
+import ConfigFile from '../../../../../src/config/configFile/ConfigFile.js';
+import setupPlatformTaskFactory from '../../../../../src/listr/tasks/setup/platform/setupPlatformTaskFactory.js';
+import { REGISTRATION_STATUS } from '../../../../../src/core/readPlatformRegistration.js';
+import generateTenderdashNodeKey from '../../../../../src/tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import getEnquirerMock from '../../../../../src/test/mock/getEnquirerMock.js';
+import { NODE_TYPE_FULLNODE, NODE_TYPE_MASTERNODE } from '../../../../../src/constants.js';
+import createPlatformSetupConfigs from '../../../../fixtures/platformSetupConfigs.js';
+
+// The options Platform-only setup may write (spec: only these, plus externalIp
+// from null on a fullnode).
+const SETUP_OWNED_PATHS = [
+  'platform.enable',
+  'platform.drive.tenderdash.mode',
+  'platform.drive.tenderdash.node.',
+  'platform.drive.tenderdash.p2p.port',
+  'platform.gateway.listeners.dapiAndDrive.port',
+  'platform.gateway.ssl.',
+];
+
+/**
+ * @param {Object} object
+ * @param {string} [prefix]
+ * @return {Object} path -> value
+ */
+function flatten(object, prefix = '') {
+  return Object.entries(object).reduce((flat, [key, value]) => {
+    const path = `${prefix}${key}`;
+
+    if (lodash.isPlainObject(value)) {
+      return { ...flat, ...flatten(value, `${path}.`) };
+    }
+
+    return { ...flat, [path]: value };
+  }, {});
+}
+
+describe('setupPlatformTask', () => {
+  let homeDir;
+  let defaultConfigs;
+  let setUp;
+  let hardResetPlatform;
+  let configFile;
+  let config;
+  let registeredKey;
+  let registration;
+  let dockerCompose;
+  let startCore;
+  let rpcClient;
+  let createRpcClient;
+  let waitForCoreSync;
+  let readPlatformRegistration;
+  let configureSSLCertificateTask;
+  let getPlatformArtefacts;
+  let setupPlatformTask;
+  let sandbox;
+
+  /**
+   * Run the task as the setup command does, on a copy of the stored config
+   *
+   * @param {Object} [answers] - context fields
+   * @param {Array} [prompts] - answers for an interactive run
+   * @return {Promise<{ ctx: Object, error: Error|null, enquirer: Object }>}
+   */
+  async function run(answers = {}, prompts = undefined) {
+    const isMasternode = config.get('core.masternode.enable');
+    const setupConfig = new Config(config.getName(), config.getStoredOptions());
+    setupConfig.set('platform.enable', true);
+    setupConfig.set('platform.drive.tenderdash.mode', isMasternode ? 'validator' : 'full');
+
+    const ctx = {
+      preset: config.getName(),
+      config: setupConfig,
+      storedConfig: config,
+      isMasternode,
+      nodeType: isMasternode ? NODE_TYPE_MASTERNODE : NODE_TYPE_FULLNODE,
+      isHP: true,
+      interactive: prompts !== undefined,
+      wasPlatformEnabled: config.get('platform.enable'),
+      isCoreRunning: true,
+      certificateRetryCommand: `dashmate setup --platform --config ${config.getName()}`,
+      certificateProvider: 'letsencrypt',
+      ...answers,
+    };
+
+    const enquirer = getEnquirerMock(sandbox, ...(prompts ?? []));
+
+    const tasks = new Listr([{ task: () => setupPlatformTask() }], { renderer: 'silent' });
+    tasks.options.injectWrapper = { enquirer };
+
+    let error = null;
+    try {
+      await tasks.run(ctx);
+    } catch (e) {
+      error = e;
+    }
+
+    return { ctx, error, enquirer };
+  }
+
+  /**
+   * @return {Config} what the command would save
+   */
+  function saved() {
+    return configFile.getConfig(config.getName());
+  }
+
+  /**
+   * @param {Config} reset
+   */
+  function useConfig(reset) {
+    config = reset;
+    configFile = new ConfigFile([config], '5.2.0', 'abcdef12', null, null);
+    // A loaded config file starts unchanged.
+    config.markAsSaved();
+    configFile.markAsSaved();
+
+    setupPlatformTask = setupPlatformTaskFactory(
+      configFile,
+      dockerCompose,
+      startCore,
+      createRpcClient,
+      async () => '127.0.0.1',
+      waitForCoreSync,
+      readPlatformRegistration,
+      () => new Listr([]),
+      configureSSLCertificateTask,
+      getPlatformArtefacts,
+      defaultConfigs,
+    );
+  }
+
+  beforeEach(async function beforeEach() {
+    sandbox = this.sinon;
+
+    homeDir = HomeDir.createTemp();
+    ({ defaultConfigs, setUp, hardResetPlatform } = createPlatformSetupConfigs(homeDir));
+
+    registeredKey = generateTenderdashNodeKey();
+    registration = {
+      status: REGISTRATION_STATUS.EVO,
+      proTxHash: 'ab'.repeat(32),
+      platformNodeId: deriveTenderdashNodeId(registeredKey),
+      platformP2PPort: 36656,
+      platformHttpPort: 1443,
+      poSeBanHeight: null,
+    };
+
+    rpcClient = { name: 'running Core' };
+    dockerCompose = { isServiceRunning: this.sinon.stub().resolves(true) };
+    startCore = this.sinon.stub().resolves({ getRpcClient: () => ({ name: 'started Core' }) });
+    createRpcClient = this.sinon.stub().returns(rpcClient);
+    waitForCoreSync = this.sinon.stub().resolves();
+    readPlatformRegistration = this.sinon.stub().callsFake(async () => registration);
+
+    // What a successful certificate step leaves: a provider, and TLS on.
+    configureSSLCertificateTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => {
+        ctx.config.set('platform.gateway.ssl.provider', ctx.certificateProvider);
+        ctx.config.set('platform.gateway.ssl.enabled', true);
+      },
+    }]));
+
+    getPlatformArtefacts = { getActiveServices: this.sinon.stub().resolves([]) };
+
+    useConfig(await hardResetPlatform(setUp('testnet', { masternode: true })));
+  });
+
+  afterEach(() => {
+    homeDir.remove();
+  });
+
+  describe('an evonode', () => {
+    it('should install the registered identity and endpoints', async () => {
+      const { error } = await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+      expect(error).to.be.null();
+      expect(saved().get('platform.enable')).to.be.true();
+      expect(saved().get('platform.drive.tenderdash.mode')).to.equal('validator');
+      expect(saved().get('platform.drive.tenderdash.node')).to.deep.equal({
+        key: registeredKey,
+        id: registration.platformNodeId,
+      });
+      expect(saved().get('platform.drive.tenderdash.p2p.port')).to.equal(36656);
+      expect(saved().get('platform.gateway.listeners.dapiAndDrive.port')).to.equal(1443);
+    });
+
+    // Validators authenticate node IDs when they dial each other: any other
+    // key leaves the node unable to take part, so there is no way past this.
+    it('should refuse a key that is not the registered one, and save nothing', async () => {
+      const other = generateTenderdashNodeKey();
+
+      const { error } = await run({ platformNodeKey: { key: other, id: deriveTenderdashNodeId(other) } });
+
+      expect(error.message).to.include(registration.platformNodeId)
+        .and.include(deriveTenderdashNodeId(other))
+        .and.include('ProUpServTx');
+      expect(configFile.isChanged()).to.be.false();
+      expect(configureSSLCertificateTask).to.not.have.been.called();
+    });
+
+    it('should read the registration from the running Core', async () => {
+      await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+      expect(startCore).to.not.have.been.called();
+      expect(readPlatformRegistration).to.have.been.calledOnceWith(rpcClient, {
+        operatorPrivateKey: config.get('core.masternode.operator.privateKey'),
+        externalIp: config.get('externalIp'),
+      });
+    });
+
+    // The started container is one the command tracks, so it is stopped
+    // again when the command exits, success or not.
+    it('should start Core when it is stopped, and say Core must be started afterwards', async () => {
+      dockerCompose.isServiceRunning.resolves(false);
+
+      const { ctx, error } = await run({
+        platformNodeKey: { key: registeredKey, id: registration.platformNodeId },
+        isCoreRunning: false,
+      });
+
+      expect(error).to.be.null();
+      expect(startCore).to.have.been.calledOnce();
+      expect(waitForCoreSync).to.have.been.calledOnce();
+      expect(readPlatformRegistration.firstCall.args[0]).to.deep.equal({ name: 'started Core' });
+      expect(ctx.isCoreRunning).to.be.false();
+    });
+
+    it('should not start Core when the operator declines', async () => {
+      dockerCompose.isServiceRunning.resolves(false);
+
+      const { error } = await run({}, [false]);
+
+      expect(error.message).to.include('needs Core');
+      expect(startCore).to.not.have.been.called();
+    });
+
+    it('should accept port answers equal to the registration, so a script can repeat them', async () => {
+      const { error } = await run({
+        platformNodeKey: { key: registeredKey, id: registration.platformNodeId },
+        platformP2PPort: 36656,
+        platformHttpPort: 1443,
+      });
+
+      expect(error).to.be.null();
+    });
+
+    it('should refuse a port answer that differs from the registration', async () => {
+      const { error } = await run({
+        platformNodeKey: { key: registeredKey, id: registration.platformNodeId },
+        platformP2PPort: 26656,
+      });
+
+      expect(error.message).to.include('--platform-p2p-port 26656').and.include('36656');
+      expect(configFile.isChanged()).to.be.false();
+    });
+
+    [
+      [REGISTRATION_STATUS.REGULAR, { proTxHash: 'cd'.repeat(32) }, 'Regular'],
+      [REGISTRATION_STATUS.NOT_FOUND, {}, 'core.masternode.operator.privateKey'],
+      [REGISTRATION_STATUS.UNSUPPORTED_ENDPOINTS, { reason: 'The registered Platform P2P address 5.6.7.8:26656 is not on this node\'s external IP' }, '5.6.7.8:26656'],
+      [REGISTRATION_STATUS.UNAVAILABLE, { reason: 'Core has not finished syncing' }, 'syncing'],
+    ].forEach(([status, fields, expected]) => {
+      it(`should refuse a ${status} registration and save nothing`, async () => {
+        registration = { status, ...fields };
+
+        const { error } = await run({
+          platformNodeKey: { key: registeredKey, id: deriveTenderdashNodeId(registeredKey) },
+        });
+
+        expect(error.message).to.include(expected);
+        expect(configFile.isChanged()).to.be.false();
+      });
+    });
+
+    // A banned node has to be configured before it can be revived.
+    it('should set up a PoSe-banned evonode and say how to revive it', async () => {
+      registration.poSeBanHeight = 1310;
+
+      const { error } = await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+      expect(error).to.be.null();
+      expect(saved().get('platform.drive.tenderdash.node.key')).to.equal(registeredKey);
+    });
+
+    describe('asked for the key', () => {
+      // The verbose renderer logs prompt redraws, so a plain prompt would
+      // print the key under --verbose.
+      it('should mask the key and prefill nothing', async () => {
+        const { error, enquirer } = await run({}, [registeredKey]);
+
+        expect(error).to.be.null();
+
+        const [prompt] = enquirer.options;
+        expect(prompt.type).to.equal('password');
+        expect(prompt.initial).to.be.undefined();
+        expect(prompt.header).to.include(registration.platformNodeId);
+      });
+
+      it('should ask again for a key that is not the registered one, naming both IDs', async () => {
+        const { enquirer } = await run({}, [registeredKey]);
+        const other = generateTenderdashNodeKey();
+
+        const validity = enquirer.options[0].validate(other);
+
+        expect(validity).to.include(deriveTenderdashNodeId(other))
+          .and.include(registration.platformNodeId);
+        expect(enquirer.options[0].validate(registeredKey)).to.be.true();
+        expect(enquirer.options[0].validate('not a key')).to.match(/base64/);
+      });
+    });
+  });
+
+  describe('an Evo fullnode', () => {
+    let storedKey;
+
+    beforeEach(async () => {
+      useConfig(await hardResetPlatform(setUp('testnet', { masternode: false })));
+      storedKey = config.get('platform.drive.tenderdash.node.key');
+    });
+
+    it('should keep the stored key unless told otherwise', async () => {
+      const { error } = await run();
+
+      expect(error).to.be.null();
+      expect(saved().get('platform.drive.tenderdash.node.key')).to.equal(storedKey);
+      expect(readPlatformRegistration).to.not.have.been.called();
+    });
+
+    it('should use the key it is given', async () => {
+      const key = generateTenderdashNodeKey();
+
+      await run({ platformNodeKey: { key, id: deriveTenderdashNodeId(key) } });
+
+      expect(saved().get('platform.drive.tenderdash.node')).to.deep.equal({
+        key,
+        id: deriveTenderdashNodeId(key),
+      });
+    });
+
+    it('should offer to keep the stored key by default', async () => {
+      const { enquirer } = await run({}, ['keep', { platformP2PPort: '36656', platformHTTPPort: '1443' }]);
+
+      const [choice] = enquirer.options;
+      expect(choice.initial).to.equal('keep');
+      expect(choice.choices[0].message).to.include(config.get('platform.drive.tenderdash.node.id'));
+      expect(choice.choices[0].message).to.not.include(storedKey.slice(0, 8));
+      expect(saved().get('platform.drive.tenderdash.node.key')).to.equal(storedKey);
+    });
+
+    // A mainnet hard reset disables Platform, and then no key is generated.
+    it('should generate a key when none is stored', async () => {
+      useConfig(await hardResetPlatform(setUp('mainnet', { masternode: false })));
+      expect(config.get('platform.drive.tenderdash.node.key')).to.be.null();
+
+      await run();
+
+      const { key, id } = saved().get('platform.drive.tenderdash.node');
+      expect(key).to.be.a('string');
+      expect(id).to.equal(deriveTenderdashNodeId(key));
+    });
+
+    it('should take the ports it is given', async () => {
+      await run({ platformP2PPort: 36656, platformHttpPort: 2443 });
+
+      expect(saved().get('platform.drive.tenderdash.p2p.port')).to.equal(36656);
+      expect(saved().get('platform.gateway.listeners.dapiAndDrive.port')).to.equal(2443);
+    });
+
+    // The schema lets a stored 0 through, which would be advertised as IP:0.
+    it('should refuse a stored port that cannot be used', async () => {
+      config.set('platform.drive.tenderdash.p2p.port', 0);
+      useConfig(config);
+
+      const { error } = await run();
+
+      expect(error.message).to.include('Platform P2P port 0 cannot be used');
+      expect(configureSSLCertificateTask).to.not.have.been.called();
+    });
+
+    it('should refuse Platform ports that Core already uses', async () => {
+      const { error } = await run({ platformP2PPort: config.get('core.p2p.port') });
+
+      expect(error.message).to.include('Core already uses port');
+    });
+
+    it('should ask for the external IP only when the node has none', async () => {
+      await run({ externalIpAnswer: '5.6.7.8' });
+      expect(saved().get('externalIp')).to.equal('1.2.3.4');
+
+      config.set('externalIp', null);
+      useConfig(config);
+
+      await run({ externalIpAnswer: '5.6.7.8' });
+      expect(saved().get('externalIp')).to.equal('5.6.7.8');
+    });
+  });
+
+  // Setup does not own the rest: image pins, log levels, Core.
+  it('should change only the options Platform setup owns', async () => {
+    config.set('platform.drive.abci.docker.image', 'dashpay/drive:pinned');
+    useConfig(config);
+    const before = flatten(config.getStoredOptions());
+
+    await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+    const after = flatten(saved().getStoredOptions());
+    const changed = Object.keys({ ...before, ...after })
+      .filter((path) => !lodash.isEqual(before[path], after[path]));
+
+    expect(changed).to.not.be.empty();
+    changed.forEach((path) => {
+      expect(SETUP_OWNED_PATHS.some((owned) => path === owned || path.startsWith(owned)), path)
+        .to.be.true();
+    });
+  });
+
+  // `start` does not take the config lock, so Platform may have been started
+  // while setup waited on the certificate.
+  // Compose gets every option in its environment, and debug output of child
+  // processes prints it: the node key given to setup must not be there.
+  it('should look for running services with the config as it was', async () => {
+    await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+    const [checked] = getPlatformArtefacts.getActiveServices.firstCall.args;
+    expect(checked).to.equal(config);
+    expect(checked.get('platform.drive.tenderdash.node.key')).to.be.null();
+  });
+
+  it('should save nothing when Platform services were started meanwhile', async () => {
+    getPlatformArtefacts.getActiveServices.resolves(['drive_abci']);
+
+    const { error } = await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+    expect(error.message).to.include('drive_abci').and.include('dashmate stop --platform --config testnet');
+    expect(configFile.isChanged()).to.be.false();
+  });
+
+  it('should not print the node key anywhere in what it reports', async () => {
+    const { ctx } = await run({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+    const other = generateTenderdashNodeKey();
+    const { error } = await run({ platformNodeKey: { key: other, id: deriveTenderdashNodeId(other) } });
+
+    const reported = JSON.stringify({
+      registration: ctx.registration,
+      error: `${error.message}\n${error.stack}`,
+    });
+
+    for (let i = 0; i + 8 <= registeredKey.length; i += 1) {
+      expect(reported).to.not.include(registeredKey.slice(i, i + 8));
+      expect(reported).to.not.include(other.slice(i, i + 8));
+    }
+  });
+});
