@@ -54,6 +54,25 @@ describe('validateZeroSslCertificateFactory', () => {
     validateZeroSslCertificate = validateZeroSslCertificateFactory(homeDir, getCertificate);
   });
 
+  let requestHomeDir;
+
+  /**
+   * Put the certificate request where the validator reads it
+   */
+  function writeCertificateRequest() {
+    requestHomeDir = HomeDir.createTemp();
+    homeDir.joinPath.callsFake((...args) => requestHomeDir.joinPath(...args));
+
+    const sslConfigDir = requestHomeDir.joinPath('my-config', 'platform', 'gateway', 'ssl');
+    fs.mkdirSync(sslConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(sslConfigDir, 'csr.pem'), csrPem);
+  }
+
+  afterEach(() => {
+    requestHomeDir?.remove();
+    requestHomeDir = undefined;
+  });
+
   it('should return API_KEY_IS_NOT_SET error when apiKey is not set', async () => {
     config.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.apiKey').returns(null);
 
@@ -167,9 +186,7 @@ describe('validateZeroSslCertificateFactory', () => {
 
     getCertificate.resolves(certificate);
 
-    this.sinon.stub(fs, 'readFileSync').callThrough()
-      .withArgs(path.join('/home/dir', 'my-config', 'platform', 'gateway', 'ssl', 'csr.pem'))
-      .returns(csrPem);
+    writeCertificateRequest();
 
     const result = await validateZeroSslCertificate(config, expirationDays);
 
@@ -186,9 +203,7 @@ describe('validateZeroSslCertificateFactory', () => {
 
     getCertificate.resolves(certificate);
 
-    this.sinon.stub(fs, 'readFileSync').callThrough()
-      .withArgs(path.join('/home/dir', 'my-config', 'platform', 'gateway', 'ssl', 'csr.pem'))
-      .returns(csrPem);
+    writeCertificateRequest();
 
     const result = await validateZeroSslCertificate(config, expirationDays);
 
@@ -411,6 +426,82 @@ describe('validateZeroSslCertificateFactory', () => {
         const result = await validateZeroSslCertificate(config, expirationDays);
 
         expect(result.data.isCsrFilePresent).to.be.false();
+      });
+
+      // A private key in the request file would go to ZeroSSL with the
+      // request, and into a doctor report.
+      it('should not count a request that holds a private key as the request', async () => {
+        fs.writeFileSync(csrFilePath, `${request}${pair.keyPem}`);
+
+        const result = await validateZeroSslCertificate(config, expirationDays);
+
+        expect(result.data.isCsrFilePresent).to.be.false();
+      });
+
+      it('should not renew with a request that holds a private key', async function it() {
+        fs.writeFileSync(csrFilePath, `${request}${pair.keyPem}`);
+        getCertificate.resolves({
+          common_name: '1.2.3.4',
+          status: 'issued',
+          isExpiredInDays: this.sinon.stub().returns(true),
+        });
+
+        const result = await validateZeroSslCertificate(config, expirationDays);
+
+        expect(result.error).to.equal(ERRORS.CSR_FILE_IS_NOT_PRESENT);
+        expect(result.data.csr).to.be.undefined();
+        expect(JSON.stringify(result.data)).to.not.include('PRIVATE KEY');
+      });
+
+      // ZeroSSL gets the request that was checked, not what else the file
+      // holds, nor what the file holds after the lookup.
+      it('should renew with the request alone', async function it() {
+        fs.writeFileSync(csrFilePath, `${request}${pair.pem}`);
+        getCertificate.resolves({
+          common_name: '1.2.3.4',
+          status: 'issued',
+          isExpiredInDays: this.sinon.stub().returns(true),
+        });
+
+        const result = await validateZeroSslCertificate(config, expirationDays);
+
+        expect(result.error).to.equal(ERRORS.CERTIFICATE_EXPIRES_SOON);
+        expect(result.data.csr).to.equal(request);
+      });
+
+      it('should renew with the request it checked', async function it() {
+        fs.writeFileSync(csrFilePath, request);
+        getCertificate.callsFake(async () => {
+          fs.writeFileSync(csrFilePath, `${request}${pair.keyPem}`);
+
+          return {
+            common_name: '1.2.3.4',
+            status: 'issued',
+            isExpiredInDays: this.sinon.stub().returns(true),
+          };
+        });
+
+        const result = await validateZeroSslCertificate(config, expirationDays);
+
+        expect(result.error).to.equal(ERRORS.CERTIFICATE_EXPIRES_SOON);
+        expect(result.data.csr).to.equal(request);
+      });
+
+      // Opening a named pipe without a writer never returns, and a renewal
+      // has nothing to send from one.
+      it('should not open a named pipe where the request goes', async function it() {
+        fs.rmSync(csrFilePath);
+        execFileSync('mkfifo', [csrFilePath]);
+        getCertificate.resolves({
+          common_name: '1.2.3.4',
+          status: 'issued',
+          isExpiredInDays: this.sinon.stub().returns(true),
+        });
+
+        const result = await validateZeroSslCertificate(config, expirationDays);
+
+        expect(result.error).to.equal(ERRORS.CSR_FILE_IS_NOT_PRESENT);
+        expect(result.data.csr).to.be.undefined();
       });
 
       // ZeroSSL issues for EC keys as well as RSA ones, and a pair placed by

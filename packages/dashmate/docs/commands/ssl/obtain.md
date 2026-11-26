@@ -38,7 +38,7 @@ The `--force` flag can be used to replace a certificate even if it's still valid
 
 Before it enables TLS, the command checks the certificate files it leaves: the bundle and the private key must load as a matching pair, and the certificate must be inside its validity window (not expired, and not valid only from a later date). A bundle on disk counts as downloaded only when it passes this check and its certificate has the fingerprint ZeroSSL reports for the saved certificate ID. Any other bundle, for example one cut short by a full disk or the one a renewal is replacing, is downloaded again from ZeroSSL while ZeroSSL holds the certificate as issued, without creating a new one. A downloaded certificate that does not belong to the private key on disk is not written; obtain a new certificate with `--force` in that case, and also when ZeroSSL has no certificate with the saved ID.
 
-Renewal sends the certificate request file (`csr.pem`) to ZeroSSL. When that file is missing or cannot be used (it does not parse, or it is not for the private key on disk), the command writes a new one for the private key on disk while the certificate is issued and valid. When the certificate is already due for renewal, it asks for `--force` instead.
+Renewal sends the certificate request in `csr.pem` to ZeroSSL, and nothing else the file holds. When that file is missing or cannot be used (it does not parse, it is not for the private key on disk, or it also holds a private key), the command writes a new one for the private key on disk while the certificate is issued and valid. When the certificate is already due for renewal, it asks for `--force` instead.
 
 ## Examples
 

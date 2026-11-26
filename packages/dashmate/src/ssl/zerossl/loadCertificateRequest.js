@@ -36,8 +36,9 @@ function toDer(node) {
  * signature, for RSA and EC keys alike.
  *
  * @param {string} pem
- * @return {{ publicKey: crypto.KeyObject }|null} null when the request does
- *  not load, or its own key did not sign it
+ * @return {{ publicKey: crypto.KeyObject, pem: string }|null} its key and the
+ *  request alone, or null when it does not load, or its own key did not sign
+ *  it
  */
 export default function loadCertificateRequest(pem) {
   try {
@@ -79,7 +80,14 @@ export default function loadCertificateRequest(pem) {
       Buffer.from(signature.value.slice(1), 'binary'),
     );
 
-    return isSigned ? { publicKey } : null;
+    if (!isSigned) {
+      return null;
+    }
+
+    return {
+      publicKey,
+      pem: forge.pem.encode({ type: 'CERTIFICATE REQUEST', body: block.body }),
+    };
   } catch {
     return null;
   }

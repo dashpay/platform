@@ -628,6 +628,20 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(fs.readdirSync(sslConfigDir)).to.have.members(['bundle.crt', 'csr.pem', 'private.key']);
     });
 
+    it('should not send a request that holds a private key to ZeroSSL', async function it() {
+      const request = await generateCertificateRequest({
+        publicKey: forge.pki.publicKeyToPem(pair.keys.publicKey),
+        privateKey: pair.keyPem,
+      }, '1.2.3.4');
+      fs.writeFileSync(path.join(sslConfigDir, 'csr.pem'), `${request}${pair.keyPem}`);
+
+      // Renewal starts this many days before the saved certificate expires
+      await expect(buildTask.call(this).run({ expirationDays: 90 }))
+        .to.be.rejectedWith('--force');
+
+      expect(createCertificate).to.not.have.been.called();
+    });
+
     // ZeroSSL issues for EC keys too, and renewal sends their request as it
     // sends an RSA one.
     it('should renew with the request on disk for an EC key', async function it() {

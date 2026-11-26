@@ -183,6 +183,31 @@ describe('collectSamplesTaskFactory', () => {
     expect(sslProblem.getSeverity()).to.equal(SEVERITY.HIGH);
   });
 
+  // Renewal is due, so the sample carries the request renewal would send.
+  it('should not put a private key held in the certificate request in the archive', async () => {
+    const csrFilePath = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'csr.pem');
+    const privateKey = fs.readFileSync(
+      homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'private.key'),
+      'utf8',
+    );
+    fs.appendFileSync(csrFilePath, privateKey);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-270)),
+      expires: toZeroSslDate(daysFromNow(-180)),
+    }));
+
+    await collectSamples();
+
+    const sample = samples.getServiceInfo('gateway', 'ssl');
+
+    expect(sample.error).to.equal(ZEROSSL_ERRORS.CSR_FILE_IS_NOT_PRESENT);
+    expect(JSON.stringify(sample)).to.not.include('PRIVATE KEY');
+  });
+
   it('should not report a problem for a valid ZeroSSL certificate', async () => {
     getCertificate.resolves(new Certificate({
       id: 'certificate-id',

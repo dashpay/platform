@@ -1,9 +1,11 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import containsPrivateKey from '../containsPrivateKey.js';
 import findCertificatePairProblem from '../findCertificatePairProblem.js';
 import loadCertificateRequest from './loadCertificateRequest.js';
 import selectLeafCertificate, { findPrivateKeyProblem } from '../selectLeafCertificate.js';
+import readRegularFile from '../../util/readRegularFile.js';
 
 export const ERRORS = {
   API_KEY_IS_NOT_SET: 'API_KEY_IS_NOT_SET',
@@ -91,63 +93,80 @@ function isPrivateKeyUsable(filePath) {
 }
 
 /**
- * Whether the certificate request on disk can renew the certificate
+ * The certificate request on disk, and whether it can renew the certificate
  *
- * Renewal sends csr.pem to ZeroSSL as it is, so it has to parse, be signed
- * by its own key, and carry the public key of the private key on disk, an
- * RSA or an EC one: a full disk can cut it short, and a request for another
- * key asks for a certificate this node cannot serve. A request that is not
- * a regular file, or that this process cannot read, is left as it is, and so
- * is one whose key this process cannot read, once it parses.
+ * Renewal sends the request to ZeroSSL, so it has to parse, be signed by its
+ * own key, and carry the public key of the private key on disk, an RSA or an
+ * EC one: a full disk can cut it short, and a request for another key asks
+ * for a certificate this node cannot serve. A file that also holds a private
+ * key cannot be used either: ZeroSSL and doctor reports get the request, and
+ * never a key. The file is read once, and what renewal sends is the request
+ * checked here alone.
+ *
+ * A request that is not a regular file, or that this process cannot read, is
+ * left as it is, and so is one whose key this process cannot read, once it
+ * parses. Only a request read here can be sent.
  *
  * @param {string} csrFilePath
  * @param {string} privateKeyFilePath
- * @return {boolean}
+ * @return {{ isUsable: boolean, pem: (string|undefined) }} pem - the request
+ *  renewal sends, when one was read and can be used
  */
-function isCsrUsable(csrFilePath, privateKeyFilePath) {
+function readCertificateRequest(csrFilePath, privateKeyFilePath) {
+  const leftAsIs = { isUsable: true, pem: undefined };
+  const unusable = { isUsable: false, pem: undefined };
+
   let stats;
   try {
     stats = fs.statSync(csrFilePath, { throwIfNoEntry: false });
   } catch {
-    return true;
+    return leftAsIs;
   }
 
   if (stats === undefined) {
-    return false;
+    return unusable;
   }
 
-  if (!stats.isFile()) {
-    return true;
-  }
-
-  let csrPem;
+  let file;
   try {
-    csrPem = fs.readFileSync(csrFilePath, 'utf8');
+    file = readRegularFile(csrFilePath);
   } catch {
-    return true;
+    return leftAsIs;
   }
 
-  const request = loadCertificateRequest(csrPem);
+  if (file === null) {
+    return leftAsIs;
+  }
+
+  const text = file.content.toString('latin1');
+
+  if (containsPrivateKey(text)) {
+    return unusable;
+  }
+
+  const request = loadCertificateRequest(text);
 
   if (request === null) {
-    return false;
+    return unusable;
   }
 
+  const usable = { isUsable: true, pem: request.pem };
+
   if (!isRegularFile(privateKeyFilePath)) {
-    return true;
+    return usable;
   }
 
   let privateKeyPem;
   try {
     privateKeyPem = fs.readFileSync(privateKeyFilePath, 'utf8');
   } catch {
-    return true;
+    return usable;
   }
 
   try {
-    return request.publicKey.equals(crypto.createPublicKey(privateKeyPem));
+    return request.publicKey.equals(crypto.createPublicKey(privateKeyPem)) ? usable : unusable;
   } catch {
-    return false;
+    return unusable;
   }
 }
 
@@ -275,7 +294,8 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
     // Check if certificate files are present. Only what they show is kept
     // here: doctor archives this data.
-    data.isCsrFilePresent = isCsrUsable(data.csrFilePath, data.privateKeyFilePath);
+    const certificateRequest = readCertificateRequest(data.csrFilePath, data.privateKeyFilePath);
+    data.isCsrFilePresent = certificateRequest.isUsable;
     data.isPrivateKeyFilePresent = isPrivateKeyUsable(data.privateKeyFilePath);
 
     // This function will throw an error if certificate with specified ID is not present
@@ -336,14 +356,14 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
       // We need to download new certificate bundle
       data.isBundleFilePresent = false;
 
-      if (!data.isCsrFilePresent) {
+      if (certificateRequest.pem === undefined) {
         return {
           error: ERRORS.CSR_FILE_IS_NOT_PRESENT,
           data,
         };
       }
 
-      data.csr = fs.readFileSync(data.csrFilePath, 'utf8');
+      data.csr = certificateRequest.pem;
 
       return {
         error: data.isExpiresSoon
