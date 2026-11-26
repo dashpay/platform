@@ -2,9 +2,7 @@ import { Listr } from 'listr2';
 
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import validateFileExists from '../../prompts/validators/validateFileExists.js';
-import validateCertificateFilePaths, {
-  readCertificateFilePair,
-} from '../../prompts/validators/validateCertificateFilePaths.js';
+import { readCertificateFilePair } from '../../prompts/validators/validateCertificateFilePaths.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask
@@ -34,10 +32,18 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
       {
         title: 'Set SSL certificate file',
         task: async (ctx, task) => {
-          let form = ctx.fileCertificateProviderForm;
+          let pair = ctx.validatedCertificatePair;
 
-          if (!ctx.validatedCertificatePair && !ctx.fileCertificateProviderForm) {
-            form = await promptOrThrow(task, {
+          if (!pair && ctx.fileCertificateProviderForm) {
+            pair = readCertificateFilePair(ctx.fileCertificateProviderForm);
+          }
+
+          if (!pair) {
+            // The pair the form's check accepted is the one installed, not
+            // the files as they are once the form returns.
+            let acceptedPair;
+
+            await promptOrThrow(task, {
               type: 'form',
               header: `  To configure SSL certificates, you need to provide a certificate chain file
   and a private key file.
@@ -56,15 +62,22 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
                   validate: validateFileExists,
                 },
               ],
-              validate: validateCertificateFilePaths,
+              validate: (paths) => {
+                try {
+                  acceptedPair = readCertificateFilePair(paths);
+                } catch (e) {
+                  return e.message;
+                }
+
+                return true;
+              },
             }, { interactive });
+
+            pair = acceptedPair;
           }
 
-          const { certificateFile, privateKeyFile } = ctx.validatedCertificatePair
-            ?? readCertificateFilePair(form);
-
-          ctx.certificateFile = certificateFile;
-          ctx.privateKeyFile = privateKeyFile;
+          ctx.certificateFile = pair.certificateFile;
+          ctx.privateKeyFile = pair.privateKeyFile;
 
           return saveCertificateTask(config);
         },

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { Listr } from 'listr2';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import installCertificateFilesTaskFactory from '../../../src/listr/tasks/ssl/installCertificateFilesTaskFactory.js';
@@ -58,6 +59,45 @@ describe('installCertificateFilesTask', () => {
       key: fs.readFileSync(path.join(sslDir, 'private.key'), 'utf8'),
     };
   }
+
+  // The form's own check reads the files when it is submitted. A file
+  // replaced before the form returns must not be what is installed.
+  it('should install the pair the form accepted, not the files as they are when it returns', async () => {
+    const enquirer = {
+      on: () => {},
+      prompt: async (options) => {
+        const [prompt] = [].concat(options);
+
+        expect(prompt.validate(form)).to.be.true();
+
+        fs.writeFileSync(form.chainFilePath, other.pem);
+        fs.writeFileSync(form.privateFilePath, other.keyPem);
+
+        return { default: form };
+      },
+    };
+
+    const tasks = new Listr([{
+      task: () => installCertificateFilesTask(config, { interactive: true }),
+    }], { renderer: 'silent' });
+    tasks.options.injectWrapper = { enquirer };
+
+    await tasks.run({});
+
+    expect(installed()).to.deep.equal({ bundle: validated.pem, key: validated.keyPem });
+  });
+
+  // PEM allows text outside its blocks, in any encoding: the gateway gets the
+  // file as it is.
+  it('should install the files byte for byte', async () => {
+    const bytes = Buffer.concat([Buffer.from('Caf'), Buffer.from([0xe9]), Buffer.from('\n'), Buffer.from(validated.pem)]);
+    fs.writeFileSync(form.chainFilePath, bytes);
+
+    await installCertificateFilesTask(config).run({ fileCertificateProviderForm: form });
+
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+    expect(fs.readFileSync(path.join(sslDir, 'bundle.crt')).equals(bytes)).to.be.true();
+  });
 
   // Platform setup checks the files before it starts Core and installs them
   // after Core has synced, which can take hours. A source replaced meanwhile
@@ -118,11 +158,15 @@ describe('readCertificateFilePair', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('should return the contents it checked', () => {
-    expect(readCertificateFilePair(form)).to.deep.equal({
-      certificateFile: pair.pem,
-      privateKeyFile: pair.keyPem,
-    });
+  it('should return the contents it checked, and the key file\'s mode as it was read', () => {
+    fs.chmodSync(form.privateFilePath, 0o640);
+
+    const { certificateFile, privateKeyFile, privateKeyStats } = readCertificateFilePair(form);
+
+    expect(certificateFile.equals(Buffer.from(pair.pem))).to.be.true();
+    expect(privateKeyFile.equals(Buffer.from(pair.keyPem))).to.be.true();
+    // eslint-disable-next-line no-bitwise
+    expect(privateKeyStats.mode & 0o777).to.equal(0o640);
   });
 
   // The gateway loads every block of the bundle, so a damaged one after the

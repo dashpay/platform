@@ -1,11 +1,11 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import validateCertificateFilePaths from '../../../../../src/listr/prompts/validators/validateCertificateFilePaths.js';
+import { readCertificateFilePair } from '../../../../../src/listr/prompts/validators/validateCertificateFilePaths.js';
 import validateFileExists from '../../../../../src/listr/prompts/validators/validateFileExists.js';
 import { issueCertificate } from '../../../../../src/test/certificateFixtures.js';
 
-describe('validateCertificateFilePaths', () => {
+describe('readCertificateFilePair: access', () => {
   let dir;
   let chainFilePath;
   let privateFilePath;
@@ -31,7 +31,7 @@ describe('validateCertificateFilePaths', () => {
   });
 
   it('should accept a matching certificate and key', () => {
-    expect(validateCertificateFilePaths({ chainFilePath, privateFilePath })).to.be.true();
+    expect(() => readCertificateFilePair({ chainFilePath, privateFilePath })).to.not.throw();
   });
 
   // Setup only reads them, and writes copies into the gateway's directory. A
@@ -48,7 +48,7 @@ describe('validateCertificateFilePaths', () => {
 
     expect(validateFileExists(privateFilePath)).to.be.true();
     expect(validateFileExists(chainFilePath)).to.be.true();
-    expect(validateCertificateFilePaths({ chainFilePath, privateFilePath })).to.be.true();
+    expect(() => readCertificateFilePair({ chainFilePath, privateFilePath })).to.not.throw();
   });
 
   it('should refuse a file it cannot read', function it() {
@@ -59,7 +59,7 @@ describe('validateCertificateFilePaths', () => {
     fs.chmodSync(privateFilePath, 0o200);
 
     expect(validateFileExists(privateFilePath)).to.be.false();
-    expect(validateCertificateFilePaths({ chainFilePath, privateFilePath }))
-      .to.equal('certificate key file path is not valid');
+    expect(() => readCertificateFilePair({ chainFilePath, privateFilePath }))
+      .to.throw('certificate key file path is not valid');
   });
 });

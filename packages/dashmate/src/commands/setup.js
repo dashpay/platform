@@ -689,7 +689,11 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         throw new Error(`--ssl-chain-file, --ssl-private-key-file: ${e.message}`);
       }
 
-      const keyWarning = getReadableByOthersWarning(privateFilePath, '--ssl-private-key-file');
+      const keyWarning = getReadableByOthersWarning(
+        privateFilePath,
+        '--ssl-private-key-file',
+        answers.validatedCertificatePair.privateKeyStats,
+      );
       if (keyWarning) {
         warnings.push(keyWarning);
       }

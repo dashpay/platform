@@ -9,18 +9,20 @@ import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../ssl/selec
  * check is on what was opened, so the path cannot be swapped in between.
  *
  * @param {string} filePath
- * @return {string}
+ * @return {{ content: Buffer, stats: fs.Stats }}
  */
 function readRegularFile(filePath) {
   // eslint-disable-next-line no-bitwise
   const fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
 
   try {
-    if (!fs.fstatSync(fd).isFile()) {
+    const stats = fs.fstatSync(fd);
+
+    if (!stats.isFile()) {
       throw new Error('the certificate and key must be regular files');
     }
 
-    return fs.readFileSync(fd, 'utf8');
+    return { content: fs.readFileSync(fd), stats };
   } finally {
     fs.closeSync(fd);
   }
@@ -30,8 +32,9 @@ function readRegularFile(filePath) {
  * Read a certificate chain and its private key, each once, and check that
  * the gateway can serve them
  *
- * The contents returned are the ones checked: a caller that installs them
- * later installs exactly what passed, even if a file was replaced meanwhile.
+ * The contents returned are the bytes checked: a caller that installs them
+ * later installs exactly what passed, byte for byte, even if a file was
+ * replaced meanwhile. The key file's stats are the ones of the file read.
  * The check is the one the install applies to what it wrote, so a pair that
  * would fail there, a damaged block after the leaf included, fails here.
  *
@@ -41,7 +44,7 @@ function readRegularFile(filePath) {
  * @param {Object} paths
  * @param {string} paths.chainFilePath
  * @param {string} paths.privateFilePath
- * @return {{ certificateFile: string, privateKeyFile: string }}
+ * @return {{ certificateFile: Buffer, privateKeyFile: Buffer, privateKeyStats: fs.Stats }}
  * @throws {Error} saying why the pair is refused
  */
 export function readCertificateFilePair({ chainFilePath, privateFilePath }) {
@@ -57,10 +60,14 @@ export function readCertificateFilePair({ chainFilePath, privateFilePath }) {
     throw new Error('the same path for both files');
   }
 
-  const certificateFile = readRegularFile(chainFilePath);
-  const privateKeyFile = readRegularFile(privateFilePath);
+  const { content: certificateFile } = readRegularFile(chainFilePath);
+  const { content: privateKeyFile, stats: privateKeyStats } = readRegularFile(privateFilePath);
 
-  const { error, detail } = selectLeafCertificate(certificateFile, privateKeyFile);
+  // Decoded as the install decodes what it wrote when it checks it again.
+  const { error, detail } = selectLeafCertificate(
+    certificateFile.toString('utf8'),
+    privateKeyFile.toString('utf8'),
+  );
 
   if (error === LEAF_SELECTION_ERRORS.KEY_MISMATCH) {
     throw new Error('The certificate and private key do not match');
@@ -70,23 +77,5 @@ export function readCertificateFilePair({ chainFilePath, privateFilePath }) {
     throw new Error(`The certificate and private key cannot be used: ${detail}`);
   }
 
-  return { certificateFile, privateKeyFile };
-}
-
-/**
- * Check a certificate chain and its private key before they are installed
- *
- * @param {Object} paths
- * @param {string} paths.chainFilePath
- * @param {string} paths.privateFilePath
- * @return {boolean|string} true, or why the pair is refused
- */
-export default function validateCertificateFilePaths(paths) {
-  try {
-    readCertificateFilePair(paths);
-  } catch (e) {
-    return e.message;
-  }
-
-  return true;
+  return { certificateFile, privateKeyFile, privateKeyStats };
 }

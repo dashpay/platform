@@ -31,10 +31,12 @@ function describeLooseMode(filePath, stats, flag) {
  *
  * @param {string} filePath
  * @param {string} flag
+ * @param {fs.Stats} [stats] - of the file as it was read, when the caller has
+ *  them
  * @return {string|null}
  */
-export function getReadableByOthersWarning(filePath, flag) {
-  return describeLooseMode(filePath, fs.statSync(filePath), flag);
+export function getReadableByOthersWarning(filePath, flag, stats = undefined) {
+  return describeLooseMode(filePath, stats ?? fs.statSync(filePath), flag);
 }
 
 /**

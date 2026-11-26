@@ -357,10 +357,9 @@ describe('Setup command', () => {
       });
 
       expect(error).to.be.null();
-      expect(platformContext.validatedCertificatePair).to.deep.equal({
-        certificateFile: pem,
-        privateKeyFile: keyPem,
-      });
+      const { certificateFile, privateKeyFile: key } = platformContext.validatedCertificatePair;
+      expect(certificateFile.toString()).to.equal(pem);
+      expect(key.toString()).to.equal(keyPem);
     });
 
     it('should hand a complete set of answers to the task without prompting', async () => {
