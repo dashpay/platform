@@ -51,11 +51,24 @@ export default function findCertificatePairProblem(bundlePem, privateKeyPem, now
 }
 
 /**
+ * @param {string} filePath
+ * @return {boolean}
+ */
+function isRegularFile(filePath) {
+  try {
+    return fs.statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Why the gateway cannot serve TLS from the certificate files at these paths,
  * if it cannot
  *
  * A file this process cannot read is a reason too: what cannot be read here
- * cannot be checked.
+ * cannot be checked. Only regular files are opened: opening a named pipe
+ * that nothing writes to never returns.
  *
  * @param {string} bundleFilePath
  * @param {string} privateKeyFilePath
@@ -63,6 +76,13 @@ export default function findCertificatePairProblem(bundlePem, privateKeyPem, now
  * @return {string|null} the reason, or null when it can
  */
 export function findCertificateFilesProblem(bundleFilePath, privateKeyFilePath, now = new Date()) {
+  const notAFile = [bundleFilePath, privateKeyFilePath]
+    .find((filePath) => !isRegularFile(filePath));
+
+  if (notAFile !== undefined) {
+    return `${notAFile} is missing or is not a regular file`;
+  }
+
   let bundlePem;
   let privateKeyPem;
 

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
@@ -271,6 +272,27 @@ describe('validateZeroSslCertificateFactory', () => {
 
       expect(result.error).to.be.undefined();
       expect(result.data.isBundleFilePresent).to.be.false();
+    });
+
+    // The gateway runs as another user and may read what this process cannot.
+    // Reading is not writing: a bundle that cannot be judged is left as it is.
+    it('should leave a bundle this process cannot read as it is', async () => {
+      fs.writeFileSync(path.join(sslConfigDir, 'bundle.crt'), pair.pem, { mode: 0o200 });
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.data.isBundleFilePresent).to.be.true();
+    });
+
+    // Opening a named pipe without a writer never returns.
+    it('should not open a named pipe where the bundle goes', async () => {
+      execFileSync('mkfifo', [path.join(sslConfigDir, 'bundle.crt')]);
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.data.isBundleFilePresent).to.be.true();
     });
 
     // A full disk can cut the key short too. The certificate serves with

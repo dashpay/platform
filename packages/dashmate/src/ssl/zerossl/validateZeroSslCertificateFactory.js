@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { findCertificateFilesProblem } from '../findCertificatePairProblem.js';
+import findCertificatePairProblem from '../findCertificatePairProblem.js';
 import { findPrivateKeyProblem } from '../selectLeafCertificate.js';
 
 export const ERRORS = {
@@ -71,6 +71,48 @@ function isPrivateKeyUsable(filePath) {
 }
 
 /**
+ * Whether an obtain leaves the bundle on disk as it is rather than download
+ * the certificate again
+ *
+ * A missing bundle is downloaded, and so is a pair of regular files this
+ * process reads and the gateway could not serve: one a full disk cut short,
+ * or one that belongs to another key. Anything else is left for the obtain's
+ * last check to report. A file this process cannot read may be one the
+ * gateway reads, and a named pipe blocks a read and a write alike.
+ *
+ * @param {string} bundleFilePath
+ * @param {string} privateKeyFilePath
+ * @return {boolean}
+ */
+function isBundleKept(bundleFilePath, privateKeyFilePath) {
+  let stats;
+  try {
+    stats = fs.statSync(bundleFilePath, { throwIfNoEntry: false });
+  } catch {
+    return true;
+  }
+
+  if (stats === undefined) {
+    return false;
+  }
+
+  if (!stats.isFile() || !isRegularFile(privateKeyFilePath)) {
+    return true;
+  }
+
+  let bundlePem;
+  let privateKeyPem;
+  try {
+    bundlePem = fs.readFileSync(bundleFilePath, 'utf8');
+    privateKeyPem = fs.readFileSync(privateKeyFilePath, 'utf8');
+  } catch {
+    return true;
+  }
+
+  return findCertificatePairProblem(bundlePem, privateKeyPem) === null;
+}
+
+/**
  * @param {HomeDir} homeDir
  * @param {getCertificate} getCertificate
  * @return {validateZeroSslCertificate}
@@ -125,12 +167,8 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     // here: doctor archives this data.
     data.isCsrFilePresent = fs.existsSync(data.csrFilePath);
     data.isPrivateKeyFilePresent = isPrivateKeyUsable(data.privateKeyFilePath);
-
-    // A bundle counts as downloaded only when the gateway can serve it with
-    // the key beside it. One that a full disk cut short, or that belongs to
-    // another key, is downloaded again rather than kept.
     data.isBundleFilePresent = data.isPrivateKeyFilePresent
-      && findCertificateFilesProblem(data.bundleFilePath, data.privateKeyFilePath) === null;
+      && isBundleKept(data.bundleFilePath, data.privateKeyFilePath);
 
     // This function will throw an error if certificate with specified ID is not present
     try {
