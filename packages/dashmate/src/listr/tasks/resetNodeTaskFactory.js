@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import wait from '../../util/wait.js';
-import resolveConfigDirectory from '../../config/resolve-config-directory.js';
+import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
 // More paths than this are counted rather than listed.
@@ -255,6 +255,13 @@ export default function resetNodeTaskFactory(
       return null;
     }
 
+    // Old config files may hold a config under a name that is now reserved.
+    // Its directory would be a file the repository owns, such as the config
+    // file itself, so the entry is reset or removed and the path never is.
+    if (!isConfigNameAvailable(config.getName())) {
+      return null;
+    }
+
     if (ctx.isPlatformOnlyReset) {
       return path.join(configDirectory, 'platform');
     }
@@ -311,10 +318,14 @@ export default function resetNodeTaskFactory(
    * The config is saved only when the command succeeds, so after this error
    * config.json is as it was.
    *
-   * @param {string} targetPath
+   * @param {string|null} targetPath - null when there is nothing to remove
    * @param {Config} config
    */
   function removePath(targetPath, config) {
+    if (targetPath === null) {
+      return;
+    }
+
     // Part of the service files may be gone by the time removal fails, and
     // Compose needs them to load the project, so they are rendered again
     // before the reset is. Starting the node first would let Docker create the

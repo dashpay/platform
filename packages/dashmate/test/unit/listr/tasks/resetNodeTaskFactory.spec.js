@@ -246,6 +246,32 @@ describe('resetNodeTaskFactory', () => {
     });
   });
 
+  // A config file written before `config.json` became a reserved name may
+  // still hold a config by that name. Its directory would be the file that
+  // holds every config, so the entry goes and the path is never removed, as
+  // `config remove` does.
+  describe('a legacy config named after the config file', () => {
+    [
+      { group: 'ops', ctx: {} },
+      { group: 'local', ctx: { removeConfig: true } },
+    ].forEach(({ group, ctx }) => {
+      it(`should keep the config file on a hard reset of a member of group '${group}'`, async () => {
+        const options = getTestnetConfig().getStoredOptions();
+        options.group = group;
+        useConfigs([new Config('config.json', options)]);
+
+        const configFilePath = homeDir.joinPath('config.json');
+        fs.writeFileSync(configFilePath, '{"configs":{}}');
+
+        await hardReset({ isPlatformOnlyReset: false, ...ctx });
+
+        expect(dockerCompose.down).to.have.been.calledOnce();
+        expect(configFile.isConfigExists('config.json')).to.be.false();
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal('{"configs":{}}');
+      });
+    });
+  });
+
   describe('a member of a group', () => {
     beforeEach(() => {
       const members = ['local_1', 'local_2'].map((name) => {
