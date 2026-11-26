@@ -209,7 +209,9 @@ export default function resetNodeTaskFactory(
     return new Listr([
       {
         task: (ctx) => {
-          if (!config.get('platform.enable') && ctx.isPlatformOnlyReset) {
+          // A hard reset may still clear the Platform data a node ran with before
+          // Platform was disabled, as a mainnet hard reset leaves it.
+          if (!config.get('platform.enable') && ctx.isPlatformOnlyReset && !ctx.isHardReset) {
             throw new Error('Cannot reset platform only if platform services are not enabled in config');
           }
 

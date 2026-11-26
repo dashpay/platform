@@ -11,6 +11,7 @@ import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getTestnetConfigFactory from '../../../../configs/defaults/getTestnetConfigFactory.js';
 import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
+import getMainnetConfigFactory from '../../../../configs/defaults/getMainnetConfigFactory.js';
 import resetNodeTaskFactory from '../../../../src/listr/tasks/resetNodeTaskFactory.js';
 import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
@@ -20,6 +21,7 @@ describe('resetNodeTaskFactory', () => {
   let getBaseConfig;
   let getTestnetConfig;
   let getLocalConfig;
+  let getMainnetConfig;
   let config;
   let configFile;
   let dockerCompose;
@@ -40,7 +42,7 @@ describe('resetNodeTaskFactory', () => {
       {},
       null,
       null,
-      new DefaultConfigs([getBaseConfig, getTestnetConfig, getLocalConfig]),
+      new DefaultConfigs([getBaseConfig, getTestnetConfig, getLocalConfig, getMainnetConfig]),
       configFile,
       homeDir,
       () => [{ name: 'drive_abci', profiles: ['platform'] }],
@@ -65,6 +67,7 @@ describe('resetNodeTaskFactory', () => {
     getBaseConfig = getBaseConfigFactory(homeDir);
     getTestnetConfig = getTestnetConfigFactory(homeDir, getBaseConfig);
     getLocalConfig = getLocalConfigFactory(getBaseConfig);
+    getMainnetConfig = getMainnetConfigFactory(homeDir, getBaseConfig);
 
     dockerCompose = {
       isNodeRunning: this.sinon.stub().resolves(false),
@@ -324,6 +327,41 @@ describe('resetNodeTaskFactory', () => {
 
       await expect(reset({ isHardReset: true, removeConfig: true }))
         .to.be.rejectedWith(sslPath);
+    });
+  });
+
+  describe('a node with Platform disabled', () => {
+    beforeEach(() => {
+      // A mainnet hard reset leaves Platform disabled, as mainnet's defaults
+      // have it, while the Platform data the node ran with may still be there.
+      const mainnetConfig = getMainnetConfig();
+      mainnetConfig.set('platform.gateway.ssl.enabled', true);
+
+      useConfigs([mainnetConfig]);
+
+      writeFile('mainnet', 'core', 'dash.conf');
+      writeFile('mainnet', 'platform', 'gateway', 'ssl', 'private.key');
+    });
+
+    it('should let a hard Platform reset clear its Platform data', async () => {
+      await hardReset({ isPlatformOnlyReset: true, keepData: false });
+
+      expect(dockerCompose.rm).to.have.been.calledOnceWithExactly(config, {
+        serviceNames: ['drive_abci', 'dashmate_helper'],
+        profiles: ['platform'],
+        removeVolumes: true,
+      });
+      expect(fs.existsSync(homeDir.joinPath('mainnet', 'platform'))).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('mainnet', 'core', 'dash.conf'))).to.be.true();
+      expect(config.get('platform')).to.deep.equal(getMainnetConfig().get('platform'));
+    });
+
+    // Without --hard nothing would change in the config, and Platform stays off.
+    it('should still refuse a soft Platform reset', async () => {
+      await expect(reset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith('Cannot reset platform only if platform services are not enabled in config');
+
+      expect(dockerCompose.rm).to.not.have.been.called();
     });
   });
 
@@ -587,6 +625,32 @@ describe('resetNodeTaskFactory', () => {
       expect(rmCalls[1].composeOptions).to.deep.equal(rmCalls[0].composeOptions);
       expect(rmCalls[1].commandOptions).to.include('-v');
       expect(removedVolumes).to.include('docker_drive_abci_data');
+    });
+
+    // With Platform disabled every Platform service is off by profile, so
+    // only naming them reaches their containers and volumes.
+    it('should reach Platform services and not Core when Platform is disabled', async () => {
+      platformConfig = diContainer.resolve('configFile').getConfig('mainnet');
+      platformConfig.set('platform.quorumList.enabled', true);
+      platformConfig.set('platform.gateway.rateLimiter.metrics.enabled', true);
+      projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
+
+      await platformReset({ isHardReset: true });
+
+      composeCalls.forEach(({ composeOptions }) => {
+        const profiles = selectedProfiles(composeOptions);
+
+        if (profiles.length > 0) {
+          expect(profiles).to.have.members(ALL_PROFILES);
+        }
+      });
+
+      expect(removedServices()).to.have.members([...PLATFORM_SERVICES, 'dashmate_helper']);
+      expect(removedVolumes).to.have.members([
+        'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
     });
 
     /**
