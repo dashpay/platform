@@ -11,7 +11,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
-import { getOptionValue, hideOptionValue, isOption } from '../../../util/commandLineOption.js';
+import { getOptionValue, isOption } from '../../../util/commandLineOption.js';
 import maskOperatorIdentity, { getOperatorIdentity } from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
@@ -128,96 +128,87 @@ function redactContainerEnvironment(inspect) {
  * @param {*[]} command
  * @param {*} [before] - the argument the command follows, if it continues
  *   another one
- * @return {{redacted: *[], hidden: string[]}}
+ * @return {string[]} the values in the command that can carry a secret: the
+ *   value of each `-name=value` option, a value given as the argument after
+ *   its option, and a whole shell command line
  */
-function redactCommandArguments(command, before = undefined) {
-  const hidden = [];
+function collectCommandValues(command, before = undefined) {
+  const values = [];
 
-  const redacted = command.map((argument, index) => {
+  command.forEach((argument, index) => {
     if (typeof argument !== 'string') {
-      return REDACTED_VALUE;
+      return;
     }
 
     const previous = index === 0 ? before : command[index - 1];
+    const inlineValue = getOptionValue(argument);
 
-    // A shell command line in one argument, as `sh -c` takes it, can set
-    // anything; it is not taken apart but goes whole. So does the value of an
-    // option given as the next argument: `--token value`.
+    if (inlineValue !== null) {
+      values.push(inlineValue);
+    }
+
     if (/\s/.test(argument)
       || (!isOption(argument) && isOption(previous) && getOptionValue(previous) === null)) {
-      hidden.push(argument);
-
-      return REDACTED_VALUE;
+      values.push(argument);
     }
-
-    const value = getOptionValue(argument);
-
-    if (value !== null) {
-      hidden.push(value);
-    }
-
-    return hideOptionValue(argument, () => REDACTED_VALUE);
   });
 
-  return { redacted, hidden };
+  return values;
 }
 
 /**
- * @param {Object} holder
- * @param {string} field
- * @param {*} [before] - the argument the command follows, if it continues
- *   another one
- * @return {string[]} the values hidden
- */
-function redactCommandField(holder, field, before = undefined) {
-  const command = holder?.[field];
-
-  if (command === undefined || command === null) {
-    return [];
-  }
-
-  if (!Array.isArray(command)) {
-    // eslint-disable-next-line no-param-reassign
-    holder[field] = REDACTED_VALUE;
-
-    return typeof command === 'string' ? [command] : [];
-  }
-
-  const { redacted, hidden } = redactCommandArguments(command, before);
-
-  // eslint-disable-next-line no-param-reassign
-  holder[field] = redacted;
-
-  return hidden;
-}
-
-/**
- * Keep the command a container was started with and drop the values of its
- * options.
+ * Leave the command a container runs out of its inspect sample, and say what
+ * in it can be a secret.
  *
- * Options are how some operators pass a service a key or a password, for Core
- * in particular, and an image can bring credentials of its own that the
- * config does not know. Which options a container runs with stays; what they
- * were set to goes, for the same reason as the environment: the value of a
- * `-name=value` option, a value given as the argument after its option, and
- * a whole shell command line. The executable and plain arguments stay.
+ * Options are how some operators pass a service a key or a password, and an
+ * image can bring credentials of its own that the config does not know. A
+ * command line has too many ways of carrying one - a value after its option,
+ * a value starting with a hyphen, a positional argument to a shell script -
+ * to mask it argument by argument, and no doctor analyser reads it, so the
+ * startup command and the health check command are replaced whole. The
+ * executable, in `Path`, stays.
  *
  * Docker runs the entrypoint with the command after it, so an option at the
  * end of the entrypoint takes its value from the start of the command.
  *
  * @param {Object} inspect - mutated in place
- * @return {string[]} the values hidden, for the container's logs to be
- *   scrubbed of too
+ * @return {string[]} the values that can be secrets, for the container's logs
+ *   to be scrubbed of
  */
-function redactContainerCommand(inspect) {
-  const entrypoint = inspect?.Config?.Entrypoint;
-  const entrypointEnd = Array.isArray(entrypoint) ? entrypoint[entrypoint.length - 1] : undefined;
+function omitContainerCommand(inspect) {
+  const config = inspect?.Config;
+  const entrypoint = config?.Entrypoint;
 
-  return [
-    ...redactCommandField(inspect, 'Args'),
-    ...redactCommandField(inspect?.Config, 'Cmd', entrypointEnd),
-    ...redactCommandField(inspect?.Config, 'Entrypoint'),
+  const commands = [
+    [inspect, 'Args', undefined],
+    [config, 'Cmd', Array.isArray(entrypoint) ? entrypoint[entrypoint.length - 1] : undefined],
+    [config, 'Entrypoint', undefined],
+    [config?.Healthcheck, 'Test', undefined],
   ];
+
+  const values = [];
+
+  for (const [holder, field, before] of commands) {
+    const command = holder?.[field];
+
+    if (command === undefined || command === null) {
+      continue;
+    }
+
+    if (Array.isArray(command)) {
+      // Appended one by one: a command can hold more arguments than a call
+      // can take spread
+      for (const value of collectCommandValues(command, before)) {
+        values.push(value);
+      }
+    } else if (typeof command === 'string') {
+      values.push(command);
+    }
+
+    holder[field] = REDACTED_VALUE;
+  }
+
+  return values;
 }
 
 export default function collectSamplesTaskFactory(
@@ -698,10 +689,11 @@ export default function collectSamplesTaskFactory(
 
                 redactContainerEnvironment(inspect);
 
-                // What the container's command hides is scrubbed from its
-                // logs too: an image can pass itself credentials the config
-                // does not know, and a service can print its own command
-                const commandSecrets = redactContainerCommand(inspect);
+                // What the container's command could carry is scrubbed from
+                // its logs too: an image can pass itself credentials the
+                // config does not know, and a service can print its own
+                // command
+                const commandSecrets = omitContainerCommand(inspect);
                 const serviceScrub = commandSecrets.length > 0
                   ? createSecretScrubber(config, commandSecrets)
                   : scrub;

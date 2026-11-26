@@ -644,9 +644,10 @@ describe('collectSamplesTaskFactory', () => {
       const restored = await unarchiveSamplesFactory(getServiceList)(archivePath);
       const inspect = restored.getServiceInfo(SERVICE.name, 'dockerInspect');
 
-      expect(inspect.Args).to.deep.equal(['-masternodeblsprivkey=<redacted>', '-printtoconsole']);
-      expect(inspect.Config.Cmd).to.deep.equal(['dashd', '-masternodeblsprivkey=<redacted>', '-printtoconsole']);
-      expect(inspect.Config.Entrypoint).to.deep.equal(['/docker-entrypoint.sh', '--token=<redacted>']);
+      expect(inspect.Path).to.equal('dashd');
+      expect(inspect.Args).to.equal('<redacted>');
+      expect(inspect.Config.Cmd).to.equal('<redacted>');
+      expect(inspect.Config.Entrypoint).to.equal('<redacted>');
       expect(archived).to.not.contain('entrypointToken7Qx');
       expect(restored.getDashmateConfig().get('core.docker.commandArgs')).to.deep.equal([
         `-masternodeblsprivkey=${'*'.repeat(blsKey.length)}`,
@@ -656,34 +657,87 @@ describe('collectSamplesTaskFactory', () => {
     });
 
     // An image can bring credentials of its own, which the config does not
-    // know, so the command is masked by its shape: a value given after its
-    // option, and a whole shell command line, which can set anything
-    it('should not archive option values a container command gives apart or in a shell line', async () => {
+    // know, and a command line has too many ways of carrying one to mask it
+    // argument by argument. No analyser reads it, so it is left out; only the
+    // executable stays.
+    [
+      ['a shell command line', { Cmd: ['sh', '-c', 'exec app --password shellSecret7Qx'] }],
+      ['a value after its option', { Cmd: ['app', '--token', 'separateSecret7Qx'] }],
+      ['a value that starts with a hyphen', { Cmd: ['app', '--token', '-hyphenSecret7Qx'] }],
+      ['a positional value after the script name', {
+        Cmd: ['sh', '-c', 'exec app --password "$1"', 'sh', 'positionalSecret7Qx'],
+      }],
+      ['an entrypoint argument', { Entrypoint: ['/entry.sh', 'entrypointSecret7Qx'] }],
+      ['a health check', {
+        Healthcheck: { Test: ['CMD-SHELL', 'curl -u probe:healthSecret7Qx http://localhost/'], Interval: 1e9 },
+      }],
+    ].forEach(([description, commandConfig]) => {
+      it(`should leave the container command out of the archive, with ${description}`, async () => {
+        const [secret] = JSON.stringify(commandConfig).match(/[A-Za-z]+Secret7Qx/);
+
+        dockerCompose.inspectService.resolves({
+          Id: 'container-id',
+          Path: 'app',
+          Args: ['--token', secret],
+          Config: {
+            Image: 'example/service:test',
+            Env: [],
+            ...commandConfig,
+          },
+          State: { Status: 'running', Restarting: false, ExitCode: 0 },
+        });
+
+        const archivePath = await collectAndArchive();
+
+        expect(readArchivedBytes(archivePath)).to.not.contain(secret);
+
+        const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+          .getServiceInfo(SERVICE.name, 'dockerInspect');
+
+        expect(inspect.Path).to.equal('app');
+        expect(inspect.Args).to.equal('<redacted>');
+        ['Cmd', 'Entrypoint'].filter((field) => field in commandConfig)
+          .forEach((field) => expect(inspect.Config[field]).to.equal('<redacted>'));
+
+        if (commandConfig.Healthcheck) {
+          expect(inspect.Config.Healthcheck.Test).to.equal('<redacted>');
+          expect(inspect.Config.Healthcheck.Interval).to.equal(1e9);
+        }
+      });
+    });
+
+    it('should collect a container whose command has more arguments than a call can take', async () => {
+      const command = Array.from({ length: 200_000 }, (_, index) => `-o${index}=v${index}`);
+
       dockerCompose.inspectService.resolves({
         Id: 'container-id',
-        Path: 'service',
-        Args: ['serve', '--token', 'containerOnlyToken7Qx', '--verbose'],
-        Config: {
-          Image: 'example/service:test',
-          Env: [],
-          Cmd: ['sh', '-c', 'exec app --password shellPassword7Qx'],
-          Entrypoint: ['/entry.sh', 'run with secret=entrypointSecret7Qx'],
-        },
+        Path: 'app',
+        Args: command,
+        Config: { Image: 'example/service:test', Env: [], Cmd: command },
         State: { Status: 'running', Restarting: false, ExitCode: 0 },
       });
 
-      const archivePath = await collectAndArchive();
-      const archived = readArchivedBytes(archivePath);
-
-      ['containerOnlyToken7Qx', 'shellPassword7Qx', 'entrypointSecret7Qx']
-        .forEach((secret) => expect(archived).to.not.contain(secret));
-
-      const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+      const inspect = (await unarchiveSamplesFactory(getServiceList)(await collectAndArchive()))
         .getServiceInfo(SERVICE.name, 'dockerInspect');
 
-      expect(inspect.Args).to.deep.equal(['serve', '--token', '<redacted>', '--verbose']);
-      expect(inspect.Config.Cmd).to.deep.equal(['sh', '-c', '<redacted>']);
-      expect(inspect.Config.Entrypoint).to.deep.equal(['/entry.sh', '<redacted>']);
+      expect(inspect.Args).to.equal('<redacted>');
+    });
+
+    // A service can print an option value on its own, apart from the option
+    it('should scrub a log of an option value with spaces in it printed alone', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: ['--token=container token 7Qx'],
+        Config: { Image: 'example/service:test', Env: [], Cmd: ['--token=container token 7Qx'] },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({ out: 'using token container token 7Qx\n', err: '' });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('container token 7Qx');
+      expect(archived).to.contain('using token ');
     });
 
     // Docker runs the entrypoint with the command after it, so an option at
@@ -709,7 +763,7 @@ describe('collectSamplesTaskFactory', () => {
       const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
         .getServiceInfo(SERVICE.name, 'dockerInspect');
 
-      expect(inspect.Config.Cmd).to.deep.equal(['<redacted>']);
+      expect(inspect.Config.Cmd).to.equal('<redacted>');
     });
 
     // A container can print the command it was started with, and the

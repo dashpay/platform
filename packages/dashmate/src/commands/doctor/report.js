@@ -52,10 +52,11 @@ The command collects diagnostic information and creates an archive, with the nod
 
   Masked: secrets in the current node configuration (private keys, passwords,
   API keys, build arguments, command-line option values, credentials in URLs),
-  the values of container environment variables and command-line options and
-  any shell command line a container runs, your home directory, and your user name in logs, paths, the node description and
-  contact addresses. Copies of those config secrets in logs and other collected
-  data are masked when they are 8 characters or longer.
+  the values of container environment variables, your home directory, and your
+  user name in logs, paths, the node description and contact addresses. The
+  commands containers run, health checks included, are left out. Copies of
+  those config secrets in logs and other collected data are masked when they
+  are 8 characters or longer.
 
   Logs can still contain other sensitive text, such as earlier passwords or short
   values, so review the archive before you share it. The rest is diagnostic data

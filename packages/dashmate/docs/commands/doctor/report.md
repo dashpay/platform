@@ -23,9 +23,9 @@ The archive contains:
 - System information (OS, memory, CPU, disk usage)
 - Node configuration (with its secrets masked)
 - Service logs, metrics, and status
-- Docker container information (environment variable and command-line option names only, without their values, and no shell command lines)
+- Docker container information (environment variable names without their values; the commands containers run, health checks included, are left out)
 
-Secrets in the current node configuration, such as private keys, passwords, API keys, build arguments, command-line option values and credentials in URLs, are masked in the archive's copy of the configuration. The values of container environment variables and command-line options are left out, and so is any shell command line a container runs. Your home directory is masked, and so is your user name in logs, paths, the node description and contact addresses; it is left as it is in other configuration values, which it could be spelled like. Copies of the configuration's secrets elsewhere in the archive, including service logs, are masked when they are 8 characters or longer; shorter values are not searched for, because they would match unrelated text.
+Secrets in the current node configuration, such as private keys, passwords, API keys, build arguments, command-line option values and credentials in URLs, are masked in the archive's copy of the configuration. The values of container environment variables are left out, and so are the commands containers run, health checks included; the executable is kept. Your home directory is masked, and so is your user name in logs, paths, the node description and contact addresses; it is left as it is in other configuration values, which it could be spelled like. Copies of the configuration's secrets elsewhere in the archive, including service logs, are masked when they are 8 characters or longer; shorter values are not searched for, because they would match unrelated text.
 
 Logs can still contain other sensitive text, such as earlier passwords or short values, so review the archive before you share it. The rest is diagnostic data about your node, such as its addresses, host details, certificate settings and logs, and is shared with whoever you send the archive to.
 
