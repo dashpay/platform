@@ -493,6 +493,27 @@ describe('Update command', () => {
       expect(mockDocker.pull).to.have.been.called();
     });
 
+    // An interrupted ZeroSSL setup that installed its certificate can start:
+    // only renewal waits for the setup to finish.
+    it('should not say Platform cannot run when only its setup is unfinished', async function it() {
+      const runCheck = this.sinon.stub();
+      const pending = new Error('Platform setup did not finish');
+      pending.problem = 'the gateway serves the installed certificate, but nothing renews it until the setup is finished';
+      pending.remedy = 'To finish the setup:\n  dashmate ssl obtain --config testnet';
+      pending.canStart = true;
+
+      await runUpdate({
+        findPendingSetup: () => pending,
+        gatewayCertificateTask: () => runCheck,
+      });
+
+      expect(stderr).to.contain('Platform setup of')
+        .and.contain('did not finish: the gateway serves the installed certificate')
+        .and.contain('dashmate ssl obtain --config testnet');
+      expect(stderr).to.not.contain('cannot run yet');
+      expect(runCheck).to.not.have.been.called();
+    });
+
     it('should check the certificate as usual once Platform is set up', async function it() {
       const runCheck = this.sinon.stub();
 

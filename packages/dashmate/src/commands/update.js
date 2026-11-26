@@ -93,8 +93,11 @@ export default class UpdateCommand extends ConfigBaseCommand {
     const platformSetupError = assertPlatformCanStart.findPendingSetup(config);
 
     if (platformSetupError !== null) {
-      process.stderr.write(`Platform of ${config.getName()} cannot run yet:`
-        + ` ${platformSetupError.problem ?? platformSetupError.message}.\n`
+      const heading = platformSetupError.canStart
+        ? `Platform setup of ${config.getName()} did not finish`
+        : `Platform of ${config.getName()} cannot run yet`;
+
+      process.stderr.write(`${heading}: ${platformSetupError.problem ?? platformSetupError.message}.\n`
         + `${platformSetupError.remedy ?? ''}\n`
         + `${isGated ? 'The gateway certificate check is skipped until then.\n' : ''}\n`);
     }

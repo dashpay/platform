@@ -256,8 +256,9 @@ describe('assertPlatformCanStart', () => {
       installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': pair.keyPem });
 
       expect(refusalOf(config)).to.be.null();
-      expect(assertPlatformCanStart.findPendingSetup(config).remedy)
-        .to.include('dashmate ssl obtain --config testnet');
+      const pending = assertPlatformCanStart.findPendingSetup(config);
+      expect(pending.canStart).to.be.true();
+      expect(pending.remedy).to.include('dashmate ssl obtain --config testnet');
     });
 
     // Rootful Docker mounts what the CLI user may not read: files the user

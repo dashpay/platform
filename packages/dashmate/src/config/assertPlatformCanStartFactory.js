@@ -253,7 +253,8 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
    * Platform setup refuse.
    *
    * @param {Config} config
-   * @return {Error|null} with `problem` and `remedy`
+   * @return {Error|null} with `problem` and `remedy`, and `canStart` when
+   *  start lets the node through
    */
   function findPendingPlatformSetup(config) {
     try {
@@ -274,9 +275,13 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
       return null;
     }
 
-    const error = new Error('Platform is not set up');
-    error.problem = 'its Platform part is not set up';
+    // What start lets through: a fullnode whose interrupted ZeroSSL setup
+    // installed a certificate the gateway serves.
+    const error = new Error('Platform setup did not finish');
+    error.problem = 'the gateway serves the installed certificate, but nothing renews it until the'
+      + ' setup is finished';
     error.remedy = describePlatformSetupState(setupState, config.getName());
+    error.canStart = true;
 
     return error;
   }
