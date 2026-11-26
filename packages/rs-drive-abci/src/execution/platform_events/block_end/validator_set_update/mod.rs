@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod key_share_tests;
 mod v0;
 mod v1;
 mod v2;
