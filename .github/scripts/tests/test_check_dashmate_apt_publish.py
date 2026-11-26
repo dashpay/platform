@@ -22,10 +22,12 @@ SUMS = (f'{"c" * 64}  dashmate-v5.1.0-rc.2-3a5da22021-linux-x64.tar.gz\n'
         f'{ARM64}  dashmate_5.1.0.rc.2-1_arm64.deb\n').encode()
 
 
-def stanza(arch, version, sha256, package='dashmate'):
-    """One record of a suite's Packages index, as the apt client in the container prints it."""
+def stanza(arch, version, sha256, package='dashmate', size=None):
+    """One record of a suite's Packages index, as the apt client in the container prints it. Its
+    Size is that of the verified deb of its architecture unless given."""
+    size = len(DEBS[arch]) if size is None else size
     return (f'Package: {package}\nArchitecture: {arch}\nVersion: {version}\nPriority: optional\n'
-            f'Filename: pool/main/d/dashmate/dashmate_{version}_{arch}.deb\nSize: 123\n'
+            f'Filename: pool/main/d/dashmate/dashmate_{version}_{arch}.deb\nSize: {size}\n'
             f'SHA256: {sha256}\nDescription: Distribution package for Dash node installation\n\n')
 
 
@@ -65,11 +67,15 @@ args = sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as log:
     log.write(json.dumps(['curl'] + args) + '\\n')
 url, output = args[-1], args[args.index('-o') + 1]
+limit = int(args[args.index('--max-filesize') + 1]) if '--max-filesize' in args else None
 base = os.environ['REPOSITORY'] + '/'
 source = os.path.join(os.environ['CURL_POOL'], url[len(base):]) if url.startswith(base) else ''
 if not os.path.isfile(source):
     print(f'curl: (22) The requested URL returned error: 404', file=sys.stderr)
     sys.exit(22)
+if limit is not None and os.path.getsize(source) > limit:
+    print('curl: (63) Exceeded the maximum allowed file size', file=sys.stderr)
+    sys.exit(63)
 shutil.copy(source, output)
 '''
 DOCKER_STUB = '''#!/usr/bin/env python3
@@ -151,6 +157,38 @@ class CheckDashmateAptPublishTests(unittest.TestCase):
                 self.assertIn(f'the {arch} deb', result.stderr)
                 self.assertIn('the release is not done, report it to infra', result.stderr)
                 self.assertNotIn(f'testing serves the verified deb: {arch}', result.stdout)
+
+    def test_should_refuse_a_deb_whose_size_is_not_the_one_the_index_lists(self):
+        # apt rejects a deb whose size differs from its record, even with the right sha256.
+        served = SERVED.replace(f'Size: {len(DEBS["amd64"])}\n', f'Size: {len(DEBS["amd64"]) + 1}\n', 1)
+        result = self.check(*self.args(), served=served)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'has {len(DEBS["amd64"])} bytes, not the {len(DEBS["amd64"]) + 1} its record lists', result.stderr)
+
+    def test_should_cap_each_download_near_the_size_the_index_lists(self):
+        # An oversized response stops the download instead of filling the disk.
+        result = self.check(*self.args())
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        limits = {call[-1].rsplit('_', 1)[1]: int(call[call.index('--max-filesize') + 1])
+                  for call in self.calls() if call[0] == 'curl'}
+        self.assertEqual(limits, {f'{arch}.deb': len(data) + 4096 for arch, data in DEBS.items()})
+
+        result = self.check(*self.args(), debs=dict(DEBS, amd64=DEBS['amd64'] + b'x' * 5000))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('could not download the amd64 deb', result.stderr)
+
+    def test_should_refuse_a_record_without_a_plain_size(self):
+        for size in ('', '0', '-5', '12x', '1e9'):
+            with self.subTest(size):
+                served = SERVED.replace(f'Size: {len(DEBS["amd64"])}\n', f'Size: {size}\n', 1)
+                (self.tmp / 'calls').unlink(missing_ok=True)
+                result = self.check(*self.args(), served=served)
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('the amd64 record in testing lists size', result.stderr)
+                self.assertEqual([call for call in self.calls() if call[0] == 'curl'], [])
 
     def test_should_refuse_a_record_whose_file_name_is_not_a_pool_path(self):
         for filename in ('../../../etc/passwd', 'https://elsewhere.example/dashmate.deb', 'pool/a/../../x.deb', '',

@@ -145,19 +145,20 @@ SERVED="$(docker run --rm -e SUITE="${SUITE}" -e KEYRING_URL="${KEYRING_URL}" -e
     done
   ')" || fail "the apt client could not read the ${SUITE} suite; the release is not done, report it to infra"
 
-# One tab-separated `<architecture> <version> <sha256> <file name>` line per dashmate record that
-# its own architecture's index lists. The file name is the whole field, spaces included, so the
-# path check below sees all of it.
+# One tab-separated `<architecture> <version> <sha256> <size> <file name>` line per dashmate record
+# that its own architecture's index lists. The size and the file name are whole fields, spaces
+# included, so the checks below see all of them.
 RECORDS="$(printf '%s\n' "${SERVED}" | awk 'BEGIN {OFS = "\t"}
   function emit() {
-    if (package == "dashmate" && arch != "" && sha != "" && ("x" arch) == ("x" index_arch)) print arch, version, sha, filename
-    package = arch = version = sha = filename = ""
+    if (package == "dashmate" && arch != "" && sha != "" && ("x" arch) == ("x" index_arch)) print arch, version, sha, size, filename
+    package = arch = version = sha = size = filename = ""
   }
   /^### index / {emit(); index_arch = $3; next}
   /^Package: / {package = $2}
   /^Architecture: / {arch = $2}
   /^Version: / {version = $2}
   /^SHA256: / {sha = $2}
+  /^Size: / {size = substr($0, 7)}
   /^Filename: / {filename = substr($0, 11)}
   /^$/ {emit()}
   END {emit()}')"
@@ -175,7 +176,14 @@ for pair in "amd64 ${AMD64}" "arm64 ${ARM64}"; do
     version="${record#*$'\t'}"
     filename="${version#*$'\t'}"
     filename="${filename#*$'\t'}"
+    size="${filename%%$'\t'*}"
+    filename="${filename#*$'\t'}"
     version="${version%%$'\t'*}"
+    # A positive number of bytes, short enough for shell arithmetic.
+    case "${size}" in
+      '' | 0* | *[!0-9]* | ?????????????*)
+        fail "the ${arch} record in ${SUITE} lists size '${size}', not a number of bytes; the release is not done, report it to infra" ;;
+    esac
     case "${filename}" in
       pool/*.deb) ;;
       *) fail "the ${arch} record in ${SUITE} names '${filename}', not a deb in the pool; the release is not done, report it to infra" ;;
@@ -183,8 +191,14 @@ for pair in "amd64 ${AMD64}" "arm64 ${ARM64}"; do
     case "${filename}" in
       *..* | *[!A-Za-z0-9._+~/-]*) fail "the ${arch} record in ${SUITE} names '${filename}', not a plain pool path; the release is not done, report it to infra" ;;
     esac
-    curl -fsSL --proto '=https' --max-time 600 -o "${WORK_DIR}/${arch}.deb" "${REPOSITORY_URL}/${filename}" \
+    # Capped a little above the listed size, so an oversized response cannot fill the disk.
+    curl -fsSL --proto '=https' --max-time 600 --max-filesize "$((size + 4096))" -o "${WORK_DIR}/${arch}.deb" \
+      "${REPOSITORY_URL}/${filename}" \
       || fail "could not download the ${arch} deb ${filename} that ${SUITE} lists; the release is not done, report it to infra"
+    # apt refuses a deb whose size is not the one its record lists.
+    served_size="$(wc -c < "${WORK_DIR}/${arch}.deb" | tr -d ' ')"
+    [ "${served_size}" = "${size}" ] \
+      || fail "the ${arch} deb ${filename} in ${SUITE} has ${served_size} bytes, not the ${size} its record lists; the release is not done, report it to infra"
     served_sum="$("${sha256[@]}" "${WORK_DIR}/${arch}.deb" | cut -d' ' -f1)"
     [ "${served_sum}" = "${want}" ] \
       || fail "the ${arch} deb ${filename} in ${SUITE} has sha256 ${served_sum}, not the ${want} that SHA256SUMS lists; the release is not done, report it to infra"
