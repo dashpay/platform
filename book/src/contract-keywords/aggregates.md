@@ -107,7 +107,7 @@ On a unique index the flag changes almost nothing, since each value holds at mos
 | **Since** | protocol version 12 |
 | **On update** | Fixed (10217) |
 
-Keeps the sum of the named property for each value of the index, the way `countable` keeps a count, and serves sum queries under the same exact-match rule. The property follows the rules of `documentsSummable`: it exists, is required, and fits a signed 64-bit sum.
+Keeps the sum of the named property for each value of the index, the way `countable` keeps a count, and serves sum queries under the same exact-match rule. The property follows the rules of `documentsSummable`: it exists, is required, and fits a signed 64-bit sum. From protocol version 15 a property whose values may pass ±2^27 also needs `documentsSummable` or `documentsAverageable` on the type: see [Writes past a sum](#writes-past-a-sum).
 
 ## `averageable`
 
@@ -154,10 +154,22 @@ A range total costs more on each write than a per-value total, since every node 
 - All summed properties of a type are the same property.
 - From protocol version 14, on a type with a [contested index](contested.md), the summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
 - From protocol version 14, on a type with a [`ttl`](ttl.md), the summed property declares a `minimum` of at least 0, or a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
-- On other types, each value only has to fit a signed 64-bit integer.
+- From protocol version 15, a summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27), or a `minimum` of at least 0 on a type that declares `documentsSummable` or `documentsAverageable` on it. See [Writes past a sum](#writes-past-a-sum). Before protocol version 15, on other types each value only has to fit a signed 64-bit integer.
+- From protocol version 15, the summed property is not listed in [`transient`](transient.md). A transient value is never stored, and the type's sums read the stored value of each document. A contract registered earlier may hold such a type; a document create on it is refused with the same error.
 - The shorthands agree with their longhand where both are written, and no explicit `false` or `"notCountable"` contradicts them.
 - Each `range*` flag has its prerequisite, as listed above.
 - The meta-schema refuses a malformed value (`JsonSchemaError`, 10101).
+
+## Writes past a sum
+
+A sum holds a signed 64-bit integer, and each node of a sum tree keeps the total of its own branch, so a write can take a sum out of range even when every value is in range. From protocol version 15 two rules keep the sums in range:
+
+- **Small values need nothing.** With a `minimum` of at least -134217728 and a `maximum` of at most 134217728, no sum leaves the range short of 2^36 documents.
+- **Larger values are never negative, on a type that keeps its total.** The property declares a `minimum` of at least 0 and the type declares `documentsSummable` or `documentsAverageable` on it. Every other sum of the type is a sum over some of the same documents, so none exceeds that total. A create, a replace that raises the property, or a moderator's restore of a removed document, that would take the total past what the type's sums hold is refused with `DocumentSumOverflowError` (40154), a paid error like any other refused by state validation. A moderator's field change never writes the property: it is required, and a field moderators write is not. The most the total holds is `i64::MAX`, divided by the number of entries one document adds to a summed index when an index keys the document by the elements of a [typed array](indexes.md#typed-arrays) or the windows of a range grid.
+
+Values of both signs past ±2^27 are refused at registration: with them a branch of a sum tree can leave the range while the total stays in it, which nothing read before a write can tell. An [index-only type](index-only.md) keeps no total, so its summed values stay within ±2^27. Without [`sizedIntegerTypes`](contract-config.md#sizedintegertypes) a `minimum` of 0 with no `maximum` is a signed 64-bit integer that is never negative; with it, the largest such property is an unsigned 32-bit integer.
+
+A type whose `creationRestrictionMode` allows no creation is exempt: only the protocol writes its documents. A contract registered before protocol version 15 keeps its types: one that keeps a total is held to it, and one that does not is written as before. An update re-validates every type of the contract, so a type that does not meet the rule blocks the update; the summed property and the type's flags are fixed, so such a type cannot be brought to meet it.
 
 ## Choosing what to set
 

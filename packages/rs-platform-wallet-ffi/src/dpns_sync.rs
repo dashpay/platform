@@ -158,15 +158,17 @@ pub unsafe extern "C" fn platform_wallet_manager_dpns_sync_sync_now(
     out_error_count: *mut usize,
     out_sync_unix_seconds: *mut u64,
 ) -> PlatformWalletFFIResult {
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let mgr = manager.dpns_sync_arc();
-        // `block_on_worker`, NOT `runtime().block_on`: the pass verifies
-        // GroveDB document-query proofs whose recursion blows the ~512 KB
-        // stack of the iOS calling thread. The worker dispatch moves the
-        // compute onto the runtime's 8 MB-stack threads (see runtime.rs).
-        block_on_worker(async move { mgr.sync_now().await })
-    });
-    let summary = unwrap_option_or_return!(option);
+    // The manager registry's lock is released before the pass runs: a wallet's pass can
+    // wait on its DPNS operation gate behind a give-up waiting on the host's signer, and a
+    // signer callback tearing down a manager takes that lock for writing.
+    let mgr = unwrap_option_or_return!(
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.dpns_sync_arc())
+    );
+    // `block_on_worker`, NOT `runtime().block_on`: the pass verifies
+    // GroveDB document-query proofs whose recursion blows the ~512 KB
+    // stack of the iOS calling thread. The worker dispatch moves the
+    // compute onto the runtime's 8 MB-stack threads (see runtime.rs).
+    let summary = block_on_worker(async move { mgr.sync_now().await });
 
     if !out_success_count.is_null() {
         *out_success_count = summary.success_count();

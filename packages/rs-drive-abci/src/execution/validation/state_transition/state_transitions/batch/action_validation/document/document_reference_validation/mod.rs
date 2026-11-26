@@ -1,3 +1,5 @@
+pub(crate) mod choose_first_reservation;
+pub(crate) mod reference_lookup_reservation;
 pub mod v0;
 pub mod v1;
 
@@ -101,6 +103,12 @@ pub(crate) trait DocumentReferenceValidation {
     /// `minimumAgeBlocks`, and when the reference declares `consume` the document is pushed onto
     /// `consumed_documents` for the caller to delete with the create once it accepts it. A
     /// replace leaves it alone, since nothing it reads can have changed.
+    /// `opens_or_joins_contest` is whether the write is a create that opens or joins a contest
+    /// (it states the contest's fund): from protocol version 15 such a create reads no
+    /// `chooseFirst` competitors when its contest decides the `chooseFirst` (commitments to the
+    /// contest's values alone, ranked by creation height alone, at least a block old), the
+    /// contest deciding between its contenders.
+    /// Generation 0 does not take it, and holds every create to `chooseFirst`.
     ///
     /// When `derived_index_values` is given (a create, protocol version 14), an accepted write
     /// records there the value of each derived index property of the document type, read from
@@ -125,6 +133,7 @@ pub(crate) trait DocumentReferenceValidation {
         referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
+        opens_or_joins_contest: bool,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -154,7 +163,9 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
             .batch_state_transition
             .document_reference_validation
         {
-            // Generation 1 changes what a lookup keeps of a consumed document only
+            // Generation 1 changes nothing this check reads: what a consume keeps and a
+            // contested create's `chooseFirst` belong to a create's lookup, and a dynamic
+            // reference, which it resolves, is never deletable
             0 | 1 => self.deletable_document_reference_target_is_gone_v0(
                 property,
                 referenced_id,
@@ -181,6 +192,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
+        opens_or_joins_contest: bool,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -220,6 +232,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 referring_system,
                 changed_fields,
                 stored_values,
+                opens_or_joins_contest,
                 platform,
                 block_info,
                 consumed_documents,

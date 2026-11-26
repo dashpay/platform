@@ -9,9 +9,12 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
+mod delete_domain;
 mod v0;
 mod v1;
 mod v2;
+
+pub use delete_domain::delete_domain_data_trigger;
 
 pub fn create_domain_data_trigger(
     document_transition: &DocumentTransitionAction,

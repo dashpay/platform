@@ -14,6 +14,7 @@
 //!     .await?;
 //! ```
 
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -101,6 +102,24 @@ pub trait ClaimContractFees: Waitable {
     ) -> Result<ClaimedContractFees, Error>;
 }
 
+/// [`ClaimContractFees`] that also returns the quorum-authenticated response metadata of the
+/// proof: `metadata.height` is the block the proved balances are as of, which a caller that
+/// keeps those balances pins them to.
+#[async_trait::async_trait]
+pub trait ClaimContractFeesWithMetadata: Waitable {
+    /// [`ClaimContractFees::claim_contract_fees`], returning the proof's response metadata
+    /// beside the claimed pot.
+    async fn claim_contract_fees_with_metadata<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        pot: ContractFeePot,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<(ClaimedContractFees, ResponseMetadata), Error>;
+}
+
 #[async_trait::async_trait]
 impl ClaimContractFees for Identity {
     async fn claim_contract_fees<S: Signer<IdentityPublicKey> + Send>(
@@ -112,6 +131,30 @@ impl ClaimContractFees for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ClaimedContractFees, Error> {
+        self.claim_contract_fees_with_metadata(
+            sdk,
+            contract_id,
+            pot,
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+        .map(|(claimed, _metadata)| claimed)
+    }
+}
+
+#[async_trait::async_trait]
+impl ClaimContractFeesWithMetadata for Identity {
+    async fn claim_contract_fees_with_metadata<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        pot: ContractFeePot,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<(ClaimedContractFees, ResponseMetadata), Error> {
         let signing_key_id = match signing_key_to_use {
             Some(key) => key.id(),
             None => signing_key_for_moderation(self, &signer)?,
@@ -144,7 +187,7 @@ impl ClaimContractFees for Identity {
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         state_transition
-            .broadcast_and_wait_for_affected_state(sdk, settings)
+            .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)
             .await
     }
 }

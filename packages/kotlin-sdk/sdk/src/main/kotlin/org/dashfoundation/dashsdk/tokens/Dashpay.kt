@@ -165,8 +165,10 @@ class Dashpay internal constructor(private val walletHandle: Long,
     /**
      * Read the cached DashPay profile for [identityId] (no network round-trip).
      * Returns a JSON object string (displayName, publicMessage, avatarUrl,
-     * avatarHash hex, avatarFingerprint hex) or null when there is no cached
-     * profile.
+     * avatarHash hex, avatarFingerprint hex, and the published
+     * corePaymentAddress / platformPaymentAddress / shieldedAddress in their
+     * stored form as hex, rendered by [DashPayPaymentAddresses.string]) or
+     * null when there is no cached profile.
      */
     suspend fun getProfile(identityId: ByteArray): String? = withContext(Dispatchers.IO) {
         mapNativeErrors { TokensNative.getDashPayProfile(walletHandle, identityId) }
@@ -770,13 +772,33 @@ class Dashpay internal constructor(private val walletHandle: Long,
         avatarBytes: ByteArray? = null,
         doCreate: Boolean,
         signerHandle: Long,
+        corePaymentAddress: DashPayPaymentAddressUpdate = DashPayPaymentAddressUpdate.Keep,
+        platformPaymentAddress: DashPayPaymentAddressUpdate = DashPayPaymentAddressUpdate.Keep,
+        shieldedAddress: DashPayPaymentAddressUpdate = DashPayPaymentAddressUpdate.Keep,
     ): String? = gate.op {
         mapNativeErrors {
-            DashpayNative.createOrUpdateProfile(
+            DashpayNative.createOrUpdateProfileWithAddresses(
                 walletHandle, identityId, displayName, publicMessage,
-                avatarUrl, avatarBytes, doCreate, signerHandle,
+                avatarUrl, avatarBytes,
+                corePaymentAddress.ffiAction, corePaymentAddress.ffiBytes,
+                platformPaymentAddress.ffiAction, platformPaymentAddress.ffiBytes,
+                shieldedAddress.ffiAction, shieldedAddress.ffiBytes,
+                doCreate, signerHandle,
             )
         }
+    }
+
+    /**
+     * Which payment addresses a profile write may set on the network this
+     * wallet is connected to, as `platform-wallet` reports it from the
+     * network's DashPay contract (protocol version 14 or later has them).
+     * Blocks on the network; runs on IO. Removing an address needs no
+     * support. ← Swift `ManagedPlatformWallet.dashPayPaymentAddressSupport()`.
+     */
+    suspend fun paymentAddressSupport(): DashPayPaymentAddressSupport = gate.op {
+        val flags = mapNativeErrors { DashpayNative.paymentAddressSupport(walletHandle) }
+        checkNotNull(flags) { "native paymentAddressSupport returned no flags" }
+        DashPayPaymentAddressSupport.fromFlags(flags)
     }
 
     /**

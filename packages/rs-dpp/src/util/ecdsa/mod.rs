@@ -1,8 +1,9 @@
 //! ECDSA secp256k1 verification as every released Platform does it: a signature whose S is in
-//! the upper half of the curve order is refused. `dashcore` verifies such a signature like its
-//! low-S twin, the same signature with S negated, so Platform checks S itself, at every protocol
-//! version. Accepting it would fork from nodes that refuse it and change the replay of chain
-//! history.
+//! the upper half of the curve order is refused as a signature that does not verify.
+//! `EcdsaPublicKey::verify` verifies such a signature like its low-S twin, the same signature with
+//! S negated, and `signer::verify_data_signature` refuses it with an error of its own, so Platform
+//! checks S itself, at every protocol version. Accepting it would fork from nodes that refuse it
+//! and change the replay of chain history.
 //!
 //! A signature checked by recovering its public key ([`verify_hash_signature`]) is the
 //! exception: every released Platform accepts a high-S one there, and one whose header names an
@@ -10,7 +11,7 @@
 //! `verify_hash_signature`.
 
 use dashcore::crypto::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSignature};
-use dashcore::{sign_message, signer};
+use dashcore::{sign_message, signer, PublicKey};
 
 mod verify_hash_signature;
 
@@ -23,14 +24,20 @@ pub fn verify_data_signature(
     signature: &[u8],
     public_key: &[u8],
 ) -> Result<(), anyhow::Error> {
-    signer::verify_data_signature(data, signature, public_key)?;
-    // `dashcore` parsed the signature to verify it, so parsing it again succeeds.
-    let signature = sign_message::from_slice(signature)?.signature()?;
-    if signature.is_low_s() {
-        Ok(())
-    } else {
-        Err(anyhow::Error::msg(EcdsaError::VerifyFailed))
+    let result = signer::verify_data_signature(data, signature, public_key);
+    // `dashcore` reads the key before it checks S, so a key it cannot read keeps its error.
+    if result.is_err() && is_high_s(signature) && PublicKey::from_slice(public_key).is_ok() {
+        return Err(anyhow::Error::msg(EcdsaError::VerifyFailed));
     }
+    result
+}
+
+/// Whether `signature` reads as a recoverable signature whose S is high.
+fn is_high_s(signature: &[u8]) -> bool {
+    sign_message::from_slice(signature)
+        .ok()
+        .and_then(|signature| signature.signature().ok())
+        .is_some_and(|signature| !signature.is_low_s())
 }
 
 /// [`EcdsaPublicKey::verify`], refusing a high-S signature with

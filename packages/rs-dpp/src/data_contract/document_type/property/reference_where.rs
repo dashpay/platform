@@ -42,7 +42,6 @@ use crate::data_contract::document_type::property_constraints::{
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::OWNER_ID;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value};
 use serde::Serialize;
 use std::borrow::Cow;
@@ -176,8 +175,7 @@ impl WhereLiteral {
             (WhereLiteral::Boolean(flag), WhereLiteralKind::Boolean) => Some(Value::Bool(*flag)),
             (WhereLiteral::Text(text), WhereLiteralKind::Text) => Some(Value::Text(text.clone())),
             (WhereLiteral::Text(text), WhereLiteralKind::Identifier) => {
-                Identifier::from_string(text, Encoding::Base58)
-                    .ok()
+                Identifier::from_base58_text(text)
                     .map(|identifier| Value::Identifier(identifier.to_buffer()))
             }
             (WhereLiteral::Text(text), WhereLiteralKind::Bytes) => {
@@ -732,6 +730,7 @@ impl fmt::Display for WhereCondition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_value::string_encoding::Encoding;
 
     fn ordering(ordering: WhereOrdering, bound: WhereOrderingBound) -> WhereCondition {
         WhereCondition::Ordering { ordering, bound }

@@ -312,6 +312,10 @@ pub mod drive_document_count_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_sum_query;
 
+/// Reading a document index's sum at the width its type keeps it in.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod sum_width;
+
 /// A query to compute the average of an integer property across
 /// documents using `CountSumTree` / `ProvableCountProvableSumTree`
 /// (PCPS) elements. Averages are NOT computed server-side; the
@@ -3222,8 +3226,6 @@ impl<'a> DriveDocumentQuery<'a> {
         mut serialized_documents: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-        use dpp::document::DocumentV0Getters;
         if !self.pads_cursor_page(platform_version) {
             return Ok((serialized_documents, 0));
         }
@@ -3231,8 +3233,8 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok((serialized_documents, 0));
         };
         if let Some(first) = serialized_documents.first() {
-            let document = Document::from_bytes(first, self.document_type, platform_version)?;
-            if document.id().to_buffer() == start_at {
+            let first_id = Document::id_from_bytes(first, platform_version)?;
+            if first_id.to_buffer() == start_at {
                 serialized_documents.remove(0);
             }
         }
@@ -3251,7 +3253,6 @@ impl<'a> DriveDocumentQuery<'a> {
         mut elements: QueryResultElements,
         platform_version: &PlatformVersion,
     ) -> Result<(QueryResultElements, u16), Error> {
-        use dpp::document::DocumentV0Getters;
         use grovedb::query_result_type::QueryResultElement;
         // A summable type stores its documents as `ItemWithSumItem`, read as
         // an item all the same.
@@ -3282,10 +3283,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // version 14 (`pads_cursor_page`), so no earlier page reaches here.
         let first_is_cursor = match first_element.map(Element::as_item_bytes) {
             Some(Ok(bytes)) => {
-                Document::from_bytes(bytes, self.document_type, platform_version)?
-                    .id()
-                    .to_buffer()
-                    == start_at
+                Document::id_from_bytes(bytes, platform_version)?.to_buffer() == start_at
             }
             _ => false,
         };

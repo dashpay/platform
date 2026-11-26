@@ -53,9 +53,14 @@ revision, inclusive `start_at_revision`, or exact `revision`. Unproved responses
 carry entries with time, revision and document bytes, plus lifecycle metadata;
 proved responses carry one signed proof object containing one GroveDB proof of
 the page and lifecycle.
-The Rust SDK and its WASM/JavaScript bindings send version 1 and require proofs.
-On an updated node running protocol version 14 this returns the standard
-unsupported-query-version error; the SDK does not fall back to version 0.
+The Rust SDK and its WASM/JavaScript bindings require proofs. They send version 1
+to a network at protocol version 15. On a network a verified answer shows below
+15, they send a start-time query as version 0, starting one millisecond earlier
+since its start is exclusive, and the answer has no lifecycle. They refuse
+revision and cursor filters there before sending. If version 0 fails because
+the network has reached 15 since, the SDK asks for the network's version again
+and sends version 1. The FFI binding, whose result always includes the
+lifecycle, sends version 1 only.
 
 ### Rules at registration
 

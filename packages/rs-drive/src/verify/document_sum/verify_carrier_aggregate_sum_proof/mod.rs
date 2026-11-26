@@ -9,7 +9,7 @@ use dpp::version::PlatformVersion;
 
 impl DriveDocumentSumQuery<'_> {
     /// Verifies a **carrier** `AggregateSumOnRange` proof and returns
-    /// `(root_hash, per_key_sums)` — one `(in_key, i64)` pair per
+    /// `(root_hash, per_key_sums)` — one `(in_key, i128)` pair per
     /// resolved In branch. Order depends on `left_to_right`:
     /// `true` returns serialized lex-ascending, `false` returns
     /// serialized lex-descending.
@@ -44,7 +44,7 @@ impl DriveDocumentSumQuery<'_> {
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, i64)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, i128)>), Error> {
         match platform_version
             .drive
             .methods

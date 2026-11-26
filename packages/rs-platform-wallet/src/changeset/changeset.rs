@@ -2259,13 +2259,13 @@ pub(crate) fn account_address_pool_entries<'a>(
     pools
         .into_iter()
         .filter_map(|pool| {
-            let addresses: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            let addresses: Vec<AddressInfo> = pool.addresses().values().cloned().collect();
             if addresses.is_empty() {
                 return None;
             }
             Some(AccountAddressPoolEntry {
                 account_type,
-                pool_type: pool.pool_type,
+                pool_type: pool.pool_type(),
                 addresses,
             })
         })
@@ -3870,7 +3870,6 @@ mod tests {
         let pubkey =
             dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
         let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
-        let script_pubkey = address.script_pubkey();
         let path = DerivationPath::from(vec![
             ChildNumber::from_normal_idx(0).expect("valid child number"),
             ChildNumber::from_normal_idx(index).expect("valid child number"),
@@ -3880,17 +3879,10 @@ mod tests {
             pool_type,
             info: AddressInfo {
                 address,
-                script_pubkey,
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
                 state: AddressState::Used,
-                tx_count: 0,
-                total_received: 0,
-                total_sent: 0,
-                balance: 0,
-                label: None,
-                metadata: BTreeMap::new(),
             },
         }
     }

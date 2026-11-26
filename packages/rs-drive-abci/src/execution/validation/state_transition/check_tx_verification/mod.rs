@@ -3,6 +3,7 @@ pub(crate) mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -11,6 +12,22 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 use crate::execution::check_tx::CheckTxLevel;
+
+/// What check tx builds for a transition it admits: the execution event fee validation judges,
+/// and the bounds among what it reserved on top of the transition's estimate for work a block
+/// bills where check tx validated no state (`CheckTxReservation`: a `chooseFirst` scan's budget
+/// and its competitors' hashes, a `refersTo` lookup query's allowance). The event's execution
+/// operations hold every reserved operation, so fee validation holds the payer to them all;
+/// `reserved_bounds` holds the bounds again, so check tx can leave them out of the `gas_wanted`
+/// it reports, which Tenderdash fills a block's gas with: a bound is what a block may bill, not
+/// what it is expected to.
+#[derive(Clone)]
+pub(in crate::execution) struct CheckTxExecutionEvent<'a> {
+    /// The execution event, the reserved operations among its execution operations.
+    pub(in crate::execution) event: ExecutionEvent<'a>,
+    /// The bounds reserved on top of the transition's estimate.
+    pub(in crate::execution) reserved_bounds: Vec<ValidationOperation>,
+}
 
 /// === CHECK TX: NEW ====
 /// Full validation for identity create and identity top up
@@ -29,7 +46,7 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
     check_tx_level: CheckTxLevel,
     proof_verifier: &CheckTxProofVerifier,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
+) -> Result<ConsensusValidationResult<Option<CheckTxExecutionEvent<'a>>>, Error> {
     match platform_version
         .drive_abci
         .validation_and_processing

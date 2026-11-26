@@ -168,6 +168,12 @@ pub enum WalletStorageError {
     #[error("blob/column decode failed: {reason}")]
     BlobDecode { reason: &'static str },
 
+    /// A row's encoding stamp names a shape this build has no decoder for:
+    /// a corrupt stamp, or one a later build wrote. `column` is the stamp
+    /// column, `format` the value it held.
+    #[error("{column} holds encoding {format}, which this build cannot decode")]
+    UnknownBlobFormat { column: &'static str, format: i64 },
+
     /// A typed-column decode failed because an underlying
     /// `dashcore::hashes` deserialisation rejected the bytes.
     #[error("hash decode failed")]
@@ -743,6 +749,7 @@ impl WalletStorageError {
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
             | Self::BlobDecode { .. }
+            | Self::UnknownBlobFormat { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::AddressDecode { .. }
@@ -857,6 +864,7 @@ impl WalletStorageError {
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
             | Self::BlobDecode { .. }
+            | Self::UnknownBlobFormat { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::AddressDecode { .. }
@@ -935,6 +943,7 @@ impl WalletStorageError {
             Self::BincodeEncode { .. } => "bincode_encode",
             Self::BincodeDecode { .. } => "bincode_decode",
             Self::BlobDecode { .. } => "blob_decode",
+            Self::UnknownBlobFormat { .. } => "unknown_blob_format",
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::AddressDecode { .. } => "address_decode",

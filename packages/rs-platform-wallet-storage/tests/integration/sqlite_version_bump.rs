@@ -48,8 +48,8 @@ fn one_external_info(seed_byte: u8) -> AddressInfo {
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type == AddressPoolType::External && !pool.addresses.is_empty() {
-                return pool.addresses.values().next().cloned().unwrap();
+            if pool.pool_type() == AddressPoolType::External && !pool.addresses().is_empty() {
+                return pool.addresses().values().next().cloned().unwrap();
             }
         }
     }

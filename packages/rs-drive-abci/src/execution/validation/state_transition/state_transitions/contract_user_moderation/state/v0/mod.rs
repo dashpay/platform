@@ -15,7 +15,7 @@ use crate::execution::validation::state_transition::common::validate_identity_ex
 use crate::execution::validation::state_transition::state_transitions::batch::{
     fetch_document_with_id, fetch_document_with_id_and_storage_flags,
     read_property_constraint_aggregates_for_moderator_change,
-    read_property_constraint_aggregates_for_restore,
+    read_property_constraint_aggregates_for_restore, validate_summed_value_within_type_total,
 };
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -193,6 +193,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                     &contract_fetch_info,
                     document_type_name,
                     document.as_slice(),
+                    false,
                     execution_context,
                     tx,
                     platform_version,
@@ -294,7 +295,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         }
         // The lists are contract-wide: a seated team uses one when the declaration gives it
         // the ability on some moderated document type.
-        let ability = ability_of(list);
+        let ability = list.ability();
         if moderators.lacks(ability, None) {
             return refuse(
                 ContractModerationAbilityNotGrantedError::new(contract_id, ability, None).into(),
@@ -1410,6 +1411,10 @@ fn document_deletion_context<C: CoreRPCLike>(
 /// action carries that identity, so that Drive writes the change in its name and the storage
 /// stays where it is. Without it the read is generation 0's and the action names nobody, which
 /// writes the change in the name of the document's owner.
+///
+/// The change never writes the property its type sums, so the total the type keeps of it is
+/// not read: registration requires a summed property and refuses a required property among
+/// the fields moderators write.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn transform_document_fields_change_v0<C: CoreRPCLike>(
     transition: &ContractUserModerationTransition,
@@ -1730,14 +1735,19 @@ pub(super) fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// creation fee, and no fee agreement is asked: a moderator undoes a moderation, it does not
 /// create content. The document comes back as it was, `$updatedAt` included, so a type's
 /// deletion window (`moderatorAbilities.deleteWithin`) may have run out on it by then.
+///
+/// `holds_type_total` is what generation 1 of the transformation asks for and generation 0
+/// does not: the restore is held to the total its type keeps of its summed property, as a
+/// create is. Generation 0 reads no total.
 #[allow(clippy::too_many_arguments)]
-fn transform_document_restore_v0<C: CoreRPCLike>(
+pub(super) fn transform_document_restore_v0<C: CoreRPCLike>(
     transition: &ContractUserModerationTransition,
     platform: &PlatformRef<C>,
     block_info: &BlockInfo,
     contract_fetch_info: &Arc<DataContractFetchInfo>,
     document_type_name: &str,
     document_bytes: &[u8],
+    holds_type_total: bool,
     execution_context: &mut StateTransitionExecutionContext,
     tx: TransactionArg,
     platform_version: &PlatformVersion,
@@ -2018,6 +2028,29 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
         }
     }
 
+    // The restore puts the document's summed value back in its type's sums, so it is held to
+    // the total the type keeps of it, as a create is: other writes may have raised the total
+    // while the document was gone.
+    if holds_type_total {
+        let result = validate_summed_value_within_type_total(
+            contract,
+            document_type,
+            document.properties(),
+            None,
+            platform.drive,
+            block_info,
+            tx,
+            execution_context,
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action(),
+                result.errors,
+            ));
+        }
+    }
+
     let removal = ContractDocumentRemoval {
         restoration: Some(ContractDocumentRestoration {
             moderator_id,
@@ -2036,15 +2069,6 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
         )
         .into(),
     ))
-}
-
-/// The ability a seated team needs to edit `list`, putting an identity on it or taking one off.
-fn ability_of(list: ContractModerationList) -> ModerationAbility {
-    match list {
-        ContractModerationList::Banlist => ModerationAbility::Ban,
-        ContractModerationList::Suspensions => ModerationAbility::Suspend,
-        ContractModerationList::Warnings => ModerationAbility::Warn,
-    }
 }
 
 /// The list the action edits, `None` for an action on a document, which edits none.

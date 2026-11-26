@@ -17,9 +17,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.example.services.shielded.asWalletDrainWallet
 import org.dashfoundation.example.state.AppState
 import org.dashfoundation.example.state.AppUiState
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.hexToBytes
 
 private val Context.preferencesStore by preferencesDataStore(name = "example_prefs")
 
@@ -125,6 +127,43 @@ class AppContainer(private val context: Context) {
         )
 
     /**
+     * In-flight shields from an identity's balance (type 21), top-ups of
+     * an identity from the shielded pool (type 22) and shielded tips to a
+     * DashPay username, held past the screen
+     * that started them so a rotation or tab switch cannot start a second
+     * payment while the first is proving.
+     */
+    val shieldedIdentityPaymentCoordinator =
+        org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator(
+            applicationScope,
+        )
+
+    /**
+     * In-flight creates of private document entries (type 29) and the requests that may have
+     * gone through, held past the screen that started them so going back or a rotation cannot
+     * lose a create's outcome or start the same create again.
+     */
+    val privateDocumentEntryCreateCoordinator =
+        org.dashfoundation.example.services.shielded.PrivateDocumentEntryCreateCoordinator(
+            applicationScope,
+        )
+
+    /**
+     * Core to shielded "Max" transfers: the stored operation ids and what
+     * Rust last reported for each. Port of the `WalletDrainCoordinator` iOS
+     * hosts on `PlatformWalletManager`. App-scoped so a transfer survives
+     * its screen, and reads the SDK database's `wallet_drain_operations`
+     * table, so a stored id survives the process.
+     */
+    val walletDrainCoordinator =
+        org.dashfoundation.example.services.shielded.WalletDrainCoordinator(
+            store = org.dashfoundation.example.services.shielded.RoomWalletDrainOperationStore(
+                database.walletDrainOperationDao(),
+            ),
+            fundingCoordinator = shieldedFundCoordinator,
+        )
+
+    /**
      * Ephemeral pricing / purchase-eligibility for the state-transition
      * catalog — port of `TransitionState.swift`. App-scoped (the Swift
      * `@StateObject` lives on the app) so it survives category ↔ detail
@@ -179,6 +218,12 @@ class AppContainer(private val context: Context) {
         )
         platformBalanceSyncService.configure(manager)
 
+        // Ask Rust what became of every Max transfer stored before the last
+        // process ended (← the launch reconcile in `SwiftExampleAppApp.swift`).
+        // Its own coroutine: each read loads the wallet list from the store,
+        // and activation must not wait on that.
+        applicationScope.launch { reconcileWalletDrains(manager) }
+
         // Bind the wallet-scoped services against the deterministic first
         // wallet now, and re-bind whenever the wallet set changes (create /
         // import / remove) so a wallet created mid-session binds and starts
@@ -214,6 +259,28 @@ class AppContainer(private val context: Context) {
                     ).takeIf { p.isSyncing },
                 )
             }
+        }
+    }
+
+    /**
+     * Read the status of every stored Max transfer of [manager]'s network
+     * whose wallet is loaded. Sends nothing.
+     */
+    private suspend fun reconcileWalletDrains(
+        manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
+    ) {
+        if (!shieldedService.isAvailable) return
+        try {
+            walletDrainCoordinator.refreshFromStore()
+            walletDrainCoordinator.reconcile(
+                network = manager.network,
+                walletIds = manager.wallets.value.keys.map { it.hexToBytes() },
+                wallet = manager.asWalletDrainWallet(),
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to reconcile saved Max transfers", e)
         }
     }
 
@@ -389,6 +456,7 @@ class AppContainer(private val context: Context) {
             appState.initializeSdk()
             loadKnownContractsIntoSdk()
             backfillOncePerIdentityDistributions()
+            rederiveTokenRules()
             activateManager()
             _bootstrapState.value = BootstrapState.Ready
         } catch (e: Exception) {
@@ -413,6 +481,28 @@ class AppContainer(private val context: Context) {
             android.util.Log.i(TAG, "Backfilled $filled once-per-identity token blocks")
         } catch (e: Exception) {
             android.util.Log.w(TAG, "Failed to backfill once-per-identity token blocks", e)
+        }
+    }
+
+    /**
+     * Repair token rows whose rule columns no longer match their stored
+     * contract, such as rows written before the rules parser read rs-dpp's
+     * `$type` action-taker maps (every rule stored as "NoOne", so Mint, Burn,
+     * Freeze and the other rule-gated actions show as locked). Runs on every
+     * launch rather than once, so rows an older build writes again after a
+     * downgrade are repaired too; unchanged rows are not written
+     * (`TokenMaterializer.rederiveRules`). Best-effort and non-fatal.
+     */
+    private suspend fun rederiveTokenRules() {
+        try {
+            val contracts = database.dataContractDao().observeWithTokens().first()
+            val rewritten = org.dashfoundation.example.services.tokens.TokenMaterializer
+                .rederiveRules(contracts, database.tokenDao())
+            if (rewritten > 0) {
+                android.util.Log.i(TAG, "Re-derived the rules of $rewritten token rows")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to re-derive token rules", e)
         }
     }
 

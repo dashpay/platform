@@ -58,12 +58,34 @@ pub struct MockDashPlatformSdk {
     /// expectation reports, by the request's key ([Self::set_response_height_for]), over
     /// `response_heights_of`.
     response_heights_for: BTreeMap<Key, u64>,
+    /// The protocol version expectations registered now are encoded at, over the SDK's
+    /// ([Self::encode_expectations_at]); `None` for the SDK's.
+    encoding_version: Option<&'static PlatformVersion>,
 }
 
 impl MockDashPlatformSdk {
     /// Number of transport executions of this exact request, including failures.
     pub async fn request_count<R: Mockable>(&self, request: &R) -> usize {
         self.dapi.lock().await.request_count(request)
+    }
+
+    /// Expect a request that is not a proved fetch, such as a Core query, and
+    /// answer it with `response`.
+    #[cfg(test)]
+    pub(crate) async fn expect_request<R>(
+        &mut self,
+        request: &R,
+        response: R::Response,
+    ) -> Result<&mut Self, Error>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+    {
+        self.dapi
+            .lock()
+            .await
+            .expect(request, &Ok(mock_execution_response(response)))?;
+        Ok(self)
     }
 
     /// Returns true when requests should use proofs.
@@ -93,7 +115,21 @@ impl MockDashPlatformSdk {
             response_height: 0,
             response_heights_of: BTreeMap::new(),
             response_heights_for: BTreeMap::new(),
+            encoding_version: None,
         }
+    }
+
+    /// Encodes the expectations registered from now on at `version` instead of the SDK's own,
+    /// until called again with `None`; their answers are still decoded at the SDK's version
+    /// when a fetch reads them. For a test that prepares answers of a protocol version the
+    /// SDK under test has not reached yet, without advancing it.
+    #[cfg(test)]
+    pub(crate) fn encode_expectations_at(
+        &mut self,
+        version: Option<&'static PlatformVersion>,
+    ) -> &mut Self {
+        self.encoding_version = version;
+        self
     }
 
     /// Sets the block time, in milliseconds, the metadata of every response answered from an
@@ -133,6 +169,32 @@ impl MockDashPlatformSdk {
         self
     }
 
+    /// [Self::set_response_height_for] for the response to `query`, a fetch of many `O`
+    /// answered from an expectation.
+    pub fn set_response_height_for_many<K, O, Q, R>(&mut self, query: Q, height: u64) -> &mut Self
+    where
+        K: Ord,
+        O: FetchMany<K, R>,
+        Q: Query<<O as FetchMany<K, R>>::Query>,
+        R: FromIterator<(K, Option<O>)>
+            + MockResponse
+            + FromProof<
+                <O as FetchMany<K, R>>::Query,
+                Request = <O as FetchMany<K, R>>::Query,
+                Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
+            > + Sync
+            + Send
+            + Default,
+    {
+        let (rich, _) = self
+            .encode_rich_to_wire::<Q, <O as FetchMany<K, R>>::Query, <O as FetchMany<K, R>>::Request>(
+                query,
+                <O as FetchMany<K, R>>::prepare_query,
+            );
+        self.response_heights_for.insert(Key::new(&rich), height);
+        self
+    }
+
     pub(crate) fn set_sdk(&mut self, sdk: Sdk) {
         self.sdk.store(Some(Arc::new(sdk)));
     }
@@ -147,6 +209,9 @@ impl MockDashPlatformSdk {
     ///
     /// Panics when sdk is not set during initialization.
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
+        if let Some(version) = self.encoding_version {
+            return version;
+        }
         if let Some(sdk) = self.sdk.load().as_ref() {
             sdk.version()
         } else {
@@ -603,11 +668,7 @@ impl MockDashPlatformSdk {
         let mut dapi_guard = self.dapi.lock().await;
         dapi_guard.expect(
             &wire_request,
-            &Ok(ExecutionResponse {
-                inner: Default::default(),
-                retries: 0,
-                address: "http://127.0.0.1".parse().expect("failed to parse address"),
-            }),
+            &Ok(mock_execution_response(Default::default())),
         )?;
 
         Ok(())
@@ -720,6 +781,15 @@ fn load_expectation<T: TransportRequest>(
         ))
     })?;
     Ok(())
+}
+
+/// A transport answer from the mock DAPI client carrying `inner`.
+fn mock_execution_response<T>(inner: T) -> ExecutionResponse<T> {
+    ExecutionResponse {
+        inner,
+        retries: 0,
+        address: "http://127.0.0.1".parse().expect("failed to parse address"),
+    }
 }
 
 #[cfg(test)]

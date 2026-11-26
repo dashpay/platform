@@ -326,7 +326,6 @@ mod tests {
     use super::*;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
 
     fn platform_version(protocol_version: ProtocolVersion) -> &'static PlatformVersion {
         PlatformVersion::get(protocol_version).expect("expected a supported platform version")
@@ -514,13 +513,8 @@ mod tests {
     fn should_serve_token_market_only_from_its_activation_version() {
         let contracts = SystemDataContracts::new();
 
-        // Protocol version 16, the token marketplace's first, has no tables yet: the test
-        // version that selects the marketplace stands in for it.
-        let token_marketplace_version = platform_version(TEST_PROTOCOL_VERSION_5);
-        assert!(
-            token_marketplace_version.protocol_version
-                >= TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-        );
+        let token_marketplace_version =
+            platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION);
 
         for before in [14, TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1] {
             assert!(contracts

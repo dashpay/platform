@@ -1,5 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::data_contract::validate_document::is_unreadable_byte_array_refusal;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionOwned};
@@ -41,7 +42,13 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
     /// - a performed `TokenConfigUpdate` must leave its contract within the compiled size cap
     ///   (`DataContractCompiledMaxSizeExceededError`, 10282).
     ///
-    /// A failing action bumps the signer's nonce, as every advanced structure failure does.
+    /// A failing action bumps the signer's nonce, as every advanced structure failure does but
+    /// one: a document whose byte array or identifier the document serializer cannot read as
+    /// bytes (`is_unreadable_byte_array_refusal`) is refused unpaid, its result carrying no
+    /// action. The refusal reads only the transition and its contract, so check_tx gives it and
+    /// no honest proposer holds such a batch: a proposer drops it and validators reject a block
+    /// holding it, as through protocol version 14, where serializing the document fails
+    /// internally. Charging for it would pay a proposer to add what check_tx refused.
     fn validate_advanced_structure_from_state_v2(
         &self,
         block_info: &BlockInfo,
@@ -60,6 +67,11 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
             platform_version,
         )?;
         if !result.is_valid() {
+            // Only the refusal alone: beside any other error the batch is charged as before
+            if matches!(result.errors.as_slice(), [error] if is_unreadable_byte_array_refusal(error))
+            {
+                return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+            }
             return Ok(result);
         }
 

@@ -7,22 +7,41 @@ import SwiftDashSDK
 ///
 /// Factored out of `IdentityDetailView.refreshIdentityData()` so other
 /// views that mutate an identity's keys (e.g. `KeyDetailView`'s
-/// **Disable Key** action) can refresh the persisted rows — and the
-/// `disabledAt` badge those rows drive — without a manual pull-to-
+/// **Disable Key** action) can refresh the persisted rows (and the
+/// `disabledAt` badge those rows drive) without a manual pull-to-
 /// refresh and without duplicating the parse/persist logic.
 ///
 /// Per `packages/swift-sdk/CLAUDE.md` this is strictly persist + load:
 /// it calls the already-existing `SDK.identityGet` FFI query, marshals
-/// the response into `IdentityPublicKey` values, and replaces the
-/// `PersistentPublicKey` rows. No derivation, no policy decisions, no
-/// orchestration of multi-step Rust pipelines.
+/// the keys with `PersistentPublicKey.fromFetchedIdentity(_:identityId:)`
+/// and merges them with `PersistentIdentity.mergeFetchedPublicKeys(_:)`.
+/// No derivation, no policy decisions, no orchestration of multi-step
+/// Rust pipelines.
 enum IdentityKeyRefresher {
     /// Re-fetch `identity`'s balance + public keys from Platform and
-    /// persist them, replacing the existing `PersistentPublicKey` rows.
+    /// persist them.
     ///
-    /// Carries over any `privateKeyKeychainIdentifier` we already knew
-    /// for a given keyId so a refresh doesn't orphan the matching
-    /// Keychain reference.
+    /// When `wallet` holds the identity, the refresh is the wallet's own
+    /// proved one (`refreshIdentity`): Rust folds the fetch into its copy
+    /// and upserts the changed key rows through the persister, keeping
+    /// each row's wallet id, derivation path and Keychain reference, and
+    /// never letting a lagging node roll back a raise or a disable. Swift
+    /// does not write those rows itself then, so the wallet stays their
+    /// only writer.
+    ///
+    /// Without a wallet (an identity only looked up, not held), the
+    /// identity is fetched and its keys go through
+    /// `PersistentIdentity.mergeFetchedPublicKeys(_:)`: a key whose id,
+    /// type and bytes are unchanged keeps its row, and with it the
+    /// `privateKeyKeychainIdentifier`, `walletId` and
+    /// `identityDerivationPath` that let it sign. A new key gets a new row.
+    /// A stored key the response lacks keeps its row, since Platform never
+    /// removes a key and such a response predates it. Keychain items are
+    /// left alone.
+    ///
+    /// The keys are read before anything is written: when the response's
+    /// key list cannot be read completely, this throws and changes nothing,
+    /// the balance included.
     ///
     /// Mutates SwiftData on the `modelContext`'s actor; call from the
     /// main actor (the SwiftData container the views use is main-actor
@@ -30,14 +49,44 @@ enum IdentityKeyRefresher {
     @MainActor
     static func refreshBalanceAndKeys(
         identity: PersistentIdentity,
+        wallet: ManagedPlatformWallet?,
         sdk: SDK,
         modelContext: ModelContext
     ) async throws {
+        if let wallet {
+            try await wallet.refreshIdentity(identityId: identity.identityId)
+            return
+        }
+        // Held by a wallet that is not loaded right now: its rows carry the
+        // wallet id and derivation path the signer needs, which a rebuild
+        // from a plain fetch would drop. Leave them to the wallet.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("The wallet holding this identity is not loaded; open the wallet and refresh again.")
+        }
+
         let fetchedIdentity = try await sdk.identityGet(
             identityId: identity.identityIdBase58
         )
+        // Wallet discovery may have claimed the identity, and written its
+        // rows with their signing metadata, while the fetch was out. This
+        // check narrows that window but does not close it: the wallet's
+        // persister commits from its own context off the main actor, so a
+        // claim can still land before the save below. Tracked in #6074.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("A wallet took over this identity during the refresh; refresh it again from the wallet.")
+        }
 
-        // Balance — accept either the numeric or string-encoded form
+        // Public keys: read the whole fetched set before writing anything.
+        // A key read only in part would be written over its stored row, so
+        // a list that cannot be read completely is not applied at all.
+        guard let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
+            fetchedIdentity,
+            identityId: identity.identityId
+        ) else {
+            throw SDKError.serializationError("This identity's keys could not be read from the response, so nothing was changed. Refresh again.")
+        }
+
+        // Balance: accept either the numeric or string-encoded form
         // the FFI may hand back depending on magnitude.
         if let balanceValue = fetchedIdentity["balance"] {
             if let balanceNum = balanceValue as? NSNumber {
@@ -58,69 +107,9 @@ enum IdentityKeyRefresher {
             }
         }
 
-        // Public keys — parse the freshly-fetched set.
-        var parsedPublicKeys: [IdentityPublicKey] = []
-        if let publicKeysArray = fetchedIdentity["publicKeys"] as? [[String: Any]] {
-            parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
-                guard let id = keyData["id"] as? Int,
-                      let purpose = keyData["purpose"] as? Int,
-                      let securityLevel = keyData["securityLevel"] as? Int,
-                      let keyType = keyData["type"] as? Int,
-                      let dataStr = keyData["data"] as? String,
-                      let data = Data(base64Encoded: dataStr) else {
-                    return nil
-                }
-
-                let readOnly = keyData["readOnly"] as? Bool ?? false
-                // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
-                // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
-                // as a decimal string above it. `UInt64(jsonValue:)` reads both
-                // shapes; a plain `as? UInt64` would drop the large ones.
-                let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
-                // Usage limits (protocol version 14). Present only on a
-                // version 1 key: `totalBudget` is credits for the key's
-                // whole lifetime, `expiresAt` is block time in
-                // milliseconds. Dropping them here would persist a
-                // limited key as unlimited.
-                let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
-                let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
-
-                return IdentityPublicKey(
-                    id: UInt32(id),
-                    purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                    securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                    contractBounds: nil,
-                    keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                    readOnly: readOnly,
-                    data: data,
-                    disabledAt: disabledAt,
-                    totalBudget: totalBudget,
-                    expiresAt: expiresAt
-                )
-            }
-        }
-
-        // Replace the PersistentIdentity's public key rows with the
-        // freshly-fetched set, carrying over the keychain identifier
-        // for any key we already knew about so we don't lose the
-        // matching private key reference after a refresh.
-        let identifierByKeyId: [Int32: String] = Dictionary(
-            uniqueKeysWithValues: identity.publicKeys.compactMap { key in
-                guard let identifier = key.privateKeyKeychainIdentifier else { return nil }
-                return (key.keyId, identifier)
-            }
-        )
-        identity.publicKeys.removeAll()
-        let identityHex = identity.identityIdBase58
-        for publicKey in parsedPublicKeys {
-            guard let persistentKey = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
-                continue
-            }
-            if let identifier = identifierByKeyId[persistentKey.keyId] {
-                persistentKey.privateKeyKeychainIdentifier = identifier
-            }
-            identity.addPublicKey(persistentKey)
-        }
+        // Merge the fetched keys into the existing rows, so an unchanged key
+        // keeps its Keychain identifier, wallet id and derivation path.
+        identity.mergeFetchedPublicKeys(fetchedKeys)
         try? modelContext.save()
     }
 }

@@ -40,6 +40,7 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
@@ -70,9 +71,9 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val wallet = rememberManagedWalletFor(identity?.walletId)
 
     var amountText by rememberSaveable { mutableStateOf("50000000") } // 0.5 DASH in duffs

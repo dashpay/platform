@@ -55,6 +55,8 @@ export const TAGS = [
   'freeze',        // freeze / unfreeze / destroy-frozen balances
   'funding',       // requires asset-lock / faucet funding to run
   'masternode',    // requires a masternode key
+  'restart',       // kills and relaunches the app mid-flow to check recovery
+  'proposal',      // decision proposals (create / vote / tally)
 ];
 
 // v4 -> v5 testId remap. MultiWallet (MW-*) and Group (GRP-*) ids were folded into
