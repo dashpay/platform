@@ -481,10 +481,22 @@ describe('setupPlatformTask', () => {
     const answers = () => ({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
 
     it('should write config.json and render the service files before it reports success', async () => {
+      // What reaches the disk is what the config file holds when it is
+      // written, not what it holds once the task has finished.
+      let written;
+      configFileRepository.write.callsFake((file) => {
+        written = file.toObject().configs[config.getName()];
+      });
+
       const { ctx, error } = await run(answers());
 
       expect(error).to.be.null();
       expect(configFileRepository.write).to.have.been.calledOnceWithExactly(configFile);
+      expect(written.platform.drive.tenderdash.node).to.deep.equal({
+        key: registeredKey,
+        id: registration.platformNodeId,
+      });
+      expect(written.platform.gateway.ssl.enabled).to.be.true();
       expect(writeConfigTemplates).to.have.been.calledOnce();
       expect(writeConfigTemplates.firstCall.args[0]).to.equal(ctx.config);
       expect(writeConfigTemplates).to.have.been.calledAfter(configFileRepository.write);
