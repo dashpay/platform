@@ -689,6 +689,25 @@ describe('Setup command', () => {
       expect(retried.message).to.include('dashmate ssl obtain --config testnet')
         .and.not.include('--force');
     });
+
+    // Compose creates a missing bind-mount source as a directory. ssl obtain
+    // --force would create a certificate and then fail to write a file there.
+    it('should tell a retry to remove directories where the certificate files go, before obtaining', async () => {
+      const config = configFile.getConfig('testnet');
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+      fs.mkdirSync(path.join(sslDir, 'bundle.crt'), { recursive: true });
+      fs.mkdirSync(path.join(sslDir, 'private.key'));
+
+      const { message } = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(message).to.include(`rmdir ${path.join(sslDir, 'bundle.crt')}`)
+        .and.include(`rmdir ${path.join(sslDir, 'private.key')}`)
+        .and.include('dashmate ssl obtain --force --config testnet');
+      expect(message.indexOf('rmdir')).to.be.below(message.indexOf('ssl obtain'));
+    });
   });
 
   describe('full setup of a preset already set up', () => {

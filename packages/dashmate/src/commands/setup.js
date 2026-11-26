@@ -504,7 +504,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
     let setupState = getPlatformSetupState(config, {
       defaultConfig,
       certificateFiles: findCertificateFiles(homeDir, preset),
-      isCertificateUsable: inspectCertificateFiles(homeDir, preset).isUsable,
+      certificate: inspectCertificateFiles(homeDir, preset),
     });
     if (setupState.state !== PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED) {
       refuse(describePlatformSetupState(setupState, preset));
@@ -812,6 +812,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
   static reportPlatformSetupFailure(ctx, homeDir) {
     const flag = renderConfigFlag(ctx.preset);
     const certificateFiles = findCertificateFiles(homeDir, ctx.preset);
+    const certificate = inspectCertificateFiles(homeDir, ctx.preset);
 
     let message;
 
@@ -827,7 +828,8 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
         markers: certificateFiles,
         certificateId: ctx.config.get('platform.gateway.ssl.providerConfigs.zerossl.id'),
-        isCertificateInstalled: inspectCertificateFiles(homeDir, ctx.preset).isUsable,
+        isCertificateInstalled: certificate.isUsable,
+        certificateDirectories: certificate.directories,
       }, ctx.preset);
     } else if (ctx.isCertificateStepStarted) {
       const lines = ['Platform setup did not finish, and nothing was saved.'];

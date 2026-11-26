@@ -235,7 +235,7 @@ describe('getPlatformSetupState', () => {
 
       const setupState = stateOf(config, {
         certificateFiles: [`${sslDir}/bundle.crt`, `${sslDir}/private.key`],
-        isCertificateUsable: true,
+        certificate: { isUsable: true, directories: [] },
       });
       const text = describePlatformSetupState(setupState, 'testnet');
 
@@ -257,7 +257,7 @@ describe('getPlatformSetupState', () => {
 
       const setupState = stateOf(config, {
         certificateFiles: [`${sslDir}/bundle.crt`, `${sslDir}/private.key`],
-        isCertificateUsable: false,
+        certificate: { isUsable: false, directories: [] },
       });
 
       expect(describePlatformSetupState(setupState, 'testnet'))

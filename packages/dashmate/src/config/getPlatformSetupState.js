@@ -1,4 +1,5 @@
 import renderConfigFlag from '../util/renderConfigFlag.js';
+import quoteShellArgument, { isShellQuotable } from '../util/quoteShellArgument.js';
 import renderNodeKeyBackup, { NODE_KEY_PATH } from './renderNodeKeyBackup.js';
 
 export const PLATFORM_SETUP_STATE = {
@@ -64,8 +65,8 @@ function isCoreSetUp(config, defaultConfig) {
  * @param {Config} [options.defaultConfig] - the preset's defaults
  * @param {string[]} [options.certificateFiles] - gateway certificate files found
  * @param {string[]} [options.dataVolumes] - Platform data volumes that exist
- * @param {boolean} [options.isCertificateUsable] - whether the gateway can
- *  serve TLS from its certificate files, by `inspectCertificateFiles`
+ * @param {{ isUsable: boolean, directories: string[] }} [options.certificate] -
+ *  the gateway certificate files, by `inspectCertificateFiles`
  * @return {{ state: string, markers: string[] }} markers are option paths,
  *  file paths and volumes, never values
  */
@@ -73,7 +74,7 @@ export default function getPlatformSetupState(config, {
   defaultConfig,
   certificateFiles = [],
   dataVolumes = [],
-  isCertificateUsable = false,
+  certificate = { isUsable: false, directories: [] },
 } = {}) {
   if (!isCoreSetUp(config, defaultConfig)) {
     return { state: PLATFORM_SETUP_STATE.CORE_NOT_SET_UP, markers: [] };
@@ -92,7 +93,8 @@ export default function getPlatformSetupState(config, {
       state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
       markers: certificateFiles,
       certificateId: zeroSsl.id,
-      isCertificateInstalled: isCertificateUsable,
+      isCertificateInstalled: certificate.isUsable,
+      certificateDirectories: certificate.directories,
     };
   }
 
@@ -133,6 +135,7 @@ export default function getPlatformSetupState(config, {
  *   markers: string[],
  *   certificateId?: string,
  *   isCertificateInstalled?: boolean,
+ *   certificateDirectories?: string[],
  * }} setupState
  * @param {string} configName
  * @return {string}
@@ -142,6 +145,7 @@ export function describePlatformSetupState({
   markers,
   certificateId,
   isCertificateInstalled,
+  certificateDirectories = [],
 }, configName) {
   const flag = renderConfigFlag(configName);
   const setupCommand = `dashmate setup --platform ${flag}`;
@@ -168,7 +172,18 @@ export function describePlatformSetupState({
         ].join('\n');
       }
 
+      // Compose creates a missing bind-mount source as a directory, and ssl
+      // obtain cannot write a file over one.
+      const removeDirectories = certificateDirectories.length === 0 ? [] : [
+        'Docker created directories where the gateway\'s certificate files go, as it does for a'
+          + ' file it mounts that is missing. Remove them first:',
+        ...certificateDirectories.map((directory) => (isShellQuotable(directory)
+          ? `  rmdir ${quoteShellArgument(directory)}`
+          : `  rmdir ${JSON.stringify(directory)}    (escaped, not to paste)`)),
+      ];
+
       return [
+        ...removeDirectories,
         `An earlier Platform setup of ${configName} stopped after it created a ZeroSSL certificate`,
         'and before the certificate was installed. Its answers were saved, but that certificate',
         'cannot be completed. To finish the setup:',
