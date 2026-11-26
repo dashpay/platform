@@ -2349,7 +2349,39 @@ pub(crate) fn sdk_payment_delivery(error: &dash_sdk::Error) -> PaymentDelivery {
         {
             PaymentDelivery::NotSent
         }
-        _ => PaymentDelivery::MaybeSent,
+        // Every other SDK failure may follow a dispatch. Listed, not
+        // wildcarded: a new SDK variant must be classed here before it builds,
+        // so a pre-send refusal cannot fall into `MaybeSent` silently.
+        dash_sdk::Error::Config(_)
+        | dash_sdk::Error::InvalidRequest(_)
+        | dash_sdk::Error::Drive(_)
+        | dash_sdk::Error::DriveProofError(..)
+        | dash_sdk::Error::Protocol(_)
+        | dash_sdk::Error::Proof(_)
+        | dash_sdk::Error::InvalidProvedResponse(_)
+        | dash_sdk::Error::ExecutionNotProved(_)
+        | dash_sdk::Error::StateTransitionResultUnconfirmed(_)
+        | dash_sdk::Error::DapiClientError(_)
+        | dash_sdk::Error::DapiMocksError(_)
+        | dash_sdk::Error::CoreError(_)
+        | dash_sdk::Error::MerkleBlockError(_)
+        | dash_sdk::Error::CoreClientError(_)
+        | dash_sdk::Error::MissingDependency(..)
+        | dash_sdk::Error::TotalCreditsNotFound
+        | dash_sdk::Error::EpochNotFound
+        | dash_sdk::Error::TimeoutReached(..)
+        | dash_sdk::Error::AlreadyExists(_)
+        | dash_sdk::Error::InvalidCreditTransfer(_)
+        | dash_sdk::Error::NonceOverflow(_)
+        | dash_sdk::Error::IdentityNonceNotFound(_)
+        | dash_sdk::Error::DriveInternalError(_)
+        | dash_sdk::Error::Generic(_)
+        | dash_sdk::Error::ContextProviderError(_)
+        | dash_sdk::Error::Cancelled(_)
+        | dash_sdk::Error::StaleNode(_)
+        | dash_sdk::Error::StateTransitionBroadcastError(_)
+        | dash_sdk::Error::NoAvailableAddressesToRetry(_)
+        | dash_sdk::Error::EncryptedFor(_) => PaymentDelivery::MaybeSent,
     }
 }
 
