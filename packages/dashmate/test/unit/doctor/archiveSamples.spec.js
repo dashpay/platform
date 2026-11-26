@@ -181,6 +181,20 @@ describe('archiveSamples', () => {
       expect(archived).to.contain(`auth ${'*'.repeat('alpha123456beta'.length)} rejected`);
     });
 
+    it('should scrub a nested password from a log that echoes the URL holding it', async () => {
+      const inner = 'https://innerUser:long!Password7Qx@inner.example.com/';
+      const outer = `https://acme.example.com/directory?${new URLSearchParams({ upstream: inner })}`;
+
+      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl', outer);
+
+      samples.setServiceInfo('gateway', 'stdOut', `lego: using directory ${outer}\n`);
+
+      const archived = await archiveAndRead();
+
+      expect(archived).to.not.contain('long%21Password7Qx');
+      expect(archived).to.contain('lego: using directory https://acme.example.com/directory?upstream=');
+    });
+
     it('should mask the whole of a secret that contains another', async () => {
       config.set('core.rpc.users.tenderdash.password', 'nestedSecret1');
       config.set('core.rpc.users.quorum_list.password', 'nestedSecret1Tail9');

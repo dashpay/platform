@@ -168,6 +168,20 @@ describe('obfuscateConfig', () => {
       expect(obfuscateUrl(url).obfuscatedUrl).to.equal(url);
     });
 
+    // A query built with URLSearchParams escapes more than encodeURIComponent
+    // does, `!` among it
+    it('should find credentials from a query value as a form-encoded query writes them', () => {
+      const inner = 'https://innerUser:long!Password7Qx@inner.example.com/';
+      const { config } = obfuscateUrl(
+        `https://acme.example.com/directory?${new URLSearchParams({ upstream: inner })}`,
+      );
+
+      expect(getConfigSecretValues(config)).to.include.members([
+        'long!Password7Qx',
+        'long%21Password7Qx',
+      ]);
+    });
+
     // A service logs the password as it uses it, not as the URL escapes it
     it('should find the password of a URL inside other text as written and decoded', () => {
       const config = getBaseConfigFactory()();

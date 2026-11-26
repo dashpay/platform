@@ -226,10 +226,16 @@ function getUrlCredentials(value, nesting = 0) {
     }
 
     // A URL in a query value is read decoded, and its credentials are also
-    // looked for as the outer URL writes them, encoded once more
+    // looked for as the outer URL writes them, encoded once more: by
+    // encodeURIComponent, or by form encoding as URLSearchParams does, which
+    // escapes more
     for (const queryValue of getDecodedQueryValues(url)) {
       for (const credential of getUrlCredentials(queryValue, nesting + 1)) {
-        credentials.push(credential, encodeURIComponent(credential));
+        credentials.push(
+          credential,
+          encodeURIComponent(credential),
+          new URLSearchParams([['', credential]]).toString().slice(1),
+        );
       }
     }
   }
