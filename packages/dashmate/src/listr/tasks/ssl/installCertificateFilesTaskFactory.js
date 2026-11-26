@@ -3,7 +3,7 @@ import { Listr } from 'listr2';
 
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import validateFileExists from '../../prompts/validators/validateFileExists.js';
-import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
+import validateCertificateFilePaths from '../../prompts/validators/validateCertificateFilePaths.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask
@@ -51,27 +51,7 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
                   validate: validateFileExists,
                 },
               ],
-              validate: ({ chainFilePath, privateFilePath }) => {
-                if (!validateFileExists(chainFilePath)) {
-                  return 'certificate chain file path is not valid';
-                }
-
-                if (!validateFileExists(privateFilePath)) {
-                  return 'certificate key file path is not valid';
-                }
-
-                if (chainFilePath === privateFilePath) {
-                  return 'the same path for both files';
-                }
-
-                const isValid = validateSslCertificateFiles(chainFilePath, privateFilePath);
-
-                if (!isValid) {
-                  return 'The certificate and private key do not match';
-                }
-
-                return true;
-              },
+              validate: validateCertificateFilePaths,
             }, { interactive });
           }
 
