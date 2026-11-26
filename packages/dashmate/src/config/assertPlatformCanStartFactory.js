@@ -6,7 +6,10 @@ import getPlatformSetupState, {
 } from './getPlatformSetupState.js';
 import { findCertificateFiles, inspectCertificateFiles } from './getPlatformArtefactsFactory.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
-import findLocalGroupConfigsNotRebuilt, { LOCAL_GROUP_MEMBER_NAME } from './findLocalGroupConfigsNotRebuilt.js';
+import findLocalGroupConfigsNotRebuilt, {
+  LOCAL_GROUP_MEMBER_NAME,
+  renderLocalGroupSetupCommand,
+} from './findLocalGroupConfigsNotRebuilt.js';
 import { PRESET_LOCAL, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
 import quoteShellArgument, { isShellQuotable } from '../util/quoteShellArgument.js';
 
@@ -189,7 +192,7 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
         refuse(name, problem, [
           `Set the ${groupName} group up again with:`,
           `  dashmate group reset --group ${groupName} --hard`,
-          `  dashmate setup ${groupName}`,
+          `  ${renderLocalGroupSetupCommand(configFile, [name])}`,
         ].join('\n'));
       }
 

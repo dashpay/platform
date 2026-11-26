@@ -50,7 +50,7 @@ If a configuration for the specified preset already exists, the command will sug
 
 Setup refuses, changing nothing, when:
 
-- the preset is `local` (set the group up again with `dashmate group reset --group local --hard` and `dashmate setup local`; when the group also holds a config `setup local` does not build, the message names it instead, because the reset would remove it for good), or not a preset;
+- the preset is `local` (set the group up again with `dashmate group reset --group local --hard` and `dashmate setup local`, with `--node-count` for a group of more than three masternodes, as the message gives it; when the group also holds a config `setup local` does not build, the message names it instead, because the reset would remove it for good), or not a preset;
 - Core was never set up (run `dashmate setup <preset>`);
 - Platform was configured: a masternode's node key, TLS enabled, ZeroSSL settings, certificate files in the gateway directory, or Platform data volumes left by `reset --platform --hard --keep-data`. The message lists what it found, by path, and how to start over;
 - Platform services are running;

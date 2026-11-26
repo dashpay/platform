@@ -18,7 +18,9 @@ import readSecretInput, { getReadableByOthersWarning } from '../util/readSecretI
 import isInteractiveSession from '../util/isInteractiveSession.js';
 import promptOrThrow from '../util/promptOrThrow.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
-import findLocalGroupConfigsNotRebuilt from '../config/findLocalGroupConfigsNotRebuilt.js';
+import findLocalGroupConfigsNotRebuilt, {
+  renderLocalGroupSetupCommand,
+} from '../config/findLocalGroupConfigsNotRebuilt.js';
 import validateIPv4 from '../listr/prompts/validators/validateIPv4.js';
 import { readCertificateFilePair } from '../listr/prompts/validators/validateCertificateFilePaths.js';
 import createPortValidators, { findPortCollision } from '../listr/prompts/validators/createPortValidators.js';
@@ -608,7 +610,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
 
       throw new Error(`${unsupported} Set it up again with:\n`
         + '  dashmate group reset --group local --hard\n'
-        + '  dashmate setup local');
+        + `  ${renderLocalGroupSetupCommand(configFile)}`);
     }
 
     if (!PLATFORM_PRESETS.includes(preset)) {

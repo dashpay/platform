@@ -181,6 +181,21 @@ describe('Setup command', () => {
       expect(getPlatformArtefacts).to.not.have.been.called();
     });
 
+    // `setup local` builds three masternodes unless told otherwise.
+    it('should give the group setup the number of masternodes to build again', async () => {
+      const members = ['local_1', 'local_2', 'local_3', 'local_4', 'local_seed'].map((name) => {
+        const config = new Config(name, defaultConfigs.get('local').getStoredOptions());
+        config.set('group', 'local');
+
+        return config;
+      });
+      useConfigs([defaultConfigs.get('base'), ...members]);
+
+      const error = await setupPlatform({}, { preset: 'local' });
+
+      expect(error.message).to.match(/ {2}dashmate setup local --node-count=4$/);
+    });
+
     // The group's reset selects every config whose group is local, and one
     // created from local_seed inherits it. `setup local` would not build it
     // again.

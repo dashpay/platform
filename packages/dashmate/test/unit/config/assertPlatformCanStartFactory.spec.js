@@ -399,6 +399,16 @@ describe('assertPlatformCanStart', () => {
     expect(refusal.message).to.not.include('setup --platform');
   });
 
+  // `setup local` builds three masternodes unless told otherwise.
+  it('should give the group setup the number of masternodes to build again', () => {
+    const config = keylessLocalMember();
+    configFile.setConfigs([
+      config, ...['local_2', 'local_3', 'local_4', 'local_seed'].map(localGroupConfig),
+    ]);
+
+    expect(refusalOf(config).remedy).to.match(/ {2}dashmate setup local --node-count=4$/);
+  });
+
   // The group's reset selects every config whose group is local, and one
   // created from local_seed inherits it. `setup local` would not build it
   // again.
