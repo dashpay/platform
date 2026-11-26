@@ -211,6 +211,45 @@ describe('assertPlatformCanStart', () => {
     expect(refusal.message).to.not.include('setup --platform');
   });
 
+  // A hard reset removes a member of a group setup does not build, or a
+  // config that is not a preset, entirely, and setup cannot create it again:
+  // the remedy is the setting itself.
+  describe('a masternode without a key that setup cannot set up again', () => {
+    /**
+     * @param {string} name
+     * @param {string|null} group
+     * @return {Config}
+     */
+    async function keyless(name, group) {
+      const reset = await hardResetPlatform(setUp('testnet', { masternode: true }));
+      const config = new Config(name, reset.getStoredOptions());
+      config.set('group', group);
+
+      return config;
+    }
+
+    [
+      ['a member of a custom group', 'testnet_1', 'production'],
+      ['a config that is not a preset', 'evo-1', null],
+    ].forEach(([description, name, group]) => {
+      it(`should name the setting to fix for ${description}, and advise no reset`, async () => {
+        const config = await keyless(name, group);
+
+        const refusal = refusalOf(config);
+
+        expect(refusal.problem).to.equal('this masternode has no Platform node key');
+        expect(refusal.remedy).to.include('platform.drive.tenderdash.node.key')
+          .and.include('platform.drive.tenderdash.node.id')
+          .and.include(homeDir.joinPath('config.json'))
+          .and.include(`dashmate config render --config ${name}`)
+          .and.include(`dashmate config set platform.enable false --config ${name}`);
+        expect(refusal.remedy).to.not.include('reset --')
+          .and.not.include('dashmate setup')
+          .and.not.include('config set platform.drive.tenderdash.node');
+      });
+    });
+  });
+
   // update words the refusal itself.
   it('should carry the problem and the remedy apart', async () => {
     const config = await hardResetPlatform(setUp('testnet', { masternode: true }));

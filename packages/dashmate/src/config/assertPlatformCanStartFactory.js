@@ -6,7 +6,7 @@ import getPlatformSetupState, {
 } from './getPlatformSetupState.js';
 import { findCertificateFiles } from './getPlatformArtefactsFactory.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
-import { PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
+import { PRESET_LOCAL, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
 
 const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 
@@ -124,21 +124,41 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
     const setupState = getSetupState(config);
 
     if (key === null) {
+      const problem = 'this masternode has no Platform node key';
+      const runCoreAlone = `To run Core alone until then: dashmate config set platform.enable false ${flag}`;
       const groupName = config.get('group');
 
-      // A group's identities, ports and peers belong to the whole group, and
-      // setting up Platform alone does not support them.
-      if (groupName) {
-        refuse(name, 'this masternode has no Platform node key', [
+      // The local group's identities, ports and peers belong to the whole
+      // group, which `setup local` builds again.
+      if (groupName === PRESET_LOCAL) {
+        refuse(name, problem, [
           `Set the ${groupName} group up again with:`,
           `  dashmate group reset --group ${groupName} --hard`,
           `  dashmate setup ${groupName}`,
         ].join('\n'));
       }
 
-      refuse(name, 'this masternode has no Platform node key', [
+      // Setup builds only the presets. A hard reset would remove a member of
+      // any other group, or a config with any other name, entirely, and
+      // nothing could create it again, so the remedy is the setting itself.
+      // `config set` would take the key on its command line.
+      if (groupName || !PLATFORM_PRESETS.includes(name)) {
+        refuse(name, problem, [
+          ...(setupState.state === PLATFORM_SETUP_STATE.CORE_NOT_SET_UP
+            ? [describePlatformSetupState(setupState, name)]
+            : []),
+          'Put the Tenderdash node key that the masternode\'s registration names into'
+            + ' platform.drive.tenderdash.node.key, and its node ID into'
+            + ` platform.drive.tenderdash.node.id, by editing ${homeDir.joinPath('config.json')}`
+            + ' while no dashmate command runs. Then render the service files with:',
+          `  dashmate config render ${flag}`,
+          runCoreAlone,
+        ].join('\n'));
+      }
+
+      refuse(name, problem, [
         describePlatformSetupState(setupState, name),
-        `To run Core alone until then: dashmate config set platform.enable false ${flag}`,
+        runCoreAlone,
       ].join('\n'));
     }
 
