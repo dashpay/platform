@@ -195,6 +195,14 @@ $ dashmate update
 $ dashmate start
 ```
 
+If the quorum list service is enabled (`platform.quorumList.enabled` is `true`), the Platform-only reset fails with `service "quorum_list" depends on undefined service "core"`, because that service depends on Core, which the reset leaves out. Turn the service off for the reset and back on before you start the node:
+
+```bash
+$ dashmate config set platform.quorumList.enabled false
+$ dashmate reset --platform
+$ dashmate config set platform.quorumList.enabled true
+```
+
 On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet's operators publish with `dashmate config set platform.drive.tenderdash.genesis '<genesis JSON>'` before `dashmate start`.
 
 ### Do not add `--hard`
@@ -210,7 +218,7 @@ The reset it suggests instead, `dashmate reset --config <preset> --hard`, also r
 
 ## Local Network Updates
 
-Before applying an upgrade to a local network, stop it with `dashmate group stop` and reset it with `dashmate group reset --hard`, which removes the local configurations. Then set it up again with `dashmate setup local`.
+Before applying an upgrade to a local network, stop it with `dashmate group stop --group local` and reset it with `dashmate group reset --group local --hard`, which removes the local configurations. Name the group: without `--group`, both commands act on the current default group, which may not be `local`. Then set it up again with `dashmate setup local`.
 
 ## Notes on Compatibility
 
