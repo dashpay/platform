@@ -360,12 +360,6 @@ export default function resetNodeTaskFactory(
         // title, and nothing for a task without one.
         title: 'Check the reset can be done',
         task: (ctx) => {
-          // A hard reset may still clear the Platform data a node ran with before
-          // Platform was disabled, as a mainnet hard reset leaves it.
-          if (!config.get('platform.enable') && ctx.isPlatformOnlyReset && !ctx.isHardReset) {
-            throw new Error('Cannot reset platform only if platform services are not enabled in config');
-          }
-
           // A hard Platform reset restores the Platform options from the defaults
           // of the config's preset or group. Without them there is nothing to
           // restore, so refuse before any service is touched rather than fall

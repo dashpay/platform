@@ -28,7 +28,7 @@ Various flags can modify this behavior:
 - Use `--hard` to reset both configuration and data. Running the [setup](./setup.md) command will be required afterward.
 - Use `--keep-data` to preserve data but reset service containers
 - Use `--platform` to reset only platform-related components
-- Use `--platform --hard` to also set the Platform options back to the defaults of the config's preset (`mainnet`, `testnet`) or group (`local`). A config with any other name has no such defaults, so dashmate refuses: reset its Platform services and data with `--platform` alone, or remove the whole config, Core included, with `--hard`. `--platform --hard` also works when Platform is disabled (`platform.enable` is `false`, as a mainnet hard reset leaves it), to remove the Platform data the node ran with before; `--platform` alone refuses there
+- Use `--platform --hard` to also set the Platform options back to the defaults of the config's preset (`mainnet`, `testnet`) or group (`local`). A config with any other name has no such defaults, so dashmate refuses: reset its Platform services and data with `--platform` alone, or remove the whole config, Core included, with `--hard`. `--platform` and `--platform --hard` also work when Platform is disabled (`platform.enable` is `false`, as a mainnet hard reset leaves it), to remove the Platform data the node ran with before
 - Use `--force` to skip confirmation prompts and service checks
 
 The reset command will normally ask for confirmation before proceeding, unless the `--force` flag is used.

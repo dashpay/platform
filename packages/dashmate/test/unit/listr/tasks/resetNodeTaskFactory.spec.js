@@ -557,12 +557,19 @@ describe('resetNodeTaskFactory', () => {
       expect(config.get('platform')).to.deep.equal(getMainnetConfig().get('platform'));
     });
 
-    // Without --hard nothing would change in the config, and Platform stays off.
-    it('should still refuse a soft Platform reset', async () => {
-      await expect(reset({ isPlatformOnlyReset: true }))
-        .to.be.rejectedWith('Cannot reset platform only if platform services are not enabled in config');
+    // Platform services are named whether the config enables them or not, so
+    // a soft reset can clear the old Platform data too. The local group's seed
+    // node has Platform disabled, and refusing there failed `group reset
+    // --platform` after the other members were already reset.
+    it('should reset Platform services and data without --hard too', async () => {
+      const platformOptions = config.get('platform');
 
-      expect(dockerCompose.rm).to.not.have.been.called();
+      await reset({ isPlatformOnlyReset: true, keepData: false });
+
+      expect(dockerCompose.rm).to.have.been.calledOnce();
+      expect(dockerCompose.getVolumeNames).to.have.been.calledOnce();
+      expect(config.get('platform')).to.deep.equal(platformOptions);
+      expect(fs.existsSync(homeDir.joinPath('mainnet', 'platform', 'gateway', 'ssl', 'private.key'))).to.be.true();
     });
   });
 
