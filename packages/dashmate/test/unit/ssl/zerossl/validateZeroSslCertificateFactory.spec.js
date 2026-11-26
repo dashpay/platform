@@ -504,6 +504,92 @@ describe('validateZeroSslCertificateFactory', () => {
         expect(result.data.csr).to.be.undefined();
       });
 
+      // ZeroSSL gets the bytes on disk, so they are what has to be a request
+      // and carry the signature.
+      describe('as PKCS #10 lays it out', () => {
+        /**
+         * @param {string} pem
+         * @param {function(Buffer): Buffer} change
+         * @return {string}
+         */
+        function changeRequest(pem, change) {
+          const [block] = forge.pem.decode(pem);
+          const der = change(Buffer.from(block.body, 'binary'));
+
+          return forge.pem.encode({ type: block.type, body: der.toString('binary') });
+        }
+
+        it('should not count a request whose outer sequence is a set', async () => {
+          fs.writeFileSync(csrFilePath, changeRequest(
+            createCertificateRequest(pair.keyPem),
+            (der) => Buffer.concat([Buffer.from([0x31]), der.subarray(1)]),
+          ));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.false();
+        });
+
+        it('should not count a request whose algorithm is not an object identifier', async () => {
+          // sha256WithRSAEncryption, after the subject's rsaEncryption key
+          const oid = Buffer.from('06092a864886f70d01010b', 'hex');
+
+          fs.writeFileSync(csrFilePath, changeRequest(
+            createCertificateRequest(pair.keyPem),
+            (der) => {
+              const changed = Buffer.from(der);
+              changed[der.indexOf(oid)] = 0x04;
+
+              return changed;
+            },
+          ));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.false();
+        });
+
+        it('should not count a request with parameters its algorithm does not take', async () => {
+          fs.writeFileSync(csrFilePath, createCertificateRequest(pair.keyPem, {
+            algorithm: {
+              oid: '1.2.840.113549.1.1.11',
+              hash: 'sha256',
+              parameters: Buffer.from('0403010203', 'hex'),
+            },
+          }));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.false();
+        });
+
+        it('should not count a request whose version is not in its shortest form', async () => {
+          fs.writeFileSync(csrFilePath, createCertificateRequest(pair.keyPem, {
+            version: Buffer.from('02020000', 'hex'),
+          }));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.false();
+        });
+
+        // An attribute of a type nobody here knows, whose value starts with a
+        // zero byte. OpenSSL verifies it; node-forge drops that byte when it
+        // encodes the request again.
+        it('should count a request with an attribute only its bytes describe', async () => {
+          const ecKeyPem = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+            .privateKey.export({ type: 'sec1', format: 'pem' });
+          fs.writeFileSync(path.join(sslConfigDir, 'private.key'), ecKeyPem);
+          fs.writeFileSync(csrFilePath, createCertificateRequest(ecKeyPem, {
+            attributes: Buffer.from('301106092b06010401868d1f01310482020001', 'hex'),
+          }));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.true();
+        });
+      });
+
       // ZeroSSL issues for EC keys as well as RSA ones, and a pair placed by
       // hand renews like one Dashmate made.
       describe('for an EC key', () => {
