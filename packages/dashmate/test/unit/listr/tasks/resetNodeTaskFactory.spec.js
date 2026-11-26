@@ -873,6 +873,18 @@ describe('resetNodeTaskFactory', () => {
         }
 
         if (command === 'ps') {
+          // Compose before 2.15 fails `ps <names>` when a named service has
+          // no container.
+          const namedServices = commandOptions
+            .filter((option, i) => !option.startsWith('-') && commandOptions[i - 1] !== '--format');
+          const serviceWithoutContainer = namedServices
+            .find((name) => !runningContainers.some(({ Service: service }) => service === name));
+
+          if (serviceWithoutContainer) {
+            // eslint-disable-next-line prefer-promise-reject-errors
+            return Promise.reject({ exitCode: 1, out: '', err: `no such service: ${serviceWithoutContainer}\n` });
+          }
+
           return { exitCode: 0, err: '', out: runningContainers.map((c) => JSON.stringify(c)).join('\n') };
         }
 
@@ -1166,6 +1178,19 @@ describe('resetNodeTaskFactory', () => {
       await platformReset({ isForce: false });
 
       expect(removedServices()).to.include('drive_abci');
+    });
+
+    // `docker compose ps <names>` fails before Compose 2.15 when a named
+    // service has no container, which read as nothing running. A service the
+    // config enables but that was never started then hid a running Core, and
+    // the reset went on to take the node down.
+    it('should refuse a full reset while Core runs next to a service with no container', async () => {
+      runningContainers = [runningContainer('core')];
+
+      await expect(platformReset({ isPlatformOnlyReset: false, isForce: false }))
+        .to.be.rejectedWith('Running services detected');
+
+      expect(composeCalls.filter(({ command }) => command === 'down')).to.be.empty();
     });
 
     // `docker compose ps <names>` fails before Compose 2.15 when a named
