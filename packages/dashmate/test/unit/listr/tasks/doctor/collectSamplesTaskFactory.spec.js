@@ -7,6 +7,7 @@ import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigF
 import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
+import analyseCoreFactory from '../../../../../src/doctor/analyse/analyseCoreFactory.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
@@ -15,8 +16,24 @@ import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayC
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import { PACKAGE_ROOT_DIR } from '../../../../../src/constants.js';
+import deriveTenderdashNodeId from '../../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../../../src/tenderdash/generateTenderdashNodeKey.js';
 
 const EXTERNAL_IP = '198.51.100.7';
+
+/**
+ * Read a Core RPC response captured from a real Dash Core node
+ *
+ * @param {string} name
+ * @return {Object}
+ */
+function readCoreRpcFixture(name) {
+  return JSON.parse(fs.readFileSync(
+    path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc/24.0.3', name),
+    'utf8',
+  ));
+}
 
 /**
  * Format a date the way the ZeroSSL API reports certificate dates
@@ -361,6 +378,98 @@ describe('collectSamplesTaskFactory', () => {
     await collectSamples();
 
     expect(samples.getServiceInfo('gateway', 'metrics')).to.equal('metrics_sample 1');
+  });
+
+  describe('Core status', () => {
+    let masternodeStatus;
+    let mnsyncStatus;
+
+    beforeEach(() => {
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+
+      masternodeStatus = readCoreRpcFixture('masternode-status-evonode.json');
+      mnsyncStatus = readCoreRpcFixture('mnsync-status.json');
+
+      config.set('core.masternode.enable', true);
+
+      rpcClient.masternode.withArgs('status').resolves({ result: masternodeStatus });
+      rpcClient.mnsync.withArgs('status').resolves({ result: mnsyncStatus });
+    });
+
+    // The Core analysers judge PoSe state from one response and sync progress
+    // from the other, so each must be stored under the name it is read by.
+    it('should store each RPC response under its own sample', async () => {
+      await collectSamples();
+
+      expect(samples.getServiceInfo('core', 'masternodeStatus')).to.deep.equal(masternodeStatus);
+      expect(samples.getServiceInfo('core', 'masternodeSyncStatus')).to.deep.equal(mnsyncStatus);
+    });
+
+    it('should report a PoSe-banned masternode', async () => {
+      masternodeStatus.state = 'POSE_BANNED';
+
+      await collectSamples();
+
+      const problems = analyseCoreFactory()(samples);
+
+      expect(problems.map((problem) => problem.getDescription())).to.include(
+        'The masternode has been banned due to failing Proof-of-Service checks.',
+      );
+    });
+
+    it('should report an evonode whose Tenderdash node ID is not the registered one', async () => {
+      config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+
+      await collectSamples();
+
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // Tenderdash takes its ID from the key, not from the saved ID, and
+    // `config set` can change the key alone
+    it('should report an evonode whose node key is not the registered one, even when its saved node ID is', async () => {
+      config.set('platform.drive.tenderdash.node.key', generateTenderdashNodeKey());
+      config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
+
+      await collectSamples();
+
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // The schema requires neither the key nor the ID, and a masternode is
+    // never given a generated key, so a config can hold only the saved ID
+    it('should diagnose an evonode whose config has a saved node ID but no key', async () => {
+      config.set('platform.drive.tenderdash.node', { id: 'f'.repeat(40) });
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.be.undefined();
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // The key is redacted from the report, so the ID it gives is collected
+    // instead. The ID is public: Tenderdash announces it to every peer.
+    it('should collect the node ID derived from the node key', async () => {
+      const nodeKey = generateTenderdashNodeKey();
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey'))
+        .to.equal(deriveTenderdashNodeId(nodeKey));
+    });
   });
 
   describe('gateway TLS private key permissions', () => {
