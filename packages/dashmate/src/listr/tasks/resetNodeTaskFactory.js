@@ -140,29 +140,27 @@ export default function resetNodeTaskFactory(
   }
 
   /**
-   * Remove a path and everything under it, as far as permissions allow
+   * Find the paths under a target that this user cannot remove, removing
+   * nothing
    *
-   * Removal goes on past what it may not remove, so one run removes all it can
-   * and returns every path left behind. The entries of a directory this user
-   * cannot write cannot be removed, so such a directory is returned once rather
-   * than entry by entry, unless it is empty: removing an empty directory needs
-   * only its parent to be writable. Symbolic links are removed, never followed.
-   * A dry run removes nothing and returns what a removal would leave, as far as
-   * permissions show it.
+   * The entries of a directory this user cannot write cannot be removed, so
+   * such a directory is named once rather than entry by entry, unless it is
+   * empty: removing an empty directory needs only its parent to be writable.
+   * The target itself goes only if its parent directory is writable, and is
+   * not even found if the parent cannot be searched. Symbolic links are never
+   * followed: a link is removed, wherever it points.
    *
    * @param {string} targetPath
-   * @param {Object} [options]
-   * @param {boolean} [options.dryRun=false]
-   * @return {string[]} paths left in place for lack of permission
+   * @return {string[]}
    */
-  function removePathAsFarAsPermitted(targetPath, { dryRun = false } = {}) {
+  function findUnremovablePaths(targetPath) {
     const deniedPaths = [];
 
     /**
      * @param {string} currentPath
-     * @return {boolean} whether the path is gone
+     * @return {boolean} whether this user can remove the path
      */
-    function remove(currentPath) {
+    function canRemove(currentPath) {
       let stats;
       try {
         stats = fs.lstatSync(currentPath);
@@ -181,104 +179,61 @@ export default function resetNodeTaskFactory(
         throw e;
       }
 
-      const isDirectory = stats.isDirectory();
-      let canRemoveEntries = true;
-
-      if (isDirectory) {
-        try {
-          // eslint-disable-next-line no-bitwise
-          fs.accessSync(currentPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
-        } catch (e) {
-          if (!isPermissionError(e)) {
-            throw e;
-          }
-
-          canRemoveEntries = false;
-        }
-
-        if (canRemoveEntries) {
-          const isEmptied = fs.readdirSync(currentPath)
-            .map((entry) => remove(path.join(currentPath, entry)))
-            .every((isRemoved) => isRemoved);
-
-          if (!isEmptied) {
-            return false;
-          }
-        } else if (dryRun) {
-          let isEmpty;
-          try {
-            isEmpty = fs.readdirSync(currentPath).length === 0;
-          } catch (e) {
-            if (!isPermissionError(e)) {
-              throw e;
-            }
-
-            isEmpty = false;
-          }
-
-          if (!isEmpty) {
-            deniedPaths.push(currentPath);
-
-            return false;
-          }
-        }
-      }
-
-      if (dryRun) {
+      if (!stats.isDirectory()) {
         return true;
       }
 
       try {
-        if (isDirectory) {
-          fs.rmdirSync(currentPath);
-        } else {
-          fs.unlinkSync(currentPath);
-        }
-      } catch (e) {
-        if (e.code === 'ENOENT') {
-          return true;
-        }
-
-        // A directory whose entries it could not remove still has them.
-        const isLockedDirectory = !canRemoveEntries
-          && (e.code === 'ENOTEMPTY' || e.code === 'EEXIST');
-
-        if (isPermissionError(e) || isLockedDirectory) {
-          deniedPaths.push(currentPath);
-
-          return false;
-        }
-
-        throw e;
-      }
-
-      return true;
-    }
-
-    // The target itself goes only if its parent directory is writable, and
-    // it is not even found if the parent cannot be searched. A link is the
-    // target here, wherever it points.
-    if (dryRun) {
-      const parentPath = path.dirname(targetPath);
-
-      try {
-        fs.lstatSync(targetPath);
         // eslint-disable-next-line no-bitwise
-        fs.accessSync(parentPath, fs.constants.W_OK | fs.constants.X_OK);
+        fs.accessSync(currentPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
       } catch (e) {
-        if (e.code === 'ENOENT') {
-          return [];
-        }
-
         if (!isPermissionError(e)) {
           throw e;
         }
 
-        return [parentPath];
+        let isEmpty;
+        try {
+          isEmpty = fs.readdirSync(currentPath).length === 0;
+        } catch (readError) {
+          if (!isPermissionError(readError)) {
+            throw readError;
+          }
+
+          isEmpty = false;
+        }
+
+        if (!isEmpty) {
+          deniedPaths.push(currentPath);
+        }
+
+        return isEmpty;
       }
+
+      // Every entry is checked, so that each one left is named.
+      return fs.readdirSync(currentPath)
+        .map((entry) => canRemove(path.join(currentPath, entry)))
+        .every((isRemovable) => isRemovable);
     }
 
-    remove(targetPath);
+    const parentPath = path.dirname(targetPath);
+
+    try {
+      fs.lstatSync(targetPath);
+      // eslint-disable-next-line no-bitwise
+      fs.accessSync(parentPath, fs.constants.W_OK | fs.constants.X_OK);
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return [];
+      }
+
+      if (!isPermissionError(e)) {
+        throw e;
+      }
+
+      return [parentPath];
+    }
+
+    canRemove(targetPath);
 
     return deniedPaths;
   }
@@ -348,7 +303,7 @@ export default function resetNodeTaskFactory(
 
     let deniedPaths;
     try {
-      deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
+      deniedPaths = findUnremovablePaths(targetPath);
     } catch (e) {
       throw new Error([
         `Cannot reset config '${config.getName()}': could not inspect ${formatPath(targetPath)}:`
@@ -413,19 +368,33 @@ export default function resetNodeTaskFactory(
 
     recovery.push('Do not start the node before the reset has completed.');
 
-    let deniedPaths;
+    // Node's own recursive removal, as the reset always used: its native
+    // implementation can remove entries relative to the directories it holds
+    // open, which a walk by path name cannot.
+    let removalError;
     try {
-      deniedPaths = removePathAsFarAsPermitted(targetPath);
+      fs.rmSync(targetPath, { recursive: true, force: true });
+
+      return;
     } catch (e) {
-      throw new Error([
-        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(e.message)}`,
-        'Fix the cause,',
-        ...recovery,
-      ].join('\n'));
+      removalError = e;
+    }
+
+    // Node's error names the target at most, so what is left is walked for
+    // the paths this user cannot remove.
+    let deniedPaths = [];
+    try {
+      deniedPaths = findUnremovablePaths(targetPath);
+    } catch {
+      // The removal's own error is what is reported then.
     }
 
     if (deniedPaths.length === 0) {
-      return;
+      throw new Error([
+        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(removalError.message)}`,
+        'Fix the cause,',
+        ...recovery,
+      ].join('\n'));
     }
 
     throw new Error([
