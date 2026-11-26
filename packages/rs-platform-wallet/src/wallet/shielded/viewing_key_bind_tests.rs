@@ -2034,8 +2034,13 @@ async fn should_keep_a_retired_tip_account_bound_after_a_clear_and_a_restart() {
         SubwalletId::new(wallet.wallet_id(), retired)
     };
     assert!(
-        !persister.captured_viewing_keys().contains_key(&retired_id),
-        "no bind has written the retired account's row"
+        !persister
+            .load()
+            .expect("load after Clear")
+            .shielded
+            .viewing_keys
+            .contains_key(&retired_id),
+        "the restarted bind cannot recover the retired index from the host snapshot"
     );
 
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
@@ -2054,6 +2059,55 @@ async fn should_keep_a_retired_tip_account_bound_after_a_clear_and_a_restart() {
     assert!(
         persister.captured_viewing_keys().contains_key(&retired_id),
         "and its viewing key is written again"
+    );
+}
+
+/// A wallet that was not bound before the Clear, so its store has never
+/// kept its identity accounts: the Clear reads them from the host's viewing
+/// key rows before it wipes them, and the first bind after a restart
+/// registers the retired account again.
+#[tokio::test]
+async fn should_keep_a_retired_tip_account_of_a_wallet_not_bound_before_the_clear() {
+    let retired = crate::shielded_identity_account_index(7).unwrap();
+    let persister = Arc::new(CapturingPersistence::default());
+    let dir = temp_dir("retired_tips_unbound");
+    let retired_id = {
+        let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+        let row = |account: u32| {
+            let keys = super::OrchardKeySet::from_seed(&BIND_SEED[..], Network::Testnet, account)
+                .expect("derive the account");
+            (
+                SubwalletId::new(wallet.wallet_id(), account),
+                keys.full_viewing_key.to_bytes().to_vec(),
+            )
+        };
+        persister.serve_viewing_keys(BTreeMap::from([row(0), row(retired)]));
+        let coordinator = coordinator_at(&dir);
+        coordinator.clear(&*persister).await.expect("clear");
+        SubwalletId::new(wallet.wallet_id(), retired)
+    };
+    assert!(
+        !persister
+            .load()
+            .expect("load after Clear")
+            .shielded
+            .viewing_keys
+            .contains_key(&retired_id),
+        "the host wiped the retired account's row"
+    );
+
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&dir);
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    wallet.bind_shielded(&BIND_SEED, &[0]).await.unwrap();
+    assert!(
+        coordinator
+            .registered_subwallets()
+            .await
+            .contains(&retired_id),
+        "the retired tip account is scanned again"
     );
 }
 

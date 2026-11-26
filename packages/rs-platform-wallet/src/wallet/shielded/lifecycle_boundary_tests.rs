@@ -254,16 +254,20 @@ async fn unconfigured(
     (manager, wallet)
 }
 
-/// Host callbacks of a bind that finished before a Clear.
-const BIND_THEN_CLEAR: [&str; 5] = [
+/// Host callbacks of a bind that finished before a Clear. The Clear reads
+/// the host's snapshot before it wipes, to keep the identity accounts the
+/// rows record.
+const BIND_THEN_CLEAR: [&str; 6] = [
     "load",
     "store viewing keys",
     "stored viewing keys",
+    "load",
     "wipe",
     "wiped",
 ];
 /// Host callbacks of a Clear followed by a bind (or account add).
-const CLEAR_THEN_BIND: [&str; 5] = [
+const CLEAR_THEN_BIND: [&str; 6] = [
+    "load",
     "wipe",
     "wiped",
     "load",
@@ -397,7 +401,7 @@ async fn should_restore_nothing_that_survives_from_a_snapshot_read_before_clear(
     assert!(rebind.await.unwrap().expect("the rebind finishes first"));
     manager.clear_shielded().await.expect("then Clear runs");
 
-    assert_eq!(host.events(), vec!["load", "wipe", "wiped"]);
+    assert_eq!(host.events(), vec!["load", "load", "wipe", "wiped"]);
     assert_eq!(host.viewing_key_rows(), 0);
     assert!(host.subwallets.lock().unwrap().is_empty());
     assert_native_state_cleared(&coordinator, id).await;
@@ -516,8 +520,8 @@ async fn should_order_an_account_add_and_a_clear() {
     );
     assert_eq!(
         host.events(),
-        vec!["wipe", "wiped"],
-        "the add neither read nor wrote the host"
+        vec!["load", "wipe", "wiped"],
+        "the add neither read nor wrote the host; the load is the Clear's"
     );
     assert_eq!(host.viewing_key_rows(), 0, "no row after the Clear");
 }

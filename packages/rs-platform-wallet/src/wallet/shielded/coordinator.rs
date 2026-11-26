@@ -1599,6 +1599,76 @@ impl NetworkShieldedCoordinator {
         self.identity_accounts.write().await.remove(&wallet_id);
     }
 
+    /// Keep the identity accounts the host holds viewing keys for before a
+    /// Clear wipes those rows: those rows are the only durable record of a
+    /// removed identity's account for a wallet that has not been registered
+    /// since this store began keeping them. Only a wallet the host reports on
+    /// another network is skipped; one whose network is unknown has its rows
+    /// wiped too.
+    ///
+    /// A host snapshot that cannot be read keeps nothing and lets the Clear
+    /// go on: Clear is how a host recovers from rows it cannot read. A write
+    /// that fails aborts the Clear with nothing reset.
+    async fn keep_host_identity_accounts(
+        &self,
+        host: &dyn PlatformWalletPersistence,
+    ) -> Result<(), PlatformWalletError> {
+        let start = match host.load() {
+            Ok(start) => start,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "the host snapshot could not be read before Clear; its identity accounts \
+                     are not kept"
+                );
+                return Ok(());
+            }
+        };
+        let mut found: BTreeMap<WalletId, BTreeSet<u32>> = BTreeMap::new();
+        for id in start.shielded.viewing_keys.keys() {
+            let other_network = start
+                .wallets
+                .get(&id.wallet_id)
+                .is_some_and(|wallet| wallet.wallet.network != self.network);
+            if !other_network && is_shielded_identity_account(id.account_index) {
+                found
+                    .entry(id.wallet_id)
+                    .or_default()
+                    .insert(id.account_index);
+            }
+        }
+        for (wallet_id, accounts) in found {
+            let unkept: BTreeSet<u32> = {
+                let kept = self.identity_accounts.read().await;
+                let kept = kept.get(&wallet_id);
+                accounts
+                    .into_iter()
+                    .filter(|account| !kept.is_some_and(|kept| kept.contains(account)))
+                    .collect()
+            };
+            if unkept.is_empty() {
+                continue;
+            }
+            self.store
+                .write()
+                .await
+                .keep_identity_accounts(wallet_id, &unkept)
+                .map_err(|e| {
+                    PlatformWalletError::ShieldedStoreError(format!(
+                        "the host's identity accounts could not be kept; clear aborted with \
+                         nothing reset: {e}"
+                    ))
+                })?;
+            self.identity_accounts
+                .write()
+                .await
+                .entry(wallet_id)
+                .or_default()
+                .extend(unkept);
+        }
+        Ok(())
+    }
+
     /// The identity accounts `wallet_id` has had registered on this
     /// coordinator's store, in this process or an earlier one (see the
     /// `identity_accounts` field). Takes no store lock.
@@ -2252,6 +2322,8 @@ impl NetworkShieldedCoordinator {
         // Registry atomicity against `unregister_wallet`, which takes this
         // mutex without an admission (see the `lifecycle` field doc).
         let _lifecycle = self.lifecycle.lock().await;
+
+        self.keep_host_identity_accounts(host).await?;
 
         let was_pending = clear_state.host_wipe_pending;
         if let Err(e) = self.store.write().await.set_host_wipe_pending(true) {
