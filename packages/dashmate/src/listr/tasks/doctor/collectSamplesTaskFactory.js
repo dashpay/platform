@@ -478,7 +478,7 @@ export default function collectSamplesTaskFactory(
                     state: renewal.state,
                     path: renewal.path,
                     error: renewal.error,
-                    ...renewal.record?.toObject(),
+                    ...renewal.record?.toDiagnosticObject(),
                   };
 
                   // Same treatment as the certificate above: the path is what

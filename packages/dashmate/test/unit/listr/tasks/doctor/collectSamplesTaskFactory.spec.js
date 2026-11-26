@@ -962,6 +962,45 @@ describe('collectSamplesTaskFactory', () => {
       });
     });
 
+    // The provider and the code of a renewal record are kept as they are,
+    // because doctor decides on them. The file can be edited by hand, though,
+    // so a value dashmate does not know is any text at all, and the report
+    // carries a label in its place. The record on disk is still read as it is.
+    it('should label a renewal provider and code it does not know as unknown', async () => {
+      const handWritten = 'handWrittenValue7Qx';
+
+      config.set('core.rpc.users.dapi.password', handWritten);
+
+      const repository = new RenewalRecordRepository(homeDir);
+
+      repository.write(config.getName(), RenewalRecord.fromObject({
+        provider: `${handWritten}-provider`,
+        outcome: 'failed',
+        code: `${handWritten}-code`,
+        detail: 'challenge failed',
+        attemptedAt: new Date().toISOString(),
+      }));
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain(handWritten);
+
+      const live = samples.getServiceInfo('gateway', 'certificateRenewal');
+      const restored = (await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'certificateRenewal');
+
+      [live, restored].forEach((sample) => {
+        expect(sample.provider).to.equal('unknown');
+        expect(sample.code).to.equal('UNKNOWN');
+        expect(RenewalRecord.fromObject(sample).isFailed()).to.be.true();
+      });
+
+      const onDisk = repository.read(config.getName()).record;
+
+      expect(onDisk.getProvider()).to.equal(`${handWritten}-provider`);
+      expect(onDisk.getCode()).to.equal(`${handWritten}-code`);
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the
