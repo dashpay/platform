@@ -133,32 +133,36 @@ Create these files only with the [commands above](#debian-and-ubuntu-dashs-apt-r
 
 ### Prereleases
 
-Dash's apt repository also has a `testing` suite, which carries betas, release candidates and final releases, and a `dev` suite, which carries dev builds as well. To install prereleases, add `testing` in files of its own. These commands work the same way as the ones for `stable`; for dev builds, write `Suites: dev` instead of `Suites: testing`.
+Dash's apt repository also has a `testing` suite, which carries betas, release candidates and final releases, and a `dev` suite, which carries dev builds as well. To install prereleases, add `testing` in a source file of its own; for dev builds, write `Suites: dev` instead of `Suites: testing`.
+The source uses the package's keyring, `/etc/apt/keyrings/dashmate-archive-keyring.gpg`, so a renewed key that a dashmate upgrade installs reaches both suites. The commands install that keyring only if it is not there yet, checked the same way as for `stable` and byte for byte as the package ships it, and they delete `dashmate-testing-archive-keyring.gpg`, the separate copy that earlier versions of this guide had you create:
 
 ```bash
 (
 set -e
-keyring=$(mktemp)
-trap 'rm -f "$keyring"' EXIT
-curl --proto '=https' -fsSL https://apt.services.dash.org/dashmate/dashmate-archive-keyring.gpg -o "$keyring"
-echo "08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230  $keyring" | sha256sum -c -
-sudo install -d -m 0755 /etc/apt/keyrings
-sudo install -m 0644 "$keyring" /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
+if [ ! -e /etc/apt/keyrings/dashmate-archive-keyring.gpg ]; then
+  keyring=$(mktemp)
+  trap 'rm -f "$keyring"' EXIT
+  curl --proto '=https' -fsSL https://apt.services.dash.org/dashmate/dashmate-archive-keyring.gpg -o "$keyring"
+  echo "08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230  $keyring" | sha256sum -c -
+  sudo install -d -m 0755 /etc/apt/keyrings
+  sudo install -m 0644 "$keyring" /etc/apt/keyrings/dashmate-archive-keyring.gpg
+fi
 sudo tee /etc/apt/sources.list.d/dashmate-testing.sources > /dev/null <<'EOF'
 Types: deb
 URIs: https://apt.services.dash.org/dashmate
 Suites: testing
 Components: main
 Architectures: amd64 arm64
-Signed-By: /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
+Signed-By: /etc/apt/keyrings/dashmate-archive-keyring.gpg
 EOF
+sudo rm -f /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
 sudo apt update
 )
 ```
 
 Then install or upgrade dashmate with `sudo apt install dashmate`. On a host without dashmate, the package then adds the `stable` source next to this one. Both suites have the same priority, so apt installs the highest version either one offers, and a final release sorts above its prereleases (`5.1.0-1` is newer than `5.1.0~rc.2-1`).
 
-To stop following prereleases, delete the files again. dashmate stays at the version it has, since apt does not downgrade it, and the next final release on `stable` upgrades it:
+To stop following prereleases, delete the source again, with the files earlier versions of this guide created. The package's keyring stays, since the `stable` source uses it. dashmate stays at the version it has, since apt does not downgrade it, and the next final release on `stable` upgrades it:
 
 ```bash
 sudo rm -f /etc/apt/sources.list.d/dashmate-testing.sources \
@@ -169,7 +173,7 @@ sudo apt update
 
 `dashmate-testing.pref` is a pin that earlier versions of this guide had you create; the package's own `dashmate.pref` covers both suites. Those versions also suggested changing `Suites:` in `dashmate.sources` itself. That file then differs from the package's, so dpkg asks about it when a release changes it: set it back to `Suites: stable` and add `testing` as above instead.
 
-dpkg does not own the `testing` files, so purging dashmate leaves them in place and the source active. To take dashmate off a host that uses them, delete them as well.
+dpkg does not own `dashmate-testing.sources`, so purging dashmate leaves the source active but deletes the keyring it uses, and `apt update` then reports a signature error for it. To take dashmate off a host that follows prereleases, delete the source with the commands above as well. To install dashmate again after a purge, run the commands that add `testing` again, which put the keyring back.
 
 ### Node package
 
