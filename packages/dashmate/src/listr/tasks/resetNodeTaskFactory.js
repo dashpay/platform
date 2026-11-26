@@ -206,6 +206,10 @@ export default function resetNodeTaskFactory(
           const groupName = config.get('group');
           const defaultConfigName = groupName || config.getName();
 
+          // The group name only selects the defaults. Each member's service
+          // files live in a directory named after the config itself.
+          const configDirectory = resolveConfigDirectory(homeDir, config.getName());
+
           if (defaultConfigs.has(defaultConfigName)) {
             // Reset config if the corresponding default config exists
             if (ctx.isPlatformOnlyReset) {
@@ -225,7 +229,7 @@ export default function resetNodeTaskFactory(
             ensureTenderdashNodeKey(config);
 
             // Remove service configs
-            let serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
+            let serviceConfigsPath = configDirectory;
 
             if (ctx.isPlatformOnlyReset) {
               serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
@@ -234,12 +238,10 @@ export default function resetNodeTaskFactory(
             removePathSafely(serviceConfigsPath, task);
           } else {
             // Delete config if no base config
-            const serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
-
             configFile.removeConfig(config.getName());
 
             // Remove service configs
-            removePathSafely(serviceConfigsPath, task);
+            removePathSafely(configDirectory, task);
           }
         },
       },

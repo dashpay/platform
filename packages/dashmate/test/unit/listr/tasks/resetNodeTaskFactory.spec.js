@@ -7,6 +7,7 @@ import Config from '../../../../src/config/Config.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getTestnetConfigFactory from '../../../../configs/defaults/getTestnetConfigFactory.js';
+import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
 import resetNodeTaskFactory from '../../../../src/listr/tasks/resetNodeTaskFactory.js';
 import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
@@ -15,6 +16,7 @@ describe('resetNodeTaskFactory', () => {
   let homeDir;
   let getBaseConfig;
   let getTestnetConfig;
+  let getLocalConfig;
   let config;
   let configFile;
   let dockerCompose;
@@ -35,7 +37,7 @@ describe('resetNodeTaskFactory', () => {
       {},
       null,
       null,
-      new DefaultConfigs([getBaseConfig, getTestnetConfig]),
+      new DefaultConfigs([getBaseConfig, getTestnetConfig, getLocalConfig]),
       configFile,
       homeDir,
       () => ({}),
@@ -60,6 +62,7 @@ describe('resetNodeTaskFactory', () => {
 
     getBaseConfig = getBaseConfigFactory(homeDir);
     getTestnetConfig = getTestnetConfigFactory(homeDir, getBaseConfig);
+    getLocalConfig = getLocalConfigFactory(getBaseConfig);
 
     dockerCompose = {
       isNodeRunning: this.sinon.stub().resolves(false),
@@ -201,6 +204,45 @@ describe('resetNodeTaskFactory', () => {
 
       expect(configFile.isConfigExists('devnet-ops')).to.be.false();
       expect(fs.existsSync(homeDir.joinPath('devnet-ops'))).to.be.false();
+    });
+  });
+
+  describe('a member of a group', () => {
+    beforeEach(() => {
+      const members = ['local_1', 'local_2'].map((name) => {
+        const options = getLocalConfig().getStoredOptions();
+        options.group = 'local';
+
+        return new Config(name, options);
+      });
+
+      useConfigs(members);
+
+      // Older homes also hold a config named after the group.
+      writeFile('local', 'platform', 'drive', 'tenderdash', 'config.toml');
+      writeFile('local_1', 'core', 'dash.conf');
+      writeFile('local_1', 'platform', 'drive', 'tenderdash', 'config.toml');
+      writeFile('local_2', 'core', 'dash.conf');
+      writeFile('local_2', 'platform', 'drive', 'tenderdash', 'config.toml');
+    });
+
+    // Compose mounts each member's files from its own directory, named after
+    // the config. The group name only selects the defaults.
+    it('should remove its own Platform files and leave the other member\'s', async () => {
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(fs.existsSync(homeDir.joinPath('local_1', 'platform'))).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('local_1', 'core', 'dash.conf'))).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('local_2', 'platform', 'drive', 'tenderdash', 'config.toml'))).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('local', 'platform', 'drive', 'tenderdash', 'config.toml'))).to.be.true();
+    });
+
+    it('should remove only its own directory on a full hard reset', async () => {
+      await hardReset({ isPlatformOnlyReset: false });
+
+      expect(fs.existsSync(homeDir.joinPath('local_1'))).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('local_2', 'core', 'dash.conf'))).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('local', 'platform', 'drive', 'tenderdash', 'config.toml'))).to.be.true();
     });
   });
 });
