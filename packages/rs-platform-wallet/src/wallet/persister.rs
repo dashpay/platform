@@ -1422,6 +1422,61 @@ mod tests {
         assert_eq!(persister.flush_ledger.in_flight(), 0);
     }
 
+    /// An assignment the backend refused after committing what it had
+    /// buffered (the lock was swept first, say) dropped nothing: it is not
+    /// counted as a failed or lost flush, so the handle's later durable
+    /// flushes are not refused as having lost writes. The caller gets the
+    /// refusal as the backend gave it.
+    #[test]
+    fn should_not_count_an_assignment_refused_after_the_buffer_committed_as_lost() {
+        struct RefusesAfterCommit;
+        impl PlatformWalletPersistence for RefusesAfterCommit {
+            fn assign_asset_lock_identity_recipient(
+                &self,
+                _wallet_id: WalletId,
+                _out_point: OutPoint,
+                _identity: Identifier,
+            ) -> Result<(), PersistenceError> {
+                Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Constraint,
+                    "the wallet stores no asset lock at it",
+                )
+                .after_buffer_committed())
+            }
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let persister = WalletPersister::new([0; 32], Arc::new(RefusesAfterCommit) as _);
+        let (lost_before, failed_before) = (
+            persister.flush_ledger.lost(),
+            persister.flush_ledger.failed(),
+        );
+
+        let refused = persister
+            .assign_asset_lock_identity_recipient(OutPoint::null(), Identifier::from([1; 32]))
+            .expect_err("refused");
+
+        assert_eq!(refused.kind(), Some(PersistenceErrorKind::Constraint));
+        assert!(refused
+            .to_string()
+            .contains("the wallet stores no asset lock at it"));
+        assert_eq!(persister.flush_ledger.lost(), lost_before);
+        assert_eq!(persister.flush_ledger.failed(), failed_before);
+        assert_eq!(persister.flush_ledger.in_flight(), 0);
+    }
+
     /// A store is not answered for on the strength of a flush that succeeded
     /// after another took what the store buffered and failed for good,
     /// whether that one ran between the store and its flush or during the

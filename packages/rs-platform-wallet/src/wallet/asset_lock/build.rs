@@ -2487,6 +2487,8 @@ mod tests {
         fail_on_flush: Option<usize>,
         restored_wallet: Option<(Wallet, ManagedWalletInfo)>,
         before_remove: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+        /// Run as a recipient assignment reaches the backend.
+        on_assign: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
         restore_stored_locks: std::sync::atomic::AtomicBool,
         commits_inline: bool,
         fail_remove_store: bool,
@@ -2699,6 +2701,9 @@ mod tests {
             out_point: OutPoint,
             identity: dpp::prelude::Identifier,
         ) -> Result<(), PersistenceError> {
+            if let Some(hook) = self.on_assign.lock().unwrap().as_ref() {
+                hook();
+            }
             if self
                 .fail_lock_store
                 .load(std::sync::atomic::Ordering::SeqCst)
@@ -5361,6 +5366,116 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert_eq!(published, Some(identity));
+    }
+
+    /// A resume's authorization runs on the row it claims, under the guard it
+    /// claims the dispatch window under: a row recreated at the outpoint for
+    /// another recipient after an earlier read is seen as it is now, and a
+    /// refusal sends nothing and leaves no claim to hold back rejection
+    /// cleanup.
+    #[tokio::test]
+    async fn should_authorize_a_resume_on_the_row_it_claims() {
+        let authorized_for = dpp::prelude::Identifier::from([0x62; 32]);
+        let rebuilt_for = dpp::prelude::Identifier::from([0x63; 32]);
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, out_point) =
+            unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Built).await;
+        manager
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&manager.wallet_id)
+            .unwrap()
+            .tracked_asset_locks
+            .get_mut(&out_point)
+            .unwrap()
+            .identity_recipient = Some(rebuilt_for);
+        let sends_before = manager.broadcaster.calls();
+
+        let result = manager
+            .resume_authorized_asset_lock(&out_point, Some(Duration::from_millis(50)), &|row| {
+                match row.identity_recipient {
+                    Some(recorded) if recorded == authorized_for => Ok(()),
+                    recorded => Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                        out_point,
+                        recorded: recorded.unwrap_or_default(),
+                        requested: authorized_for,
+                    }),
+                }
+            })
+            .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::AssetLockIdentityRecipientMismatch { recorded, .. })
+                    if recorded == rebuilt_for
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            manager.broadcaster.calls(),
+            sends_before,
+            "nothing was sent"
+        );
+        assert!(
+            !manager.resume_cleanup_excluded(&out_point),
+            "no dispatch claim was left behind"
+        );
+    }
+
+    /// A committed assignment is not published over another recipient the
+    /// row in memory records: rejection cleanup can remove the row assigned
+    /// and a build for another identity recreate the same outpoint, with its
+    /// own recipient, before the publication takes the manager lock. That
+    /// recipient stays, and the assignment reports the mismatch.
+    #[tokio::test]
+    async fn should_not_publish_an_assignment_over_a_recreated_rows_recipient() {
+        let assigned = dpp::prelude::Identifier::from([0x60; 32]);
+        let rebuilt_for = dpp::prelude::Identifier::from([0x61; 32]);
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, out_point) =
+            unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Built).await;
+        let wallet_manager = Arc::clone(&manager.wallet_manager);
+        let wallet_id = manager.wallet_id;
+        *persistence.on_assign.lock().unwrap() = Some(Box::new(move || {
+            // The row recreated for another identity, as its build tracks it.
+            let mut wm = wallet_manager
+                .try_write()
+                .expect("the assignment holds no manager lock at the backend");
+            wm.get_wallet_info_mut(&wallet_id)
+                .unwrap()
+                .tracked_asset_locks
+                .get_mut(&out_point)
+                .unwrap()
+                .identity_recipient = Some(rebuilt_for);
+        }));
+
+        let result = assign_on_current_generation(&manager, &out_point, assigned).await;
+
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                    recorded,
+                    requested,
+                    ..
+                }) if recorded == rebuilt_for && requested == assigned
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            Some(rebuilt_for)
+        );
     }
 
     /// A recipient-less lock whose Platform consumption is unknown (rebuilt

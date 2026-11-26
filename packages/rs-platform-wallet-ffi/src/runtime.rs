@@ -34,7 +34,6 @@ const WORKER_STACK_BYTES: usize = 8 * 1024 * 1024;
 /// runtime). An export that blocks on the runtime would panic there, and
 /// the iOS profiles build with `panic = "abort"`. The caller moves the call
 /// to another thread.
-#[cfg(feature = "shielded")]
 pub(crate) fn ensure_not_on_runtime(operation: &str) -> Result<(), PlatformWalletFFIResult> {
     if tokio::runtime::Handle::try_current().is_ok() {
         return Err(PlatformWalletFFIResult::err(

@@ -57,7 +57,7 @@ pub struct TrackedAssetLockFFI {
     /// restore from the seed carries: Platform may have consumed it long ago,
     /// and no query tells the wallet whether it did, so hosts must not
     /// present it as recoverable. Assigning one is refused with
-    /// `ErrorAssetLockConsumptionUnknown` (82) and nothing is assigned; its key
+    /// `ErrorAssetLockConsumptionUnknown` (90) and nothing is assigned; its key
     /// stays with the wallet until a consumption check exists.
     pub identity_recipient_unassigned: bool,
     /// Whether the lock is an external Platform-address funding (funding type

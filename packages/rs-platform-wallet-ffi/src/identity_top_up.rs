@@ -44,7 +44,7 @@ use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration::IdentityFundingInputFFI;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, ensure_not_on_runtime};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 #[cfg(test)]
@@ -589,6 +589,11 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
     check_ptr!(core_signer_handle);
     check_ptr!(out_new_balance);
     *out_new_balance = 0;
+    // `block_on_worker` cannot block a runtime thread (a host calling from a
+    // wallet callback): refused before anything is built.
+    if let Err(result) = ensure_not_on_runtime("external identity top-up") {
+        return result;
+    }
     let identity_id = Identifier::from(*identity_id);
     let core_signer_addr = core_signer_handle as usize;
 

@@ -89,6 +89,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "core_pool.rs",
         "SELECT address_index, length(script), script, length(public_key), public_key",
     ),
+    // Funding-pool reader: one-shot read-only scan of one asset-lock funding
+    // pool's rows, keyed or not, during `load()` rehydration.
+    (
+        "core_pool.rs",
+        "SELECT address_index, length(script), script, key_type, length(public_key)",
+    ),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",

@@ -147,6 +147,32 @@ impl PersistenceError {
         }
     }
 
+    /// The same error, marked as raised after the backend committed what it
+    /// had buffered for the wallet, kind and message unchanged.
+    ///
+    /// For an operation that commits the wallet's buffer before a write of
+    /// its own ([`assign_asset_lock_identity_recipient`](PlatformWalletPersistence::assign_asset_lock_identity_recipient),
+    /// [`release_unsent_pool_address`](PlatformWalletPersistence::release_unsent_pool_address)),
+    /// when that commit succeeded and its own write then failed or was
+    /// refused: nothing buffered was dropped, which
+    /// [`Self::left_buffer_committed`] tells the wallet's flush accounting.
+    /// [`Self::LockPoisoned`] is returned unchanged.
+    pub fn after_buffer_committed(self) -> Self {
+        match self {
+            Self::LockPoisoned => Self::LockPoisoned,
+            Self::Backend { kind, source } => Self::Backend {
+                kind,
+                source: Box::new(FailedAfterBufferCommitted { source }),
+            },
+        }
+    }
+
+    /// Whether the error was marked by [`Self::after_buffer_committed`]: the
+    /// wallet's buffer was committed before it, and none of it was dropped.
+    pub fn left_buffer_committed(&self) -> bool {
+        matches!(self, Self::Backend { source, .. } if source.is::<FailedAfterBufferCommitted>())
+    }
+
     /// `true` if the error is a `Backend` whose kind is
     /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`, and
     /// `Constraint` all read as non-transient.
@@ -172,6 +198,15 @@ impl PersistenceError {
             Self::Backend { kind, .. } => Some(*kind),
         }
     }
+}
+
+/// The source of a [`PersistenceError`] marked by
+/// [`PersistenceError::after_buffer_committed`]: the backend's own failure,
+/// shown as it is.
+#[derive(Debug, thiserror::Error)]
+#[error("{source}")]
+pub struct FailedAfterBufferCommitted {
+    source: Box<dyn StdError + Send + Sync>,
 }
 
 /// Why [`PlatformWalletPersistence::store_and_commit`] did not make its

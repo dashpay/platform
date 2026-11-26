@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use rusqlite::OptionalExtension;
 use tokio::sync::watch;
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
@@ -1755,6 +1756,51 @@ impl ShieldedStore for FileBackedShieldedStore {
         position: u64,
         depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
+        // No checkpoint at `depth` covers a position the tree holds:
+        // `Ok(None)`, as the trait states. shardtree reports a position past the checkpoint as
+        // a `NotContained` query error, which the wrapper flattens into the
+        // same string as a storage failure, so the store reads the
+        // checkpoint's position first and keeps `Err` for failures. The
+        // table is the wrapper's own (`SqliteShardStore`), which
+        // `reset_commitment_tree` also wipes by name; read on the recovery
+        // connection, as the tree's connection is owned by the wrapper. Its
+        // writes commit as they return (WAL), and the caller's lock keeps a
+        // writer out between this read and the witness.
+        let checkpoint: Option<Option<u64>> = {
+            let conn = self.pending_conn.lock().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("recovery connection mutex poisoned: {e}"))
+            })?;
+            conn.query_row(
+                "SELECT position FROM commitment_tree_checkpoints \
+                 ORDER BY checkpoint_id DESC LIMIT 1 OFFSET ?1",
+                [depth as i64],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("read checkpoint at depth {depth}: {e}"))
+            })?
+            .map(|covered| covered.map(|p| p as u64))
+        };
+        let covered = match checkpoint {
+            Some(Some(covered)) => position <= covered,
+            // No checkpoint at this depth, or an empty-tree checkpoint.
+            None | Some(None) => false,
+        };
+        if !covered {
+            // `Ok(None)` only for a leaf the tree holds, which a later
+            // checkpoint covers. A position the tree does not hold (notes
+            // restored against a shorter tree, or a tree reset whose note
+            // purge failed) is not something a sync adds, so it is `Err`.
+            let size = self.tree_size()?;
+            if position >= size {
+                return Err(FileShieldedStoreError::Storage(format!(
+                    "note position {position} is not in the commitment tree (size {size})"
+                )));
+            }
+            return Ok(None);
+        }
+
         let tree = self
             .tree
             .lock()
