@@ -700,6 +700,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                # the Docker image is not one of the packages SHA256SUMS lists
                {'id': 602, 'name': 'Release Dashmate Helper image / Build linux/arm64 image', 'status': 'in_progress',
                 'conclusion': None}]
+        apt = {'id': 604, 'name': 'Publish Dashmate debs to apt', 'status': 'in_progress', 'conclusion': None}
         cases = {
             'the run still building the SDKs': ({'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {}),
             # the dashmate jobs carried over into the new attempt, under new ids
@@ -716,6 +717,12 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 {'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {'GH_FINISH_WHILE_LISTED': '1'}),
             'the SDK builds finishing before the attempt is read': (
                 {'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {'GH_FINISH_BEFORE_ATTEMPT_READ': '1'}),
+            # the apt publish changes no asset, so it does not hold signing up, nor does a re-run of it
+            'the apt publish still running': ({'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + [apt]}}, {}),
+            'a re-run of the apt publish only': ({
+                'runs': [dict(newest, run_attempt=2)],
+                'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID}/2': dashmate_jobs(100) + [apt]},
+                'logged': (CHECKSUMS_JOB + 100,)}, {}),
             # an SDK job waiting on its environment makes the run wait; the dashmate jobs are done
             'a run waiting on an SDK deployment': ({'runs': [dict(newest, status='waiting')], 'jobs': {
                 f'{RUN_ID}/1': DASHMATE_JOBS + [{'id': 603, 'name': 'Release Kotlin SDK / Deploy to Maven Central',
