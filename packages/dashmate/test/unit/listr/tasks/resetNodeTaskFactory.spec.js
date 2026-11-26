@@ -907,7 +907,7 @@ describe('resetNodeTaskFactory', () => {
       expect(error.message).to.include('EACCES: permission denied, rm');
       expect(lines).to.include('Remove it with sufficient rights, for example:');
       expect(lines).to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
-      expect(error.message).to.not.include('immutable');
+      expect(lines.filter((line) => line.startsWith('If that fails with EPERM'))).to.be.empty();
       expect(error.message).to.include('dashmate config render --config testnet');
     });
 
