@@ -8,7 +8,7 @@ import { REGISTRATION_STATUS } from '../../../../../src/core/readPlatformRegistr
 import generateTenderdashNodeKey from '../../../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../../../src/tenderdash/deriveTenderdashNodeId.js';
 import getEnquirerMock from '../../../../../src/test/mock/getEnquirerMock.js';
-import { NODE_TYPE_FULLNODE, NODE_TYPE_MASTERNODE } from '../../../../../src/constants.js';
+import { NODE_TYPE_FULLNODE, NODE_TYPE_MASTERNODE, PLATFORM_ONLY_RENDER_SCOPE } from '../../../../../src/constants.js';
 import createPlatformSetupConfigs from '../../../../fixtures/platformSetupConfigs.js';
 import getConfigProfilesFactory from '../../../../../src/config/getConfigProfilesFactory.js';
 import getPlatformSetupState, { PLATFORM_SETUP_STATE } from '../../../../../src/config/getPlatformSetupState.js';
@@ -487,7 +487,8 @@ describe('setupPlatformTask', () => {
 
       expect(error).to.be.null();
       expect(configFileRepository.write).to.have.been.calledOnceWithExactly(configFile);
-      expect(writeConfigTemplates).to.have.been.calledOnceWithExactly(ctx.config);
+      expect(writeConfigTemplates).to.have.been.calledOnce();
+      expect(writeConfigTemplates.firstCall.args[0]).to.equal(ctx.config);
       expect(writeConfigTemplates).to.have.been.calledAfter(configFileRepository.write);
       expect(saved()).to.equal(ctx.config);
       expect(ctx.isConfigSaved).to.be.true();
@@ -501,6 +502,28 @@ describe('setupPlatformTask', () => {
       expect(error.message).to.include('ENOSPC');
       expect(ctx.isConfigSaved).to.not.equal(true);
       expect(writeConfigTemplates).to.not.have.been.called();
+    });
+
+    // Core's files read no Platform option. Rendered again, dash.conf would
+    // lose an operator's edit and get fresh rpcauth salts under a running Core.
+    it('should leave Core\'s service files as they are when it changed only Platform options', async () => {
+      const { error } = await run(answers());
+
+      expect(error).to.be.null();
+      expect(writeConfigTemplates.firstCall.args[1]).to.deep.equal(PLATFORM_ONLY_RENDER_SCOPE);
+    });
+
+    // dash.conf advertises externalIp.
+    it('should render Core\'s service files too when it set the external IP', async () => {
+      config = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      config.set('externalIp', null);
+      useConfig(config);
+
+      const { error } = await run({ externalIpAnswer: '5.6.7.8' });
+
+      expect(error).to.be.null();
+      expect(saved().get('externalIp')).to.equal('5.6.7.8');
+      expect(writeConfigTemplates.firstCall.args[1]).to.be.undefined();
     });
 
     // config.json refers to the certificate now, so it must stay.

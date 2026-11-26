@@ -1,9 +1,10 @@
 import { Listr } from 'listr2';
+import lodash from 'lodash';
 import { Observable } from 'rxjs';
 import { publicIpv4 } from 'public-ip';
 
 import Config from '../../../../config/Config.js';
-import { PRESET_MAINNET } from '../../../../constants.js';
+import { PLATFORM_ONLY_RENDER_SCOPE, PRESET_MAINNET } from '../../../../constants.js';
 import { REGISTRATION_STATUS } from '../../../../core/readPlatformRegistration.js';
 import parseTenderdashNodeKey from '../../../../tenderdash/parseTenderdashNodeKey.js';
 import generateTenderdashNodeKey from '../../../../tenderdash/generateTenderdashNodeKey.js';
@@ -553,7 +554,19 @@ export default function setupPlatformTaskFactory(
           configFileRepository.write(configFile);
           ctx.isConfigSaved = true;
 
-          writeConfigTemplates(ctx.config);
+          // Core's service files read no Platform option, so they are left as
+          // they are unless setup changed another option (externalIp, which
+          // dash.conf advertises). Rendered again, dash.conf would lose an
+          // operator's edit and get new rpcauth salts.
+          const isOnlyPlatformChanged = lodash.isEqual(
+            lodash.omit(ctx.storedConfig.getOptions(), 'platform'),
+            lodash.omit(ctx.config.getOptions(), 'platform'),
+          );
+
+          writeConfigTemplates(
+            ctx.config,
+            isOnlyPlatformChanged ? PLATFORM_ONLY_RENDER_SCOPE : undefined,
+          );
 
           // eslint-disable-next-line no-param-reassign
           task.output = renderSummary(ctx);
