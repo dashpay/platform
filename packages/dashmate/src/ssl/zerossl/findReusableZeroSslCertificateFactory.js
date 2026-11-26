@@ -59,7 +59,8 @@ export default function findReusableZeroSslCertificateFactory(validateZeroSslCer
       case ERRORS.CERTIFICATE_ID_IS_NOT_SET:
         return notReusable('no certificate ID is saved');
       case ERRORS.PRIVATE_KEY_IS_NOT_PRESENT:
-        return notReusable('the private key it was requested with is not on this node');
+        return notReusable('the private key it was requested with is missing on this node, or'
+          + ' it cannot be loaded');
       case ERRORS.EXTERNAL_IP_MISMATCH:
         return notReusable(`it was issued for ${data.certificate.common_name}, and externalIp is`
           + ` ${data.externalIp}`);

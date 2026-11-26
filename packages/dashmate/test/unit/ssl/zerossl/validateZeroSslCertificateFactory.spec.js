@@ -153,7 +153,9 @@ describe('validateZeroSslCertificateFactory', () => {
 
     getCertificate.resolves(certificate);
 
-    this.sinon.stub(fs, 'readFileSync').returns('csr content');
+    this.sinon.stub(fs, 'readFileSync').callThrough()
+      .withArgs(path.join('/home/dir', 'my-config', 'platform', 'gateway', 'ssl', 'csr.pem'))
+      .returns('csr content');
 
     const result = await validateZeroSslCertificate(config, expirationDays);
 
@@ -170,7 +172,9 @@ describe('validateZeroSslCertificateFactory', () => {
 
     getCertificate.resolves(certificate);
 
-    this.sinon.stub(fs, 'readFileSync').returns('csr content');
+    this.sinon.stub(fs, 'readFileSync').callThrough()
+      .withArgs(path.join('/home/dir', 'my-config', 'platform', 'gateway', 'ssl', 'csr.pem'))
+      .returns('csr content');
 
     const result = await validateZeroSslCertificate(config, expirationDays);
 
@@ -267,6 +271,16 @@ describe('validateZeroSslCertificateFactory', () => {
 
       expect(result.error).to.be.undefined();
       expect(result.data.isBundleFilePresent).to.be.false();
+    });
+
+    // A full disk can cut the key short too. The certificate serves with
+    // nothing else.
+    it('should not count a key cut short as the key', async () => {
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem.slice(0, pair.keyPem.length / 2));
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.error).to.equal(ERRORS.PRIVATE_KEY_IS_NOT_PRESENT);
     });
 
     // Compose creates a missing bind-mount source as a directory. The key the

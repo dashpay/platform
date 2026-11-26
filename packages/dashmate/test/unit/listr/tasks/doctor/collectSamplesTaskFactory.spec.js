@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -89,7 +90,8 @@ describe('collectSamplesTaskFactory', () => {
     fs.writeFileSync(path.join(sslDir, 'csr.pem'), 'csr', 'utf8');
     // Dashmate writes the key accessible to its owner only, and doctor reports
     // one that is not - so the fixture has to be what a healthy node has
-    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', {
+    const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    fs.writeFileSync(path.join(sslDir, 'private.key'), privateKey.export({ type: 'pkcs8', format: 'pem' }), {
       encoding: 'utf8',
       mode: 0o600,
     });

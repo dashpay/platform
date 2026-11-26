@@ -126,7 +126,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
             case ERRORS.PRIVATE_KEY_IS_NOT_PRESENT:
               // If certificate exists but private key does not, then we can't set up TLS connection
               // In this case we need to regenerate certificate or put back this private key
-              throw new Error(`Certificate private key file not found in ${ctx.privateKeyFilePath}.\n`
+              throw new Error(`Certificate private key file ${ctx.privateKeyFilePath} is missing or cannot be loaded.\n`
                 + 'Please regenerate the certificate using the obtain'
                 + ' command with the --force flag and revoke the previous certificate in'
                 + ' the ZeroSSL dashboard');

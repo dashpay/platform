@@ -166,7 +166,7 @@ And then update your configuration with {bold.cyanBright dashmate config set pla
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new certificate`,
               },
               [ZEROSSL_ERRORS.PRIVATE_KEY_IS_NOT_PRESENT]: {
-                description: chalk`ZeroSSL private key file not found in ${ssl?.data?.privateKeyFilePath}.`,
+                description: chalk`ZeroSSL private key file ${ssl?.data?.privateKeyFilePath} is missing or cannot be loaded.`,
                 solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },

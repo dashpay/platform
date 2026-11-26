@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { findCertificateFilesProblem } from '../findCertificatePairProblem.js';
+import { findPrivateKeyProblem } from '../selectLeafCertificate.js';
 
 export const ERRORS = {
   API_KEY_IS_NOT_SET: 'API_KEY_IS_NOT_SET',
@@ -36,7 +37,37 @@ export function isSavedCertificateReusable(error) {
  * @return {boolean}
  */
 function isRegularFile(filePath) {
-  return fs.statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+  try {
+    return fs.statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the private key a certificate was requested with is on disk and
+ * loads
+ *
+ * Compose creates a missing bind-mount source as a directory, and a full
+ * disk can cut the key short. A key this process cannot read counts: the
+ * gateway may read what this process cannot.
+ *
+ * @param {string} filePath
+ * @return {boolean}
+ */
+function isPrivateKeyUsable(filePath) {
+  if (!isRegularFile(filePath)) {
+    return false;
+  }
+
+  let privateKeyPem;
+  try {
+    privateKeyPem = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return true;
+  }
+
+  return findPrivateKeyProblem(privateKeyPem) === null;
 }
 
 /**
@@ -90,10 +121,10 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
     // Certificate is already configured
 
-    // Check if certificate files are present. Compose creates a missing
-    // bind-mount source as a directory, which holds no key.
+    // Check if certificate files are present. Only what they show is kept
+    // here: doctor archives this data.
     data.isCsrFilePresent = fs.existsSync(data.csrFilePath);
-    data.isPrivateKeyFilePresent = isRegularFile(data.privateKeyFilePath);
+    data.isPrivateKeyFilePresent = isPrivateKeyUsable(data.privateKeyFilePath);
 
     // A bundle counts as downloaded only when the gateway can serve it with
     // the key beside it. One that a full disk cut short, or that belongs to
