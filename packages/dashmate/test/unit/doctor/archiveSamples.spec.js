@@ -267,6 +267,20 @@ describe('archiveSamples', () => {
         .to.equal(1234567890);
     });
 
+    // Certificate dates are judged against the moment the samples were taken,
+    // so the date has to survive a secret that happens to read like it.
+    it('should keep the collection date when a secret reads like it', async () => {
+      config.set('core.rpc.users.tenderdash.password', samples.date.toISOString().slice(0, 10));
+
+      await archiveSamples(samples, archiveRoot, config);
+
+      const restored = await unarchiveSamplesFactory(() => [])(
+        path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`),
+      );
+
+      expect(restored.date.toISOString()).to.equal(samples.date.toISOString());
+    });
+
     it('should refuse to write an archive it cannot remove the secrets from', async () => {
       await expect(archiveSamples(samples, archiveRoot)).to.be.rejectedWith(
         'The config the samples were collected from is needed to remove its secrets',

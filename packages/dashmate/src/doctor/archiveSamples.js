@@ -23,13 +23,9 @@ const MIN_SCRUBBED_SECRET_LENGTH = 8;
  * string.
  *
  * The config sample has its secret fields hidden already, but the same values
- * reach other samples on their own: a service can log one, an RPC response can
- * echo one. They are all known when the archive is written, so they are taken
- * out of every file of it.
- *
- * A secret that is also the whole value of another config field - a password
- * set to the name of an environment, say - is masked there as well. Doctor may
- * then be unable to read that config back, which is the safer way to fail.
+ * reach the collected samples on their own: a service can log one, an RPC
+ * response can echo one. They are all known when the archive is written, so
+ * they are taken out of every collected sample.
  *
  * @param {Config} config - as stored, not obfuscated
  * @return {function(string): string}
@@ -112,11 +108,19 @@ export default async function archiveSamples(samples, folderPath, config) {
   const archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), `${archiveName}-`));
 
   try {
-    writeSampleFile(archiveDir, null, 'date', samples.date.toISOString(), scrub);
+    // What dashmate writes about itself rather than collects is left out of
+    // the scrub. Doctor checks its structure when it reads a report back - the
+    // config copy against the config schema, the date as a date - and the
+    // scrub cannot tell a secret from an equal value that has to stay, such
+    // as a password spelled like the environment name. The config copy has
+    // its secrets hidden field by field instead.
+    const keep = (text) => text;
+
+    writeSampleFile(archiveDir, null, 'date', samples.date.toISOString(), keep);
     writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo(), scrub);
     writeSampleFile(archiveDir, null, 'dockerError', samples.getStringifiedDockerError(), scrub);
-    writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig(), scrub);
-    writeSampleFile(archiveDir, null, 'dashmateVersion', samples.getDashmateVersion(), scrub);
+    writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig(), keep);
+    writeSampleFile(archiveDir, null, 'dashmateVersion', samples.getDashmateVersion(), keep);
 
     for (const [serviceName, service] of Object.entries(samples.getServices())) {
       for (const [key, data] of Object.entries(service)) {

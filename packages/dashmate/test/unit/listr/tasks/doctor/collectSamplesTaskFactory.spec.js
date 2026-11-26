@@ -588,5 +588,39 @@ describe('collectSamplesTaskFactory', () => {
         'Service Drive ABCI failed with an error code 137\nand message: container exited unexpectedly.',
       );
     });
+
+    // A password can be spelled like a value the config schema requires
+    // elsewhere, such as the environment name. Doctor validates the config copy
+    // when it reads a report back, so the copy must keep that value while the
+    // password itself stays hidden.
+    it('should read a report back when a password equals another config value', async () => {
+      config.set('environment', 'production');
+      config.set('core.rpc.users.dapi.password', 'production');
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: { Image: 'dashpay/drive:test', Env: [] },
+        State: {
+          Restarting: true,
+          ExitCode: 1,
+          Error: 'container exited unexpectedly',
+        },
+      });
+
+      const restored = await unarchiveSamplesFactory(getServiceList)(await collectAndArchive());
+
+      const restoredConfig = restored.getDashmateConfig();
+
+      expect(restoredConfig.get('environment')).to.equal('production');
+      expect(restoredConfig.get('core.rpc.users.dapi.password')).to.equal('*'.repeat('production'.length));
+
+      const problems = analyseServiceContainersFactory(getServiceList)(restored)
+        .map((problem) => problem.getDescription());
+
+      expect(problems).to.include(
+        'Service Drive ABCI failed with an error code 1\nand message: container exited unexpectedly.',
+      );
+      expect(() => analyseConfig(restored)).to.not.throw();
+    });
   });
 });
