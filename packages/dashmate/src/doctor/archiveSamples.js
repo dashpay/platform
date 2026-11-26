@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import { create } from 'tar';
 import { getConfigSecretValues } from '../config/obfuscateConfig.js';
-import hideString from '../util/hideString.js';
 import maskOperatorIdentity, { getOperatorIdentity } from '../util/maskOperatorIdentity.js';
 
 /**
@@ -17,6 +16,57 @@ import maskOperatorIdentity, { getOperatorIdentity } from '../util/maskOperatorI
  * copied, are left out when samples are collected.
  */
 const MIN_SCRUBBED_SECRET_LENGTH = 8;
+
+/**
+ * @param {string} text
+ * @param {string[]} needles
+ * @return {[number, number][]} where each needle occurs in the text, every
+ *   occurrence, overlapping ones included
+ */
+function findRanges(text, needles) {
+  const ranges = [];
+
+  for (const needle of needles) {
+    for (let index = text.indexOf(needle); index !== -1; index = text.indexOf(needle, index + 1)) {
+      ranges.push([index, index + needle.length]);
+    }
+  }
+
+  return ranges;
+}
+
+/**
+ * Mask every character any range covers. Ranges are found in the text as it
+ * was and merged where they overlap, so masking one secret never hides part
+ * of another from the search.
+ *
+ * @param {string} text
+ * @param {[number, number][]} ranges
+ * @return {string}
+ */
+function maskRanges(text, ranges) {
+  if (ranges.length === 0) {
+    return text;
+  }
+
+  const sorted = [...ranges].sort(([a], [b]) => a - b);
+
+  let masked = '';
+  let cursor = 0;
+  let [start, end] = sorted[0];
+
+  for (const [rangeStart, rangeEnd] of sorted.slice(1)) {
+    if (rangeStart <= end) {
+      end = Math.max(end, rangeEnd);
+    } else {
+      masked += text.slice(cursor, start) + '*'.repeat(end - start);
+      cursor = end;
+      [start, end] = [rangeStart, rangeEnd];
+    }
+  }
+
+  return masked + text.slice(cursor, start) + '*'.repeat(end - start) + text.slice(end);
+}
 
 /**
  * Mask every config secret long enough to search for wherever it occurs in a
@@ -44,15 +94,9 @@ function createSecretScrubber(config) {
       .flatMap((value) => [value, JSON.stringify(value).slice(1, -1)])
       // Masking the name can leave too little of a secret to search for
       .filter((value) => value.length >= MIN_SCRUBBED_SECRET_LENGTH),
-  )]
-    // Longest first, so a secret that contains another is masked whole rather
-    // than leaving the part outside the shorter one in clear
-    .sort((a, b) => b.length - a.length);
+  )];
 
-  return (text) => needles.reduce(
-    (scrubbed, needle) => scrubbed.replaceAll(needle, hideString(needle)),
-    text,
-  );
+  return (text) => maskRanges(text, findRanges(text, needles));
 }
 
 function writeSampleFile(archiveDir, service, filename, data, scrub) {

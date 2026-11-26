@@ -167,6 +167,20 @@ describe('archiveSamples', () => {
         .to.equal('https://********:***************@acme.example.com/directory');
     });
 
+    // Masking one secret must not hide part of another from the search: each
+    // is looked for in the text as it was, and every match is masked
+    it('should mask the whole of two secrets that overlap in the text', async () => {
+      config.set('core.rpc.users.tenderdash.password', 'alpha123456');
+      config.set('core.rpc.users.quorum_list.password', '123456beta');
+
+      samples.setServiceInfo('core', 'stdOut', 'auth alpha123456beta rejected\n');
+
+      const archived = await archiveAndRead();
+
+      expect(archived).to.not.contain('beta');
+      expect(archived).to.contain(`auth ${'*'.repeat('alpha123456beta'.length)} rejected`);
+    });
+
     it('should mask the whole of a secret that contains another', async () => {
       config.set('core.rpc.users.tenderdash.password', 'nestedSecret1');
       config.set('core.rpc.users.quorum_list.password', 'nestedSecret1Tail9');
