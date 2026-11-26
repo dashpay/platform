@@ -2391,12 +2391,14 @@ impl PlatformWallet {
     /// configuration lock for its binding check, so a caller must hold none
     /// of them: a removal or a Clear queued in between would deadlock it.
     ///
-    /// Every refusal raised before anything is built is `NotSent`. One whose
-    /// variant is otherwise classed possibly sent (a zero amount, an invalid
-    /// recipient) arrives wrapped in
+    /// A refusal of the recipient, the amount or the note reservation is
+    /// `NotSent`. One whose variant is otherwise classed possibly sent (a zero
+    /// amount, an invalid recipient) arrives wrapped in
     /// [`PlatformWalletError::RefusedBeforeDispatch`]: match the diagnostic
     /// on [`PlatformWalletError::dispatched_source`], and read delivery and
-    /// retry from the outer error.
+    /// retry from the outer error. A later failure keeps its own class, even
+    /// one before the build: a failed recorded-anchor fetch is an SDK error,
+    /// classed possibly sent.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
