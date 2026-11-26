@@ -37,7 +37,7 @@ export default function createLegacyReportCleanupTasks(tempDir) {
             ? [`Could not look in ${scanFailure.dir} for files left by earlier reports: ${scanFailure.error.message}`]
             : []),
           ...left.map(describeLeft),
-          ...found.map((dir) => `Found ${dir}`),
+          ...found.map(({ dir }) => `Found ${dir}`),
         ];
 
         if (lines.length === 0) {
@@ -62,7 +62,7 @@ export default function createLegacyReportCleanupTasks(tempDir) {
           name: 'confirm',
           header: `  Earlier dashmate versions left these directories behind while creating reports:
 
-${ctx.legacyReportDirs.map((dir) => `  - ${dir}`).join('\n')}
+${ctx.legacyReportDirs.map(({ dir }) => `  - ${dir}`).join('\n')}
 
   They hold nothing but the files those versions wrote. A report you unpacked
   there yourself looks the same, so they are only removed if you agree.\n`,

@@ -300,10 +300,12 @@ function verifyStagingDir(dir, uid, tempDev, state) {
  *
  * @param {string} tempDir - the directory reports were staged in
  * @return {{
- *   found: string[],
+ *   found: {dir: string, dev: number, ino: number, tempDev: number, tempIno: number}[],
  *   left: {dir: string, error: Error, restricted: boolean}[],
  *   scanFailure: {dir: string, error: Error}|null,
- * }} `restricted` says whether a directory left in place was closed to other
+ * }} each found directory with its identity and its temp directory's, so a
+ *   different directory put at the same path is not taken for it;
+ *   `restricted` says whether a directory left in place was closed to other
  *   users; `scanFailure` says the temp directory itself could not be looked
  *   in
  */
@@ -318,7 +320,7 @@ export function findLegacyReportStagingDirs(tempDir) {
   const uid = process.getuid();
 
   let resolvedTempDir;
-  let tempDev;
+  let tempStat;
   let names;
 
   try {
@@ -337,7 +339,7 @@ export function findLegacyReportStagingDirs(tempDir) {
       throw new Error('it, or a directory above it, can be changed by other users');
     }
 
-    tempDev = fs.lstatSync(resolvedTempDir).dev;
+    tempStat = fs.lstatSync(resolvedTempDir);
     names = fs.readdirSync(resolvedTempDir);
   } catch (error) {
     return { found, left, scanFailure: { dir: resolvedTempDir ?? tempDir, error } };
@@ -352,9 +354,15 @@ export function findLegacyReportStagingDirs(tempDir) {
       const stat = fs.lstatSync(dir);
 
       if (stat.isDirectory() && stat.uid === uid) {
-        verifyStagingDir(dir, uid, tempDev, state);
+        verifyStagingDir(dir, uid, tempStat.dev, state);
 
-        found.push(dir);
+        found.push({
+          dir,
+          dev: stat.dev,
+          ino: stat.ino,
+          tempDev: tempStat.dev,
+          tempIno: tempStat.ino,
+        });
       }
     } catch (error) {
       left.push({ dir, error, restricted: state.restricted });
@@ -365,11 +373,59 @@ export function findLegacyReportStagingDirs(tempDir) {
 }
 
 /**
+ * Remove a directory that was checked, and nothing put at its path instead.
+ *
+ * It is first moved into a fresh directory of its own beside it, which only
+ * the user can reach, and checked again there; what is removed is then the
+ * directory that was moved, whatever appears at the old path meanwhile. One
+ * that turns out not to be the directory found is put back.
+ *
+ * @param {string} dir
+ * @param {{dev: number, ino: number}} identity - as recorded when found
+ * @param {number} uid
+ * @param {number} tempDev
+ * @param {{restricted: boolean}} state
+ */
+function removeVerified(dir, { dev, ino }, uid, tempDev, state) {
+  const holding = fs.mkdtempSync(path.join(path.dirname(dir), '.dashmate-report-removal-'));
+  const moved = path.join(holding, path.basename(dir));
+
+  fs.renameSync(dir, moved);
+
+  try {
+    const stat = fs.lstatSync(moved);
+
+    if (stat.dev !== dev || stat.ino !== ino) {
+      throw new Error(`${dir} is not the directory that was found there`);
+    }
+
+    verifyStagingDir(moved, uid, tempDev, state);
+  } catch (error) {
+    try {
+      fs.renameSync(moved, dir);
+      fs.rmdirSync(holding);
+    } catch {
+      throw new Error(`${error.message}; it was left in ${holding}`);
+    }
+
+    throw error;
+  }
+
+  try {
+    fs.rmSync(moved, { recursive: true, force: true });
+    fs.rmdirSync(holding);
+  } catch (error) {
+    throw new Error(`${error.message}; what is left of it is in ${holding}`);
+  }
+}
+
+/**
  * Remove staging directories the operator agreed to remove. Each one is
  * checked again first, so one that changed since it was found is left in
  * place.
  *
- * @param {string[]} dirs - as found by findLegacyReportStagingDirs
+ * @param {{dir: string, dev: number, ino: number, tempDev: number, tempIno: number}[]} dirs
+ *   as found by findLegacyReportStagingDirs
  * @return {{removed: string[], failed: {dir: string, error: Error, restricted: boolean}[]}}
  */
 export function removeLegacyReportStagingDirs(dirs) {
@@ -383,7 +439,9 @@ export function removeLegacyReportStagingDirs(dirs) {
 
   const uid = process.getuid();
 
-  for (const dir of dirs) {
+  for (const {
+    dir, dev, ino, tempDev, tempIno,
+  } of dirs) {
     const state = { restricted: false };
 
     try {
@@ -396,15 +454,24 @@ export function removeLegacyReportStagingDirs(dirs) {
         throw new Error(`${tempDir} is no longer the directory ${path.basename(dir)} was found in`);
       }
 
+      // The operator agreed to remove the directory that was looked at, so
+      // one that is not the same directory, or not in the same temp
+      // directory, is not it, however alike the two are
+      const tempStat = fs.lstatSync(tempDir);
       const stat = fs.lstatSync(dir);
+
+      if (tempStat.dev !== tempDev || tempStat.ino !== tempIno
+        || stat.dev !== dev || stat.ino !== ino) {
+        throw new Error(`${dir} is not the directory that was found there`);
+      }
 
       if (!stat.isDirectory() || stat.uid !== uid) {
         throw new Error(`${dir} is no longer a directory of the current user`);
       }
 
-      verifyStagingDir(dir, uid, fs.lstatSync(tempDir).dev, state);
+      verifyStagingDir(dir, uid, tempDev, state);
 
-      fs.rmSync(dir, { recursive: true, force: true });
+      removeVerified(dir, { dev, ino }, uid, tempDev, state);
 
       removed.push(dir);
     } catch (error) {

@@ -109,7 +109,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
     const { found, left, scanFailure } = findLegacyReportStagingDirs(tempDir);
 
-    expect(found).to.deep.equal([dir]);
+    expect(found.map(({ dir: foundDir }) => foundDir)).to.deep.equal([dir]);
     expect(left).to.be.empty();
     expect(scanFailure).to.be.null();
     expect(fs.existsSync(dir)).to.be.true();
@@ -130,6 +130,87 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
       .to.deep.equal([[dir, true]]);
     expect(fs.existsSync(path.join(dir, 'notes.txt'))).to.be.true();
+  });
+
+  // What the operator agreed to remove is the directory that was looked at,
+  // not whatever is at its path when they answer
+  it('should not remove a different directory put at the path of one it found', () => {
+    const dir = makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    fs.renameSync(dir, path.join(testRoot, 'original'));
+    makeStagingDir(legacyName);
+
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.be.empty();
+    expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
+    expect(fs.existsSync(path.join(dir, 'date.txt'))).to.be.true();
+  });
+
+  // Whatever is put at the path while the directory is being removed is not
+  // what was checked, so it is not what goes
+  it('should remove the checked directory, not one put at its path while removing it', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    const rmSync = fs.rmSync.bind(fs);
+    let replaced = false;
+
+    this.sinon.stub(fs, 'rmSync').callsFake((target, options) => {
+      if (!replaced && path.basename(target) === legacyName) {
+        replaced = true;
+
+        if (fs.existsSync(dir)) {
+          fs.renameSync(dir, path.join(testRoot, 'original'));
+        }
+
+        makeStagingDir(legacyName);
+        fs.writeFileSync(path.join(dir, 'core', 'stdOut.txt'), 'replacement\n');
+      }
+
+      return rmSync(target, options);
+    });
+
+    const { removed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.deep.equal([dir]);
+    expect(fs.readFileSync(path.join(dir, 'core', 'stdOut.txt'), 'utf8')).to.equal('replacement\n');
+  });
+
+  it('should put a directory back if what was moved for removal is not the one found', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    const lstatSync = fs.lstatSync.bind(fs);
+
+    this.sinon.stub(fs, 'lstatSync').callsFake((entry, ...rest) => {
+      const stat = lstatSync(entry, ...rest);
+
+      return String(entry).includes('.dashmate-report-removal-') && path.basename(entry) === legacyName
+        ? Object.assign(Object.create(stat), { ino: stat.ino + 1 })
+        : stat;
+    });
+
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.be.empty();
+    expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
+    expect(fs.existsSync(path.join(dir, 'date.txt'))).to.be.true();
+    expect(fs.readdirSync(tempDir)).to.deep.equal([legacyName]);
+  });
+
+  it('should leave nothing of its own behind once a directory is removed', () => {
+    makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    removeLegacyReportStagingDirs(found);
+
+    expect(fs.readdirSync(tempDir)).to.be.empty();
   });
 
   // The directory was found in one temp directory; by the time the operator
@@ -252,7 +333,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
     const rmSync = fs.rmSync.bind(fs);
     this.sinon.stub(fs, 'rmSync').callsFake((target, options) => {
-      if (target === first) {
+      if (path.basename(target) === path.basename(first)) {
         throw new Error('permission denied');
       }
 
@@ -262,8 +343,8 @@ describe('removeLegacyReportStagingDirs', () => {
     const { removed, failed } = cleanUp(tempDir);
 
     expect(removed).to.deep.equal([second]);
-    expect(failed.map(({ dir, error }) => [dir, error.message]))
-      .to.deep.equal([[first, 'permission denied']]);
+    expect(failed.map(({ dir }) => dir)).to.deep.equal([first]);
+    expect(failed[0].error.message).to.match(/^permission denied; what is left of it is in /);
   });
 
   // What is removed is decided by name and owner, and both only hold while
