@@ -11,6 +11,7 @@ use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+use crate::platform_types::state_transition_execution_proofs::StateTransitionExecutionProofs;
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
@@ -54,6 +55,9 @@ pub struct Platform<C> {
     pub core_rpc: C,
     /// CheckTx-only proof-verification admission control
     pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
+    /// The state transitions this node was asked to prove the state before and after, and
+    /// the proofs it has made of them
+    pub(crate) state_transition_execution_proofs: StateTransitionExecutionProofs,
 }
 
 // @append_only
@@ -313,6 +317,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
+            state_transition_execution_proofs: StateTransitionExecutionProofs::new(height),
         };
 
         Ok(platform)
@@ -351,6 +356,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
+            state_transition_execution_proofs: StateTransitionExecutionProofs::new(height),
         })
     }
 }

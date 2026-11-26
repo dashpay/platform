@@ -8,6 +8,7 @@ pub mod identity_sync;
 mod load;
 #[cfg(test)]
 pub(crate) use load::pool_validations_on_this_thread;
+pub use load::{restore_account_address_pools, AddressPoolRestoreStats};
 mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
@@ -159,7 +160,7 @@ const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
 
 /// Deadline for joining the shielded balance emitter at shutdown. The emitter
 /// observes its cancellation at every await, including the wait for a store a
-/// scan holds, so only a host callback it is inside can hold it up; the bound
+/// writer holds, so only a host callback it is inside can hold it up; the bound
 /// keeps such a callback from hanging `destroy`. The handle stays in its slot
 /// until a join completes, so a timeout or a dropped `shutdown` future leaves
 /// it for a later `shutdown` on the same manager to re-join, and the report
@@ -2005,6 +2006,9 @@ mod tests {
         Arc::clone(&mgr.identity_sync_manager).start();
         Arc::clone(&mgr.platform_address_sync_manager).start();
         Arc::clone(&mgr.dashpay_sync_manager).start();
+        Arc::clone(&mgr.dpns_sync_manager).start();
+        #[cfg(feature = "shielded")]
+        Arc::clone(&mgr.shielded_sync_manager).start();
 
         let report = mgr.shutdown().await;
         assert!(report.all_clean(), "clean shutdown: {report:?}");
@@ -2012,6 +2016,9 @@ mod tests {
             WalletWorker::IdentitySync,
             WalletWorker::PlatformAddressSync,
             WalletWorker::DashPaySync,
+            WalletWorker::DpnsSync,
+            #[cfg(feature = "shielded")]
+            WalletWorker::ShieldedSync,
         ] {
             assert_eq!(
                 report.per_worker.get(&worker),
@@ -2395,6 +2402,7 @@ mod tests {
             balance: corrected,
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         });
 
         // Observable immediately — before the lifecycle writer commits.

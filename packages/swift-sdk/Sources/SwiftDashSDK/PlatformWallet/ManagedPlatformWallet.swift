@@ -88,6 +88,77 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         )
     }
 
+    // MARK: - Locked outpoints
+
+    /// A transaction output: the txid's raw 32 bytes (the order the FFI
+    /// carries, as `PersistentTxo.outpoint`) and the output index.
+    public struct Outpoint: Hashable, Sendable {
+        public let txid: Data
+        public let vout: UInt32
+
+        public init(txid: Data, vout: UInt32) {
+            self.txid = txid
+            self.vout = vout
+        }
+    }
+
+    /// The outpoints this wallet keeps out of coin selection: the collateral
+    /// of the masternode registrations the wallet has seen in a block (or
+    /// that created their collateral), and every outpoint locked with
+    /// `lockOutpoint`. An entry may name a coin the
+    /// wallet does not hold yet; the coin arrives locked.
+    public func lockedOutpoints() throws -> [Outpoint] {
+        var entries: UnsafePointer<OutPointFFI>?
+        var count: UInt = 0
+        let result = platform_wallet_locked_outpoints(handle, &entries, &count)
+        try result.check()
+        guard let entries, count > 0 else { return [] }
+        defer {
+            platform_wallet_locked_outpoints_free(UnsafeMutablePointer(mutating: entries), count)
+        }
+        return (0..<Int(count)).map { index in
+            Outpoint(txid: hashData(entries[index].txid), vout: entries[index].vout)
+        }
+    }
+
+    /// Lock `outpoint`, so no send, asset lock or special-transaction fee
+    /// spends it until `unlockOutpoint`. Returns `true` when it was not
+    /// locked before. The lock is persisted before this returns.
+    @discardableResult
+    public func lockOutpoint(_ outpoint: Outpoint) async throws -> Bool {
+        try await setOutpointLock(outpoint, locked: true)
+    }
+
+    /// Unlock `outpoint`, so coin selection may spend it again. Unlocking a
+    /// masternode collateral lets a send spend it, and spending it ends the
+    /// masternode registration. Returns `true` when it was locked. The
+    /// unlock is persisted before this returns.
+    @discardableResult
+    public func unlockOutpoint(_ outpoint: Outpoint) async throws -> Bool {
+        try await setOutpointLock(outpoint, locked: false)
+    }
+
+    private func setOutpointLock(_ outpoint: Outpoint, locked: Bool) async throws -> Bool {
+        guard outpoint.txid.count == 32 else {
+            throw PlatformWalletError.invalidParameter("txid must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var entry = OutPointFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                    outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                entry.vout = outpoint.vout
+                var changed = false
+                let result = locked
+                    ? platform_wallet_lock_outpoint(handle, &entry, &changed)
+                    : platform_wallet_unlock_outpoint(handle, &entry, &changed)
+                try result.check()
+                return changed
+            }
+        }.value
+    }
+
     // MARK: - Sub-wallet access
 
     /// Get the platform address wallet for BLAST sync, transfers, and withdrawals.
@@ -750,15 +821,23 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     // MARK: - Identity top-up (address-funded)
 
-    /// Top up an existing identity's credit balance from one or more
-    /// Platform addresses, using an external `KeychainSigner` for the
+    /// Top up an identity's credit balance from one or more Platform
+    /// addresses, whoever owns the identity (one of this wallet's or
+    /// someone else's), using an external `KeychainSigner` for the
     /// per-address funding signatures.
+    ///
+    /// Bridges `platform_wallet_top_up_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform, never adds it to the
+    /// wallet's identities, and updates the balance of an identity the
+    /// wallet manages, so the caller does not decide whether the identity
+    /// is its own.
     ///
     /// Top-up state-transitions are signed entirely with the input
     /// addresses' private keys (no IdentityCreate to sign), so unlike
     /// `registerIdentityFromAddresses` only one signer is required —
     /// the same `KeychainSigner` you use for registration's
-    /// `addressSigner` role.
+    /// `addressSigner` role. An identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
     ///
     /// - Parameters:
     ///   - identityId: 32-byte identity id of the existing identity
@@ -769,19 +848,117 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     ///     for each input platform address. Borrowed for the
     ///     duration of the call.
     ///
+    /// - Returns: the identity's new credit balance.
+    public func topUpIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.any
+        )
+    }
+
+    /// Top up an identity this wallet manages from one or more Platform
+    /// addresses.
+    ///
+    /// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
+    /// identity and updates a managed one's balance the same way. This
+    /// method differs only in throwing `PlatformWalletError.identityNotFound`
+    /// for an identity the wallet does not manage, before Platform is asked,
+    /// and `PlatformWalletError.identityBalanceUnavailable` (retryable) when
+    /// Platform does not show the wallet's identity yet. Arguments and
+    /// signer handling match `topUpIdentityFromAddresses`.
+    ///
     /// - Returns: the new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
     public func topUpFromAddresses(
         identityId: Data,
         inputs: [IdentityAddressInput],
         addressSigner: KeychainSigner
     ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.managed
+        )
+    }
+
+    /// Top up an identity this wallet does **not** manage (someone
+    /// else's) from one or more Platform addresses.
+    ///
+    /// **Deprecated:** now the same operation as
+    /// `topUpIdentityFromAddresses`, which tops up any identity; use that
+    /// instead.
+    ///
+    /// Bridges `platform_wallet_top_up_external_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform and never adds it to the
+    /// wallet's identities, so nothing about it is persisted here either.
+    /// Arguments, signer handling and error mapping match
+    /// `topUpFromAddresses`; an identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
+    ///
+    /// - Returns: the identity's new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
+    public func topUpExternalIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.external
+        )
+    }
+
+    /// The address-funded top-up exports each public wrapper hands its
+    /// arguments to. A stored property so tests can swap in fakes and see
+    /// which export a wrapper dispatches to.
+    struct AddressTopUpExports {
+        var any: AddressTopUpCall = platform_wallet_top_up_identity_from_addresses_with_signer
+        var managed: AddressTopUpCall = platform_wallet_top_up_from_addresses_with_signer
+        var external: AddressTopUpCall =
+            platform_wallet_top_up_external_identity_from_addresses_with_signer
+    }
+
+    var addressTopUpExports = AddressTopUpExports()
+
+    /// Signature shared by the address-funded top-up exports.
+    typealias AddressTopUpCall = @Sendable (
+        Handle,
+        UnsafePointer<IdentityIdBytes>?,
+        UnsafePointer<IdentityFundingInputFFI>?,
+        UInt,
+        OpaquePointer?,
+        UnsafeMutablePointer<UInt64>?
+    ) -> PlatformWalletFFIResult
+
+    typealias IdentityIdBytes = (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+
+    /// Guards and marshalling shared by the address-funded top-ups;
+    /// `call` is the export to hand the marshalled arguments to.
+    /// `internal` so tests can observe the marshalling.
+    func topUpFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner,
+        call: @escaping AddressTopUpCall
+    ) async throws -> UInt64 {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "identityId must be 32 bytes, got \(identityId.count)"
             )
-        }
-        guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter("inputs is empty")
         }
         // Reject malformed address hashes up front. Earlier
         // revisions used `.prefix(20)` on the FFI build below,
@@ -801,17 +978,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let addressSignerHandle = addressSigner.handle
 
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
-            // Keepalive — see `registerIdentityFromAddresses` for
-            // rationale. The trampoline ctx pointer dangles unless
-            // the Swift owner stays alive across this detached work.
-            _ = addressSigner
-
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
+            var idTuple: IdentityIdBytes = (
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
@@ -840,16 +1007,27 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             var newBalance: UInt64 = 0
 
-            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                withUnsafePointer(to: &idTuple) { idPtr in
-                    platform_wallet_top_up_from_addresses_with_signer(
-                        handle,
-                        idPtr,
-                        inputsBuf.baseAddress,
-                        UInt(inputsBuf.count),
-                        addressSignerHandle,
-                        &newBalance
-                    )
+            // `KeychainSigner` registers itself with the Rust signer as a
+            // `passUnretained` ctx and destroys the handle in `deinit`, and
+            // Swift lifetimes end at last use, not at scope end — a bare
+            // `_ = addressSigner` is no fence. `withExtendedLifetime` pins
+            // it across the whole synchronous FFI call (lookup, signing,
+            // broadcast and wait) and its buffer pinning. The wallet is
+            // pinned with it: its `deinit` destroys `handle`.
+            let result = withExtendedLifetime((self, addressSigner)) {
+                ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                    withUnsafePointer(to: &idTuple) { idPtr in
+                        // An empty list goes over as `(NULL, 0)`; Rust
+                        // refuses it as an invalid parameter.
+                        call(
+                            handle,
+                            idPtr,
+                            inputsBuf.isEmpty ? nil : inputsBuf.baseAddress,
+                            UInt(inputsBuf.count),
+                            addressSignerHandle,
+                            &newBalance
+                        )
+                    }
                 }
             }
 
@@ -2736,19 +2914,47 @@ extension ManagedPlatformWallet {
         /// unspent (a reclaim top-up consumes it without creating this
         /// identity), so the claim can still fail late.
         public let alreadyClaimed: Bool
+        /// Whether this wallet made the claim: `true` only when the wallet
+        /// records the invitation's identity in one of its registration
+        /// slots, `false` whenever `alreadyClaimed` is false, and `nil` for
+        /// any other claimed invitation (no key the identity holds decides
+        /// it). Always `nil` for a claimed invitation from
+        /// ``invitationClaimStatus(uri:)``, which does not ask.
+        public let claimedByThisWallet: Bool?
 
+        /// `claimedByThisWallet` defaults to unknown; Rust reports `false`
+        /// for an unclaimed invitation.
         public init(
             prospectiveIdentityId: Data,
             amountDuffs: UInt64,
             isInstant: Bool,
             isChainLocked: Bool,
-            alreadyClaimed: Bool
+            alreadyClaimed: Bool,
+            claimedByThisWallet: Bool? = nil
         ) {
             self.prospectiveIdentityId = prospectiveIdentityId
             self.amountDuffs = amountDuffs
             self.isInstant = isInstant
             self.isChainLocked = isChainLocked
             self.alreadyClaimed = alreadyClaimed
+            self.claimedByThisWallet = claimedByThisWallet
+        }
+
+        init(_ ffi: InvitationClaimStatusFFI) {
+            let claimedByThisWallet: Bool?
+            switch ffi.claimed_by_this_wallet {
+            case UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO): claimedByThisWallet = false
+            case UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_YES): claimedByThisWallet = true
+            default: claimedByThisWallet = nil
+            }
+            self.init(
+                prospectiveIdentityId: withUnsafeBytes(of: ffi.prospective_identity_id) { Data($0) },
+                amountDuffs: ffi.amount_duffs,
+                isInstant: ffi.is_instant,
+                isChainLocked: ffi.is_chain_locked,
+                alreadyClaimed: ffi.already_claimed,
+                claimedByThisWallet: claimedByThisWallet
+            )
         }
     }
 
@@ -2853,6 +3059,25 @@ extension ManagedPlatformWallet {
     /// time gate. The contact-bootstrap ("establish contact with the
     /// sender?") is NOT done here — after a successful claim the UI asks the
     /// invitee and, on confirm, calls `sendContactRequest` for the reciprocal.
+    ///
+    /// Nothing is broadcast when Platform would refuse the claim and charge
+    /// the voucher: it throws `.invitationClaimedByThisWallet` (the wallet
+    /// already records the invitation's identity; load that identity),
+    /// `.assetLockAlreadyConsumed` (claimed by an identity the wallet does not
+    /// record: whose it is is unknown, usually someone else's, possibly an
+    /// earlier claim of this wallet whose result was lost before it was
+    /// recorded; no key the identity holds decides it),
+    /// `.invitationKeysAlreadyRegistered` with no consensus error (another
+    /// identity holds these keys)
+    /// or `.invitationNotReady` (retry once synced). The same
+    /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
+    /// different: a key was registered after the lookup, Platform refused
+    /// the broadcast, and the voucher may have been charged.
+    /// `.assetLockNotChainLocked` means retry later. A node that has not seen an earlier landed claim
+    /// lets the retry through; Platform then refuses it, and the identity is
+    /// returned as the claim's result when it carries exactly these keys, or
+    /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`
+    /// as above when it does not.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(
@@ -2971,13 +3196,26 @@ extension ManagedPlatformWallet {
                     platform_wallet_invitation_claim_status(handle, uriPtr, &out)
                 }
                 try result.check()
-                return InvitationClaimStatus(
-                    prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
-                    amountDuffs: out.amount_duffs,
-                    isInstant: out.is_instant,
-                    isChainLocked: out.is_chain_locked,
-                    alreadyClaimed: out.already_claimed
-                )
+                return InvitationClaimStatus(out)
+            }
+        }.value
+    }
+
+    /// ``invitationClaimStatus(uri:)``, plus whether this wallet made the
+    /// claim (``InvitationClaimStatus/claimedByThisWallet``): `true` only for
+    /// an identity the wallet records, `nil` for any other claimed
+    /// invitation. Same error contract as ``invitationClaimStatus(uri:)``.
+    public func invitationClaimStatusForThisWallet(uri: String) async throws -> InvitationClaimStatus {
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
+            try withExtendedLifetime(self) {
+                var out = InvitationClaimStatusFFI()
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_claim_status_for_identity(handle, uriPtr, &out)
+                }
+                try result.check()
+                return InvitationClaimStatus(out)
             }
         }.value
     }
@@ -4121,8 +4359,9 @@ extension ManagedPlatformWallet {
     /// fold it into the wallet (`IdentityWallet::refresh_identity`). Keys
     /// added or changed on another client are taken in, a node behind what
     /// the wallet already holds cannot roll an update back, and changed key
-    /// rows are handed to the persist-identity-keys callback (a failed
-    /// store there is logged by Rust, not thrown).
+    /// rows are handed to the persist-identity-keys callback. A failed
+    /// store there is thrown and leaves the wallet's copy as it was, so a
+    /// retry still includes those keys.
     public func refreshIdentity(identityId: Identifier) async throws {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")

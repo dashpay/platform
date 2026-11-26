@@ -29,6 +29,7 @@ use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDire
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
+use super::anchor_cache::{fetch_recorded_anchor_set, RecordedAnchorCache};
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, ensure_token_purchase_count,
@@ -57,7 +58,6 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
-use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::{
     identity_top_up_from_shielded_pool_requirement, shield_from_identity_requirement,
     token_purchase_from_shielded_pool_requirement,
@@ -878,7 +878,7 @@ where
     S: ShieldedStore,
     D: Fn(&dash_sdk::Error) -> String,
 {
-    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     // A transition that names no input is no shield from addresses: its
     // result then shows nothing spent, and it settles as unconfirmed.
     let no_inputs = BTreeMap::new();
@@ -1629,6 +1629,7 @@ mod shield_from_identity_build_error_tests {
 pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -1640,6 +1641,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     identity_top_up_from_pool_with_metadata(
         sdk,
         store,
+        anchor_cache,
         persister,
         wallet_id,
         keys,
@@ -1659,6 +1661,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 >(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -1693,7 +1696,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         let anchor_bytes = anchor.to_bytes();
 
         let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
@@ -1758,6 +1761,13 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok((proof, metadata)) => {
@@ -2747,7 +2757,9 @@ where
         }
         // The fee bundle's anchor too: a write to the credit pool during
         // proving may have pruned it.
-        let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk).await?;
+        let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk)
+            .await
+            .map_err(PlatformWalletError::from)?;
         if !credit_anchors_now.contains(&fee_anchor.to_bytes()) {
             return Err(PlatformWalletError::ShieldedNoRecordedAnchor(
                 "the credit pool no longer records the anchor this spend's fee was built \
@@ -3562,6 +3574,7 @@ pub(crate) async fn pay_private_document_with_outcome<S: ShieldedStore>(
 pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3605,7 +3618,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3672,6 +3685,13 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok(_) => {
@@ -3746,6 +3766,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3758,6 +3779,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     transfer_once_claimed(
         sdk,
         store,
+        anchor_cache,
         persister,
         wallet_id,
         keys,
@@ -3784,6 +3806,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 pub(crate) async fn transfer_once_claimed<S, P, C, CFut>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3827,7 +3850,7 @@ where
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3894,6 +3917,13 @@ where
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok(_) => {
@@ -3950,6 +3980,7 @@ where
 pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3992,7 +4023,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -4061,6 +4092,13 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok(_) => {
@@ -4134,6 +4172,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 pub async fn identity_create_from_shielded_pool<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -4198,7 +4237,7 @@ where
     let mut derived_identity_id = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed create can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -4281,6 +4320,13 @@ where
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok((identity_id, identity)) => {
@@ -4426,7 +4472,7 @@ async fn broadcast_identity_create(
         })
     };
 
-    match broadcast_tracking_delivery(sdk, st).await {
+    match broadcast_tracking_delivery(sdk, st, None).await {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -4618,7 +4664,8 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// frequently a value Platform never recorded — building against it
 /// unconditionally is what made such spends fail and never land.
 ///
-/// This fetches Platform's recorded anchor set (outside the store lock), then
+/// This obtains Platform's recorded anchor set — from `anchor_cache` when it
+/// holds a usable one, otherwise fetched (outside the store lock) — then
 /// selects the shallowest checkpoint depth whose root is in that set — depth 0
 /// being the fully-synced fast path — witnessing every note at that same depth
 /// so the anchor and the authentication paths agree (the builder derives the
@@ -4631,6 +4678,110 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// Returns the proved height of the recorded anchor set the anchor was chosen
 /// from too: the anchor was in the set at that height, so a set proved at or
 /// above it that lacks the anchor shows it pruned rather than newer.
+async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    notes: &[ShieldedNote],
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError> {
+    // Nothing selected — fail before the network round-trip.
+    if notes.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "no spendable notes selected — anchor undefined".to_string(),
+        ));
+    }
+
+    // A cache bound to another SDK, or one that cannot reuse a set now (a
+    // zero TTL, or a provider reporting no policy revision), is skipped
+    // without reading the tree size for it.
+    let Some(anchor_cache) = anchor_cache
+        .for_sdk(sdk)
+        .filter(|anchor_cache| anchor_cache.can_reuse())
+    else {
+        return extract_spends_and_recorded_anchor(sdk, store, notes).await;
+    };
+    select_spends_with_anchor_cache(store, anchor_cache, notes, || async {
+        Ok(fetch_recorded_anchor_set(sdk).await?)
+    })
+    .await
+}
+
+/// [`extract_spends_and_cached_anchor`]'s anchor-set sourcing, with the network fetch
+/// injected so the cache policy is testable without an SDK.
+///
+/// 1. If the store lock is free and `anchor_cache` holds a set that is younger
+///    than its TTL and was fetched at the tree's current size, probe against
+///    it under that one read guard. A selection, or any error other than
+///    `ShieldedNoRecordedAnchor`, is final — no network round trip.
+/// 2. Otherwise (no usable set, the lock is contended, or the cached set
+///    covers none of the checkpoints) `fetch` a fresh set OUTSIDE the store
+///    lock, record it in the cache when the pre-fetch tree size was read,
+///    and probe against it.
+///
+/// See [`RecordedAnchorCache`] for why a cached set selects the same anchor a
+/// fresh fetch from an equally current node would.
+async fn select_spends_with_anchor_cache<S, F, Fut>(
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    notes: &[ShieldedNote],
+    fetch: F,
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError>
+where
+    S: ShieldedStore,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(HashSet<[u8; 32]>, u64), PlatformWalletError>>,
+{
+    // `try_read`, not `read().await`: when a writer (a sync's append or
+    // commit, another spend) holds the store, waiting here would serialize the lock wait in front of the fetch below, which
+    // otherwise overlaps it. A contended lock simply takes the fetch path
+    // and leaves the cache untouched (no pre-fetch tree size to pin).
+    let tree_size_before_fetch = match store.try_read() {
+        Ok(guard) => match guard.tree_size() {
+            Ok(tree_size) => {
+                if let Some((recorded, height)) = anchor_cache.get(tree_size) {
+                    match select_recorded_spends(&*guard, notes, &recorded) {
+                        Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {
+                            debug!(
+                                tree_size,
+                                "cached recorded-anchor set covers no checkpoint; refetching"
+                            );
+                        }
+                        selected => {
+                            return selected.map(|(spends, anchor)| (spends, anchor, height))
+                        }
+                    }
+                }
+                Some(tree_size)
+            }
+            Err(e) => {
+                debug!(error = %e, "tree_size unavailable; skipping the recorded-anchor cache");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
+    // Fetch the recorded anchor set OUTSIDE the store lock so the network
+    // round-trip doesn't serialize with other store users, and so the lock is
+    // held only for the mutually-consistent depth/witness probe below.
+    let fetch_started = anchor_cache.stamp();
+    let (recorded, height) = fetch().await?;
+    let recorded = Arc::new(recorded);
+    if let Some(tree_size) = tree_size_before_fetch {
+        anchor_cache.insert(Arc::clone(&recorded), fetch_started, tree_size, height);
+    }
+
+    // Hold a single read lock across the whole probe so the checkpoint depths
+    // and the per-note witnesses stay mutually consistent: a concurrent sync
+    // checkpointing mid-probe would otherwise shift the depth indices out from
+    // under us.
+    let store = store.read().await;
+    select_recorded_spends(&*store, notes, &recorded)
+        .map(|(spends, anchor)| (spends, anchor, height))
+}
+
+/// [`extract_spends_and_cached_anchor`] without the cache: always fetches the
+/// recorded anchor set. Same selection and the same returned proved height.
 async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -4655,15 +4806,6 @@ async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     let store = store.read().await;
     select_recorded_spends(&*store, notes, &recorded)
         .map(|(spends, anchor)| (spends, anchor, height))
-}
-
-/// Platform's recorded anchor set, with the proved height it was read at.
-async fn fetch_recorded_anchor_set(
-    sdk: &Arc<dash_sdk::Sdk>,
-) -> Result<(HashSet<[u8; 32]>, u64), PlatformWalletError> {
-    let (dash_sdk::query_types::ShieldedAnchors(recorded_anchors), metadata) =
-        dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(sdk).await?;
-    Ok((recorded_anchors.into_iter().collect(), metadata.height))
 }
 
 /// Pick the shallowest checkpoint depth whose tree root is in `recorded`,
@@ -4710,9 +4852,13 @@ fn select_recorded_spends<S: ShieldedStore>(
     // Build every selected note's `SpendableNote` plus the shared anchor at a
     // single checkpoint `depth`.
     //
-    // `strict` (depth 0 only): a missing/failed witness is a hard
-    // `ShieldedMerkleWitnessUnavailable` (the note is expected to be witnessable
-    // at the current tip). At depth > 0, `Ok(None)` means the note post-dates
+    // `strict` (depth 0 only): a note no checkpoint covers yet (`Ok(None)`) is
+    // `ShieldedMerkleWitnessUnavailable`, which the next sync's checkpoint
+    // resolves; a store failure (`Err`: an unreadable store, a poisoned
+    // mutex, a position the tree does not hold, a tree that cannot produce a
+    // path for a covered position) is
+    // `ShieldedStoreError`, which no sync repairs. At depth > 0, `Ok(None)`
+    // means the note post-dates
     // this older checkpoint, so the depth is unusable — return `Ok(None)` and
     // let the caller stop probing deeper; a genuine store `Err` (poisoned mutex,
     // IO, tree corruption) is logged — the probe would otherwise discard the
@@ -4730,13 +4876,13 @@ fn select_recorded_spends<S: ShieldedStore>(
                 Ok(Some(path)) => path,
                 Ok(None) if strict => {
                     return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no witness available for note at position {position} (not marked, or pruned past this position)"
+                        "no checkpoint of the commitment tree covers the note at position {position} yet"
                     )));
                 }
                 Err(e) if strict => {
-                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
-                        e.to_string(),
-                    ));
+                    return Err(PlatformWalletError::ShieldedStoreError(format!(
+                        "witness for the note at position {position}: {e}"
+                    )));
                 }
                 // depth > 0: the note isn't witnessable at this older checkpoint
                 // (appended after it, or the depth doesn't exist).
@@ -4791,7 +4937,7 @@ fn select_recorded_spends<S: ShieldedStore>(
         // Unreachable — a strict build returns `Some` or errors — but stay
         // fund-safe (a clean error, never a panic) if that invariant breaks.
         None => {
-            return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+            return Err(PlatformWalletError::ShieldedBuildError(
                 "depth-0 witness probe returned no witness for a selected note".to_string(),
             ));
         }
@@ -4828,7 +4974,26 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// Also drops any matching pending reservation so the
 /// confirmed-spent state and the in-flight-spend state can't
 /// disagree.
-async fn mark_notes_spent<S: ShieldedStore>(
+///
+/// The changeset carries each note itself, marked spent, not only its
+/// nullifier. A note a sync pass just found can be spent before the
+/// pass's receipt round reaches the host; the host then has no row for
+/// `nullifiers_spent` to flip, and the receipt would land unspent. A
+/// spent row saved here is kept by the host whatever arrives later
+/// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
+/// read under the same guard: a sync pass may have re-saved the note
+/// with newer metadata since `notes` were selected.
+///
+/// The round is queued before that guard drops, downgraded to a read guard
+/// so balance reads can run alongside the host I/O, unless a writer has
+/// queued ahead of them. Until the round has reached the host, no writer
+/// gets in:
+/// - a sync pass can't commit a newer copy of a note and have its round
+///   overtake this one, which would roll the host back to older metadata;
+/// - a Clear can't purge the store and return. The host deletes its rows
+///   once Clear returns, so a round landing after that would put a deleted
+///   note back.
+pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
@@ -4836,19 +5001,41 @@ async fn mark_notes_spent<S: ShieldedStore>(
     notes: &[ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
     let mut changeset = ShieldedChangeSet::default();
-    {
-        let mut store = store.write().await;
-        for note in notes {
-            if store
-                .mark_spent(id, &note.nullifier)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-            {
-                changeset.record_nullifier_spent(id, note.nullifier);
+    let mut store = store.write().await;
+    for note in notes {
+        if store
+            .mark_spent(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+        {
+            if let Some(stored) = stored_note_to_save(&*store, id, &note.nullifier) {
+                changeset.record_note(id, stored);
             }
+            changeset.record_nullifier_spent(id, note.nullifier);
         }
     }
+    let _round_guard = store.downgrade();
     queue_shielded_changeset(persister, wallet_id, changeset);
     Ok(())
+}
+
+/// `id`'s stored copy of the note with `nullifier`, for a spend's round to
+/// save. A failed read is logged and skipped rather than failing the spend:
+/// the note is already marked spent, and the round still carries its
+/// nullifier.
+fn stored_note_to_save<S: ShieldedStore>(
+    store: &S,
+    id: SubwalletId,
+    nullifier: &[u8; 32],
+) -> Option<ShieldedNote> {
+    store.get_note(id, nullifier).unwrap_or_else(|e| {
+        tracing::warn!(
+            wallet_id = %hex::encode(id.wallet_id),
+            account = id.account_index,
+            error = %e,
+            "Could not read a spent note to save it with its spend"
+        );
+        None
+    })
 }
 
 /// Select unspent notes and reserve them against an in-flight
@@ -6085,7 +6272,7 @@ async fn broadcast_shielded_spend_classified(
     operation: &'static str,
     wait: SpendResultWait,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
-    match broadcast_tracking_delivery(sdk, state_transition).await {
+    match broadcast_tracking_delivery(sdk, state_transition, None).await {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -6740,6 +6927,7 @@ mod redrive_tests {
         let result = identity_top_up_from_pool(
             &sdk,
             &store,
+            &RecordedAnchorCache::new(),
             None,
             wallet_id,
             &keys,
@@ -6778,6 +6966,7 @@ mod redrive_tests {
         let result = identity_top_up_from_pool_with_metadata(
             &sdk,
             &store,
+            &RecordedAnchorCache::new(),
             None,
             wallet_id,
             &keys,
@@ -10032,9 +10221,17 @@ mod record_activity_status_tests {
 #[cfg(test)]
 mod select_recorded_spends_tests {
     use super::*;
+    use crate::wallet::shielded::anchor_cache::FetchStamp;
     use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use crate::wallet::shielded::CachedOrchardProver;
+    use dash_sdk::dapi_grpc::platform::v0::get_shielded_anchors_request::{
+        self, GetShieldedAnchorsRequestV0,
+    };
+    use dash_sdk::dapi_grpc::platform::v0::GetShieldedAnchorsRequest;
     use dashcore::Network;
     use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     /// Unique temp path for a test tree (no `tempfile` dev-dep).
     fn temp_tree_path(tag: &str) -> std::path::PathBuf {
@@ -10272,6 +10469,530 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+
+    /// A selected note appended after the latest checkpoint (a sync pass that
+    /// appended and stopped before its checkpoint) is the one case the next
+    /// sync resolves: `ShieldedMerkleWitnessUnavailable`, which hosts get as
+    /// retryable code 88.
+    #[test]
+    fn should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable() {
+        let path = temp_tree_path("past_checkpoint");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        let note = real_note(1);
+        store.append_commitment(&note.cmx, true).unwrap();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(message)) => {
+                assert!(message.contains("position 1"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedMerkleWitnessUnavailable, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedMerkleWitnessUnavailable, got Ok"),
+        }
+    }
+
+    /// A store that cannot produce the path of a covered note (here its shard
+    /// table is gone) is a store failure no sync repairs: `ShieldedStoreError`,
+    /// never the retryable `ShieldedMerkleWitnessUnavailable`.
+    #[test]
+    fn should_refuse_a_store_failure_at_depth_0_as_a_store_error() {
+        let path = temp_tree_path("store_failure");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = real_note(0);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TABLE commitment_tree_shards;")
+            .unwrap();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedStoreError(message)) => {
+                assert!(message.contains("position 0"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedStoreError, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedStoreError, got Ok"),
+        }
+    }
+
+    /// A selected note whose position the tree does not hold at all (notes
+    /// restored against a shorter tree, or a tree reset whose note purge
+    /// failed) is not something the next sync adds: `ShieldedStoreError`,
+    /// never the retryable `ShieldedMerkleWitnessUnavailable`. Its sibling, a
+    /// leaf the tree holds past the latest checkpoint, stays retryable
+    /// (`should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable`).
+    #[test]
+    fn should_refuse_a_note_missing_from_the_tree_as_a_store_error() {
+        let path = temp_tree_path("missing_leaf");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        let note = real_note(5);
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedStoreError(message)) => {
+                assert!(message.contains("position 5"), "{message}");
+                assert!(message.contains("not in the commitment tree"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedStoreError, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedStoreError, got Ok"),
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Recorded-anchor cache on the spend path (`select_spends_with_anchor_cache`)
+    // ---------------------------------------------------------------------
+
+    /// A wallet tree one block-boundary checkpoint deep, then left mid-block by
+    /// an index-chunk sync: the spend must select the depth-1 root. Returns the
+    /// store, the owned note, and that recorded block-boundary root.
+    fn mid_block_store(
+        tag: &str,
+    ) -> (
+        std::path::PathBuf,
+        Arc<RwLock<FileBackedShieldedStore>>,
+        ShieldedNote,
+        [u8; 32],
+    ) {
+        let path = temp_tree_path(tag);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let note = real_note(0);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let recorded_root = store.tree_anchor().unwrap();
+        store.append_commitment(&filler_cmx(0xC1), true).unwrap();
+        store.checkpoint_tree(4).unwrap();
+        (path, Arc::new(RwLock::new(store)), note, recorded_root)
+    }
+
+    /// A stand-in for the network fetch that counts how often it is called.
+    async fn counting_fetch(
+        calls: &AtomicUsize,
+        recorded: &HashSet<[u8; 32]>,
+    ) -> Result<(HashSet<[u8; 32]>, u64), PlatformWalletError> {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok((recorded.clone(), 100))
+    }
+
+    async fn spend_anchor(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        cache: &RecordedAnchorCache,
+        note: &ShieldedNote,
+        calls: &AtomicUsize,
+        platform_set: &HashSet<[u8; 32]>,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        select_spends_with_anchor_cache(store, cache, std::slice::from_ref(note), || {
+            counting_fetch(calls, platform_set)
+        })
+        .await
+        .map(|(_, anchor, height)| {
+            assert_eq!(height, 100);
+            anchor.to_bytes()
+        })
+    }
+
+    async fn tree_size(store: &Arc<RwLock<FileBackedShieldedStore>>) -> u64 {
+        store.read().await.tree_size().unwrap()
+    }
+
+    /// The measurement behind the change: three back-to-back sends cost three
+    /// anchor-set round trips without the cache (a zero TTL reproduces the
+    /// old always-fetch behavior) and one with it — and every send still
+    /// selects the same recorded anchor.
+    #[tokio::test]
+    async fn should_fetch_the_anchor_set_once_for_back_to_back_sends() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_count");
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+
+        let uncached = RecordedAnchorCache::with_ttl(Duration::ZERO);
+        let uncached_calls = AtomicUsize::new(0);
+        for _ in 0..3 {
+            let anchor = spend_anchor(&store, &uncached, &note, &uncached_calls, &platform_set)
+                .await
+                .expect("recorded checkpoint covers the note");
+            assert_eq!(anchor, recorded_root);
+        }
+
+        let cached = RecordedAnchorCache::new();
+        let cached_calls = AtomicUsize::new(0);
+        for _ in 0..3 {
+            let anchor = spend_anchor(&store, &cached, &note, &cached_calls, &platform_set)
+                .await
+                .expect("recorded checkpoint covers the note");
+            assert_eq!(
+                anchor, recorded_root,
+                "the cache never changes the selection"
+            );
+        }
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            uncached_calls.load(Ordering::SeqCst),
+            3,
+            "before: one fetch per send"
+        );
+        assert_eq!(
+            cached_calls.load(Ordering::SeqCst),
+            1,
+            "after: one fetch for all three"
+        );
+    }
+
+    /// A set already in the cache, from an earlier send or the coordinator's
+    /// release pass, takes the fetch off the send entirely.
+    #[tokio::test]
+    async fn should_not_fetch_when_a_prefetched_set_is_fresh() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_prefetched");
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new(platform_set.clone()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            100,
+        );
+
+        let calls = AtomicUsize::new(0);
+        let anchor = spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("prefetched set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(anchor, recorded_root);
+        assert_eq!(calls.load(Ordering::SeqCst), 0, "no round trip on the send");
+    }
+
+    #[tokio::test]
+    async fn should_return_the_proved_height_of_the_selected_anchor_set() {
+        let (path, store, note, root) = mid_block_store("cache_proved_height");
+        let recorded: HashSet<[u8; 32]> = [root].into_iter().collect();
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new(recorded.clone()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            99,
+        );
+        let calls = AtomicUsize::new(0);
+        for expected in [99, 100] {
+            let (_, anchor, height) = select_spends_with_anchor_cache(
+                &store,
+                &cache,
+                std::slice::from_ref(&note),
+                || counting_fetch(&calls, &recorded),
+            )
+            .await
+            .expect("recorded checkpoint covers the note");
+            assert_eq!(anchor.to_bytes(), root);
+            assert_eq!(height, expected);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(expected == 100));
+            cache.invalidate();
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A cached set that covers none of the wallet's checkpoints (e.g. served
+    /// by a node lagging behind the one the wallet synced from) is not the
+    /// last word: the send refetches, succeeds, and refreshes the cache.
+    #[tokio::test]
+    async fn should_refetch_and_refresh_when_the_cached_set_covers_no_checkpoint() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_norecorded");
+        let size = tree_size(&store).await;
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new([[0xEE; 32]].into_iter().collect()),
+            FetchStamp::now(),
+            size,
+            100,
+        );
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+
+        let calls = AtomicUsize::new(0);
+        let anchor = spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("the fresh set covers the note");
+        assert_eq!(anchor, recorded_root);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "refetched once");
+
+        let refreshed = cache
+            .get(size)
+            .expect("the fresh set replaced the stale one");
+        assert!(refreshed.0.contains(&recorded_root));
+        spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("served from the refreshed cache");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the next send reuses the refresh"
+        );
+    }
+
+    /// A set older than the TTL is never used, even when it would still
+    /// select a valid anchor.
+    #[tokio::test]
+    async fn should_refetch_once_the_cached_set_is_past_its_ttl() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_ttl");
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+        let cache = RecordedAnchorCache::with_ttl(Duration::from_secs(30));
+        let expired = FetchStamp::ago(Duration::from_secs(31));
+        cache.insert(
+            Arc::new(platform_set.clone()),
+            expired,
+            tree_size(&store).await,
+            100,
+        );
+
+        let calls = AtomicUsize::new(0);
+        spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("the fresh set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A sync that grows the tree after the set was fetched can add a
+    /// checkpoint Platform recorded later than that snapshot. The cached set
+    /// would still find the OLDER checkpoint — so it must not be used: the
+    /// send refetches and selects the newest recorded root, exactly as it
+    /// would without the cache.
+    #[tokio::test]
+    async fn should_refetch_when_a_sync_grew_the_tree_after_the_fetch() {
+        let path = temp_tree_path("cache_grown");
+        let mut inner = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let note = real_note(0);
+        inner.append_commitment(&note.cmx, true).unwrap();
+        inner.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        inner.checkpoint_tree(2).unwrap();
+        let root_block1 = inner.tree_anchor().unwrap();
+        let store = Arc::new(RwLock::new(inner));
+
+        // Prefetched while the wallet was at block 1.
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new([root_block1].into_iter().collect()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            100,
+        );
+
+        // A sync then appends block 2 and checkpoints on its boundary.
+        let root_block2 = {
+            let mut s = store.write().await;
+            s.append_commitment(&filler_cmx(0xB1), true).unwrap();
+            s.append_commitment(&filler_cmx(0xB2), true).unwrap();
+            s.checkpoint_tree(4).unwrap();
+            s.tree_anchor().unwrap()
+        };
+        let platform_set: HashSet<[u8; 32]> = [root_block1, root_block2].into_iter().collect();
+
+        let calls = AtomicUsize::new(0);
+        let anchor = spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("the fresh set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the grown tree retired the cached set"
+        );
+        assert_eq!(
+            anchor, root_block2,
+            "selects the newest recorded root, not the older one the cached set knew"
+        );
+    }
+
+    /// While a sync holds the store, the send does not queue for the lock
+    /// just to consult the cache: it fetches (overlapping the lock wait, as
+    /// before the cache existed) and leaves the cache alone, having no
+    /// pre-fetch tree size to pin a new set to.
+    #[tokio::test]
+    async fn should_fetch_without_waiting_while_the_store_is_write_locked() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_contended");
+        let size = tree_size(&store).await;
+        let marker = [0xEE; 32];
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new([recorded_root, marker].into_iter().collect()),
+            FetchStamp::now(),
+            size,
+            100,
+        );
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+
+        let sync_guard = store.write().await;
+        let calls = AtomicUsize::new(0);
+        let fetch = {
+            let calls = &calls;
+            let platform_set = platform_set.clone();
+            move || {
+                // The "sync" finishes while the fetch is in flight.
+                drop(sync_guard);
+                calls.fetch_add(1, Ordering::SeqCst);
+                std::future::ready(Ok((platform_set, 100)))
+            }
+        };
+        // Bounded: waiting on the held write lock (instead of `try_read`)
+        // would deadlock here, since only the fetch releases it.
+        let anchor = tokio::time::timeout(
+            Duration::from_secs(5),
+            select_spends_with_anchor_cache(&store, &cache, std::slice::from_ref(&note), fetch),
+        )
+        .await
+        .expect("the cache check must not wait for the store lock")
+        .map(|(_, anchor, height)| {
+            assert_eq!(height, 100);
+            anchor.to_bytes()
+        })
+        .expect("the fresh set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(anchor, recorded_root);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "contended lock takes the fetch path"
+        );
+        assert!(
+            cache.get(size).expect("entry kept").0.contains(&marker),
+            "a fetch without a pre-fetch tree size must not replace the cached set"
+        );
+    }
+
+    /// A spend that fails after its anchor was chosen leaves no cached set
+    /// behind, so the retry selects against a fresh one. Driven through the
+    /// real `unshield` op: the cached set is used (tree size matches), and
+    /// the selected note has no witness in the tree, so the op fails at
+    /// anchor selection — before any proving or network I/O.
+    #[tokio::test]
+    async fn should_invalidate_the_cache_when_a_spend_fails() {
+        let (path, store, _, recorded_root) = mid_block_store("cache_failed_spend");
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed");
+        let wallet_id: WalletId = [0x31; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        // An unspent note at a position the tree doesn't hold: selectable,
+        // but never witnessable. Its value covers any shielded fee.
+        let mut unwitnessable = real_note(50);
+        unwitnessable.value = 1_000_000_000_000_000;
+        store
+            .write()
+            .await
+            .save_note(id, &unwitnessable)
+            .expect("save note");
+
+        let size = tree_size(&store).await;
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&sdk).expect("fresh cache binds");
+        cache.insert(
+            Arc::new([recorded_root].into_iter().collect()),
+            cache.stamp(),
+            size,
+            100,
+        );
+
+        let to = PlatformAddress::P2pkh([0x22; 20]);
+        let prover = CachedOrchardProver::new();
+        let result = unshield(
+            &sdk, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShieldedStoreError(_))),
+            "expected the anchor-selection failure, got {result:?}"
+        );
+        assert!(
+            cache.get(size).is_none(),
+            "a failed spend must drop the cached anchor set"
+        );
+    }
+
+    /// A spend on one SDK never consults a cache bound to another, so its
+    /// failure must not drop that cache's set either.
+    #[tokio::test]
+    async fn should_keep_another_sdks_cached_set_when_a_spend_fails() {
+        let (path, store, _, recorded_root) = mid_block_store("cache_other_sdk_failed_spend");
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed");
+        let wallet_id: WalletId = [0x32; 32];
+        let mut note = real_note(50);
+        note.value = 1_000_000_000_000_000;
+        store
+            .write()
+            .await
+            .save_note(SubwalletId::new(wallet_id, 0), &note)
+            .expect("save note");
+
+        let size = tree_size(&store).await;
+        let owner = Arc::new(dash_sdk::Sdk::new_mock());
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&owner).expect("fresh cache binds");
+        cache.insert(
+            Arc::new([recorded_root].into_iter().collect()),
+            cache.stamp(),
+            size,
+            100,
+        );
+
+        // The other mock SDK has no recorded-anchor expectation, so its
+        // uncached fetch fails.
+        let other = Arc::new(dash_sdk::Sdk::new_mock());
+        let to = PlatformAddress::P2pkh([0x22; 20]);
+        let prover = CachedOrchardProver::new();
+        let result = unshield(
+            &other, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_err(), "the other SDK's fetch fails");
+        let anchors_request = GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                GetShieldedAnchorsRequestV0 {
+                    prove: true,
+                    token_id: None,
+                },
+            )),
+        };
+        // A clone shares the mock's request counts.
+        let (mut owner, mut other) = ((*owner).clone(), (*other).clone());
+        assert_eq!(
+            other.mock().request_count(&anchors_request).await,
+            1,
+            "the spend reached its own fetch instead of the owner's set"
+        );
+        assert_eq!(owner.mock().request_count(&anchors_request).await, 0);
+        assert!(
+            cache.get(size).is_some(),
+            "the owner SDK's cached set is kept"
+        );
     }
 }
 

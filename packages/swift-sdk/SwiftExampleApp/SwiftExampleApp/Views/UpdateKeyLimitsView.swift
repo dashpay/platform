@@ -351,7 +351,7 @@ struct UpdateKeyLimitsView: View {
                 try await wallet.refreshIdentity(identityId: identity.identityId)
                 refreshedWallet = wallet
             } catch {
-                gate = .refused("Could not read this identity from Platform: \(error.localizedDescription). Close the sheet and try again when the network is reachable.")
+                gate = .refused("Could not read this identity from Platform: \(error.localizedDescription). Close the sheet and try again.")
                 return
             }
         case .refused(let message):

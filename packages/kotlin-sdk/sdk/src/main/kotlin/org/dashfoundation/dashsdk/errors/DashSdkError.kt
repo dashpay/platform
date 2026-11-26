@@ -1,7 +1,12 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 // Display text for the persister failures, whose native message is a nested
 // Rust error chain (operation, backend classification, the store's own
@@ -260,6 +265,57 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * Code 63: a key of the DashPay invitation claim is already
+         * registered to another identity ([identityId], base58; `null` when
+         * Platform refused the broadcast without naming it). Definitive for
+         * these keys.
+         */
+        class InvitationKeysAlreadyRegistered(
+            val identityId: String?,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            if (identityId == null) {
+                "A key of this invitation claim is already registered to another identity."
+            } else {
+                "A key of this invitation claim is already registered to identity $identityId."
+            },
+            cause,
+        )
+
+        /**
+         * Code 64: the invitation's identity ([identityId], base58) is this
+         * wallet's: the wallet already records it in one of its registration
+         * slots (no key the identity holds decides this). Nothing was recorded, and nothing
+         * was broadcast unless a node that lagged behind let the claim
+         * through; load the identity like any of the wallet's own.
+         */
+        class InvitationClaimedByThisWallet(
+            val identityId: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "This invitation was already claimed by this wallet as identity $identityId.",
+            cause,
+        )
+
+        /**
+         * Code 65: the invitation claim could not verify Platform's answers
+         * yet. Nothing was broadcast; retry once synced.
+         */
+        class InvitationNotReady(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * Code 66: the asset lock is not usable yet (not propagated, or not
+         * chain-locked for a ChainLock proof). Retry later.
+         */
+        class AssetLockNotChainLocked(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -268,6 +324,20 @@ sealed class DashSdkError(
          * from [TransactionBroadcastUnconfirmed], which must NOT be retried.
          */
         class ShieldedNoRecordedAnchor(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedMerkleWitnessUnavailable` (native code 88). A shielded
+         * spend selected a note no checkpoint of the wallet's local commitment
+         * tree covers yet. Refused before any proof or broadcast, with the
+         * notes released, so this **is** retryable once the next shielded sync
+         * checkpoints the tree. Only that case: a store that cannot produce the
+         * path arrives as the generic wallet failure, not as this.
+         * ← Swift `PlatformWalletError.shieldedMerkleWitnessUnavailable`.
+         */
+        class ShieldedMerkleWitnessUnavailable(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
@@ -511,7 +581,16 @@ sealed class DashSdkError(
             cause,
         )
 
-        /** The purchasing identity cannot cover price plus the fee reserve. */
+        /**
+         * `ErrorInsufficientIdentityCredits` (native code 39). The identity
+         * cannot cover the required credits: a DPNS purchase's price plus its
+         * fee reserve, or an identity-funded shield's amount plus its
+         * admission fee floor. For a shield, [requiredCredits] minus the
+         * amount is that floor, not the fee that would be charged; the metered
+         * fee can be lower. An identity-funded shield reports this before
+         * signing or broadcasting; other operations can report it after
+         * Platform rejects a submitted transition.
+         */
         class InsufficientIdentityCredits(
             val identityId: String,
             val requiredCredits: ULong,
@@ -643,15 +722,19 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorIdentityBalanceUnavailable` (native code 58). The identity's
-         * balance could not be read with a proof, so the operation that needed
-         * it (a shield from the identity's balance, Type 21) was refused
-         * before anything was saved or sent. Mirrors Swift's
-         * `PlatformWalletError.identityBalanceUnavailable` in
+         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
+         * returned no balance for a managed identity (not yet visible, or a
+         * lagging node), or the balance could not be read with a proof, so
+         * the operation that needed it (a shield from the identity's
+         * balance, Type 21, for one) was refused before anything was saved,
+         * signed or broadcast. The read may be retried as it is. Mirrors
+         * Swift's `PlatformWalletError.identityBalanceUnavailable` in
          * `PlatformWalletResult.swift`.
          */
         class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
@@ -808,6 +891,19 @@ sealed class DashSdkError(
          */
         class PublicContactRequestUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
+
+        /**
+         * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
+         * asked for an identity the operation names (the lookup failed, which
+         * is not Platform's answer that it does not exist, code 7). Nothing
+         * was signed, reserved or broadcast, so the operation may be retried
+         * as it is and is never a possibly delivered one.
+         * ← Swift `PlatformWalletError.identityLookupFailed`.
+         */
+        class IdentityLookupFailed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         /**
          * `ErrorBalanceHistoryInconsistentHeights` (native code 83). The
@@ -1000,6 +1096,7 @@ sealed class DashSdkError(
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
+            88 -> PlatformWallet.ShieldedMerkleWitnessUnavailable(message, cause) // ErrorShieldedMerkleWitnessUnavailable
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
@@ -1011,6 +1108,24 @@ sealed class DashSdkError(
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             61 -> PlatformWallet.AssetLockRecipientMismatch(message, cause) // ErrorAssetLockRecipientMismatch
+            63 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InvitationKeysAlreadyRegistered(
+                        identityId = detail.optionalString("identityId"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            64 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InvitationClaimedByThisWallet(
+                        identityId = requireNotNull(detail.optionalString("identityId")),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            65 -> PlatformWallet.InvitationNotReady(message, cause) // ErrorInvitationNotReady
+            66 -> PlatformWallet.AssetLockNotChainLocked(message, cause) // ErrorAssetLockNotChainLocked
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
@@ -1021,31 +1136,31 @@ sealed class DashSdkError(
             35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
             36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
             37 -> PlatformWallet.DocumentNotForSale(message, cause)
-            38 -> parseMarketplaceDetail(message)?.let { detail ->
+            38 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.DocumentPriceChanged(
-                        documentId = detail.getString("documentId"),
+                        documentId = detail.requiredString("documentId"),
                         expectedCredits = detail.requiredULong("expected"),
                         actualCredits = detail.requiredULong("actual"),
                         cause = cause,
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            39 -> parseMarketplaceDetail(message)?.let { detail ->
+            39 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.InsufficientIdentityCredits(
-                        identityId = detail.getString("identityId"),
+                        identityId = detail.requiredString("identityId"),
                         requiredCredits = detail.requiredULong("required"),
                         availableCredits = detail.requiredULong("available"),
                         cause = cause,
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            40 -> parseMarketplaceDetail(message)?.let { detail ->
+            40 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.ContestedNameNotTradable(
-                        label = detail.getString("label"),
-                        endsAtMs = detail.getLong("endsAtMs"),
+                        label = detail.requiredString("label"),
+                        endsAtMs = detail.requiredLong("endsAtMs"),
                         cause = cause,
                     )
                 }.getOrNull()
@@ -1094,6 +1209,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
             85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
@@ -1112,11 +1228,32 @@ sealed class DashSdkError(
         private fun isSigningKeyUnavailable(message: String): Boolean =
             message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
 
-        private fun parseMarketplaceDetail(message: String): JSONObject? =
-            runCatching { JSONObject(message) }.getOrNull()
+        // kotlinx.serialization keeps each number's source text, so a `u64`
+        // above Long.MAX_VALUE still decodes exactly. Android's org.json
+        // turned such a token into a Double, whose text ("9.2E18") no longer
+        // parsed as ULong, and the typed error degraded to Generic.
+        private fun parseErrorDetail(message: String): JsonObject? =
+            runCatching { Json.parseToJsonElement(message).jsonObject }.getOrNull()
 
-        private fun JSONObject.requiredULong(name: String): ULong =
-            get(name).toString().toULong()
+        private fun JsonObject.requiredString(name: String): String {
+            val value = getValue(name).jsonPrimitive
+            require(value.isString) { "$name is not a string" }
+            return value.content
+        }
+
+        private fun JsonObject.requiredULong(name: String): ULong =
+            getValue(name).jsonPrimitive.content.toULong()
+
+        private fun JsonObject.requiredLong(name: String): Long =
+            getValue(name).jsonPrimitive.content.toLong()
+
+        /** A string, or `null` when the key is JSON `null` or absent. */
+        private fun JsonObject.optionalString(name: String): String? {
+            val value = get(name)
+            if (value == null || value is JsonNull) return null
+            require(value is JsonPrimitive && value.isString) { "$name is not a string" }
+            return value.content
+        }
     }
 }
 

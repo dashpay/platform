@@ -72,6 +72,19 @@ fn contract_ids_to_historical_path_query(contract_ids: &[Identifier]) -> PathQue
 }
 
 impl Drive {
+    /// The kinds whose proof this version makes of a fixed set of keys: a credit transfer's
+    /// two balances, a top-up's balance and revision, and a credit withdrawal's balance.
+    pub(super) fn state_transition_proof_has_fixed_keys_v0(
+        state_transition: &StateTransition,
+    ) -> bool {
+        matches!(
+            state_transition,
+            StateTransition::IdentityCreditTransfer(_)
+                | StateTransition::IdentityTopUp(_)
+                | StateTransition::IdentityCreditWithdrawal(_)
+        )
+    }
+
     pub(super) fn prove_state_transition_v0(
         &self,
         state_transition: &StateTransition,

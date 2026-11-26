@@ -1758,8 +1758,8 @@ mod tests {
 
             // Account 0: an address only in the derived pool, no balance.
             let mut pool = empty_pool(0);
-            pool.addresses
-                .insert(0, pool_entry(0, derived_only_byte, 0));
+            pool.insert(pool_entry(0, derived_only_byte, 0))
+                .expect("store the derived row");
             info.core_wallet
                 .accounts
                 .insert_platform_account(ManagedPlatformAccount::new(0, 0, pool, false));

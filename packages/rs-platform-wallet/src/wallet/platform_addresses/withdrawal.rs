@@ -1431,8 +1431,10 @@ mod plan_withdrawal_seam_tests {
                 20,
                 Network::Testnet,
             );
-            pool.addresses.insert(0, pool_entry(recipient_byte, 0));
-            pool.addresses.insert(1, pool_entry(origin_byte, 1));
+            pool.insert(pool_entry(recipient_byte, 0))
+                .expect("store recipient row");
+            pool.insert(pool_entry(origin_byte, 1))
+                .expect("store origin row");
 
             let mut platform_account = ManagedPlatformAccount::new(ACCOUNT, 0, pool, false);
             // Seed the cache to DISAGREE with the chain: recipient doubled.
@@ -1600,7 +1602,7 @@ mod plan_withdrawal_seam_tests {
                 .platform_payment_managed_account_at_index(ACCOUNT)
                 .expect("platform account");
             assert!(
-                account.addresses.addresses.is_empty(),
+                account.addresses.addresses().is_empty(),
                 "test setup: the derived pool must be empty (post-relaunch state)"
             );
         }

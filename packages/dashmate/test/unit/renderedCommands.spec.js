@@ -63,6 +63,10 @@ const PRESENTED_IN_SOURCE = new RegExp(
  * node off the network.
  */
 const RESTART_ADVICE_ALLOWED = {
+  'src/doctor/analyse/analyseConfigFactory.js':
+    'the evonode\'s configured node key already gives the registered node ID and only the running '
+    + 'Tenderdash, which reads its key at startup alone, still has the old one - nothing but a '
+    + 'restart loads it, and until then peers do not accept the node under its registered ID',
   'src/doctor/analyse/analyseGatewayCertificateFactory.js':
     'a renewed certificate is already on disk, verified newer and usable than the one being '
     + 'served, and only the gateway has not picked it up - re-reading the files is the entire '

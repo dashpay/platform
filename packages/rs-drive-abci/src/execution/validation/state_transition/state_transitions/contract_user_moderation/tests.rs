@@ -4282,6 +4282,7 @@ async fn should_confirm_document_restore_without_contract_in_context_provider() 
                     ),
                 ),
                 metadata: Some(metadata),
+                state_before_block: None,
             },
         )),
     };

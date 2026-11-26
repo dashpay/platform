@@ -437,6 +437,21 @@ impl PlatformAddressSyncManager {
             .is_ok()
     }
 
+    /// Test-only: release a slot taken by
+    /// [`wedge_sync_slot_for_test`](Self::wedge_sync_slot_for_test), as the
+    /// wedged pass finally draining would.
+    #[cfg(test)]
+    pub(crate) fn release_sync_slot_for_test(&self) {
+        self.is_syncing.store(false, Ordering::Release);
+    }
+
+    /// Test-only: whether new sync passes are currently barred — a drain in
+    /// flight, a latched timeout, or the terminal seal `shutdown` applies.
+    #[cfg(test)]
+    pub(crate) fn sync_admission_closed(&self) -> bool {
+        self.quiescing.is_closed()
+    }
+
     /// Sync a single wallet on demand.
     ///
     /// Goes through the same admission as [`sync_now`](Self::sync_now) —
@@ -514,6 +529,7 @@ mod tests {
     use super::*;
 
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+    use std::sync::{OnceLock, Weak};
 
     use dash_spv::EventHandler;
 
@@ -521,15 +537,21 @@ mod tests {
 
     /// Event handler that just counts `on_platform_address_sync_completed`
     /// dispatches. Stands in for the host's FFI handler so we can assert
-    /// the quiescing gate suppresses the completion callback.
+    /// the quiescing gate suppresses the completion callback. It also
+    /// records how many dispatches arrived while the coordinator still
+    /// held its `is_syncing` slot.
     struct CompletionCounter {
         completions: AtomicUsize,
+        dispatched_with_slot_held: AtomicUsize,
+        manager: OnceLock<Weak<PlatformAddressSyncManager>>,
     }
 
     impl CompletionCounter {
         fn new() -> Self {
             Self {
                 completions: AtomicUsize::new(0),
+                dispatched_with_slot_held: AtomicUsize::new(0),
+                manager: OnceLock::new(),
             }
         }
     }
@@ -539,6 +561,15 @@ mod tests {
     impl PlatformEventHandler for CompletionCounter {
         fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {
             self.completions.fetch_add(1, AtomicOrdering::SeqCst);
+            let slot_held = self
+                .manager
+                .get()
+                .and_then(Weak::upgrade)
+                .is_some_and(|manager| manager.is_syncing());
+            if slot_held {
+                self.dispatched_with_slot_held
+                    .fetch_add(1, AtomicOrdering::SeqCst);
+            }
         }
     }
 
@@ -547,19 +578,33 @@ mod tests {
     /// but still drives the full flag → gate → completion-event protocol
     /// we're testing here.
     fn make_manager() -> (Arc<PlatformAddressSyncManager>, Arc<CompletionCounter>) {
+        let (manager, counter, _registry) = make_manager_with_registry();
+        (manager, counter)
+    }
+
+    /// [`make_manager`] plus the registry that owns the loop thread, for
+    /// tests that join it.
+    fn make_manager_with_registry() -> (
+        Arc<PlatformAddressSyncManager>,
+        Arc<CompletionCounter>,
+        Arc<ThreadRegistry<WalletWorker>>,
+    ) {
         let wallets = Arc::new(ArcSwap::from_pointee(BTreeMap::new()));
         let counter = Arc::new(CompletionCounter::new());
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             Arc::clone(&counter) as Arc<dyn PlatformEventHandler>
         ]));
-        (
-            Arc::new(PlatformAddressSyncManager::new(
-                wallets,
-                event_manager,
-                ThreadRegistry::<WalletWorker>::new(),
-            )),
-            counter,
-        )
+        let registry = ThreadRegistry::<WalletWorker>::new();
+        let manager = Arc::new(PlatformAddressSyncManager::new(
+            wallets,
+            event_manager,
+            Arc::clone(&registry),
+        ));
+        counter
+            .manager
+            .set(Arc::downgrade(&manager))
+            .expect("set once");
+        (manager, counter, registry)
     }
 
     /// A normal pass (no gate) fires the completion event and leaves the
@@ -575,48 +620,41 @@ mod tests {
     /// `quiesce()` must not return while a pass is in flight, and must
     /// return promptly once the pass drains.
     ///
-    /// Drives the real `is_syncing` lifecycle: a background task takes
-    /// the slot via the same `compare_exchange` the real `sync_now`
-    /// uses, holds it across a sleep (standing in for the pass body +
-    /// completion-event dispatch, which `sync_now` keeps the flag set
-    /// across), then clears it.
+    /// Drives the real `is_syncing` lifecycle: the test takes the slot
+    /// via the same `compare_exchange` the real `sync_now` uses and holds
+    /// it (standing in for the pass body + completion-event dispatch,
+    /// which `sync_now` keeps the flag set across), then clears it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn quiesce_blocks_until_in_flight_pass_drains() {
         let (mgr, _counter) = make_manager();
 
-        let holder = Arc::clone(&mgr);
-        let pass = tokio::spawn(async move {
-            assert!(
-                holder
-                    .is_syncing
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok(),
-                "test should own the is_syncing slot"
-            );
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            holder.is_syncing.store(false, Ordering::Release);
-        });
-
-        while !mgr.is_syncing() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        // Hold the slot as an in-flight pass would, for exactly as long as
+        // the test decides — no timer the test could miss on a loaded runner.
+        assert!(
+            mgr.wedge_sync_slot_for_test(),
+            "test should own the is_syncing slot"
+        );
 
         let quiesce_fut = mgr.quiesce();
         tokio::pin!(quiesce_fut);
 
-        tokio::select! {
-            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-        }
+        // While the pass holds the slot, quiesce must stay pending, with
+        // admission already shut.
+        assert!(
+            futures::poll!(quiesce_fut.as_mut()).is_pending(),
+            "quiesce returned while a pass was in flight"
+        );
+        assert!(mgr.sync_admission_closed());
         assert!(mgr.is_syncing(), "pass should still be in flight");
 
-        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
+        // Once the pass drains, quiesce must return, with admission reopened.
+        mgr.release_sync_slot_for_test();
+        let drained = tokio::time::timeout(Duration::from_secs(2), quiesce_fut)
             .await
             .expect("quiesce did not return after the pass drained");
-
-        assert!(!mgr.quiescing.is_closed());
+        assert!(drained);
+        assert!(!mgr.sync_admission_closed());
         assert!(!mgr.is_syncing());
-        pass.await.unwrap();
     }
 
     /// A pass that never drains must NOT hang `quiesce_within` forever:
@@ -628,10 +666,7 @@ mod tests {
     async fn quiesce_within_times_out_and_leaves_gate_up_when_pass_never_drains() {
         let (mgr, _counter) = make_manager();
 
-        assert!(mgr
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok());
+        assert!(mgr.wedge_sync_slot_for_test());
 
         let drained = tokio::time::timeout(
             Duration::from_secs(2),
@@ -641,13 +676,13 @@ mod tests {
         .expect("bounded quiesce must return at its deadline");
         assert!(!drained, "a wedged pass must be reported as non-drained");
         assert!(
-            mgr.quiescing.is_closed(),
+            mgr.sync_admission_closed(),
             "gate must stay up after a timed-out drain"
         );
 
-        mgr.is_syncing.store(false, Ordering::Release);
+        mgr.release_sync_slot_for_test();
         assert!(mgr.quiesce().await);
-        assert!(!mgr.quiescing.is_closed());
+        assert!(!mgr.sync_admission_closed());
     }
 
     /// A `sync_now()` invoked while `quiescing` is set must bail without
@@ -661,7 +696,10 @@ mod tests {
 
         // Raise the gate as an in-flight `quiesce()` would (a drain holds
         // the gate from its first instruction).
-        let gate_hold = mgr.quiescing.hold();
+        let gate_hold = mgr
+            .quiesce_held()
+            .await
+            .expect("an idle coordinator must drain immediately");
 
         let summary = mgr.sync_now().await;
 
@@ -702,7 +740,7 @@ mod tests {
         drop(guard);
 
         // Admission is restored for ordinary use once the mutation is done.
-        assert!(!mgr.quiescing.is_closed());
+        assert!(!mgr.sync_admission_closed());
         mgr.sync_now().await;
         assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 1);
     }
@@ -719,12 +757,12 @@ mod tests {
 
         drop(inner);
         assert!(
-            mgr.quiescing.is_closed(),
+            mgr.sync_admission_closed(),
             "the outer holder is still mutating; admission must stay shut"
         );
 
         drop(outer);
-        assert!(!mgr.quiescing.is_closed());
+        assert!(!mgr.sync_admission_closed());
     }
 
     /// Shutdown seals the gate: admission must never reopen, because the
@@ -739,14 +777,14 @@ mod tests {
         let (mgr, counter) = make_manager();
 
         assert!(mgr.quiesce_sealed_within(Duration::from_secs(1)).await);
-        assert!(mgr.quiescing.is_closed(), "seal must leave the gate shut");
+        assert!(mgr.sync_admission_closed(), "seal must leave the gate shut");
 
         assert!(mgr.sync_now().await.is_empty());
         assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
 
         // Not even an explicit drain reopens a sealed gate.
         assert!(mgr.quiesce().await);
-        assert!(mgr.quiescing.is_closed());
+        assert!(mgr.sync_admission_closed());
         assert!(mgr.sync_now().await.is_empty());
         assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
     }
@@ -787,7 +825,7 @@ mod tests {
         assert!(mgr.wedge_sync_slot_for_test());
         assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
         assert!(
-            mgr.quiescing.is_closed(),
+            mgr.sync_admission_closed(),
             "timed-out drain latches the gate"
         );
 
@@ -797,7 +835,10 @@ mod tests {
         Arc::clone(&mgr).start();
         assert!(mgr.is_running());
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert!(mgr.quiescing.is_closed(), "gate stays latched while wedged");
+        assert!(
+            mgr.sync_admission_closed(),
+            "gate stays latched while wedged"
+        );
         assert_eq!(
             counter.completions.load(AtomicOrdering::SeqCst),
             0,
@@ -806,7 +847,7 @@ mod tests {
 
         // The wedged pass drains: the running loop reopens the gate and
         // its next pass completes.
-        mgr.is_syncing.store(false, Ordering::Release);
+        mgr.release_sync_slot_for_test();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while counter.completions.load(AtomicOrdering::SeqCst) == 0 {
             assert!(
@@ -815,7 +856,7 @@ mod tests {
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(!mgr.quiescing.is_closed(), "latch is cleared");
+        assert!(!mgr.sync_admission_closed(), "latch is cleared");
 
         mgr.stop();
         assert!(mgr.quiesce().await);
@@ -829,11 +870,14 @@ mod tests {
 
         assert!(mgr.wedge_sync_slot_for_test());
         assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
-        mgr.is_syncing.store(false, Ordering::Release);
-        assert!(mgr.quiescing.is_closed(), "latch outlives the wedged pass");
+        mgr.release_sync_slot_for_test();
+        assert!(
+            mgr.sync_admission_closed(),
+            "latch outlives the wedged pass"
+        );
 
         Arc::clone(&mgr).start();
-        assert!(!mgr.quiescing.is_closed(), "start clears a stale latch");
+        assert!(!mgr.sync_admission_closed(), "start clears a stale latch");
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while counter.completions.load(AtomicOrdering::SeqCst) == 0 {
@@ -858,9 +902,9 @@ mod tests {
         assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
         mgr.sync_now().await;
         assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
-        assert!(mgr.quiescing.is_closed(), "latch stays while wedged");
+        assert!(mgr.sync_admission_closed(), "latch stays while wedged");
 
-        mgr.is_syncing.store(false, Ordering::Release);
+        mgr.release_sync_slot_for_test();
         mgr.sync_now().await;
         assert_eq!(
             counter.completions.load(AtomicOrdering::SeqCst),
@@ -868,8 +912,270 @@ mod tests {
             "a direct pass runs once the wedged pass is gone"
         );
         assert!(
-            !mgr.quiescing.is_closed(),
+            !mgr.sync_admission_closed(),
             "the direct pass cleared the latch"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_round_trip_interval() {
+        let (mgr, _counter) = make_manager();
+
+        assert_eq!(
+            mgr.interval(),
+            Duration::from_secs(DEFAULT_SYNC_INTERVAL_SECS)
+        );
+
+        mgr.set_interval(Duration::from_secs(0));
+        assert_eq!(mgr.interval(), Duration::from_secs(1));
+
+        mgr.set_interval(Duration::from_secs(120));
+        assert_eq!(mgr.interval(), Duration::from_secs(120));
+    }
+
+    /// A pass that ran stamps both the summary and the coordinator.
+    #[tokio::test]
+    async fn should_stamp_a_completed_pass() {
+        let (mgr, _counter) = make_manager();
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+
+        let summary = mgr.sync_now().await;
+
+        assert_ne!(summary.sync_unix_seconds, 0, "a pass that ran is stamped");
+        assert_eq!(
+            mgr.last_sync_unix_seconds(),
+            Some(summary.sync_unix_seconds)
+        );
+    }
+
+    /// The completion event reaches the host while the pass still holds
+    /// `is_syncing`, so a drain waiting on the slot's falling edge also
+    /// waits out the host callback.
+    #[tokio::test]
+    async fn should_dispatch_completion_before_releasing_the_slot() {
+        let (mgr, counter) = make_manager();
+
+        mgr.sync_now().await;
+
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(
+            counter
+                .dispatched_with_slot_held
+                .load(AtomicOrdering::SeqCst),
+            1,
+            "the completion must be dispatched with the slot still held"
+        );
+        assert!(!mgr.is_syncing(), "the slot is released after the dispatch");
+    }
+
+    /// A second `sync_now` while a pass holds the slot does nothing: empty
+    /// unstamped summary, no event, and the slot it lost stays with its
+    /// owner.
+    #[tokio::test]
+    async fn should_skip_sync_now_while_slot_is_held() {
+        let (mgr, counter) = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+
+        let summary = mgr.sync_now().await;
+
+        assert!(summary.is_empty());
+        assert_eq!(summary.sync_unix_seconds, 0, "0 means no pass ran");
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+        assert!(
+            mgr.is_syncing(),
+            "the losing call must not release the in-flight pass's slot"
+        );
+        assert!(!mgr.sync_admission_closed());
+
+        mgr.release_sync_slot_for_test();
+        mgr.sync_now().await;
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    /// A refused `sync_now` behind a closed gate leaves no timestamp.
+    #[tokio::test]
+    async fn should_not_stamp_sync_now_refused_by_a_shut_gate() {
+        let (mgr, _counter) = make_manager();
+        let _guard = mgr.quiesce_held().await.expect("drain");
+
+        let summary = mgr.sync_now().await;
+
+        assert_eq!(summary.sync_unix_seconds, 0);
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+    }
+
+    /// `sync_wallet` behind an in-flight pass is refused with the
+    /// "already in flight" message, and leaves that pass's slot alone.
+    #[tokio::test]
+    async fn should_return_busy_error_when_slot_is_held() {
+        let (mgr, _counter) = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+
+        let error = mgr
+            .sync_wallet(&[7u8; 32])
+            .await
+            .expect_err("a per-wallet sync must be refused while a pass is in flight");
+
+        match error {
+            PlatformWalletError::AddressSync(message) => assert_eq!(
+                message,
+                "a platform-address sync pass is already in flight; retry once it completes"
+            ),
+            other => panic!("expected an AddressSync refusal, got {other:?}"),
+        }
+        assert!(
+            mgr.is_syncing(),
+            "the refused call must not release the in-flight pass's slot"
+        );
+    }
+
+    /// `sync_wallet` behind a closed gate is refused with the "quiescing"
+    /// message — distinct from the slot-busy one.
+    #[tokio::test]
+    async fn should_return_quiescing_error_when_admission_is_shut() {
+        let (mgr, _counter) = make_manager();
+        let _guard = mgr.quiesce_held().await.expect("drain");
+
+        let error = mgr
+            .sync_wallet(&[7u8; 32])
+            .await
+            .expect_err("a per-wallet sync must be refused while the gate is held");
+
+        match error {
+            PlatformWalletError::AddressSync(message) => assert_eq!(
+                message,
+                "platform-address sync is quiescing; retry once the reset / teardown completes"
+            ),
+            other => panic!("expected an AddressSync refusal, got {other:?}"),
+        }
+        assert!(!mgr.is_syncing(), "the slot must be released on the bail");
+    }
+
+    /// An admitted `sync_wallet` for an unknown wallet reports it and
+    /// releases the slot; it clears a drained latch on the way in, like
+    /// `sync_now`.
+    #[tokio::test]
+    async fn should_admit_sync_wallet_and_release_the_slot_for_an_unknown_wallet() {
+        let (mgr, counter) = make_manager();
+
+        assert!(mgr.wedge_sync_slot_for_test());
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        mgr.release_sync_slot_for_test();
+        assert!(
+            mgr.sync_admission_closed(),
+            "latch outlives the wedged pass"
+        );
+
+        let error = mgr
+            .sync_wallet(&[7u8; 32])
+            .await
+            .expect_err("the wallet is not registered");
+
+        assert!(
+            matches!(error, PlatformWalletError::WalletNotFound(_)),
+            "expected WalletNotFound, got {error:?}"
+        );
+        assert!(!mgr.sync_admission_closed(), "the call cleared the latch");
+        assert!(!mgr.is_syncing());
+        assert_eq!(
+            counter.completions.load(AtomicOrdering::SeqCst),
+            0,
+            "a per-wallet sync fires no completion event"
+        );
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+    }
+
+    /// A sealed drain that times out still seals, and reports non-drained.
+    #[tokio::test]
+    async fn should_seal_admission_even_when_the_sealed_quiesce_times_out() {
+        let (mgr, counter) = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+
+        assert!(!mgr.quiesce_sealed_within(Duration::from_millis(50)).await);
+
+        mgr.release_sync_slot_for_test();
+        assert!(mgr.sync_now().await.is_empty());
+        assert!(
+            mgr.sync_admission_closed(),
+            "a sealed gate survives the drained-latch reopen"
+        );
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
+    }
+
+    /// The first pass runs as soon as the loop starts, not one interval
+    /// later (the default interval is far longer than the wait here).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_run_first_pass_immediately_after_start() {
+        let (mgr, counter) = make_manager();
+
+        Arc::clone(&mgr).start();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while counter.completions.load(AtomicOrdering::SeqCst) == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the loop never ran its first pass"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(mgr.last_sync_unix_seconds().is_some());
+
+        mgr.stop();
+        assert!(mgr.quiesce().await);
+    }
+
+    /// `start()` on a running loop is a no-op: it neither restarts the loop
+    /// (which would run another immediate first pass) nor spawns a second.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_ignore_start_when_loop_is_running() {
+        let (mgr, counter, registry) = make_manager_with_registry();
+
+        Arc::clone(&mgr).start();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while counter.completions.load(AtomicOrdering::SeqCst) == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the loop never ran its first pass"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            counter.completions.load(AtomicOrdering::SeqCst),
+            1,
+            "a second start must not run another first pass"
+        );
+
+        mgr.stop();
+        assert!(!mgr.is_running(), "one stop cancels the only loop");
+        let report = registry.shutdown().await;
+        assert!(report.all_clean(), "clean join: {report:?}");
+    }
+
+    /// A `stop()` followed at once by `start()` leaves the new loop
+    /// running and cancellable, and both generations join cleanly.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_keep_new_loop_cancellable_after_stop_then_quick_start() {
+        let (mgr, _counter, registry) = make_manager_with_registry();
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+
+        mgr.stop();
+        assert!(!mgr.is_running(), "stop() clears the running flag at once");
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running(), "loop B must be running after the restart");
+
+        mgr.stop();
+        assert!(!mgr.is_running());
+        let report = registry.shutdown().await;
+        assert!(
+            report.all_clean(),
+            "clean shutdown after restart: {report:?}"
         );
     }
 }

@@ -226,6 +226,10 @@ struct TopUpIdentityView: View {
     @State private var isToppingUp: Bool = false
     @State private var submitError: SubmitError? = nil
     @State private var newBalance: UInt64? = nil
+    /// The top-up may have been broadcast and its outcome is not confirmed
+    /// (code 20): shown as pending, and the form is gone so the same top-up
+    /// cannot be sent again.
+    @State private var isPending: Bool = false
     @State private var shieldedOutcome: ShieldedTopUpOutcome? = nil
     @State private var checkStatus: ShieldedCheckNowStatus = .idle
 
@@ -234,6 +238,8 @@ struct TopUpIdentityView: View {
             Form {
                 if newBalance != nil {
                     successSection
+                } else if isPending {
+                    pendingSection
                 } else if let shieldedOutcome {
                     shieldedOutcomeSection(shieldedOutcome)
                     if case .mayHaveGoneThrough = shieldedOutcome {
@@ -600,6 +606,31 @@ struct TopUpIdentityView: View {
         }
     }
 
+    private var pendingSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Top-up pending", systemImage: "clock")
+                    .foregroundColor(.orange)
+                    .font(.headline)
+                    .accessibilityIdentifier("topup.pending")
+                Text(
+                    "The top-up may still complete. Don't send it again; "
+                    + "a later sync refreshes the balance but can't confirm this top-up."
+                )
+                .font(.callout)
+                .foregroundColor(.secondary)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+        }
+    }
+
     // MARK: - Derived state
 
     private var canSubmit: Bool {
@@ -732,7 +763,7 @@ struct TopUpIdentityView: View {
 
         Task {
             do {
-                let balance = try await managedWallet.topUpFromAddresses(
+                let balance = try await managedWallet.topUpIdentityFromAddresses(
                     identityId: identityId,
                     inputs: inputs,
                     addressSigner: signer
@@ -746,6 +777,13 @@ struct TopUpIdentityView: View {
                     // success banner so we don't depend on the row
                     // re-fetch landing before this UI swap.
                     self.newBalance = balance
+                    self.isToppingUp = false
+                }
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+                // Not a failure: the top-up may still execute, so no retry
+                // is offered.
+                await MainActor.run {
+                    self.isPending = true
                     self.isToppingUp = false
                 }
             } catch {

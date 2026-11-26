@@ -218,7 +218,6 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            #[cfg(feature = "mocks")]
             DapiMocksError(e) => Self::new(
                 WasmSdkErrorKind::DapiMocksError,
                 e.to_string(),

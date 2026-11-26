@@ -9,7 +9,7 @@ use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_sta
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
-use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
+use platform_version::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1947,11 +1947,10 @@ mod fixtures {
         conformance_of(&drive, "token_shielded_pool", run);
     }
     /// The token marketplace escrow: two listings of one token holding tokens, and two offers
-    /// holding credits. The marketplace starts with protocol version 16, which has no tables
-    /// yet, so the fixture is built under the test version that selects it.
+    /// holding credits. The marketplace starts with protocol version 16.
     fn token_order_escrow(run: &mut FixtureRun) {
-        let platform_version = PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
-            .expect("expected the token marketplace test version");
+        let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+            .expect("expected the token marketplace's first protocol version");
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [7; 32];
         for (order_id, amount) in [([1; 32], 500), ([2; 32], 30)] {

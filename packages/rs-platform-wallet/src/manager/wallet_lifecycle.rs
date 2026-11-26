@@ -13,7 +13,7 @@ use key_wallet::Network;
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 use crate::changeset::ProviderKeyExtendedPubKey;
 use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, ClientWalletStartState,
+    AccountAddressPoolEntry, AccountRegistrationEntry, ClientWalletStartState, CoreChangeSet,
     PlatformWalletChangeSet, PlatformWalletPersistence, PrivateContactRequestsPosition,
     ProviderKeyAccountEntry, WalletMetadataEntry,
 };
@@ -320,8 +320,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .iter()
                     .map(|pool| {
                         let infos: Vec<key_wallet::AddressInfo> =
-                            pool.addresses.values().cloned().collect();
-                        (pool.pool_type, infos)
+                            pool.addresses().values().cloned().collect();
+                        (pool.pool_type(), infos)
                     })
                     .collect();
                 (account_type, pools)
@@ -338,8 +338,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 key_class: managed.key_class,
             };
             let pool = &managed.addresses;
-            let infos: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
-            address_snapshots.push((account_type, vec![(pool.pool_type, infos)]));
+            let infos: Vec<key_wallet::AddressInfo> = pool.addresses().values().cloned().collect();
+            address_snapshots.push((account_type, vec![(pool.pool_type(), infos)]));
         }
 
         // Network-INDEPENDENT group id, snapshotted BEFORE `wallet` is
@@ -366,7 +366,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
+        // A tracked masternode's collateral may reach this wallet as it syncs:
+        // track it now so it is locked when it arrives. Any lock made here is
+        // stored with the registration below.
+        let registration_locks = platform_info.lock_known_masternode_collaterals(
+            &self.tracked_masternodes_service().known_collaterals(),
+        );
 
         wallet.downgrade_to_external_signable();
 
@@ -644,6 +652,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 })
                 .collect(),
             provider_key_account_registrations,
+            core: (!registration_locks.is_empty()).then(|| CoreChangeSet {
+                outpoint_locks: registration_locks
+                    .into_iter()
+                    .map(|outpoint| (outpoint, true))
+                    .collect(),
+                ..CoreChangeSet::default()
+            }),
             ..Default::default()
         };
 

@@ -35,23 +35,22 @@ derive_more = { version = "1.0", features = ["from"] }
 hex = { version = "0.4.3" }
 
 # optional dependencies
-parking_lot = { version = "0.12.1", optional = true }
+parking_lot = { version = "0.13", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 arc-swap = { version = "1.7.0", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 rand = { version = "0.8.4", features = ["small_rng"], optional = true }
 moka = { version = "0.12", features = [
   "future",
-  "futures-util",
   "sync",
 ], optional = true }
 bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.22.1", optional = true }
 tempfile = { version = "3", optional = true }
-enum-map = { version = "2.0.3", optional = true }
+enum-map = { version = "3.1.0", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
-itertools = { version = "0.13", optional = true }
+itertools = { version = "0.15", optional = true }
 grovedb = { workspace = true, optional = true }
 # `TreeType` for the tree-type rules shared by the index walkers and
 # `drive::document::layout`. grovedb re-exports it only with its `minimal`
@@ -66,7 +65,7 @@ grovedb-version = { workspace = true }
 grovedb-epoch-based-storage-flags = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }

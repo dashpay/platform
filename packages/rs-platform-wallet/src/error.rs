@@ -9,7 +9,7 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
@@ -124,6 +124,46 @@ pub enum PlatformWalletError {
         wallet: Network,
     },
 
+    /// The invitation's identity is this wallet's: the wallet already records
+    /// it in one of its registration slots. No key the identity holds decides
+    /// this. Nothing was recorded, and nothing was broadcast unless a node
+    /// that lagged behind let the claim through; the host loads the identity
+    /// the way it loads any of its own.
+    #[error("invitation was already claimed by this wallet as identity {identity_id}")]
+    InvitationClaimedByThisWallet { identity_id: Identifier },
+
+    /// The invitation is claimed and this wallet does not record its
+    /// identity, so whose claim it is is unknown: usually someone else's, or
+    /// an earlier claim of this wallet whose result was lost before it was
+    /// recorded (a rescan records it). No key the identity holds decides
+    /// this. Nothing was broadcast unless a node that lagged behind let the
+    /// claim through.
+    #[error(
+        "invitation was already claimed by identity {identity_id}; if this wallet \
+         submitted the claim earlier, rescan its identities to load it"
+    )]
+    InvitationAlreadyClaimed { identity_id: Identifier },
+
+    /// A key of the claim is already registered to another identity, so
+    /// Platform would refuse the claim and charge the voucher. `identity_id`
+    /// is that identity when the claim's lookup found it, `None` when
+    /// Platform refused the broadcast; `rejection` is then that refusal,
+    /// kept for its consensus code.
+    #[error("{}", match identity_id {
+        Some(id) => format!("a key of this invitation claim is already registered to identity {id}"),
+        None => "a key of this invitation claim is already registered to another identity".to_string(),
+    })]
+    InvitationKeysAlreadyRegistered {
+        identity_id: Option<Identifier>,
+        #[source]
+        rejection: Option<dash_sdk::Error>,
+    },
+
+    /// The claim's identity lookups could not be verified yet (the trusted
+    /// quorum source is not ready). Nothing was broadcast; retry once synced.
+    #[error("cannot verify Platform's answer for the invitation claim yet: {0}")]
+    InvitationNotReady(#[source] dash_sdk::Error),
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
@@ -186,6 +226,15 @@ pub enum PlatformWalletError {
         contact: Identifier,
         network: Network,
         account_index: u32,
+    },
+
+    /// key-wallet could not build the address pools of a DashPay account
+    /// from its xpub.
+    #[error("Failed to build DashPay account {account_type}: {source}")]
+    DashpayAccountBuild {
+        account_type: AccountType,
+        #[source]
+        source: key_wallet::Error,
     },
 
     #[error("Asset lock transaction failed: {0}")]
@@ -685,6 +734,20 @@ pub enum PlatformWalletError {
 
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
+
+    /// Platform could not be asked for an identity an operation names, so
+    /// nothing was signed, reserved or broadcast: the operation never
+    /// started and may be retried as it is. Distinct from [`Self::Sdk`],
+    /// which a host that treats an unknown error as "may have gone through"
+    /// cannot tell from a failure after a dispatch, and from
+    /// [`Self::IdentityNotFound`], which is Platform's answer that the
+    /// identity does not exist. `source` is the SDK's error.
+    #[error("could not look up identity {identity_id} on Platform; nothing was sent: {source}")]
+    IdentityLookupFailed {
+        identity_id: Identifier,
+        #[source]
+        source: dash_sdk::Error,
+    },
 
     /// The contact requests with this identity came or went privately
     /// (protocol version 15): a `contactRequest` document to it, in reply or
@@ -1323,6 +1386,18 @@ pub enum PlatformWalletError {
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
 
+    /// No checkpoint of the local commitment tree covers a note selected for a
+    /// shielded spend yet: the note's position was appended after the latest
+    /// checkpoint (a sync pass that appended and stopped before checkpointing).
+    ///
+    /// Raised while the spend is assembled, **before** any proof is built or
+    /// anything is broadcast; the caller's generic error path releases the
+    /// note reservations, so nothing left the wallet. **Retryable**: the next
+    /// shielded sync checkpoints the tree at its size. Only this case: a store
+    /// that cannot produce the path (unreadable, poisoned, a position the tree
+    /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
+    /// which no sync repairs. FFI mirror:
+    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 
@@ -1437,6 +1512,17 @@ impl From<InvitationError> for PlatformWalletError {
                 Self::InvitationNetworkMismatch { invitation, wallet }
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::AlreadyClaimed { identity_id } => {
+                Self::InvitationAlreadyClaimed { identity_id }
+            }
+            InvitationError::KeysAlreadyRegistered {
+                identity_id,
+                rejection,
+            } => Self::InvitationKeysAlreadyRegistered {
+                identity_id,
+                rejection,
+            },
+            InvitationError::NotReady(error) => Self::InvitationNotReady(error),
             InvitationError::Sdk(error) => Self::Sdk(error),
         }
     }
@@ -1542,12 +1628,18 @@ impl PlatformWalletError {
     ///
     /// `None` for the variants that stringified their cause, and for the
     /// typed promotions (`AddressNonceMismatch`, `DocumentNotForSale`, …),
-    /// which keep the values they need and have FFI codes of their own.
+    /// which keep the values they need and have FFI codes of their own. The
+    /// exception is [`Self::InvitationKeysAlreadyRegistered`] refused after
+    /// the broadcast, which keeps Platform's refusal beside its own code.
     pub fn consensus_error(&self) -> Option<&ConsensusError> {
         match self {
             Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
                 source.consensus_error()
             }
+            Self::InvitationKeysAlreadyRegistered {
+                rejection: Some(source),
+                ..
+            } => source.consensus_error(),
             _ => None,
         }
     }
@@ -2288,6 +2380,45 @@ mod invitation_error_mapping_tests {
                 "boom".to_string()
             ))),
             PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
+        ));
+    }
+
+    /// Code 24 cannot say whose claim it is, so its text tells the invitee
+    /// a rescan loads the identity if this wallet's earlier claim landed
+    /// unrecorded, and still names the identity.
+    #[test]
+    fn should_point_an_unrecorded_claim_to_a_rescan() {
+        let id = Identifier::new([5; 32]);
+        let message = PlatformWalletError::InvitationAlreadyClaimed { identity_id: id }.to_string();
+        assert!(message.contains(&format!("{id}")), "{message}");
+        assert!(
+            message.contains("if this wallet submitted the claim earlier, rescan its identities"),
+            "{message}"
+        );
+    }
+
+    /// The claim's preflight outcomes keep the identity they name.
+    #[test]
+    fn should_keep_the_identity_a_preflight_outcome_names() {
+        let id = Identifier::new([5; 32]);
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::AlreadyClaimed { identity_id: id }),
+            PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
+        ));
+        for owner in [Some(id), None] {
+            assert!(matches!(
+                PlatformWalletError::from(InvitationError::KeysAlreadyRegistered {
+                    identity_id: owner,
+                    rejection: None,
+                }),
+                PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id, .. } if identity_id == owner
+            ));
+        }
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotReady(dash_sdk::Error::Generic(
+                "later".to_string()
+            ))),
+            PlatformWalletError::InvitationNotReady(_)
         ));
     }
 }

@@ -34,6 +34,11 @@ impl SpvContextProvider {
 }
 
 impl ContextProvider for SpvContextProvider {
+    /// Always strict SPV, whichever client is published.
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,

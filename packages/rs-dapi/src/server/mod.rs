@@ -1,7 +1,12 @@
-mod grpc;
+pub(crate) mod grpc;
 mod jsonrpc;
 mod metrics;
 mod state;
+
+pub(crate) use grpc::MAX_RESPONSE_BYTES;
+
+#[cfg(test)]
+pub(crate) use grpc::platform_server;
 
 use futures::FutureExt;
 use std::sync::Arc;

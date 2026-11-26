@@ -5,12 +5,22 @@ use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::platform_types::state_transition_execution_proofs::{
+    ProofOfStateAtBlock, RegistrationLease, RegistrationRefused, StateTransitionExecutionProofs,
+    StateTransitionHash,
+};
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
-use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::drive::v0::get_state_transition_execution_proof_response::StateAtBlock;
+use dapi_grpc::drive::v0::{
+    GetProofsRequest, GetProofsResponse, GetStateTransitionExecutionProofRequest,
+    GetStateTransitionExecutionProofResponse, RegisterStateTransitionExecutionProofRequest,
+    RegisterStateTransitionExecutionProofResponse, UnregisterStateTransitionExecutionProofRequest,
+    UnregisterStateTransitionExecutionProofResponse,
+};
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
@@ -1212,6 +1222,111 @@ impl DriveInternal for QueryService {
         )
         .await
     }
+
+    async fn register_state_transition_execution_proof(
+        &self,
+        request: Request<RegisterStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<RegisterStateTransitionExecutionProofResponse>, Status> {
+        register_state_transition_execution_proof(
+            &self.platform.state_transition_execution_proofs,
+            request.get_ref(),
+        )
+        .map(Response::new)
+    }
+
+    async fn unregister_state_transition_execution_proof(
+        &self,
+        request: Request<UnregisterStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<UnregisterStateTransitionExecutionProofResponse>, Status> {
+        unregister_state_transition_execution_proof(
+            &self.platform.state_transition_execution_proofs,
+            request.get_ref(),
+        )
+        .map(Response::new)
+    }
+
+    async fn get_state_transition_execution_proof(
+        &self,
+        request: Request<GetStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<GetStateTransitionExecutionProofResponse>, Status> {
+        get_state_transition_execution_proof(
+            &self.platform.state_transition_execution_proofs,
+            request.get_ref(),
+        )
+        .map(Response::new)
+    }
+}
+
+/// Registers a state transition for an execution proof. `RESOURCE_EXHAUSTED` when Drive holds
+/// as many registrations as it keeps.
+fn register_state_transition_execution_proof(
+    proofs: &StateTransitionExecutionProofs,
+    request: &RegisterStateTransitionExecutionProofRequest,
+) -> Result<RegisterStateTransitionExecutionProofResponse, Status> {
+    let hash = state_transition_hash(&request.state_transition_hash)?;
+    let lease = registration_lease(&request.lease)?;
+
+    proofs
+        .register(hash, lease)
+        .map_err(|refused| match refused {
+            RegistrationRefused::TooManyRegistered => Status::resource_exhausted(
+                "too many state transitions are registered for an execution proof",
+            ),
+            RegistrationRefused::LeaseReleased => Status::failed_precondition(
+                "the registration lease was released already; register with a new lease",
+            ),
+        })?;
+
+    Ok(RegisterStateTransitionExecutionProofResponse {})
+}
+
+/// Releases one registration of a state transition for an execution proof.
+fn unregister_state_transition_execution_proof(
+    proofs: &StateTransitionExecutionProofs,
+    request: &UnregisterStateTransitionExecutionProofRequest,
+) -> Result<UnregisterStateTransitionExecutionProofResponse, Status> {
+    let hash = state_transition_hash(&request.state_transition_hash)?;
+    let lease = registration_lease(&request.lease)?;
+
+    proofs.unregister(&hash, &lease);
+
+    Ok(UnregisterStateTransitionExecutionProofResponse {})
+}
+
+/// The execution proof Drive made for a state transition, both sides absent when it has none.
+fn get_state_transition_execution_proof(
+    proofs: &StateTransitionExecutionProofs,
+    request: &GetStateTransitionExecutionProofRequest,
+) -> Result<GetStateTransitionExecutionProofResponse, Status> {
+    let hash = state_transition_hash(&request.state_transition_hash)?;
+
+    let proof = proofs.get(&hash);
+    let state_at_block = |state: &ProofOfStateAtBlock| StateAtBlock {
+        proof: Some(state.proof.clone()),
+        metadata: Some(state.metadata.clone()),
+    };
+
+    Ok(GetStateTransitionExecutionProofResponse {
+        before: proof.as_deref().map(|proof| state_at_block(&proof.before)),
+        after: proof.as_deref().map(|proof| state_at_block(&proof.after)),
+    })
+}
+
+/// The hash a state transition is registered and fetched by, which is 32 bytes.
+fn state_transition_hash(bytes: &[u8]) -> Result<StateTransitionHash, Status> {
+    bytes.try_into().map_err(|_| {
+        Status::invalid_argument(format!(
+            "state_transition_hash must be 32 bytes, got {}",
+            bytes.len()
+        ))
+    })
+}
+
+/// The lease a registration is held by, which is 16 bytes.
+fn registration_lease(bytes: &[u8]) -> Result<RegistrationLease, Status> {
+    bytes.try_into().map_err(|_| {
+        Status::invalid_argument(format!("lease must be 16 bytes, got {}", bytes.len()))
+    })
 }
 
 fn query_error_into_status(error: QueryError) -> Status {
@@ -1341,6 +1456,149 @@ fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<()
 mod tests {
     use super::*;
     use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+
+    mod state_transition_execution_proofs {
+        use super::*;
+        use crate::platform_types::state_transition_execution_proofs::{
+            StateTransitionExecutionProof, MAX_REGISTERED_STATE_TRANSITIONS,
+        };
+        use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+
+        fn register(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+            lease: Vec<u8>,
+        ) -> Result<(), Status> {
+            register_state_transition_execution_proof(
+                proofs,
+                &RegisterStateTransitionExecutionProofRequest {
+                    state_transition_hash: hash,
+                    lease,
+                },
+            )
+            .map(|_| ())
+        }
+
+        fn unregister(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+            lease: Vec<u8>,
+        ) -> Result<(), Status> {
+            unregister_state_transition_execution_proof(
+                proofs,
+                &UnregisterStateTransitionExecutionProofRequest {
+                    state_transition_hash: hash,
+                    lease,
+                },
+            )
+            .map(|_| ())
+        }
+
+        fn get(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+        ) -> Result<GetStateTransitionExecutionProofResponse, Status> {
+            get_state_transition_execution_proof(
+                proofs,
+                &GetStateTransitionExecutionProofRequest {
+                    state_transition_hash: hash,
+                },
+            )
+        }
+
+        fn side(height: u64) -> ProofOfStateAtBlock {
+            ProofOfStateAtBlock {
+                proof: Proof {
+                    grovedb_proof: vec![height as u8],
+                    ..Default::default()
+                },
+                metadata: ResponseMetadata {
+                    height,
+                    ..Default::default()
+                },
+            }
+        }
+
+        #[test]
+        fn should_answer_a_full_registry_with_resource_exhausted_until_a_slot_is_freed() {
+            let proofs = StateTransitionExecutionProofs::default();
+            for index in 0..MAX_REGISTERED_STATE_TRANSITIONS {
+                let mut hash = vec![0; 32];
+                hash[..8].copy_from_slice(&(index as u64).to_be_bytes());
+                let mut lease = vec![0; 16];
+                lease[..8].copy_from_slice(&(index as u64).to_be_bytes());
+                register(&proofs, hash, lease).expect("expected to register");
+            }
+
+            let status = register(&proofs, vec![255; 32], vec![255; 16]).unwrap_err();
+            assert_eq!(status.code(), Code::ResourceExhausted);
+
+            unregister(&proofs, vec![0; 32], vec![0; 16]).expect("expected to unregister");
+            register(&proofs, vec![255; 32], vec![255; 16]).expect("expected a freed slot");
+        }
+
+        #[test]
+        fn should_answer_a_registration_after_its_release_with_failed_precondition() {
+            let proofs = StateTransitionExecutionProofs::default();
+            unregister(&proofs, vec![1; 32], vec![1; 16]).expect("expected to unregister");
+
+            let status = register(&proofs, vec![1; 32], vec![1; 16]).unwrap_err();
+
+            assert_eq!(status.code(), Code::FailedPrecondition);
+            assert!(!proofs.has_registered());
+        }
+
+        #[test]
+        fn should_answer_both_sides_of_a_proof_and_none_without_one() {
+            let proofs = StateTransitionExecutionProofs::default();
+            proofs.store(
+                [1; 32],
+                10,
+                StateTransitionExecutionProof {
+                    before: side(9),
+                    after: side(10),
+                },
+            );
+
+            let response = get(&proofs, vec![1; 32]).expect("expected an answer");
+            let before = response.before.expect("expected the state before");
+            let after = response.after.expect("expected the state after");
+            assert_eq!(before.metadata.map(|metadata| metadata.height), Some(9));
+            assert_eq!(before.proof.map(|proof| proof.grovedb_proof), Some(vec![9]));
+            assert_eq!(after.metadata.map(|metadata| metadata.height), Some(10));
+            assert_eq!(after.proof.map(|proof| proof.grovedb_proof), Some(vec![10]));
+
+            let response = get(&proofs, vec![2; 32]).expect("expected an answer");
+            assert_eq!(response.before, None);
+            assert_eq!(response.after, None);
+        }
+
+        #[test]
+        fn should_refuse_a_hash_that_is_not_32_bytes_or_a_lease_that_is_not_16() {
+            let proofs = StateTransitionExecutionProofs::default();
+
+            for status in [
+                register(&proofs, vec![1; 31], vec![1; 16]).unwrap_err(),
+                register(&proofs, vec![1; 32], vec![1; 15]).unwrap_err(),
+                unregister(&proofs, vec![1; 33], vec![1; 16]).unwrap_err(),
+                unregister(&proofs, vec![1; 32], vec![]).unwrap_err(),
+                get(&proofs, vec![]).unwrap_err(),
+            ] {
+                assert_eq!(status.code(), Code::InvalidArgument);
+            }
+            assert!(!proofs.has_registered());
+        }
+    }
+
+    #[test]
+    fn should_take_a_state_transition_hash_of_32_bytes_only() {
+        assert_eq!(state_transition_hash(&[7; 32]).unwrap(), [7; 32]);
+
+        for length in [0, 31, 33] {
+            let status = state_transition_hash(&vec![7; length]).unwrap_err();
+            assert_eq!(status.code(), Code::InvalidArgument);
+        }
+    }
 
     #[test]
     fn path_elements_request_is_bounded_before_debug_formatting() {
