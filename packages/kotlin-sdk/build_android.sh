@@ -18,7 +18,11 @@
 #
 # Usage:
 #   ./build_android.sh [--abi arm64|x86_64|all] [--profile dev|release]
-#                      [--no-shielded] [--clean] [--verify]
+#                      [--no-shielded] [--test-hooks] [--clean] [--verify]
+#
+#   --test-hooks  compile the test-only JNI entry points (`test-hooks` feature)
+#                 used by the instrumented androidTest suite. Never use it for a
+#                 published AAR.
 
 set -euo pipefail
 
@@ -32,6 +36,7 @@ MIN_SDK=29
 ABI="all"
 PROFILE="release"
 SHIELDED=1
+TEST_HOOKS=0
 CLEAN=0
 VERIFY=0
 
@@ -40,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --abi)         ABI="$2"; shift 2 ;;
         --profile)     PROFILE="$2"; shift 2 ;;
         --no-shielded) SHIELDED=0; shift ;;
+        --test-hooks)  TEST_HOOKS=1; shift ;;
         --clean)       CLEAN=1; shift ;;
         --verify)      VERIFY=1; shift ;;
         -h|--help)     grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -64,6 +70,10 @@ esac
 FEATURES=""
 if [[ $SHIELDED -eq 1 ]]; then
     FEATURES="shielded"
+fi
+# Instrumented-suite builds only; must not be used for a published AAR.
+if [[ $TEST_HOOKS -eq 1 ]]; then
+    FEATURES="${FEATURES:+$FEATURES,}test-hooks"
 fi
 FEATURE_ARGS=()
 if [[ -n "$FEATURES" ]]; then

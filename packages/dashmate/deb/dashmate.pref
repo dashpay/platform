@@ -1,0 +1,12 @@
+Explanation: Dash's apt repository is meant for the dashmate package only. dashmate, in any
+Explanation: architecture, keeps the default priority. This record has to come first: apt
+Explanation: uses the first record that names a package.
+Package: dashmate:any
+Pin: origin apt.services.dash.org
+Pin-Priority: 500
+
+Explanation: No other package, in any architecture, is a candidate from this repository,
+Explanation: whatever version it offers, including under an APT::Default-Release setting.
+Package: *:any
+Pin: origin apt.services.dash.org
+Pin-Priority: -1

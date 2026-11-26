@@ -575,6 +575,10 @@ jobs:
     permissions:
       contents: write
       actions: read
+    # The sha256 of the SHA256SUMS this job checked and attached. The apt
+    # publish asks for that file only, by this digest.
+    outputs:
+      sha256sums_sha256: ${{ steps.attach.outputs.sha256 }}
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_ID: ${{ github.event.release.id }}
@@ -678,6 +682,7 @@ jobs:
       # so the job learns the new asset's id, and the job writes that id and the
       # file's sha256 into its own log: the signing script signs only that asset.
       - name: Attach SHA256SUMS to the release
+        id: attach
         run: |
           set -euo pipefail
           assets="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
@@ -708,3 +713,189 @@ jobs:
             exit 1
           fi
           echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"
+          echo "sha256=${sum}" >> "${GITHUB_OUTPUT}"
+
+  # Asks the apt publisher, infra's state machine, to publish the release's two
+  # debs. It downloads them itself and takes them only as SHA256SUMS lists them,
+  # so this runs once SHA256SUMS is attached. A final release reaches `stable`
+  # once its SHA256SUMS.asc is attached, on a later run or the publisher's daily
+  # one. This job neither reads nor changes the release, and no job needs it, so
+  # a failed publish leaves every asset in place; re-run this job to try again.
+  publish-dashmate-apt:
+    name: Publish Dashmate debs to apt
+    needs: release-dashmate-checksums
+    # A dispatch attaches no debs and no SHA256SUMS. The repository variable
+    # DASHMATE_APT_PUBLISH turns the job on when it is `true` (the comparison
+    # ignores case); unset or anything else leaves it off. It stays off until
+    # the publisher refuses a SHA256SUMS whose sha256 is not the
+    # sha256sums_sha256 this job sends. publish-dashmate-apt-off says so while
+    # it is off.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-checksums.result == 'success'
+      && vars.DASHMATE_APT_PUBLISH == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    # The role trusts this environment only, and the environment admits v* tags only.
+    environment: dashmate-apt-publish
+    permissions:
+      id-token: write
+      contents: none
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      SHA256SUMS_SHA256: ${{ needs.release-dashmate-checksums.outputs.sha256sums_sha256 }}
+      # The publisher runs one publish at a time, so this includes waiting for
+      # another one. It stays under the job's timeout and the hour the
+      # credentials last.
+      APT_PUBLISH_WAIT_SECONDS: 2400
+      APT_PUBLISH_POLL_SECONDS: 15
+      AWS_PAGER: ''
+    steps:
+      # The tag goes into the execution's name and input. Only the form the deb
+      # build accepts, so any tag whose debs were built passes. The publisher
+      # (dashpay/infra, stacks/apt/publisher/aptrepo.py) takes finals and dev,
+      # beta and rc prereleases, by the first identifier of the prerelease, and
+      # refuses every other kind (alpha, pr, hotfix). It does not publish that
+      # list anywhere this job can read, so it is repeated here: those kinds are
+      # skipped rather than turning the release run red. Keep it in step.
+      - name: Check the release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if ! [[ "${TAG}" =~ ${tag_pattern} ]]; then
+            # Quoted, so that no part of it starts a line of the log.
+            printf -v shown '%q' "${TAG}"
+            echo "::error::Not a release tag such as v5.1.0 or v5.1.0-rc.1: ${shown}"
+            exit 1
+          fi
+          if ! [[ "${SHA256SUMS_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::The Release Dashmate checksums job handed over no sha256 of the SHA256SUMS it attached."
+            exit 1
+          fi
+          label=''
+          case "${TAG}" in
+            *-*)
+              label="${TAG#*-}"
+              label="${label%%.*}"
+              ;;
+          esac
+          case "${label}" in
+            '' | dev | beta | rc) echo 'publish=true' >> "${GITHUB_OUTPUT}" ;;
+            *)
+              echo "::notice::${TAG} is not published to apt: the apt publisher takes finals and dev, beta and rc prereleases only, and refuses ${label} ones."
+              echo 'publish=false' >> "${GITHUB_OUTPUT}"
+              ;;
+          esac
+
+      - name: Get credentials for the apt publisher
+        if: steps.tag.outputs.publish == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::854439639386:role/dashmate-apt-release
+          aws-region: us-west-2
+
+      # The input names the release and the sha256 of the SHA256SUMS this run
+      # checked, so the publisher can refuse any other manifest the release
+      # holds by the time it serves the request.
+      #
+      # The execution's name is unique per run attempt, so a re-run starts a new
+      # publish, and made of the characters Step Functions accepts in names it
+      # logs, at most 80. Starting is idempotent for the same name and input, so
+      # the CLI's retries start no second one. What the execution reports is
+      # printed as one JSON line with every # escaped, so none of it can form a
+      # workflow command: `::` ones start a line, `##[` ones can be anywhere.
+      - name: Publish the debs to the apt repository
+        if: steps.tag.outputs.publish == 'true'
+        env:
+          STATE_MACHINE: arn:aws:states:us-west-2:854439639386:stateMachine:dashmate-apt-publish
+        run: |
+          set -euo pipefail
+          suffix="-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          name="${TAG//./-}"
+          name="${name:0:$((80 - ${#suffix}))}${suffix}"
+          input="$(jq -cn --arg tag "${TAG}" --arg sums "${SHA256SUMS_SHA256}" '{tag: $tag, sha256sums_sha256: $sums}')"
+          execution="$(aws stepfunctions start-execution --state-machine-arn "${STATE_MACHINE}" \
+            --name "${name}" --input "${input}" --query executionArn --output text \
+            --cli-connect-timeout 10 --cli-read-timeout 30)"
+          echo "Started ${execution}"
+          deadline=$((SECONDS + APT_PUBLISH_WAIT_SECONDS))
+          status=''
+          failed_reads=0
+          while :; do
+            # A read that fails is tried again, but not five times in a row: an
+            # error that does not clear, such as a denied read, fails the job early.
+            if description="$(aws stepfunctions describe-execution --execution-arn "${execution}" --output json \
+              --cli-connect-timeout 10 --cli-read-timeout 30)" \
+              && status="$(jq -er '.status' <<< "${description}")"; then
+              failed_reads=0
+              case "${status}" in
+                RUNNING | PENDING_REDRIVE) ;;
+                *) break ;;
+              esac
+            else
+              failed_reads=$((failed_reads + 1))
+              if [ "${failed_reads}" -ge 5 ]; then
+                echo "::error::Could not read ${execution} five times in a row. It may still be running; check it before re-running this job."
+                exit 1
+              fi
+              echo "::warning::Could not read the execution; trying again."
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::The apt publish did not finish within ${APT_PUBLISH_WAIT_SECONDS}s. ${execution} may still be running and succeed; check it before re-running this job."
+              exit 1
+            fi
+            sleep "${APT_PUBLISH_POLL_SECONDS}"
+          done
+          echo "apt publish: ${status}"
+          if [ "${status}" != SUCCEEDED ]; then
+            echo "::error::The apt publish of ${TAG} ended ${status}; its error and cause follow."
+            jq -c '{status, error, cause}' <<< "${description}" | sed 's/#/\\u0023/g'
+            # The state machine runs the publisher as a CodeBuild build, and a
+            # failed build is the cause, its keys capitalised by Step Functions
+            # (read here either way). Only a log name and the exit status of
+            # publish.py itself are taken from it, each in a form that cannot
+            # carry a command.
+            build="$(jq -c 'def lower: if type == "object"
+                then with_entries(.key |= ((.[0:1] | ascii_downcase) + .[1:]) | .value |= lower)
+                elif type == "array" then map(lower) else . end;
+              .cause | fromjson? | objects | lower | (.build // .) | objects' <<< "${description}" 2> /dev/null || true)"
+            exit_status="$(jq -r '[.phases[]? | select(.phaseType == "BUILD") | .contexts[]?
+              | select(.statusCode == "COMMAND_EXECUTION_ERROR") | .message | strings
+              | capture("^Error while executing command: python3 publish\\.py\\. Reason: exit status (?<n>[0-9]+)$").n]
+              | first // empty' <<< "${build}" 2> /dev/null || true)"
+            group="$(jq -r '.logs.groupName // empty | strings | select(test("^[A-Za-z0-9._/-]+$"))' <<< "${build}" 2> /dev/null || true)"
+            stream="$(jq -r '.logs.streamName // empty | strings | select(test("^[A-Za-z0-9._/-]+$"))' <<< "${build}" 2> /dev/null || true)"
+            if [ -n "${group}" ] && [ -n "${stream}" ]; then
+              echo "The publisher's log: CloudWatch Logs group ${group}, stream ${stream}."
+            fi
+            # publish.py exits 2 when it refuses the request, which can happen
+            # part-way, and 1 when it went through but logged a problem for a
+            # person, which can be about another release waiting for stable.
+            case "${exit_status}" in
+              2) echo "The publisher exited 2: it refused ${TAG}, possibly part-way. Its reason is the REFUSED: line of its log; check the suites before re-running this job." ;;
+              1) echo "The publisher exited 1: it logged a NEEDS A PERSON: problem, which can be about another release, so ${TAG} may be published; check the suites before re-running this job." ;;
+            esac
+            echo "If that log cannot be read, give infra the execution: ${execution}"
+            exit 1
+          fi
+
+  # A job skipped by its condition shows no reason, so this one says why the
+  # release run published nothing to apt. It runs exactly when
+  # publish-dashmate-apt would have, had DASHMATE_APT_PUBLISH been `true`.
+  publish-dashmate-apt-off:
+    name: Dashmate apt publish is off
+    needs: release-dashmate-checksums
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-checksums.result == 'success'
+      && vars.DASHMATE_APT_PUBLISH != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Say the apt publish is off
+        run: |
+          echo "::notice::The debs were not sent to the apt publisher: the repository variable DASHMATE_APT_PUBLISH is not 'true'. The release skill says when to turn it on."

@@ -1,0 +1,37 @@
+{
+  "outpoint": "68d588bc1559238214334d8031b28459c5bcd7df7905f4dca067f4df8cbbb1f4-1",
+  "service": "127.0.0.1:19899",
+  "proTxHash": "68d588bc1559238214334d8031b28459c5bcd7df7905f4dca067f4df8cbbb1f4",
+  "type": "Evo",
+  "collateralHash": "68d588bc1559238214334d8031b28459c5bcd7df7905f4dca067f4df8cbbb1f4",
+  "collateralIndex": 1,
+  "dmnState": {
+    "version": 2,
+    "addresses": {
+      "core_p2p": [
+        "127.0.0.1:19899"
+      ],
+      "platform_https": [
+        "127.0.0.1:1443"
+      ],
+      "platform_p2p": [
+        "127.0.0.1:26656"
+      ]
+    },
+    "registeredHeight": 601,
+    "lastPaidHeight": 603,
+    "consecutivePayments": 0,
+    "PoSePenalty": 0,
+    "PoSeRevivedHeight": -1,
+    "PoSeBanHeight": -1,
+    "revocationReason": 0,
+    "ownerAddress": "ybSh1DM1QCxwdeu5sUizELWExEfmvARcGw",
+    "votingAddress": "yR5Thavm3RaLfG2Zw9WDoHSVjTBS5aD95L",
+    "platformNodeID": "8a5a3d1b2f6c4e7d9a0b1c2d3e4f5a6b7c8d9e0f",
+    "payoutAddress": "yVY8DVEkuzTPfLh5g5oTXgTMmGyKt14rva",
+    "pubKeyOperator": "b3c0448d683ede081e6b6e7e07bec8da6e1db519f3ab93b7d3d87e71d789df03671da78d358645daf8b1194e77f1d97b"
+  },
+  "state": "READY",
+  "status": "Ready",
+  "quorumParticipation": true
+}

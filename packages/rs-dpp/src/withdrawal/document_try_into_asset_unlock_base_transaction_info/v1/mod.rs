@@ -1,9 +1,8 @@
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::convert_credits_to_duffs;
 use crate::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use crate::withdrawal::WithdrawalTransactionIndex;
+use crate::withdrawal::{asset_unlock_core_fee_duffs, WithdrawalTransactionIndex};
 use crate::ProtocolError;
-use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
     AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
 };
@@ -23,18 +22,14 @@ impl Document {
         let core_fee_per_byte: u32 =
             properties.get_integer(withdrawal::properties::CORE_FEE_PER_BYTE)?;
 
-        let max_core_fee_per_byte = platform_version
-            .system_limits
-            .max_core_fee_per_byte
-            .ok_or_else(|| {
-                ProtocolError::Generic(
-                    "asset unlock conversion v1 requires a Core fee limit".to_string(),
-                )
-            })?;
-        let effective_core_fee_per_byte = core_fee_per_byte.min(max_core_fee_per_byte);
-        let requested_fee = (ASSET_UNLOCK_TX_SIZE as u64)
-            .checked_mul(effective_core_fee_per_byte as u64)
-            .ok_or_else(|| ProtocolError::Generic("asset unlock fee overflow".to_string()))?;
+        // In-place change to a shipped generation, inert: the inline fee arithmetic moved
+        // unchanged into `asset_unlock_core_fee_duffs`, which the shielded withdrawal preflight
+        // shares. It reads the same `max_core_fee_per_byte` limit and fails with the same
+        // message when it is absent, clamps the rate to it, multiplies by `ASSET_UNLOCK_TX_SIZE`
+        // with the same overflow check and message, and still runs before the credits are
+        // converted to duffs. This generation is `try_into_asset_unlock_base_transaction_info` 1,
+        // which protocol versions 14 and 15 select.
+        let requested_fee = asset_unlock_core_fee_duffs(core_fee_per_byte, platform_version)?;
         let withdrawal_amount_duffs = convert_credits_to_duffs(withdrawal_amount)?;
         let output_script = ScriptBuf::from_bytes(output_script_bytes);
 
@@ -206,5 +201,39 @@ mod tests {
             tx.output[0].value,
             convert_credits_to_duffs(amount).expect("duffs")
         );
+    }
+
+    /// The preflight pays what the conversion queues: the same output for the same reserve and
+    /// rate, at the generation that carves the fee out and the one before it.
+    #[test]
+    fn the_conversion_pays_what_the_withdrawal_preflight_reports() {
+        for version in [13, 14] {
+            let platform_version = PlatformVersion::get(version).expect("platform version");
+            for rate in [1u32, 5, 6_765] {
+                for amount in [2_000_000_001u64, 2_345_678_999, 3_999_999_999] {
+                    let mut document = withdrawal_document(Some(1), amount);
+                    document.properties_mut().insert(
+                        withdrawal::properties::CORE_FEE_PER_BYTE.to_string(),
+                        rate.into(),
+                    );
+                    let tx = document
+                        .try_into_asset_unlock_base_transaction_info(1, platform_version)
+                        .expect("asset unlock info");
+                    let reserve = crate::withdrawal::preflight_shielded_withdrawal(
+                        amount,
+                        rate,
+                        platform_version,
+                    )
+                    .expect("in range");
+                    assert_eq!(
+                        tx.output[0].value, reserve.output_duffs,
+                        "v{version} rate {rate} amount {amount}"
+                    );
+                    if version == 14 {
+                        assert_eq!(tx.base_payload.fee as u64, reserve.core_fee_duffs);
+                    }
+                }
+            }
+        }
     }
 }
