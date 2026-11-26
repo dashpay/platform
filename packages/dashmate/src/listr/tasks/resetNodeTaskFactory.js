@@ -456,6 +456,19 @@ export default function resetNodeTaskFactory(
       ].join('\n'));
     }
 
+    // A hard reset that keeps a config under a name that is now reserved makes
+    // the command render its service files into a directory that cannot
+    // exist, which fails only once the services are gone.
+    if (ctx.isHardReset && !ctx.removeConfig && defaultConfigs.has(defaultConfigName)
+      && !isConfigNameAvailable(config.getName())) {
+      throw new Error([
+        `Cannot reset config '${config.getName()}': Dashmate now reserves this name, so the config`
+          + ' cannot have service files.',
+        'Remove the config instead:',
+        `  dashmate config remove ${quoteShellArgument(config.getName())}`,
+      ].join('\n'));
+    }
+
     assertPathCanBeRemoved(config, ctx);
   }
 

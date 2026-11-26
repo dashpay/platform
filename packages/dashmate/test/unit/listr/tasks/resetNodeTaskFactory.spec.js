@@ -286,6 +286,25 @@ describe('resetNodeTaskFactory', () => {
         expect(fs.readFileSync(configFilePath, 'utf8')).to.equal('{"configs":{}}');
       });
     });
+
+    // With defaults the hard reset keeps the entry, and the command then
+    // renders its service files into a directory that cannot exist. Found out
+    // only then, the services would already be gone.
+    [true, false].forEach((isPlatformOnlyReset) => {
+      it(`should refuse a ${isPlatformOnlyReset ? 'Platform' : 'full'} hard reset that keeps it`, async () => {
+        const options = getTestnetConfig().getStoredOptions();
+        options.group = 'testnet';
+        useConfigs([new Config('config.json', options)]);
+
+        await expect(hardReset({ isPlatformOnlyReset, isForce: false }))
+          .to.be.rejectedWith(/'config\.json'[\s\S]*dashmate config remove config\.json/);
+
+        expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+        expect(dockerCompose.down).to.not.have.been.called();
+        expect(dockerCompose.rm).to.not.have.been.called();
+        expect(configFile.isConfigExists('config.json')).to.be.true();
+      });
+    });
   });
 
   describe('a member of a group', () => {
