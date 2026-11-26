@@ -139,9 +139,10 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
     let mut expected = Vec::new();
     for mut account in info.accounts.all_accounts_mut() {
         let account_type = account.managed_account_type().to_account_type();
-        let source = public_key_source(&wallet, account_type);
+        let source = wallet.key_source_for_account(account_type);
+        let source = source.can_derive().then_some(&source);
         for pool in account.managed_account_type_mut().address_pools_mut() {
-            let reserved_index = if let Some(source) = &source {
+            let reserved_index = if let Some(source) = source {
                 pool.generate_addresses(40, source).unwrap();
                 for index in 0..40 {
                     assert!(mark_index_used(pool, index));
@@ -194,7 +195,8 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
     let mut wm = wm.write().await;
     let restored = wm.get_wallet_info_mut(&wallet.wallet_id).unwrap();
     for (account_type, pool_type, addresses, reserved_index, highest_used) in expected {
-        let source = public_key_source(&wallet, account_type);
+        let source = wallet.key_source_for_account(account_type);
+        let source = source.can_derive().then_some(&source);
         let mut accounts = restored.core_wallet.accounts.all_accounts_mut();
         let account = accounts
             .iter_mut()
@@ -228,7 +230,7 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
             "{account_type:?} {pool_type:?}"
         );
         if let Some(source) = source {
-            let next = pool.next_unused(&source).unwrap();
+            let next = pool.next_unused(source).unwrap();
             assert!(
                 pool.address_index(&next).unwrap() > reserved_index,
                 "must not reuse funded or handed-out keys"
@@ -569,21 +571,10 @@ fn with_pool<R>(
     edit(pool)
 }
 
-/// The public key an account's non-hardened pool derives from: an ECDSA
-/// xpub, or the operator account's BLS key. Platform-node keys are hardened
-/// and have none.
-fn public_key_source(wallet: &Wallet, account_type: AccountType) -> Option<KeySource> {
-    if let Some(account) = wallet.accounts.account_of_type(account_type) {
-        return Some(KeySource::Public(account.account_xpub));
-    }
-    wallet
-        .accounts
-        .bls_account_of_type(account_type)
-        .map(|account| KeySource::BLSPublic(account.bls_public_key.clone()))
-}
-
 fn account_key_source(wallet: &Wallet, account_type: AccountType) -> KeySource {
-    public_key_source(wallet, account_type).expect("account keys")
+    let source = wallet.key_source_for_account(account_type);
+    assert!(source.can_derive(), "account keys");
+    source
 }
 
 /// Hand out the next unused address of `pool`, reserved at `at`.
@@ -1002,12 +993,16 @@ fn should_reject_a_pool_row_whose_key_is_not_the_derived_one() {
 /// are trusted as stored. One address filed at two indices is the
 /// contradiction that can still be caught there: the pool refuses it.
 #[test]
+#[tracing_test::traced_test]
 fn should_reject_a_platform_node_address_stored_at_two_indices() {
     use key_wallet::error::Error as KeyWalletError;
     use platform_wallet_storage::WalletStorageError;
 
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let wallet_id = hex::encode(wallet.wallet_id);
     assert_wallet_corruption_is_isolated(
-        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap(),
+        wallet,
         |wallet, info| {
             let keys =
                 platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
@@ -1040,6 +1035,30 @@ fn should_reject_a_platform_node_address_stored_at_two_indices() {
         "account_record_invalid",
         "one platform-node address at two indices",
     );
+    logs_assert(|lines| {
+        let coordinates = [
+            format!("wallet_id={wallet_id}"),
+            "account_type=ProviderPlatformKeys".to_string(),
+            "pool_type=AbsentHardened".to_string(),
+            "address_index=1".to_string(),
+        ];
+        let reported = lines
+            .iter()
+            .filter(|line| {
+                line.contains("provider platform pool row refused")
+                    && coordinates
+                        .iter()
+                        .all(|coordinate| line.contains(coordinate))
+            })
+            .count();
+        if reported == 2 {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected row coordinates under Strict and Recovery; got {reported}"
+            ))
+        }
+    });
 }
 
 /// Keyless rows bypass typed-pool loading, so the pool restore must reject

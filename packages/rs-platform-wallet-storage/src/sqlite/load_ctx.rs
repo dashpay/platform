@@ -25,6 +25,9 @@
 //! reader can decline, at the cost of whichever unit — row or wallet — the
 //! declining loses.
 
+use dashcore::hashes::{sha256, HashEngine};
+use key_wallet::account::AccountType;
+
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt::{self, Display};
@@ -241,7 +244,7 @@ pub struct LoadDegradation {
     /// A count alone cannot answer the question a caller actually has here:
     /// a wallet missing from `load()`'s result is otherwise indistinguishable
     /// from a wallet that never existed. Raw ids rather than a wallet type,
-    /// matching [`SiteCoords`], which keeps this module free of them.
+    /// matching [`SiteCoords`].
     pub wallets_degraded: BTreeMap<[u8; 32], &'static str>,
 }
 
@@ -311,13 +314,38 @@ impl Display for LoadDegradation {
     }
 }
 
+/// Wallet-scoped contact tag for diagnostics, without either raw identity id.
+pub(crate) fn contact_log_id(wallet_id: &[u8; 32], account_type: &AccountType) -> Option<String> {
+    let (user, friend) = match account_type {
+        AccountType::DashpayReceivingFunds {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        }
+        | AccountType::DashpayExternalAccount {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        } => (user_identity_id, friend_identity_id),
+        _ => return None,
+    };
+    let mut engine = sha256::Hash::engine();
+    engine.input(wallet_id);
+    engine.input(user);
+    engine.input(friend);
+    Some(hex::encode(
+        &sha256::Hash::from_engine(engine).to_byte_array()[..4],
+    ))
+}
+
 /// Where a degraded site fired, as structured log fields.
 ///
-/// `account_type` and optional `detail` are `dyn Debug` so this stays free of
-/// wallet types; `affected` is how many rows, addresses or entries it covers.
+/// `account_type` uses Display to omit DashPay identity ids; `contact`
+/// distinguishes their pools. `affected` counts rows, addresses or entries.
 pub(crate) struct SiteCoords<'a> {
     pub wallet_id: Option<[u8; 32]>,
-    pub account_type: &'a dyn fmt::Debug,
+    pub account_type: &'a dyn Display,
+    pub contact: Option<String>,
     pub affected: usize,
     pub detail: Option<&'a dyn fmt::Debug>,
 }
@@ -404,7 +432,8 @@ impl LoadCtx {
         tracing::warn!(
             site = site.as_str(),
             wallet_id = ?coords.wallet_id.map(hex::encode),
-            account_type = ?coords.account_type,
+            account_type = %coords.account_type,
+            contact = coords.contact.as_deref().map(tracing::field::display),
             affected = coords.affected,
             detail = ?coords.detail,
             error_kind = err.error_kind_str(),
@@ -431,7 +460,8 @@ impl LoadCtx {
         tracing::warn!(
             site = site.as_str(),
             wallet_id = ?coords.wallet_id.map(hex::encode),
-            account_type = ?coords.account_type,
+            account_type = %coords.account_type,
+            contact = coords.contact.as_deref().map(tracing::field::display),
             affected = coords.affected,
             detail = ?coords.detail,
             cause,
@@ -479,6 +509,78 @@ mod tests {
     use super::*;
 
     #[test]
+    #[tracing_test::traced_test]
+    fn should_log_dashpay_contacts_without_identity_ids_at_degraded_sites() {
+        use dashcore::hashes::sha256;
+        use key_wallet::account::AccountType;
+
+        let user_identity_id = [0x21; 32];
+        for (wallet_id, friend_identity_id) in [
+            ([0x55; 32], [0x43; 32]),
+            ([0x56; 32], [0x43; 32]),
+            ([0x55; 32], [0x44; 32]),
+        ] {
+            for account_type in [
+                AccountType::DashpayReceivingFunds {
+                    index: 7,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+                AccountType::DashpayExternalAccount {
+                    index: 8,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+            ] {
+                let ctx = LoadCtx::recovery();
+                let coords = || SiteCoords {
+                    wallet_id: Some(wallet_id),
+                    account_type: &account_type,
+                    contact: contact_log_id(&wallet_id, &account_type),
+                    affected: 1,
+                    detail: None,
+                };
+                ctx.tolerate_at(
+                    LoadSite::UndecodableAddressScript,
+                    coords(),
+                    WalletStorageError::blob_decode("invalid script"),
+                )
+                .unwrap();
+                ctx.note_degraded(
+                    LoadSite::PoolRowBeyondDerivationBudget,
+                    coords(),
+                    "row beyond budget",
+                );
+                let preimage = [wallet_id, user_identity_id, friend_identity_id].concat();
+                let expected = hex::encode(&sha256::Hash::hash(&preimage).to_byte_array()[..4]);
+                logs_assert(|lines| {
+                    let matches = lines
+                        .iter()
+                        .filter(|line| {
+                            line.contains(&format!("account_type={account_type}"))
+                                && line.contains(&format!("contact={expected}"))
+                        })
+                        .count();
+                    if matches == 2 {
+                        Ok(())
+                    } else {
+                        Err(format!("expected both diagnostics for {account_type}, contact={expected}; got {matches}"))
+                    }
+                });
+            }
+        }
+        for identity in [[0x21u8; 32], [0x43; 32], [0x44; 32]] {
+            for raw in [
+                hex::encode(identity),
+                format!("{identity:?}"),
+                format!("{identity:x?}"),
+            ] {
+                assert!(!logs_contain(&raw), "identity must not be logged: {raw}");
+            }
+        }
+    }
+
+    #[test]
     fn strict_returns_the_error_and_counts_nothing() {
         let ctx = LoadCtx::strict();
         let err = ctx
@@ -521,6 +623,7 @@ mod tests {
             SiteCoords {
                 wallet_id: Some([9u8; 32]),
                 account_type: &"n/a",
+                contact: None,
                 affected: 5,
                 detail: None,
             },
@@ -571,6 +674,7 @@ mod tests {
             SiteCoords {
                 wallet_id: None,
                 account_type: &"n/a",
+                contact: None,
                 affected: 1,
                 detail: None,
             },
@@ -589,6 +693,7 @@ mod tests {
             SiteCoords {
                 wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
+                contact: None,
                 affected: 900,
                 detail: None,
             },
@@ -610,6 +715,7 @@ mod tests {
             SiteCoords {
                 wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
+                contact: None,
                 affected: 1,
                 detail: None,
             },
@@ -689,6 +795,7 @@ mod tests {
             SiteCoords {
                 wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
+                contact: None,
                 affected: 1,
                 detail: None,
             },

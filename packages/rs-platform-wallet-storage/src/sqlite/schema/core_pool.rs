@@ -21,7 +21,7 @@ use key_wallet::managed_account::address_pool::{
 };
 
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
+use crate::sqlite::load_ctx::{contact_log_id, LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::rehydrate::MAX_REHYDRATION_DERIVATION_INDEX;
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
@@ -505,21 +505,6 @@ pub fn load_used_addresses_with_ctx(
     Ok(out)
 }
 
-/// Public key material that re-derives `account_type`'s pool entries, if the
-/// watch-only `wallet` holds any.
-fn public_key_source(
-    wallet: &key_wallet::wallet::Wallet,
-    account_type: key_wallet::account::AccountType,
-) -> Option<KeySource> {
-    if let Some(account) = wallet.accounts.account_of_type(account_type) {
-        return Some(KeySource::Public(account.account_xpub));
-    }
-    wallet
-        .accounts
-        .bls_account_of_type(account_type)
-        .map(|account| KeySource::BLSPublic(account.bls_public_key.clone()))
-}
-
 /// How many indices a stored pool may be missing below its highest row and
 /// still be derived all the way through.
 ///
@@ -598,14 +583,16 @@ const ONE_TIME_ROW_NOT_RESTORED: &str = "one-time funding key row could not be r
 /// here. Neither its address nor its key is logged.
 fn refuse_pool_row(
     wallet_id: &WalletId,
-    account_type: &dyn std::fmt::Debug,
+    account_type: &dyn std::fmt::Display,
+    contact: Option<&str>,
     pool_type: &dyn std::fmt::Debug,
     address_index: Option<u32>,
     reason: &'static str,
 ) -> WalletStorageError {
     tracing::error!(
         wallet_id = %hex::encode(wallet_id),
-        account_type = ?account_type,
+        account_type = %account_type,
+        contact = contact.map(tracing::field::display),
         pool_type = ?pool_type,
         address_index = ?address_index,
         reason,
@@ -685,7 +672,9 @@ pub(crate) fn restore_pools(
         let label = accounts::account_type_db_label(&account_type);
         let one_time = ONE_TIME_FUNDING_LABELS.contains(&label);
         let (user, friend) = accounts::account_dashpay_ids(&account_type);
-        let key_source = public_key_source(wallet, account_type);
+        let key_source = wallet.key_source_for_account(account_type);
+        let key_source = key_source.can_derive().then_some(&key_source);
+        let contact = contact_log_id(wallet_id, &account_type);
         let account_index = i64::from(accounts::account_index(&account_type));
         let key_class = i64::from(accounts::account_key_class(&account_type));
         // A row filed under a pool this account does not have is read by no
@@ -711,6 +700,7 @@ pub(crate) fn restore_pools(
                 return Err(refuse_pool_row(
                     wallet_id,
                     &account_type,
+                    contact.as_deref(),
                     &stored_pool_type,
                     None,
                     "core pool row names a pool its account does not have",
@@ -743,7 +733,7 @@ pub(crate) fn restore_pools(
             if let Some(highest_stored) = highest_stored {
                 derive_towards(
                     pool,
-                    key_source.as_ref(),
+                    key_source,
                     i64_to_u32("core_address_pool.address_index", highest_stored)?,
                     // Saturating: a larger count only widens the budget.
                     u32::try_from(stored).unwrap_or(u32::MAX),
@@ -765,6 +755,7 @@ pub(crate) fn restore_pools(
                             return Err(refuse_pool_row(
                                 wallet_id,
                                 &account_type,
+                                contact.as_deref(),
                                 &pool_type,
                                 Some(index),
                                 ONE_TIME_ROW_NOT_RESTORED,
@@ -784,6 +775,7 @@ pub(crate) fn restore_pools(
                             SiteCoords {
                                 wallet_id: Some(*wallet_id),
                                 account_type: &account_type,
+                                contact: contact_log_id(wallet_id, &account_type),
                                 affected: 1,
                                 detail: Some(&pool_type),
                             },
@@ -808,6 +800,7 @@ pub(crate) fn restore_pools(
                             return Err(refuse_pool_row(
                                 wallet_id,
                                 &account_type,
+                                contact.as_deref(),
                                 &pool_type,
                                 Some(index),
                                 "core pool key type does not match its account",
@@ -821,6 +814,7 @@ pub(crate) fn restore_pools(
                                 return Err(refuse_pool_row(
                                     wallet_id,
                                     &account_type,
+                                    contact.as_deref(),
                                     &pool_type,
                                     Some(index),
                                     "core_address_pool.key_type is outside 0..=2",
@@ -843,6 +837,7 @@ pub(crate) fn restore_pools(
                         return Err(refuse_pool_row(
                             wallet_id,
                             &account_type,
+                            contact.as_deref(),
                             &pool_type,
                             Some(index),
                             "core_address_pool.public_key and key_type nullability differ",
@@ -876,6 +871,7 @@ pub(crate) fn restore_pools(
                             return Err(refuse_pool_row(
                                 wallet_id,
                                 &account_type,
+                                contact.as_deref(),
                                 &pool_type,
                                 Some(index),
                                 ONE_TIME_ROW_NOT_RESTORED,
@@ -887,6 +883,7 @@ pub(crate) fn restore_pools(
                     return Err(refuse_pool_row(
                         wallet_id,
                         &account_type,
+                        contact.as_deref(),
                         &pool_type,
                         Some(index),
                         "core pool row has no derived entry to be checked against",
@@ -903,6 +900,7 @@ pub(crate) fn restore_pools(
                     return Err(refuse_pool_row(
                         wallet_id,
                         &account_type,
+                        contact.as_deref(),
                         &pool_type,
                         Some(index),
                         "core pool row conflicts with its derived address or key",
@@ -915,6 +913,7 @@ pub(crate) fn restore_pools(
                     return Err(refuse_pool_row(
                         wallet_id,
                         &account_type,
+                        contact.as_deref(),
                         &pool_type,
                         Some(index),
                         "core pool address has multiple derivation indices",
@@ -948,6 +947,7 @@ pub(crate) fn restore_pools(
                     SiteCoords {
                         wallet_id: Some(*wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(wallet_id, &account_type),
                         affected: beyond_budget,
                         detail: Some(&pool_type),
                     },
@@ -982,6 +982,7 @@ pub(crate) fn restore_pools(
             return Err(refuse_pool_row(
                 wallet_id,
                 &format_args!("{}[{}], key class {}", pool.0, pool.1, pool.2),
+                None,
                 &pool.5,
                 u32::try_from(row.get::<_, i64>(6)?).ok(),
                 ONE_TIME_ROW_UNMATCHED,
@@ -1006,6 +1007,7 @@ pub(crate) fn restore_pools(
             SiteCoords {
                 wallet_id: Some(*wallet_id),
                 account_type: &"wallet",
+                contact: None,
                 affected: usize::try_from(unrestored).unwrap_or(usize::MAX),
                 detail: None,
             },
@@ -1353,7 +1355,7 @@ mod tests {
         );
         for coordinate in [
             hex::encode(wallet.wallet_id),
-            "BIP44Account".to_string(),
+            "account_type=Standard{idx:0,BIP44}".to_string(),
             "pool_type=External".to_string(),
             format!("address_index=Some({INDEX})"),
             "core pool row conflicts with its derived address or key".to_string(),
@@ -1365,6 +1367,90 @@ mod tests {
         }
         for withheld in [derived.to_string(), foreign, "42".repeat(20)] {
             assert!(!logs_contain(&withheld), "must not be logged: {withheld}");
+        }
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn should_log_dashpay_contact_without_identity_ids_when_refusing_pool_rows() {
+        use dashcore::hashes::sha256;
+        use key_wallet::account::AccountType;
+        use key_wallet::wallet::{
+            initialization::WalletAccountCreationOptions, ManagedWalletInfo, Wallet,
+        };
+
+        let user_identity_id = [0x21; 32];
+        let friend_identity_id = [0x43; 32];
+        let account_type = AccountType::DashpayReceivingFunds {
+            index: 7,
+            user_identity_id,
+            friend_identity_id,
+        };
+        let mut wallet = Wallet::new_random(
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        wallet.add_account(account_type, None).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let mut conn = migrated_conn();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet.wallet_id.as_slice()],
+        )
+        .unwrap();
+        let mut accounts = info.accounts.all_accounts_mut();
+        let account = accounts
+            .iter_mut()
+            .find(|a| a.managed_account_type().to_account_type() == account_type)
+            .unwrap();
+        let mut pools = account.managed_account_type_mut().address_pools_mut();
+        let pool = &mut pools[0];
+        pool.generate_addresses(4, &wallet.key_source_for_account(account_type))
+            .unwrap();
+        let stored = AccountAddressPoolEntry {
+            account_type,
+            pool_type: pool.pool_type(),
+            addresses: pool.addresses().values().cloned().collect(),
+        };
+        let tx = conn.transaction().unwrap();
+        apply_pools(&tx, &wallet.wallet_id, &[stored]).unwrap();
+        tx.commit().unwrap();
+        conn.execute(
+            "UPDATE core_address_pool SET script = ?1 WHERE address_index = 3",
+            params![hex::decode(format!("76a914{}88ac", "42".repeat(20))).unwrap()],
+        )
+        .unwrap();
+        assert!(restore_pools(
+            &conn,
+            &wallet.wallet_id,
+            &wallet,
+            &mut info,
+            &LoadCtx::strict()
+        )
+        .is_err());
+
+        for identity in [user_identity_id, friend_identity_id] {
+            for raw in [
+                hex::encode(identity),
+                format!("{identity:?}"),
+                format!("{identity:x?}"),
+            ] {
+                assert!(!logs_contain(&raw), "identity must not be logged: {raw}");
+            }
+        }
+        let preimage = [wallet.wallet_id, user_identity_id, friend_identity_id].concat();
+        let expected_contact = hex::encode(&sha256::Hash::hash(&preimage).to_byte_array()[..4]);
+        for coordinate in [
+            "account_type=DashpayReceiving{idx:7}".to_string(),
+            format!("contact={expected_contact}"),
+            "pool_type=Absent".to_string(),
+            "address_index=Some(3)".to_string(),
+        ] {
+            assert!(
+                logs_contain(&coordinate),
+                "missing from the log: {coordinate}"
+            );
         }
     }
 

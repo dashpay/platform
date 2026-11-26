@@ -1688,7 +1688,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1739,7 +1739,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             if unreadable.contains(&wallet_id) {
                 continue;
             }
-            match load_one_wallet(&conn, wallet_id, &ctx) {
+            match load_one_wallet(&mut conn, wallet_id, &ctx) {
                 Ok(wallet_state) => {
                     state.wallets.insert(wallet_id, wallet_state);
                 }
@@ -1853,11 +1853,12 @@ fn populated_field_count(cs: &PendingWrites) -> usize {
 /// Extracted from `load()`'s loop so the loop has somewhere to put a
 /// boundary: every `?` in here ends this wallet, not the file.
 fn load_one_wallet(
-    conn: &Connection,
+    conn: &mut Connection,
     wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
-    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+    let tx = conn
+        .transaction()
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
     let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
@@ -2065,6 +2066,7 @@ fn record_wallet_degradation(
         crate::sqlite::load_ctx::SiteCoords {
             wallet_id: Some(wallet_id),
             account_type: &"wallet",
+            contact: None,
             affected: 1,
             detail: Some(&cause),
         },

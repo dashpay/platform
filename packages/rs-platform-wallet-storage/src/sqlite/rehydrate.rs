@@ -22,7 +22,7 @@ use platform_wallet::wallet::address_pool_restore::derive_through;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
+use crate::sqlite::load_ctx::{contact_log_id, LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
@@ -146,6 +146,7 @@ pub(crate) fn restore_provider_platform_node_pool(
                     SiteCoords {
                         wallet_id: Some(*wallet_id),
                         account_type: &AccountType::ProviderPlatformKeys,
+                        contact: None,
                         affected: 1,
                         detail: Some(&AddressPoolType::AbsentHardened),
                     },
@@ -165,8 +166,15 @@ pub(crate) fn restore_provider_platform_node_pool(
                 PlatformNodePoolError::MissingHardenedPool => WalletStorageError::blob_decode(
                     "provider platform account has no AbsentHardened pool",
                 ),
-                PlatformNodePoolError::InvalidChildIndex { source, .. }
-                | PlatformNodePoolError::PoolRefused { source, .. } => {
+                PlatformNodePoolError::InvalidChildIndex { index, source }
+                | PlatformNodePoolError::PoolRefused { index, source } => {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        account_type = %AccountType::ProviderPlatformKeys,
+                        pool_type = ?AddressPoolType::AbsentHardened,
+                        address_index = index,
+                        "provider platform pool row refused; its wallet does not load"
+                    );
                     WalletStorageError::AccountRecordInvalid { e: source }
                 }
             })?;
@@ -469,7 +477,8 @@ pub fn apply_persisted_core_state(
                 LoadSite::OrphanedUtxoOwner,
                 SiteCoords {
                     wallet_id: Some(wallet_id),
-                    account_type: &orphaned_owners,
+                    account_type: &format_args!("{orphaned_owners:?}"),
+                    contact: None,
                     affected: orphaned_owners.len(),
                     detail: None,
                 },
@@ -590,6 +599,7 @@ pub fn apply_persisted_core_state(
                 SiteCoords {
                     wallet_id: Some(wallet_id),
                     account_type: &"any funds account",
+                    contact: None,
                     affected: unresolved,
                     detail: None,
                 },
@@ -824,6 +834,7 @@ fn gap_refills_bounded(
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(&wallet_id, &account_type),
                         affected: 1,
                         detail: Some(&pool.pool_type()),
                     },
@@ -920,7 +931,8 @@ fn discover_in_funds_accounts(
             if index.saturating_sub(start) > REHYDRATION_DEEP_SCAN_WARN_INDEX {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
-                    account_type = ?account_type,
+                    account_type = %account_type,
+                    contact = contact_log_id(&wallet_id, &account_type).as_deref().map(tracing::field::display),
                     pool_type = ?pool.pool_type(),
                     scanned_to = index.saturating_sub(1),
                     "rehydration: discovery past the pool scanned abnormally deep — \
@@ -936,6 +948,7 @@ fn discover_in_funds_accounts(
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(&wallet_id, &account_type),
                         affected: 1,
                         detail: Some(&pool.pool_type()),
                     },
@@ -962,6 +975,7 @@ fn restore_failed(
         SiteCoords {
             wallet_id: Some(wallet_id),
             account_type: &"restore_utxos",
+            contact: None,
             affected: 1,
             detail: None,
         },
@@ -1164,7 +1178,8 @@ fn extend_pools_for_restored_addresses(
             if index > REHYDRATION_DEEP_SCAN_WARN_INDEX {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
-                    account_type = ?account_type,
+                    account_type = %account_type,
+                    contact = contact_log_id(&wallet_id, &account_type).as_deref().map(tracing::field::display),
                     pool_type = ?probe.pool_type(),
                     deepest_resolved = ?deepest_resolved,
                     scanned_to = index.saturating_sub(1),
@@ -1229,6 +1244,7 @@ fn extend_pools_for_restored_addresses(
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
+                            contact: contact_log_id(&wallet_id, &account_type),
                             affected: 1,
                             detail: Some(&pool.pool_type()),
                         },
@@ -1298,6 +1314,7 @@ fn extend_pools_for_restored_addresses(
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
+                            contact: contact_log_id(&wallet_id, &account_type),
                             affected: 1,
                             detail: Some(&pool.pool_type()),
                         },
@@ -1319,6 +1336,7 @@ fn extend_pools_for_restored_addresses(
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(&wallet_id, &account_type),
                         affected: 1,
                         detail: Some(&pool.pool_type()),
                     },
