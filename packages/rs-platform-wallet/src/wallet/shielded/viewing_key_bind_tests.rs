@@ -2192,6 +2192,37 @@ async fn should_stop_a_clear_whose_host_is_busy_and_let_one_through_whose_host_c
     );
 }
 
+/// A removal of a wallet drops its kept identity accounts, and the host
+/// deletes the wallet's rows only after the removal has returned. A Clear
+/// that reads the host in between still finds the viewing key rows: it keeps
+/// nothing of the removed wallet, in memory or on disk.
+#[tokio::test]
+async fn should_not_keep_the_identity_accounts_of_a_removed_wallet_whose_rows_the_host_still_holds()
+{
+    let retired = crate::shielded_identity_account_index(7).unwrap();
+    let removed: WalletId = [0x79; 32];
+    let persister = Arc::new(CapturingPersistence::default());
+    let dir = temp_dir("retired_tips_removed_wallet");
+    let coordinator = coordinator_at(&dir);
+    persister.serve_viewing_keys(BTreeMap::from([(
+        SubwalletId::new(removed, retired),
+        vec![2; 96],
+    )]));
+
+    coordinator.unregister_wallet(removed).await;
+    coordinator.clear(&*persister).await.expect("clear");
+
+    assert!(coordinator.kept_identity_accounts(removed).await.is_empty());
+    drop(coordinator);
+    assert!(
+        coordinator_at(&dir)
+            .kept_identity_accounts(removed)
+            .await
+            .is_empty(),
+        "nothing of the removed wallet is back on disk"
+    );
+}
+
 /// A host rebind passes only ordinary accounts (FFI and host SDKs cap the
 /// request at 64 entries); Rust adds every persisted tip account itself. With
 /// more than 64 tip accounts on record, a `[0]` request must still bind them

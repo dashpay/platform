@@ -332,6 +332,18 @@ pub struct NetworkShieldedCoordinator {
     /// Clear keeps it, and a removal of the wallet drops it.
     identity_accounts: RwLock<BTreeMap<WalletId, BTreeSet<u32>>>,
 
+    /// The wallets removed from this coordinator in this process and not
+    /// registered again since.
+    ///
+    /// A removal drops the wallet's kept identity accounts here, and the
+    /// host deletes the wallet's rows only after the removal has returned.
+    /// A Clear that reads the host in between still finds the viewing key
+    /// rows, and would keep the removed wallet's accounts again
+    /// ([`host_identity_accounts`](Self::host_identity_accounts)), so it
+    /// leaves these wallets out. In memory only: the next process finds the
+    /// rows gone.
+    removed_wallets: std::sync::Mutex<BTreeSet<WalletId>>,
+
     /// The shielded admission: the one shared/exclusive lock every durable
     /// shielded mutation and a [Clear](Self::clear_admitted) agree on. See
     /// [`admit`](Self::admit) for the protocol.
@@ -776,6 +788,7 @@ impl NetworkShieldedCoordinator {
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             bound_since_clear: RwLock::new(BTreeSet::new()),
             identity_accounts: RwLock::new(identity_accounts),
+            removed_wallets: std::sync::Mutex::new(BTreeSet::new()),
             admission: RwLock::new(clear_state),
             balance_change,
         }
@@ -1420,6 +1433,11 @@ impl NetworkShieldedCoordinator {
                 .or_default()
                 .extend(unkept);
         }
+        // A wallet registered again after a removal is this coordinator's
+        // again (see the `removed_wallets` field).
+        if let Ok(mut removed) = self.removed_wallets.lock() {
+            removed.remove(&wallet_id);
+        }
         self.persisters.write().await.insert(wallet_id, persister);
         {
             let mut accounts = self.accounts.write().await;
@@ -1623,6 +1641,9 @@ impl NetworkShieldedCoordinator {
             );
         }
         self.identity_accounts.write().await.remove(&wallet_id);
+        if let Ok(mut removed) = self.removed_wallets.lock() {
+            removed.insert(wallet_id);
+        }
     }
 
     /// Keep the identity accounts the host holds viewing keys for before a
@@ -1655,13 +1676,23 @@ impl NetworkShieldedCoordinator {
                 return Ok(BTreeMap::new());
             }
         };
+        // A wallet removed in this process is left out: the host still holds
+        // its rows until it deletes them, after the removal returned.
+        let removed = self
+            .removed_wallets
+            .lock()
+            .map(|removed| removed.clone())
+            .unwrap_or_default();
         let mut found: BTreeMap<WalletId, BTreeSet<u32>> = BTreeMap::new();
         for id in start.shielded.viewing_keys.keys() {
             let other_network = start
                 .wallets
                 .get(&id.wallet_id)
                 .is_some_and(|wallet| wallet.wallet.network != self.network);
-            if !other_network && is_shielded_identity_account(id.account_index) {
+            if !other_network
+                && !removed.contains(&id.wallet_id)
+                && is_shielded_identity_account(id.account_index)
+            {
                 found
                     .entry(id.wallet_id)
                     .or_default()
