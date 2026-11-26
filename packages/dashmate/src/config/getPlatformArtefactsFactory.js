@@ -12,7 +12,25 @@ const CERTIFICATE_FILE_NAMES = ['bundle.crt', 'private.key'];
 const HELPER_SERVICE_NAME = 'dashmate_helper';
 
 /**
+ * @param {string} filePath
+ * @return {boolean} false only when there is no such entry
+ */
+function isPresent(filePath) {
+  try {
+    fs.lstatSync(filePath);
+
+    return true;
+  } catch (e) {
+    return e.code !== 'ENOENT' && e.code !== 'ENOTDIR';
+  }
+}
+
+/**
  * The gateway certificate files of a config that exist
+ *
+ * An entry counts whether or not this process can read what it points to:
+ * Docker running as root mounts files the operator's user cannot read, and a
+ * file this process cannot look at is no proof that there is none.
  *
  * @param {HomeDir} homeDir
  * @param {string} configName
@@ -23,7 +41,7 @@ export function findCertificateFiles(homeDir, configName) {
 
   return CERTIFICATE_FILE_NAMES
     .map((fileName) => path.join(sslDir, fileName))
-    .filter((filePath) => fs.existsSync(filePath));
+    .filter(isPresent);
 }
 
 /**

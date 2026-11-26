@@ -110,6 +110,31 @@ describe('assertPlatformCanStart', () => {
       expect(refusalOf(config)).to.be.null();
     });
 
+    // Rootful Docker mounts what the CLI user may not read: files the user
+    // cannot look at are not proof that there are none.
+    it('should start with certificate files the CLI user cannot read', async function it() {
+      if (process.getuid?.() === 0) {
+        this.skip();
+      }
+
+      const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      const sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+      const protectedDir = homeDir.joinPath('protected');
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.mkdirSync(protectedDir);
+      fs.writeFileSync(path.join(protectedDir, 'bundle.crt'), 'certificate');
+      fs.writeFileSync(path.join(protectedDir, 'private.key'), 'key');
+      fs.symlinkSync(path.join(protectedDir, 'bundle.crt'), path.join(sslDir, 'bundle.crt'));
+      fs.symlinkSync(path.join(protectedDir, 'private.key'), path.join(sslDir, 'private.key'));
+      fs.chmodSync(protectedDir, 0o000);
+
+      try {
+        expect(refusalOf(config)).to.be.null();
+      } finally {
+        fs.chmodSync(protectedDir, 0o700);
+      }
+    });
+
     // Setup cannot set these up, so it is not offered; nor is the reset that
     // led here a Platform-only setup's to repair.
     it('should leave a fullnode that is not a preset alone', async () => {
