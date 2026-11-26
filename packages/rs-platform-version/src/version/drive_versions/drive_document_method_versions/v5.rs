@@ -73,6 +73,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         fetch_private_document_entries: Some(0), // changed: a page of a store's entries can be read
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
+        draw_random_document_properties: None,
         delete: DriveDocumentDeleteMethodVersions {
             erase_refund_recipient_cost: Some(0), // changed: prices third-party balance work caused by erasure
             consumed_document_delete_cost: 1, // the delete from what the lookup read, as the create conversion 1 makes it

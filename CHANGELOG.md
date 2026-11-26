@@ -10,6 +10,12 @@
   `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
   instead of a borrowed, non-`'static` prover.
 
+- **dpp (Rust API):** `GeneratedFrom` gains a public `range: Option<RandomRange>` field, and
+  `SystemFunction` a `Random(RandomFunction)` variant, for `sys.random.uniform` (not active at
+  any protocol version yet). This is a source change for Rust code whichever protocol version
+  it runs: a `GeneratedFrom` literal sets `range: None` for every function but a random one,
+  and an exhaustive match on `SystemFunction` needs a `Random` arm.
+
 ## [5.1.0-rc.1](https://github.com/dashpay/platform/compare/v5.1.0-dev.4...v5.1.0-rc.1) (2026-11-24)
 
 

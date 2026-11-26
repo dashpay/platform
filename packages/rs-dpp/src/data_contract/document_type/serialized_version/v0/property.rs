@@ -11,8 +11,8 @@ use crate::data_contract::document_type::{
     ByteArrayPropertySizes, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, EncryptedFor, EncryptedForRecipient, EncryptionScheme, GeneratedFrom,
     GenerationParam, HashFunction, IdentityKeyReferenceRequirements, KeyIdReference,
-    KeyReferenceIdentityProperty, StringPropertySizes, StringTransformation, SystemFunction,
-    TokenFunction,
+    KeyReferenceIdentityProperty, RandomFunction, RandomRange, StringPropertySizes,
+    StringTransformation, SystemFunction, TokenFunction,
 };
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -140,18 +140,31 @@ pub(super) struct StoredGeneratedFrom {
     params: Vec<String>,
 }
 
-/// [`SystemFunction`].
+/// [`SystemFunction`], and for a random function the [`GeneratedFrom::range`] it draws from,
+/// which only a random function has: every other declaration keeps the bytes it was compiled
+/// to before random functions existed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub(super) enum StoredSystemFunction {
     StringTransformation(StoredStringTransformation),
     Hash(HashFunction),
     Token(StoredTokenFunction),
+    Random {
+        function: StoredRandomFunction,
+        /// [`GeneratedFrom::range`]: `(minimum, maximum)`.
+        range: Option<(i128, i128)>,
+    },
 }
 
 /// [`TokenFunction`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub(super) enum StoredTokenFunction {
     Decimals,
+}
+
+/// [`RandomFunction`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+pub(super) enum StoredRandomFunction {
+    Uniform,
 }
 
 /// [`StringTransformation`].
@@ -245,7 +258,7 @@ impl TryFrom<StoredProperty> for DocumentProperty {
                 StoredDistinctFrom::Property(path) => DistinctFrom::Property(path),
             }),
             encrypted_for: encrypted_for.map(EncryptedFor::from),
-            generated_from: generated_from.map(GeneratedFrom::from),
+            generated_from: generated_from.map(GeneratedFrom::try_from).transpose()?,
             revealed_reference,
         })
     }
@@ -519,7 +532,11 @@ impl From<StoredEncryptedFor> for EncryptedFor {
 
 impl From<&GeneratedFrom> for StoredGeneratedFrom {
     fn from(generated_from: &GeneratedFrom) -> Self {
-        let GeneratedFrom { function, params } = generated_from;
+        let GeneratedFrom {
+            function,
+            params,
+            range,
+        } = generated_from;
         StoredGeneratedFrom {
             function: match function {
                 SystemFunction::StringTransformation(transformation) => {
@@ -538,6 +555,12 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
                 SystemFunction::Token(token) => StoredSystemFunction::Token(match token {
                     TokenFunction::Decimals => StoredTokenFunction::Decimals,
                 }),
+                SystemFunction::Random(random) => StoredSystemFunction::Random {
+                    function: match random {
+                        RandomFunction::Uniform => StoredRandomFunction::Uniform,
+                    },
+                    range: range.map(|range| (range.minimum(), range.maximum())),
+                },
             },
             params: params
                 .iter()
@@ -549,10 +572,34 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
     }
 }
 
-impl From<StoredGeneratedFrom> for GeneratedFrom {
-    fn from(stored: StoredGeneratedFrom) -> Self {
+impl TryFrom<StoredGeneratedFrom> for GeneratedFrom {
+    type Error = ProtocolError;
+
+    /// Refuses a random declaration without a range, and a stored range [`RandomRange::new`]
+    /// does not admit, neither of which registration stores, rather than construct a
+    /// declaration the draw could not read.
+    fn try_from(stored: StoredGeneratedFrom) -> Result<Self, Self::Error> {
         let StoredGeneratedFrom { function, params } = stored;
-        GeneratedFrom {
+        let range = match function {
+            // Registration gives every random declaration its range, which the draw and the
+            // placeholder read: one without it could only be skipped by both
+            StoredSystemFunction::Random { range: None, .. } => {
+                return Err(stored_error(
+                    "a random generatedFrom declaration holds no range".to_string(),
+                ))
+            }
+            StoredSystemFunction::Random {
+                range: Some((minimum, maximum)),
+                ..
+            } => Some(RandomRange::new(minimum, maximum).ok_or_else(|| {
+                stored_error(format!(
+                    "generatedFrom range {minimum} to {maximum} is upside down or holds more \
+                     than 2^64 values"
+                ))
+            })?),
+            _ => None,
+        };
+        Ok(GeneratedFrom {
             function: match function {
                 StoredSystemFunction::StringTransformation(transformation) => {
                     SystemFunction::StringTransformation(match transformation {
@@ -570,8 +617,107 @@ impl From<StoredGeneratedFrom> for GeneratedFrom {
                 StoredSystemFunction::Token(token) => SystemFunction::Token(match token {
                     StoredTokenFunction::Decimals => TokenFunction::Decimals,
                 }),
+                StoredSystemFunction::Random { function, .. } => {
+                    SystemFunction::Random(match function {
+                        StoredRandomFunction::Uniform => RandomFunction::Uniform,
+                    })
+                }
             },
             params: params.into_iter().map(GenerationParam::Property).collect(),
+            range,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
+
+    fn stored_uniform(range: Option<(i128, i128)>) -> StoredGeneratedFrom {
+        StoredGeneratedFrom {
+            function: StoredSystemFunction::Random {
+                function: StoredRandomFunction::Uniform,
+                range,
+            },
+            params: vec![],
+        }
+    }
+
+    #[test]
+    fn should_read_back_a_stored_random_range() {
+        let generated_from = GeneratedFrom {
+            function: SystemFunction::Random(RandomFunction::Uniform),
+            params: vec![],
+            range: RandomRange::new(-5, 5),
+        };
+        let stored = StoredGeneratedFrom::from(&generated_from);
+        assert_eq!(stored, stored_uniform(Some((-5, 5))));
+        assert_eq!(
+            GeneratedFrom::try_from(stored).expect("the range reads back"),
+            generated_from
+        );
+    }
+
+    #[test]
+    fn should_keep_the_bytes_of_a_declaration_drawing_nothing() {
+        // Compiled contracts hold these bytes, so a declaration of any function but a random
+        // one encodes as it did before random functions existed: the function's variant and
+        // its own, then the params
+        let cases: [(SystemFunction, &str, &[u8]); 3] = [
+            (
+                SystemFunction::StringTransformation(StringTransformation::Lowercase),
+                "label",
+                &[0, 3, 1, 5, b'l', b'a', b'b', b'e', b'l'],
+            ),
+            (
+                SystemFunction::Hash(HashFunction::Sha256d),
+                "label",
+                &[1, 0, 1, 5, b'l', b'a', b'b', b'e', b'l'],
+            ),
+            (
+                SystemFunction::Token(TokenFunction::Decimals),
+                "tokenId",
+                &[2, 0, 1, 7, b't', b'o', b'k', b'e', b'n', b'I', b'd'],
+            ),
+        ];
+        for (function, param, expected) in cases {
+            let generated_from = GeneratedFrom {
+                function,
+                params: vec![GenerationParam::Property(param.to_string())],
+                range: None,
+            };
+            let bytes = bincode::encode_to_vec(
+                StoredGeneratedFrom::from(&generated_from),
+                PLATFORM_BINCODE_CONFIG,
+            )
+            .expect("encodes");
+            assert_eq!(bytes, expected, "the bytes of {function}");
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_stored_random_declaration_without_its_range() {
+        assert!(matches!(
+            GeneratedFrom::try_from(stored_uniform(None)),
+            Err(ProtocolError::CorruptedSerialization(_))
+        ));
+    }
+
+    #[test]
+    fn should_refuse_a_stored_random_range_it_could_not_draw_from() {
+        for range in [
+            (10, 1),
+            (0, i128::from(u64::MAX) + 1),
+            (i128::MIN, i128::MAX),
+        ] {
+            assert!(
+                matches!(
+                    GeneratedFrom::try_from(stored_uniform(Some(range))),
+                    Err(ProtocolError::CorruptedSerialization(_))
+                ),
+                "{range:?} is refused"
+            );
         }
     }
 }

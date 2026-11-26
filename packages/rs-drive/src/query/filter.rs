@@ -144,10 +144,10 @@ pub enum DocumentActionMatchClauses {
 }
 
 /// Refuses a clause of `clauses`, which judge a create's or a replace's data, on a property
-/// `document_type` generates with a function reading state (`sys.tokens.decimals`, protocol
-/// version 15): a transition leaves such a property out, and only the platform generates it,
-/// from state, so a filter cannot judge it. A clause on the original document reads the stored
-/// value and is allowed.
+/// only the platform generates (`sys.tokens.decimals`, read from state, and
+/// `sys.random.uniform`, drawn from the block's random beacon, protocol version 15): a
+/// transition leaves such a property out, so a filter cannot judge it. A clause on the original
+/// document reads the stored value and is allowed.
 #[cfg(any(feature = "server", feature = "verify"))]
 fn refuse_state_generated_fields(
     clauses: &InternalClauses,
@@ -165,15 +165,23 @@ fn refuse_state_generated_fields(
         )
         .chain(clauses.equal_clauses.keys().map(String::as_str));
     for field in fields {
-        if let Some((_, generated_from)) = document_type
-            .generated_from_fields()
-            .iter()
-            .find(|(path, generated_from)| path == field && generated_from.function.reads_state())
+        if let Some((_, generated_from)) =
+            document_type
+                .generated_from_fields()
+                .iter()
+                .find(|(path, generated_from)| {
+                    path == field && generated_from.function.platform_generated()
+                })
         {
+            let how = if generated_from.function.reads_state() {
+                "from state"
+            } else {
+                "at random"
+            };
             return QuerySyntaxSimpleValidationResult::new_with_error(
                 QuerySyntaxError::Unsupported(format!(
                     "a create or replace filter cannot judge {field}, which the platform \
-                     generates from state with {}: a transition leaves it out",
+                     generates {how} with {}: a transition leaves it out",
                     generated_from.function
                 )),
             );

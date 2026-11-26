@@ -7,7 +7,7 @@ use dpp::data_contract::document_type::class_methods::{
 };
 use dpp::data_contract::document_type::property_constraints::referenced_fields;
 use dpp::data_contract::document_type::{
-    is_path_listed, is_referenced_system_agreement_property,
+    is_drawn_at_random, is_path_listed, is_referenced_system_agreement_property,
     is_referring_system_agreement_property, is_transient, typed_array_property, DocumentProperty,
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
     DocumentReferenceKind, DocumentTypeRef, KeyReferenceIdentityProperty, PreallocatedKeySource,
@@ -54,9 +54,10 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// value to compare on a document of `referenced_document_type`, of
 /// `referenced_contract`, `None` when it does: `$creatorId` on a type that
 /// records none, a property the type does not define, or one no stored
-/// document carries. `$ownerId` and `$id` always hold one. Inert before
-/// protocol version 14, which alone reaches this module (contract create and
-/// update state validation 1).
+/// document carries, or one drawn at random, which a document created in the
+/// same block holds as its placeholder. `$ownerId` and `$id` always hold one.
+/// Inert before protocol version 14, which alone reaches this module (contract
+/// create and update state validation 1).
 fn referenced_side_error(
     referenced_contract: &DataContract,
     referenced_document_type: DocumentTypeRef,
@@ -94,6 +95,16 @@ fn referenced_side_error(
         return Ok(Some(
             "the referenced property is transient or inside a transient object: no stored \
              document carries its value, so none could be compared with",
+        ));
+    }
+    // In place, inert before protocol version 15: no type parsed earlier declares a
+    // `sys.random` function, and none does from it until `random_generated_from` admits one
+    if is_drawn_at_random(referenced_document_type, referenced_property) {
+        return Ok(Some(
+            "the referenced property is drawn at random once the block's transitions are \
+             accepted: a referring document written in the block that created the referenced \
+             one would be compared with its placeholder, and one written later with the drawn \
+             value",
         ));
     }
     Ok(None)
@@ -1422,5 +1433,62 @@ mod tests {
         // The post's insert never preallocates through a pair its record drops, so no tree
         // is keyed by its value
         assert_eq!(keyed_by(&contract_keeping(None)), None);
+    }
+
+    #[test]
+    fn should_refuse_a_where_entry_comparing_a_property_drawn_at_random() {
+        // No protocol version admits `sys.random.uniform` yet: the contract parses at the
+        // latest one with it admitted
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .random_generated_from = Some(0);
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Value::Identifier([7; 32]),
+                "ownerId": Value::Identifier([8; 32]),
+                "version": 1,
+                "documentSchemas": {
+                    "card": {
+                        "type": "object",
+                        "documentsMutable": false,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 32, "position": 0 },
+                            "rarity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "generatedFrom": { "function": "sys.random.uniform" },
+                                "position": 1,
+                            },
+                        },
+                        "required": ["name", "rarity"],
+                        "additionalProperties": false,
+                    },
+                },
+            }),
+            false,
+            &platform_version,
+        )
+        .expect("the contract parses");
+        let card = contract
+            .document_type_for_name("card")
+            .expect("the card type");
+        let error = referenced_side_error(&contract, card, "rarity", &platform_version)
+            .expect("the check runs");
+        assert!(
+            error.is_some_and(|reason| reason.contains("drawn at random")),
+            "a where entry comparing the drawn rarity is refused"
+        );
+        assert_eq!(
+            referenced_side_error(&contract, card, "name", &platform_version)
+                .expect("the check runs"),
+            None
+        );
     }
 }

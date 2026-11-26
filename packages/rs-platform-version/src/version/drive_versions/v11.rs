@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
+use crate::version::drive_versions::drive_document_method_versions::DriveDocumentMethodVersions;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
 };
@@ -30,6 +31,11 @@ use crate::version::drive_versions::{
 ///   Likewise the listings' escrow key sits deeper in the Tokens layer than the balances key,
 ///   and both escrows sit deeper in the root tree than the identity and token balances, so
 ///   `for_balances` 1 and `for_token_balances` 1 keep a deeper description of those layers.
+/// * **Properties drawn at random** (protocol v16 note 2): `draw_random_document_properties`
+///   0 fills the `sys.random` properties of the documents a block created from the block's
+///   random beacon and prices the index entries a create prepays for them; `None` in every
+///   earlier Drive version. Nothing calls it while `random_generated_from` refuses the
+///   function.
 ///
 /// Everything else matches `DRIVE_VERSION_V10`.
 pub const DRIVE_VERSION_V11: DriveVersion = DriveVersion {
@@ -38,6 +44,10 @@ pub const DRIVE_VERSION_V11: DriveVersion = DriveVersion {
             create_initial_state_structure: 5, // changed in v11: the token order escrow trees
         },
         token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v11: escrow methods, escrow in the token conservation check
+        document: DriveDocumentMethodVersions {
+            draw_random_document_properties: Some(0), // changed in v11: sys.random properties are drawn
+            ..DRIVE_VERSION_V10.methods.document
+        },
         contract: DriveContractMethodVersions {
             fee_pots: DriveContractFeePotMethodVersions {
                 add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v11: keeps a deeper layer description

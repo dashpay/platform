@@ -410,12 +410,20 @@ impl Checker<'_> {
     fn generated_from(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
         self.closed(map, &["function", "params"])?;
-        self.required(map, &["function", "params"])?;
+        // `sys.random.uniform` takes no parameters, so it may leave `params` out
+        let takes_no_params =
+            map.get("function").and_then(JsonValue::as_str) == Some("sys.random.uniform");
+        if takes_no_params {
+            self.required(map, &["function"])?;
+        } else {
+            self.required(map, &["function", "params"])?;
+        }
         self.member(map, "function", |c, value| {
             c.string(value)?;
             c.one_of_strings(
                 value,
                 &[
+                    "sys.random.uniform",
                     "sys.stringTransformations.camelCase",
                     "sys.stringTransformations.capitalize",
                     "sys.stringTransformations.homographSafeASCII",
@@ -428,7 +436,11 @@ impl Checker<'_> {
         })?;
         self.member(map, "params", |c, value| {
             let items = c.array(value)?;
-            c.item_count(items, Some(1), Some(16))?;
+            if takes_no_params {
+                c.item_count(items, Some(0), Some(0))?;
+            } else {
+                c.item_count(items, Some(1), Some(16))?;
+            }
             for (index, item) in items.iter().enumerate() {
                 c.at(index, |c| c.string_of_length(item, 1, Some(256)).map(drop))?;
             }

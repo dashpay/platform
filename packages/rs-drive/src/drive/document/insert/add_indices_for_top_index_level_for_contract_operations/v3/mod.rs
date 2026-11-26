@@ -13,8 +13,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::is_flat_level_key;
 
 use dpp::version::PlatformVersion;
@@ -64,19 +63,9 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
         let index_level = &document_and_contract_info.document_type.index_structure();
-        let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
         let document_type = document_and_contract_info.document_type;
-        let storage_flags = if document_type.documents_mutable()
-                || contract.config().can_be_deleted()
-                // indexOnly entries ARE the rows: they are deleted (and
-                // refunded) whenever the doctype allows deletion, so their
-                // flags must ride even though the type is immutable and the
-                // contract may not be deletable. PV14-only (`index_only()`
-                // cannot be true below meta-schema v3), so historical
-                // replay is untouched.
-                || (document_type.index_only() && document_type.documents_can_be_deleted())
-        {
+        let storage_flags = if document_and_contract_info.index_trees_carry_storage_flags() {
             document_and_contract_info
                 .owned_document_info
                 .document_info

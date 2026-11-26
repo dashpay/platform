@@ -123,6 +123,7 @@ fn should_parse_sys_tokens_decimals_onto_an_integer_property_from_protocol_versi
         Some(GeneratedFrom {
             function: SystemFunction::Token(TokenFunction::Decimals),
             params: vec![GenerationParam::Property("tokenId".to_string())],
+            range: None,
         })
     );
     // An identifier carrying a `refersTo` names the token as well

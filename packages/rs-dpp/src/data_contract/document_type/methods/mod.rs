@@ -31,8 +31,8 @@ use crate::data_contract::document_type::property_constraints::{
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::StringPropertySizes;
 use crate::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, GeneratedFrom, SystemFunction,
-    TokenFunction,
+    integer_value_for_type, DocumentPropertyReferenceTarget, DocumentPropertyType, GeneratedFrom,
+    SystemFunction, TokenFunction,
 };
 use crate::fee::Credits;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -419,13 +419,91 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         Ok(None)
     }
 
+    /// Writes or checks every `generatedFrom` property of `data` that a random function
+    /// generates (`sys.random`, protocol version 15). The platform draws such a value from the
+    /// block's random beacon once every transition of the block is accepted, so no client
+    /// knows it when it sends the document:
+    ///
+    /// * on a create (`stored` is `None`), a left-out property is written with the placeholder,
+    ///   the `minimum` of its range, which the draw replaces before the block commits; a sent
+    ///   one is refused, since a client cannot pick the value;
+    /// * on a replace (`stored`, the replaced document's properties), the stored value is kept:
+    ///   a left-out property is written with it, and a sent one must equal it.
+    ///
+    /// Returns the refusal of the first property that does not pass
+    /// (`DocumentPropertyNotGeneratedError`). Leaves alone a property whose path repeats a key,
+    /// which the schema validation and `validate_generated_from_properties` refuse on their
+    /// own. Only the platform calls this: a client leaves such a property out
+    /// (`regenerate_generated_properties` removes it).
+    ///
+    /// Inert on a type without such a declaration, which covers every type parsed before
+    /// protocol version 15 (generation 1 of `apply_generated_from` is the first to parse a
+    /// `sys.random` function), and every type parsed from it until a table's
+    /// `random_generated_from` admits one.
+    fn generate_random_properties(
+        &self,
+        data: &mut BTreeMap<String, Value>,
+        stored: Option<&BTreeMap<String, Value>>,
+    ) -> Option<ConsensusError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (path, generated_from) in self.generated_from_fields() {
+            let (SystemFunction::Random(_), Some(range)) =
+                (generated_from.function, generated_from.range)
+            else {
+                continue;
+            };
+            let Ok(sent) = read_data_at_path(data, path) else {
+                continue;
+            };
+            let sent = sent.cloned();
+            let value = match stored {
+                None => {
+                    if sent.is_some() {
+                        return Some(not_generated(self.name(), path, generated_from));
+                    }
+                    let Some(placeholder) =
+                        self.flattened_properties().get(path).and_then(|property| {
+                            integer_value_for_type(&property.property_type, range.minimum())
+                        })
+                    else {
+                        // Registration admits the function only on an integer property whose
+                        // type holds its minimum
+                        continue;
+                    };
+                    placeholder
+                }
+                Some(stored) => {
+                    let Ok(Some(kept)) = read_data_at_path(stored, path) else {
+                        continue;
+                    };
+                    match sent {
+                        Some(sent) if !same_integer(&sent, kept) => {
+                            return Some(not_generated(self.name(), path, generated_from));
+                        }
+                        Some(_) => continue,
+                        None => kept.clone(),
+                    }
+                }
+            };
+            // Registration declares the property in place, so the objects on the way are maps
+            // whenever the document holds them. If the insert ever failed, the property would
+            // stay absent and the schema validation would judge the document without it.
+            let _ = data.insert_at_path(path, value);
+        }
+        None
+    }
+
     /// Writes into `data` (a document rebuilt from a create or replace transition) every
-    /// property generated from state (`sys.tokens`) that it leaves out while supplying the
-    /// parameter, as `stored` (the document as the platform stored it) holds it. A proof
+    /// property only the platform generates (`sys.tokens`, read from state, and `sys.random`,
+    /// drawn from the block's random beacon) that it leaves out while supplying the
+    /// parameters, as `stored` (the document as the platform stored it) holds it. A proof
     /// verifier rebuilds the document a transition wrote to compare it with the proved one,
     /// and holds no state: it takes such a value from the proved document, which the
-    /// platform judged when it wrote it (`generate_state_read_properties`). A value the
-    /// transition sent stays, so a proved document holding another fails the comparison.
+    /// platform judged when it wrote it (`generate_state_read_properties`,
+    /// `generate_random_properties`). A value the transition sent stays, so a proved document
+    /// holding another fails the comparison.
     ///
     /// Inert on a type without such a declaration, which covers every type parsed before
     /// protocol version 15.
@@ -437,7 +515,7 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         Self: DocumentTypeV2Getters,
     {
         for (path, generated_from) in self.generated_from_fields() {
-            if !generated_from.function.reads_state() {
+            if !generated_from.function.platform_generated() {
                 continue;
             }
             let params_supplied = generated_from
@@ -590,12 +668,12 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
                     if arguments.iter().any(Option::is_none) {
                         // Nothing to generate from: the property must be left out too
                         value.is_none()
-                    } else if generated_from.function.reads_state() {
-                        // Generated from state (protocol version 15, inert before: no type
-                        // parsed earlier declares such a function): the platform wrote or
-                        // checked it when it built the write
-                        // (`generate_state_read_properties`), and a client, which holds no
-                        // state, leaves it out
+                    } else if generated_from.function.platform_generated() {
+                        // Generated from state or drawn at random (protocol version 15, inert
+                        // before: no type parsed earlier declares such a function): the
+                        // platform wrote or checked it when it built the write
+                        // (`generate_state_read_properties`, `generate_random_properties`),
+                        // and a client, which cannot know it, leaves it out
                         true
                     } else {
                         let texts: Option<Vec<&str>> = arguments
@@ -706,10 +784,11 @@ pub fn read_data_at_path<'a>(
     read_path_segments(value, segments)
 }
 
-/// The paths of the properties generated from state (`sys.tokens`, protocol version 15) that
-/// `properties`, a document's data, leaves out while supplying their parameter. The platform
-/// writes such a value when it builds the write (`generate_state_read_properties`), before it
-/// judges the rules; a client, which reads no state, leaves it out
+/// The paths of the properties only the platform generates (`sys.tokens`, read from state, and
+/// `sys.random`, drawn from the block's random beacon, protocol version 15) that `properties`,
+/// a document's data, leaves out while supplying their parameters. The platform writes such a
+/// value when it builds the write (`generate_state_read_properties`,
+/// `generate_random_properties`), before it judges the rules; a client leaves it out
 /// (`regenerate_generated_properties`) and does not know it. Empty on a type without such a
 /// declaration, which covers every type parsed before protocol version 15.
 pub(crate) fn state_generated_paths_left_out<'a>(
@@ -719,7 +798,7 @@ pub(crate) fn state_generated_paths_left_out<'a>(
     generated_from_fields
         .iter()
         .filter(|(path, generated_from)| {
-            generated_from.function.reads_state()
+            generated_from.function.platform_generated()
                 && matches!(read_path_segments(properties, path.split('.')), Ok(None))
                 && generated_from.property_params().all(|param| {
                     matches!(
@@ -739,7 +818,9 @@ pub(crate) fn state_generated_paths_left_out<'a>(
 /// not know. Registration admits `sys.tokens.decimals` only on an integer property holding
 /// every value from 0 to 255, declared in place with every object holding it (no `$ref`,
 /// which would bring in schemas it does not judge), inside no object declaring `const` or
-/// `enum` (which would compare the value), so 0 stands in. A `required` list naming such a property, and its
+/// `enum` (which would compare the value), so 0 stands in. `sys.random.uniform` is admitted on
+/// the same terms, on an integer property whose `minimum` and `maximum` bound the values drawn,
+/// so its `minimum` stands in. A `required` list naming such a property, and its
 /// bounds, then pass, the keys of every object are those the platform's document has, and
 /// every other check reads the data as it is. `properties` as it
 /// is on a type without such a declaration, which covers every type parsed before protocol
@@ -752,7 +833,18 @@ pub(crate) fn with_state_generated_stand_ins(
     {
         let stand_in = match generated_from.function {
             SystemFunction::Token(TokenFunction::Decimals) => Value::U8(0),
-            // These read no state
+            SystemFunction::Random(_) => {
+                let Some(minimum) = generated_from.range.map(|range| range.minimum()) else {
+                    continue;
+                };
+                // At most 64 bits wide, so one of the two holds it
+                match (i64::try_from(minimum), u64::try_from(minimum)) {
+                    (Ok(minimum), _) => Value::I64(minimum),
+                    (_, Ok(minimum)) => Value::U64(minimum),
+                    _ => continue,
+                }
+            }
+            // A client generates these itself
             SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => continue,
         };
         // The parameter was read through the objects on the way, which registration puts
