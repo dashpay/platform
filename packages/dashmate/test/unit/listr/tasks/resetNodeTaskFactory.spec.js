@@ -919,6 +919,7 @@ describe('resetNodeTaskFactory', () => {
     let configFailure;
     let configFailureConfigName;
     let volumeDefinitionsByConfig;
+    let volumeInspectErrors;
     let onRemoveServices;
     let platformConfig;
     let projectName;
@@ -952,6 +953,10 @@ describe('resetNodeTaskFactory', () => {
     function dockerVolume(name, remove) {
       return {
         inspect: async () => {
+          if (volumeInspectErrors[name]) {
+            throw volumeInspectErrors[name];
+          }
+
           if (!dockerVolumeLabels[name]) {
             throw Object.assign(new Error(`no such volume: ${name}`), { statusCode: 404 });
           }
@@ -982,6 +987,7 @@ describe('resetNodeTaskFactory', () => {
       configFailure = null;
       configFailureConfigName = null;
       volumeDefinitionsByConfig = {};
+      volumeInspectErrors = {};
       onRemoveServices = () => {};
       diContainer.register({
         docker: asValue({
@@ -1362,6 +1368,37 @@ describe('resetNodeTaskFactory', () => {
         'node_2_drive_tenderdash',
         'node_2_rs-dapi-access-logs',
       ]);
+    });
+
+    // Whose a volume is counts when it is removed, but a Docker that cannot
+    // answer for a later member's volume must stop the group before the
+    // members before it lose their services and files.
+    it('should ask Docker about every member\'s volumes before it removes anything', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      volumeDefinitionsByConfig.node_2 = { drive_abci_data: { name: 'node_2_drive_abci_data' } };
+      volumeInspectErrors.node_2_drive_abci_data = Object.assign(new Error('Docker volume inspect failed'), { statusCode: 500 });
+
+      const error = await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      ).then(() => null, (e) => e);
+
+      expect(error.getError().message).to.include('Docker volume inspect failed');
+      expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
+      expect(removedVolumes).to.be.empty();
     });
 
     it('should remove the Platform services again the same way while a volume is in use', async () => {

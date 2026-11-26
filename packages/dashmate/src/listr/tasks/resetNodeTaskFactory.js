@@ -506,6 +506,11 @@ export default function resetNodeTaskFactory(
         profiles,
       });
 
+    // Whose a volume is counts only when it is removed, but asking Docker now
+    // too means a Docker that cannot answer stops the reset while nothing has
+    // been removed.
+    await Promise.all(volumes.map((candidate) => dockerCompose.isVolumeOwned(candidate)));
+
     return { serviceNames, profiles, volumes };
   }
 
