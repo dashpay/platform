@@ -2012,6 +2012,18 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.1.0-rc.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const tenderdash = options.platform?.drive?.tenderdash;
+
+            if (tenderdash?.docker) {
+              tenderdash.docker.image = 'dashpay/tenderdash:2.0';
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
