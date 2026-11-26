@@ -195,6 +195,24 @@ describe('archiveSamples', () => {
       expect(archived).to.contain('lego: using directory https://acme.example.com/directory?upstream=');
     });
 
+    // A secret of repeated characters matches at every position of a long
+    // run of them; the matches are merged as they are found rather than all
+    // kept first
+    it('should mask a dense run of matches without keeping each one', async function it() {
+      config.set('core.rpc.users.tenderdash.password', '00000000');
+
+      samples.setServiceInfo('core', 'stdOut', `${'0'.repeat(2_000_000)}\nend\n`);
+
+      const push = this.sinon.spy(Array.prototype, 'push');
+
+      const archived = await archiveAndRead();
+
+      push.restore();
+
+      expect(archived).to.contain(`${'*'.repeat(2_000_000)}\nend`);
+      expect(push.callCount).to.be.below(1000);
+    });
+
     it('should mask the whole of a secret that contains another', async () => {
       config.set('core.rpc.users.tenderdash.password', 'nestedSecret1');
       config.set('core.rpc.users.quorum_list.password', 'nestedSecret1Tail9');

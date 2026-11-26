@@ -16,15 +16,24 @@ const MIN_SCRUBBED_SECRET_LENGTH = 8;
 /**
  * @param {string} text
  * @param {string[]} needles
- * @return {[number, number][]} where each needle occurs in the text, every
- *   occurrence, overlapping ones included
+ * @return {[number, number][]} what each needle covers in the text, every
+ *   occurrence included. Occurrences of one needle that overlap are merged as
+ *   they are found, so a long run of them is one range rather than one per
+ *   position.
  */
 function findRanges(text, needles) {
   const ranges = [];
 
   for (const needle of needles) {
+    let current = null;
+
     for (let index = text.indexOf(needle); index !== -1; index = text.indexOf(needle, index + 1)) {
-      ranges.push([index, index + needle.length]);
+      if (current && index <= current[1]) {
+        current[1] = index + needle.length;
+      } else {
+        current = [index, index + needle.length];
+        ranges.push(current);
+      }
     }
   }
 
