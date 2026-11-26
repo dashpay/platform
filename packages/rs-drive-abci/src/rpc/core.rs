@@ -333,6 +333,15 @@ impl DefaultCoreRPC {
         })
     }
 
+    /// Create new instance over a client the caller built, with no speculative fetcher: every
+    /// request then goes through that client, in the order block execution makes it.
+    pub fn with_client(inner: Client) -> Self {
+        DefaultCoreRPC {
+            inner,
+            prefetcher: None,
+        }
+    }
+
     /// The serialized coinbase of the block at `height`, `None` for a coinbase without a payload.
     fn coinbase_with_payload(&self, height: CoreHeight) -> Result<Option<Vec<u8>>, Error> {
         let block_hash = self.get_block_hash(height)?;

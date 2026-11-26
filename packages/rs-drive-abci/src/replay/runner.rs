@@ -1,7 +1,11 @@
 use crate::abci::app::FullAbciApplication;
+use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::replay::chain_answer::LoggedAnswer;
+use crate::replay::report::{Finalized, Proposed, ReplayChecks};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use hex::ToHex;
 use std::collections::VecDeque;
@@ -16,12 +20,15 @@ use tenderdash_abci::proto::abci::{
     RequestFinalizeBlock, RequestInfo, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestVerifyVoteExtension,
 };
+use tenderdash_abci::proto::ABCI_VERSION;
 use tenderdash_abci::Application;
 
 #[derive(Debug, Clone)]
 pub(super) struct ReplayItem {
     pub(super) source: ReplaySource,
     pub(super) request: LoadedRequest,
+    /// What the node that wrote the log answered, for a `ProcessProposal` request
+    pub(super) logged_answer: LoggedAnswer,
 }
 
 impl ReplayItem {
@@ -40,7 +47,13 @@ impl ReplayItem {
                 endpoint,
             },
             request,
+            logged_answer: LoggedAnswer::Absent,
         }
+    }
+
+    pub(super) fn with_logged_answer(mut self, logged_answer: LoggedAnswer) -> Self {
+        self.logged_answer = logged_answer;
+        self
     }
 
     pub(super) fn describe(&self) -> String {
@@ -118,16 +131,43 @@ pub(super) fn ensure_db_directory(path: &Path) -> Result<bool, Box<dyn Error>> {
     Ok(true)
 }
 
+/// Whether GroveDB's root hash may differ from the app hash after the block at `height`.
+///
+/// On mainnet the commit of block 32326 failed with a conflict and the chain went on with the
+/// app hash that block had computed, as `finalize_block` reproduces; `info` therefore lets the
+/// two differ below height 33000. A replay lets them differ from that block to that height,
+/// and nowhere else.
+fn grove_root_may_differ_from_app_hash(config: &PlatformConfig, height: i64) -> bool {
+    config.network == Network::Mainnet
+        && config.abci.chain_id == "evo1"
+        && (32326..33000).contains(&height)
+}
+
+/// Whether a request, executed after a `ProcessProposal`, may have replaced what that
+/// proposal's execution left for `FinalizeBlock` to commit. The replay takes the answer to a
+/// proposal for the finalized block's only where no such request lies between the two.
+///
+/// Every request is taken to, but two: `FinalizeBlock` itself, and `info`, whose handler is
+/// given the platform to read and neither the transaction nor the block execution context.
+fn comes_between_proposal_and_finalization(request: &LoadedRequest) -> bool {
+    !matches!(request, LoadedRequest::Finalize(_) | LoadedRequest::Info(_))
+}
+
 pub(super) fn execute_request<C>(
     app: &FullAbciApplication<C>,
     item: ReplayItem,
     progress: Option<&mut ProgressReporter>,
+    checks: &mut ReplayChecks,
 ) -> Result<Option<u64>, Box<dyn Error>>
 where
     C: crate::rpc::core::CoreRPCLike,
 {
     let origin = item.describe();
+    let logged_answer = item.logged_answer;
     let mut committed_height = None;
+    if comes_between_proposal_and_finalization(&item.request) {
+        checks.request_begins();
+    }
     match item.request {
         LoadedRequest::InitChain(request) => {
             tracing::debug!("executing init_chain from {}", origin);
@@ -151,6 +191,18 @@ where
                 .last_committed_block_info()
                 .as_ref()
                 .map(|info| info.basic_info().height);
+        }
+        LoadedRequest::Info(request) if !tenderdash_abci::check_version(&request.abci_version) => {
+            // The request says the ABCI version of the Tenderdash that wrote the log, and a
+            // build of another ABCI version refuses it before it reads anything. `info` reads
+            // the state and changes none of it, so the blocks replay the same without it.
+            tracing::warn!(
+                "passing over info from {}: its ABCI version {} is not this build's {}",
+                origin,
+                request.abci_version,
+                ABCI_VERSION
+            );
+            checks.info_passed_over();
         }
         LoadedRequest::Info(request) => {
             tracing::debug!("executing info from {}", origin);
@@ -189,6 +241,9 @@ where
         }
         LoadedRequest::Process(request) => {
             let height = request.height;
+            let round = request.round;
+            let core_height = request.core_chain_locked_height;
+            let block_hash = request.hash.clone();
             let context = format_height_round(Some(height), Some(request.round));
             tracing::debug!(
                 "executing process_proposal from {} (height={})",
@@ -208,10 +263,27 @@ where
                 origin,
                 status,
                 height,
-                hex::encode(response.app_hash),
+                hex::encode(&response.app_hash),
                 response.tx_results.len(),
                 response.events.len()
             );
+            checks
+                .proposal_answered(
+                    Proposed {
+                        height: u64::try_from(height)?,
+                        round: u32::try_from(round)?,
+                        block_hash: &block_hash,
+                        core_height,
+                    },
+                    &response,
+                    &logged_answer,
+                )
+                .map_err(|reason| {
+                    logged_error(format!(
+                        "replay stops after process_proposal for {}{}:\n{}",
+                        origin, context, reason
+                    ))
+                })?;
         }
         LoadedRequest::Finalize(request) => {
             let height = request.height;
@@ -224,6 +296,12 @@ where
                 round
             );
             let expected = extract_expected_app_hash(&request);
+            let block_hash = request.hash.clone();
+            let transactions = request
+                .block
+                .as_ref()
+                .and_then(|block| block.data.as_ref())
+                .map_or(0, |data| data.txs.len());
 
             let response = app.finalize_block(request).map_err(|err| {
                 logged_error(format!(
@@ -251,7 +329,13 @@ where
                         .grove_version,
                 )
                 .unwrap()
-                .unwrap_or_default();
+                .map_err(|err| {
+                    // A root that cannot be read is not a root that differs
+                    logged_error(format!(
+                        "grovedb root hash cannot be read after finalize_block for {}{}: {:?}",
+                        origin, context, err
+                    ))
+                })?;
             let actual_hex = actual_hash
                 .as_ref()
                 .map(hex::encode)
@@ -276,13 +360,22 @@ where
                         )));
                     }
                     if expected_hash != &grove_hash {
-                        return Err(logged_error(format!(
-                            "grovedb root mismatch for {}{}: expected 0x{}, grove 0x{}",
+                        if !grove_root_may_differ_from_app_hash(&app.platform.config, height) {
+                            return Err(logged_error(format!(
+                                "grovedb root mismatch for {}{}: expected 0x{}, grove 0x{}",
+                                origin,
+                                context,
+                                hex::encode(expected_hash),
+                                hex::encode(grove_hash)
+                            )));
+                        }
+                        tracing::warn!(
+                            "grovedb root is not the app hash for {}{}: app hash 0x{}, grove 0x{}; the chain went on from such a block here, and so does the replay",
                             origin,
                             context,
                             hex::encode(expected_hash),
                             hex::encode(grove_hash)
-                        )));
+                        );
                     }
                 }
                 (Some(_), None) => {
@@ -306,6 +399,29 @@ where
                     );
                 }
             }
+            checks
+                .block_finalized(
+                    Finalized {
+                        height: u64::try_from(height)?,
+                        round: u32::try_from(round)?,
+                        block_hash: &block_hash,
+                        transactions,
+                        protocol_version: app
+                            .platform
+                            .state
+                            .load()
+                            .current_protocol_version_in_consensus(),
+                        app_hash: actual_hash.as_deref().unwrap_or_default(),
+                        grove_root: &grove_hash,
+                    },
+                    &response,
+                )
+                .map_err(|reason| {
+                    logged_error(format!(
+                        "replay stops after finalize_block for {}{}:\n{}",
+                        origin, context, reason
+                    ))
+                })?;
             if let Some(reporter) = progress {
                 if let Ok(block_height) = u64::try_from(height) {
                     if let Some(hash) = actual_hash.as_deref().or(expected.as_deref()) {
@@ -554,11 +670,164 @@ fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use tenderdash_abci::proto::abci::{
         RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
         RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
     };
+    use tenderdash_abci::proto::abci::{ResponseFinalizeBlock, ResponseProcessProposal};
     use tenderdash_abci::proto::types::{Block, Header};
+
+    // ---- where GroveDB's root may differ from the app hash ----
+
+    #[test]
+    fn should_let_the_grove_root_differ_only_where_mainnet_went_on_with_it() {
+        let mut mainnet = PlatformConfig::default_mainnet();
+        mainnet.abci.chain_id = "evo1".to_owned();
+        assert!(!grove_root_may_differ_from_app_hash(&mainnet, 1));
+        assert!(!grove_root_may_differ_from_app_hash(&mainnet, 32325));
+        assert!(grove_root_may_differ_from_app_hash(&mainnet, 32326));
+        assert!(grove_root_may_differ_from_app_hash(&mainnet, 32328));
+        assert!(grove_root_may_differ_from_app_hash(&mainnet, 32999));
+        assert!(!grove_root_may_differ_from_app_hash(&mainnet, 33000));
+        assert!(!grove_root_may_differ_from_app_hash(&mainnet, 478_271));
+
+        // Another chain of the same network kind, and another network with that chain's name
+        let mut other_chain = PlatformConfig::default_mainnet();
+        other_chain.abci.chain_id = "devnet".to_owned();
+        assert!(!grove_root_may_differ_from_app_hash(&other_chain, 32326));
+        let mut testnet = PlatformConfig::default_testnet();
+        testnet.abci.chain_id = "evo1".to_owned();
+        assert!(!grove_root_may_differ_from_app_hash(&testnet, 32326));
+    }
+
+    #[test]
+    fn should_pass_over_an_info_request_of_another_abci_version() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        let mut checks = ReplayChecks::default();
+        let info = |abci_version: &str| {
+            ReplayItem::from_log(
+                Path::new("/test.log"),
+                1,
+                None,
+                None,
+                LoadedRequest::Info(RequestInfo {
+                    version: "1.8.2".to_owned(),
+                    block_version: 14,
+                    p2p_version: 10,
+                    abci_version: abci_version.to_owned(),
+                }),
+            )
+        };
+
+        // The version of a Tenderdash this build does not speak with
+        let committed = execute_request(&app, info("999.999.999"), None, &mut checks).unwrap();
+        assert_eq!(committed, None);
+        assert_eq!(checks.summary().info_passed_over, 1);
+
+        // This build's own version is answered as before
+        let committed = execute_request(&app, info(ABCI_VERSION), None, &mut checks).unwrap();
+        assert_eq!(committed, None);
+        assert_eq!(checks.summary().info_passed_over, 1);
+    }
+
+    #[test]
+    fn should_keep_the_answer_to_a_proposal_over_info_requests_only() {
+        assert!(!comes_between_proposal_and_finalization(
+            &LoadedRequest::Info(RequestInfo::default())
+        ));
+        assert!(!comes_between_proposal_and_finalization(
+            &LoadedRequest::Finalize(RequestFinalizeBlock::default())
+        ));
+        for request in [
+            LoadedRequest::InitChain(RequestInitChain::default()),
+            LoadedRequest::Prepare(RequestPrepareProposal::default()),
+            LoadedRequest::Process(RequestProcessProposal::default()),
+            LoadedRequest::ExtendVote(RequestExtendVote::default()),
+            LoadedRequest::VerifyVoteExtension(RequestVerifyVoteExtension::default()),
+        ] {
+            assert!(
+                comes_between_proposal_and_finalization(&request),
+                "{request:?}"
+            );
+        }
+
+        // An info request between a proposal and its finalization, replayed or passed over
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), None, None).unwrap();
+        let block_hash = [7u8; 32];
+        checks
+            .proposal_answered(
+                Proposed {
+                    height: 5,
+                    round: 0,
+                    block_hash: &block_hash,
+                    core_height: 1,
+                },
+                &ResponseProcessProposal {
+                    status: response_process_proposal::ProposalStatus::Accept as i32,
+                    ..Default::default()
+                },
+                &LoggedAnswer::Absent,
+            )
+            .unwrap();
+        for abci_version in ["999.999.999", ABCI_VERSION] {
+            let info = ReplayItem::from_log(
+                Path::new("/test.log"),
+                1,
+                None,
+                None,
+                LoadedRequest::Info(RequestInfo {
+                    abci_version: abci_version.to_owned(),
+                    ..Default::default()
+                }),
+            );
+            execute_request(&app, info, None, &mut checks).unwrap();
+        }
+        checks
+            .block_finalized(
+                Finalized {
+                    height: 5,
+                    round: 0,
+                    block_hash: &block_hash,
+                    transactions: 0,
+                    protocol_version: 1,
+                    app_hash: &[1; 32],
+                    grove_root: &[1; 32],
+                },
+                &ResponseFinalizeBlock::default(),
+            )
+            .unwrap();
+        let line = fs::read_to_string(&report).unwrap();
+        assert!(line.contains("\"core_height\":1,"), "{line}");
+        assert!(line.contains("\"tx\":[],"), "{line}");
+    }
+
+    #[test]
+    fn should_carry_the_logged_answer_with_the_request() {
+        let item = ReplayItem::from_log(
+            Path::new("/test.log"),
+            7,
+            None,
+            None,
+            LoadedRequest::Process(RequestProcessProposal::default()),
+        );
+        assert_eq!(item.logged_answer, LoggedAnswer::Absent);
+        let item = item.with_logged_answer(LoggedAnswer::Unreadable("cut short".to_owned()));
+        assert_eq!(
+            item.logged_answer,
+            LoggedAnswer::Unreadable("cut short".to_owned())
+        );
+        assert_eq!(item.source.line(), 7);
+    }
 
     // ---- stop_height_reached ----
 
