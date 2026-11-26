@@ -1,3 +1,25 @@
+## [5.1.0](///compare/v5.1.0-rc.2...v5.1.0) (2026-11-26)
+
+
+### Build System
+
+* **dashmate:** upgrade Tenderdash to the 2.0 release line ([#6331](undefined/undefined/undefined/issues/6331))
+
+
+### Miscellaneous Chores
+
+* pin GroveDB and rust-dashcore by release tag ([#6332](undefined/undefined/undefined/issues/6332))
+
+
+### Continuous Integration
+
+* **release:** sign and notarize the macOS installer sooner ([#6329](undefined/undefined/undefined/issues/6329))
+
+
+### Documentation
+
+* **dashmate:** install and update the deb from Dash's apt repository ([#6338](undefined/undefined/undefined/issues/6338))
+
 ## [5.1.0-rc.2](///compare/v5.1.0-rc.1...v5.1.0-rc.2) (2026-11-26)
 
 
