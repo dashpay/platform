@@ -54,12 +54,15 @@ The command collects diagnostic information and creates an archive, with the nod
   API keys, build arguments, command-line option values, credentials in URLs),
   the values of container environment variables, your home directory, and your
   user name in logs, paths, the node description and contact addresses. The
-  commands containers run, health checks included, are left out. Copies of
-  those config secrets in logs and other collected data are masked when they
-  are 8 characters or longer.
+  commands containers run and what their health checks print are left out.
+  Copies of those config secrets in logs, RPC responses, messages, paths and
+  the node description are masked when they are 8 characters or longer. The
+  values doctor decides on, such as certificate status codes, dates and
+  fingerprints, are kept as they are.
 
-  Logs can still contain other sensitive text, such as earlier passwords or short
-  values, so review the archive before you share it. The rest is diagnostic data
+  The archive can still contain other sensitive text, such as earlier passwords,
+  short values, or a secret spelled like one of those kept values, so review it
+  before you share it. The rest is diagnostic data
   about your node, including its addresses, host details, certificate settings
   and logs, and is shared with whoever you send the archive to.
 
