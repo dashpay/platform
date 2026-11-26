@@ -370,10 +370,16 @@ export default function resetNodeTaskFactory(
 
     // Node's own recursive removal: its native implementation can remove
     // entries relative to the directories it holds open, which a walk by path
-    // name cannot.
+    // name cannot. A target that is a link is unlinked instead: some Node
+    // versions' recursive removal leaves a link that points nowhere in place
+    // and reports success.
     let removalError;
     try {
-      fs.rmSync(targetPath, { recursive: true, force: true });
+      if (fs.lstatSync(targetPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        fs.unlinkSync(targetPath);
+      } else {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
 
       return;
     } catch (e) {

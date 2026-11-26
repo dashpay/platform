@@ -773,6 +773,28 @@ describe('resetNodeTaskFactory', () => {
       expect(fs.readFileSync(outsidePath, 'utf8')).to.equal('content');
     });
 
+    // The target itself can be a link, to a directory elsewhere or to one a
+    // storage move retired. The link goes and what it points to stays. Left
+    // in place, a link that points nowhere would have the Platform files
+    // rendered through it.
+    it('should remove a target that is a link, even one that points nowhere', async () => {
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const outsidePath = writeFile('outside', 'keep.txt');
+      fs.rmSync(platformPath, { recursive: true });
+
+      fs.symlinkSync(path.dirname(outsidePath), platformPath);
+      await hardReset({ isPlatformOnlyReset: true });
+
+      // lstat: a link that points nowhere does not exist to stat
+      expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
+      expect(fs.readFileSync(outsidePath, 'utf8')).to.equal('content');
+
+      fs.symlinkSync(homeDir.joinPath('retired'), platformPath);
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
+    });
+
     // A directory that becomes read-only between the check and the removal
     // makes Node's recursive removal fail, naming the target at most. The
     // reset does not go on past the failure: it names each path left that this
