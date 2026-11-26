@@ -56,27 +56,55 @@ describe('archiveSamples', () => {
     expect(unarchived.date.toISOString()).to.equal('2026-11-26T10:15:30.123Z');
   });
 
-  // A truncated archive looks like a report to whoever is sent it, and doctor
-  // cannot analyse it
-  it('should not leave a partial archive behind when packing fails', async function it() {
-    if (process.getuid?.() === 0) {
+  describe('when packing fails', () => {
+    beforeEach(function beforeEach() {
       // Root reads a file whatever its mode, so packing cannot be made to fail
-      this.skip();
-    }
-
-    // Make one staged sample unreadable, so that packing fails after the
-    // archive file has been opened
-    const { writeFileSync } = fs;
-    this.sinon.stub(fs, 'writeFileSync').callsFake((filePath, ...args) => {
-      writeFileSync(filePath, ...args);
-
-      if (path.basename(filePath) === 'dashmateVersion.txt') {
-        fs.chmodSync(filePath, 0);
+      if (process.getuid?.() === 0) {
+        this.skip();
       }
+
+      // Make one staged sample unreadable, so that packing fails after the
+      // archive file has been opened
+      const { writeFileSync } = fs;
+      this.sinon.stub(fs, 'writeFileSync').callsFake((filePath, ...args) => {
+        writeFileSync(filePath, ...args);
+
+        if (path.basename(filePath) === 'dashmateVersion.txt') {
+          fs.chmodSync(filePath, 0);
+        }
+      });
     });
 
-    await expect(archiveSamples(samples, outputDir)).to.be.rejectedWith('EACCES');
+    // A truncated archive looks like a report to whoever is sent it, and
+    // doctor cannot analyse it
+    it('should not leave a partial archive behind', async () => {
+      await expect(archiveSamples(samples, outputDir)).to.be.rejectedWith('EACCES');
 
-    expect(fs.readdirSync(outputDir)).to.be.empty();
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+    });
+
+    // A report already at that path was not written by this run
+    it('should keep a report that was already at the destination', async () => {
+      const existingReport = path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz');
+      fs.writeFileSync(existingReport, 'previous report');
+
+      await expect(archiveSamples(samples, outputDir)).to.be.rejectedWith('EACCES');
+
+      expect(fs.readFileSync(existingReport, 'utf8')).to.equal('previous report');
+    });
+
+    // The packing failure is what the operator has to act on
+    it('should report the packing error when the cleanup fails too', async function it() {
+      const { rmSync } = fs;
+      this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+        if (filePath.startsWith(outputDir)) {
+          throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+        }
+
+        return rmSync(filePath, ...args);
+      });
+
+      await expect(archiveSamples(samples, outputDir)).to.be.rejectedWith('EACCES');
+    });
   });
 });

@@ -1,6 +1,8 @@
+import crypto from 'crypto';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { pipeline } from 'stream/promises';
 import { create } from 'tar';
 
 function writeSampleFile(archiveDir, service, filename, data) {
@@ -58,22 +60,28 @@ export default async function archiveSamples(samples, folderPath) {
     }
   }
 
+  // Packed under a name only this run uses and renamed once complete, so a
+  // failure never leaves a truncated archive under the report's name and never
+  // touches a file this run did not create.
+  const partialFilePath = `${archiveFilePath}.${crypto.randomBytes(4).toString('hex')}.partial`;
+
   try {
-    await create(
-      {
-        cwd: archiveDir,
-        gzip: true,
-        file: archiveFilePath,
-      },
-      ['.'],
+    // pipeline closes the file when packing fails, so it can be removed
+    await pipeline(
+      create({ cwd: archiveDir, gzip: true }, ['.']),
+      fs.createWriteStream(partialFilePath, { flags: 'wx' }),
     );
   } catch (e) {
-    // tar has already written part of the archive by the time it fails, and a
-    // truncated archive would be mistaken for a report
-    fs.rmSync(archiveFilePath, { force: true });
+    try {
+      fs.rmSync(partialFilePath, { force: true });
+    } catch {
+      // The packing error is the one to report
+    }
 
     throw e;
   }
+
+  fs.renameSync(partialFilePath, archiveFilePath);
 
   return archiveFilePath;
 }
