@@ -80,6 +80,12 @@ function forEachStringValue(object, callback, parentField = undefined, grandpare
 }
 
 /**
+ * Config fields whose values are free text an operator writes, and nothing
+ * reads as a value
+ */
+const FREE_TEXT_FIELD_NAMES = ['description', 'email'];
+
+/**
  * @param {string} value
  * @return {boolean} whether the value is an absolute local path
  */
@@ -302,12 +308,16 @@ export default function obfuscateConfig(
     // The operator's name and home directory are masked the way they are in
     // the samples, except that a home directory is written `/~`: the schema
     // requires log paths to be absolute, and doctor validates this copy when
-    // it reads a report back. The account name is only masked in paths, where
-    // it names the operator; elsewhere it can be spelled like a value the
-    // config is made of, such as the environment name.
+    // it reads a report back. The account name is masked where it can name
+    // the operator - in paths and in free text - but not in values the
+    // config is made of, which it can be spelled like: an account named
+    // `info` or `production` would otherwise change a log level or the
+    // environment, or make the copy invalid.
+    const namesOperator = isLocalPath(value) || FREE_TEXT_FIELD_NAMES.includes(field);
+
     value = maskOperatorIdentity(
       value,
-      isLocalPath(value) ? identity : { ...identity, username: null },
+      namesOperator ? identity : { ...identity, username: null },
       { homeReplacement: '/~' },
     );
 

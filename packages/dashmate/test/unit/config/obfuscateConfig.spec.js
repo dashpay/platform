@@ -312,6 +312,23 @@ describe('obfuscateConfig', () => {
     expect(JSON.stringify(obfuscated)).to.not.contain(homePath);
   });
 
+  // Free text is where an operator writes their own name, and nothing reads
+  // it as a value
+  it('should mask the account name in the description and contact addresses', function it() {
+    this.sinon.stub(os, 'userInfo').returns({ username: 'alice', homedir: '/home/alice' });
+
+    const config = getBaseConfigFactory()();
+
+    config.set('description', 'node run by alice for testing');
+    config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', 'alice@example.com');
+
+    const obfuscated = obfuscateConfig(config);
+
+    expect(obfuscated.get('description')).to.equal('node run by ***** for testing');
+    expect(obfuscated.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+      .to.equal('*****@example.com');
+  });
+
   // Dashmate keeps its files under the home directory HOME names, which can
   // differ from the one the account is registered with; both name the
   // operator
