@@ -164,41 +164,53 @@ $  dashmate update --format=json --config local_1 | jq
 ]
 ```
 
-## Major Updates with Platform Reset
+## Major Updates
 
-In some cases, you must also additionally reset platform data:
+A major update installs and starts the same way as any other update, with no reset, unless the release notes say otherwise (see [Updates After a Platform Chain Restart](#updates-after-a-platform-chain-restart)).
+Platform upgrades are protocol upgrades that the network activates, and dashmate applies any change to the configuration format itself through migrations when the new version first runs.
+Follow the [example update process](#example-update-process) above: download the new Debian package before you stop the node, stop it, install the new version, check `dashmate --version`, run `dashmate update` and start the node.
 
-* When the upgrade contains non-compatible changes (e.g. switching between v22/v23)
-* When the `dashmate setup` command exited with errors or was interrupted
-* When the platform layer was wiped on the network
+## Updates After a Platform Chain Restart
 
-The reset and update process for major updates also runs one step at a time and stops at the first one that fails.
-Check that `dashmate --version` shows the new version before you reset platform data.
+A testnet or devnet may restart Platform from a new genesis, which starts its Platform chain again from block one. Mainnet Platform has not been restarted.
+Only then is the node's old Platform data useless, and it has to be removed with `dashmate reset --platform`.
+The reset asks for confirmation, then removes the Platform containers and the Drive and Tenderdash data, and keeps the configuration and the Core data.
+Each testnet restart so far has shipped its new genesis in a dashmate release, as a configuration migration that applies when the new version first runs, so install that release before the reset.
+A node that does not run Platform (`platform.enable` is `false`) has no Platform data and skips the reset: dashmate refuses a Platform-only reset there.
 
-What to do after a failure depends on whether the reset has run:
+As with any update, run the steps one at a time in the same shell, and stop at the first one that fails:
 
-* Before `dashmate reset --platform --hard`, no Platform data has been removed: `dashmate start` brings the node back up on the dashmate version now installed.
-* After it, `dashmate start` does not bring the old node back. The reset deletes Platform data, and nothing restores it. What to run next depends on what the reset did to the configuration:
-  * A configuration that has defaults (the `mainnet` and `testnet` presets, and the `local` group) is reset in place: its Platform part goes back to the defaults, and the configuration still exists. Fix the problem and finish the remaining steps in order: `dashmate update`, then `dashmate setup` to configure Platform again, then `dashmate start`.
-  * A configuration with any other name has no defaults to reset to, so the reset removes it, and `dashmate update` refuses to run without a configuration. Run `dashmate setup` first to create a configuration again, then `dashmate update` and `dashmate start`.
-
-The process:
+* With the Debian package, run `dashmate stop` only after the download printed `Downloaded ...`.
+* Check that `dashmate --version` shows the new version before you reset Platform data.
+* If a step fails before `dashmate reset --platform`, nothing has been removed: run `dashmate start` to bring the node back on the version it has, then fix the problem and start over.
+* If `dashmate reset --platform` or a later step fails, fix the problem, run that step again and finish the remaining steps in order. Running the reset again is safe. The node starts with an empty Platform chain, which is what the restarted network needs.
 
 ```bash
 # Debian package only: download the new package first (see above)
 $ dashmate stop
 # Install the new dashmate version (Debian package or NPM, see above)
 $ dashmate --version
-$ dashmate reset --platform --hard
-# If the reset removed the configuration (see above), run dashmate setup before dashmate update
+$ dashmate reset --platform
 $ dashmate update
-$ dashmate setup
 $ dashmate start
 ```
 
+On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet's operators publish with `dashmate config set platform.drive.tenderdash.genesis '<genesis JSON>'` before `dashmate start`.
+
+### Do not add `--hard`
+
+`dashmate reset --platform --hard` is not needed for a chain restart, and it removes things the node still needs:
+
+* It sets the whole Platform part of the configuration back to the defaults. On an evonode this clears the Tenderdash node key, whose node ID is registered on the network for this evonode, and dashmate does not create a new one for a masternode: the key stays empty until you set it again.
+* It also resets the gateway and SSL settings, and deletes the configuration's `platform` directory in the dashmate home directory (`~/.dashmate/<config name>/platform` by default), which holds the SSL certificate and its private key.
+* A configuration with no defaults of its own (any name other than `mainnet` or `testnet`, outside the `local` group) has nothing to reset to, so the hard reset removes the whole configuration.
+
+`dashmate setup` does not repair any of this: it refuses to run for a preset that is already configured, so it cannot be re-run on a configured node.
+The reset it suggests instead, `dashmate reset --config <preset> --hard`, also removes the Core data and the whole configuration, so it is not a way back for an evonode either.
+
 ## Local Network Updates
 
-Before applying an upgrade to a local network, the network should be stopped and reset with `dashmate reset --hard`.
+Before applying an upgrade to a local network, stop it with `dashmate group stop` and reset it with `dashmate group reset --hard`, which removes the local configurations. Then set it up again with `dashmate setup local`.
 
 ## Notes on Compatibility
 
