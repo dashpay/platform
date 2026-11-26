@@ -189,4 +189,43 @@ describe('startGroupNodesTaskFactory', () => {
     expect(dependencies.waitForNodesToHaveTheSameHeight).to.not.have.been.called();
     expect(dependencies.dockerCompose.execCommand).to.not.have.been.called();
   });
+
+  describe('building services from local sources', () => {
+    /**
+     * @param {Object} sinon
+     * @return {Object}
+     */
+    function createBuildingConfig(sinon) {
+      const config = createConfig(sinon, 'local_seed', 19998, 'local');
+
+      config.get.withArgs('platform.enable').returns(true);
+      config.get.withArgs('platform.drive.abci.docker.build.enabled').returns(true);
+
+      return config;
+    }
+
+    it('should build the images of a group configured to build them', async function it() {
+      const configs = [createBuildingConfig(this.sinon)];
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask(configs).run({ waitForReadiness: false });
+
+      expect(dependencies.buildServicesTask).to.have.been.calledOnceWith(configs[0]);
+    });
+
+    // Restart builds the images before it stops anything, so that a build
+    // failure cannot leave the group down. Building them again here would make
+    // every restart of a development group pay for the whole build twice.
+    it('should not build again for a caller that has already built', async function it() {
+      const configs = [createBuildingConfig(this.sinon)];
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask(configs).run({
+        waitForReadiness: false,
+        skipBuildServices: true,
+      });
+
+      expect(dependencies.buildServicesTask).to.not.have.been.called();
+    });
+  });
 });

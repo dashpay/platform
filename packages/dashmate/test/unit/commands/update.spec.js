@@ -1,3 +1,5 @@
+import { PassThrough } from 'node:stream';
+import Docker from 'dockerode';
 import UpdateCommand from '../../../src/commands/update.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
@@ -12,12 +14,29 @@ describe('Update command', () => {
   let mockServicesList;
   let mockGetServicesList;
   let mockDocker;
-  let mockDockerStream;
   let mockDockerResponse;
   let dockerCompose;
   let homeDir;
   let stderr;
   let exitCode;
+
+  /**
+   * Docker answers a pull with a stream of newline separated JSON messages
+   *
+   * @param {Object[]|string[]} messages
+   * @return {PassThrough}
+   */
+  function createPullStream(messages) {
+    const stream = new PassThrough();
+
+    messages.forEach((message) => {
+      stream.write(typeof message === 'string' ? message : `${JSON.stringify(message)}\r\n`);
+    });
+
+    stream.end();
+
+    return stream;
+  }
 
   /**
    * @param {Object} verdict
@@ -89,11 +108,12 @@ describe('Update command', () => {
     mockServicesList = [{ name: 'fake', image: 'fake', title: 'FAKE' }];
 
     mockGetServicesList = this.sinon.stub().callsFake(() => mockServicesList);
-    mockDockerStream = {
-      on: this.sinon.stub().callsFake((channel, cb) => (channel !== 'error'
-        ? cb(Buffer.from(`${JSON.stringify(mockDockerResponse)}\r\n`)) : null)),
+    mockDocker = {
+      // The real modem is used on purpose: it owns the pull stream parsing
+      modem: new Docker().modem,
+      pull: this.sinon.stub()
+        .callsFake((image, cb) => cb(false, createPullStream([mockDockerResponse]))),
     };
-    mockDocker = { pull: this.sinon.stub().callsFake((image, cb) => cb(false, mockDockerStream)) };
     dockerCompose = { isServiceRunning: this.sinon.stub().resolves(false) };
 
     stderr = '';
@@ -121,9 +141,11 @@ describe('Update command', () => {
       { name: 'fake_docker_pull_error', image: 'fake_err_image', title: 'FAKE_ERROR' }];
 
     mockDocker = {
+      modem: mockDocker.modem,
       pull: this.sinon.stub()
-        .callsFake((image, cb) => (image === mockServicesList[1].image ? cb(new Error(), null)
-          : cb(false, mockDockerStream))),
+        .callsFake((image, cb) => (image === mockServicesList[1].image
+          ? cb(new Error('pull access denied'), null)
+          : cb(false, createPullStream([mockDockerResponse])))),
     };
 
     await runUpdate({ updateNode: updateNodeFactory(mockGetServicesList, mockDocker) });
@@ -263,10 +285,12 @@ describe('Update command', () => {
       expect(stderr).to.not.contain('Your node is currently stopped');
     });
 
-    // Individual images failing is not a rejection: updateNode resolves those
-    // as error rows, and that has always exited 0.
-    it('should not fail the command when individual pulls fail', async function it() {
+    // Individual images failing is not a rejection - updateNode resolves those
+    // as error rows - but the exit code is the only thing that tells a caller
+    // apart an update that fetched everything from one that fetched none of it.
+    it('should exit non-zero without rejecting when individual pulls fail', async function it() {
       mockDocker = {
+        modem: mockDocker.modem,
         pull: this.sinon.stub().callsFake((image, cb) => cb(new Error('registry down'), null)),
       };
       this.sinon.stub(console, 'log');
@@ -274,7 +298,8 @@ describe('Update command', () => {
       await expect(runUpdate({ updateNode: updateNodeFactory(mockGetServicesList, mockDocker) }))
         .to.not.be.rejected();
 
-      expect(process.exitCode).to.equal(0);
+      expect(process.exitCode).to.equal(1);
+      expect(stderr).to.contain('registry down');
     });
 
     // exitOnError is false so the throw does not stop the list, and the
@@ -362,9 +387,10 @@ describe('Update command', () => {
     it('should not claim images were pulled when a pull failed', async function it() {
       mockServicesList = [{ name: 'a', image: 'a', title: 'A' }, { name: 'b', image: 'b', title: 'B' }];
       mockDocker = {
+        modem: mockDocker.modem,
         pull: this.sinon.stub().callsFake((image, cb) => (image === 'b'
           ? cb(new Error('registry down'), null)
-          : cb(false, mockDockerStream))),
+          : cb(false, createPullStream([mockDockerResponse])))),
       };
       this.sinon.stub(console, 'log');
 
@@ -505,6 +531,178 @@ describe('Update command', () => {
       expect(diagnostics.warnings).to.deep.equal(['PROVIDER_MISMATCH']);
       expect(diagnostics.pull).to.deep.equal({ ok: true, failed: 0, total: 1 });
       expect(diagnostics.status).to.not.equal('VALID');
+    });
+  });
+
+  describe('failed image pulls', () => {
+    const rateLimitMessage = 'toomanyrequests: You have reached your pull rate limit';
+
+    // Docker answers a pull request with 200 and reports registry and disk
+    // failures as a message inside the progress stream, so a stream that
+    // completes does not mean the image arrived.
+    it('should exit non-zero and print the reason when the registry rate limits the pull', async function it() {
+      mockDockerResponse = {
+        errorDetail: { message: rateLimitMessage },
+        error: rateLimitMessage,
+      };
+
+      this.sinon.stub(console, 'log');
+
+      await runUpdate();
+
+      expect(process.exitCode).to.equal(1);
+      expect(stderr).to.contain(rateLimitMessage);
+    });
+
+    // The previous parser split every chunk on CRLF and parsed each fragment,
+    // so an ordinary TCP boundary threw inside the stream handler.
+    it('should report the reason when Docker splits a message across chunks', async function it() {
+      const line = JSON.stringify({
+        errorDetail: { message: rateLimitMessage },
+        error: rateLimitMessage,
+      });
+
+      mockDocker.pull = this.sinon.stub().callsFake((image, cb) => cb(
+        false,
+        createPullStream([line.slice(0, 20), `${line.slice(20)}\n`]),
+      ));
+
+      const [updateInfo] = await updateNodeFactory(mockGetServicesList, mockDocker)(config);
+
+      expect(updateInfo.updated).to.equal('error');
+      expect(updateInfo.error).to.equal(rateLimitMessage);
+    });
+
+    // Docker separates messages with a line feed and can deliver several of
+    // them in a single chunk.
+    it('should report the reason when Docker separates messages with a line feed', async function it() {
+      const chunk = [
+        JSON.stringify({ status: 'Pulling from dashpay/drive' }),
+        JSON.stringify({ errorDetail: { message: rateLimitMessage }, error: rateLimitMessage }),
+        '',
+      ].join('\n');
+
+      mockDocker.pull = this.sinon.stub()
+        .callsFake((image, cb) => cb(false, createPullStream([chunk])));
+
+      const [updateInfo] = await updateNodeFactory(mockGetServicesList, mockDocker)(config);
+
+      expect(updateInfo.updated).to.equal('error');
+      expect(updateInfo.error).to.equal(rateLimitMessage);
+    });
+
+    // A pull can fail after the layers arrive - a full disk is the usual
+    // reason - and the last status line would otherwise report a success.
+    it('should exit non-zero when the pull fails after the image was downloaded', async function it() {
+      const diskFullMessage = 'write /var/lib/docker/tmp: no space left on device';
+
+      mockDocker.pull = this.sinon.stub().callsFake((image, cb) => cb(
+        false,
+        createPullStream([
+          { status: 'Status: Downloaded newer image for fake' },
+          { errorDetail: { message: diskFullMessage }, error: diskFullMessage },
+        ]),
+      ));
+
+      this.sinon.stub(console, 'log');
+
+      await runUpdate();
+
+      expect(process.exitCode).to.equal(1);
+      expect(stderr).to.contain(diskFullMessage);
+    });
+
+    it('should keep the JSON output parseable and carry the reason', async function it() {
+      mockDocker.pull = this.sinon.stub()
+        .callsFake((image, cb) => cb(new Error('no space left on device'), null));
+
+      const consoleLog = this.sinon.stub(console, 'log');
+
+      await runUpdate();
+
+      expect(consoleLog).to.have.been.calledOnce();
+
+      const output = JSON.parse(consoleLog.firstCall.firstArg);
+
+      expect(output).to.have.lengthOf(1);
+      expect(output[0].updated).to.equal('error');
+      expect(output[0].error).to.include('no space left on device');
+    });
+
+    it('should print the reason to stderr and keep the table intact in plain output', async function it() {
+      const diskFullMessage = 'write /var/lib/docker/tmp: no space left on device';
+
+      mockServicesList = [
+        { name: 'core', image: 'dashpay/dashd:23', title: 'Core' },
+        { name: 'drive_abci', image: 'dashpay/drive:4', title: 'Drive ABCI' },
+      ];
+
+      mockDocker.pull = this.sinon.stub().callsFake((image, cb) => (image === 'dashpay/drive:4'
+        ? cb(new Error(diskFullMessage), null)
+        : cb(false, createPullStream([mockDockerResponse]))));
+
+      const consoleLog = this.sinon.stub(console, 'log');
+
+      await runUpdate({ flags: { format: 'plain' } });
+
+      // Plain output renders the task list through console.log as well,
+      // so the table is one of several calls
+      const stdout = consoleLog.args.flat().join('\n');
+
+      expect(stdout).to.include('Drive ABCI');
+      expect(stdout).to.include('error');
+      // The table has no column for it, so the reason is only reported on stderr
+      expect(stdout).to.not.include(diskFullMessage);
+
+      expect(stderr).to.contain('Failed to update 1 of 2 images');
+      expect(stderr).to.contain(`Drive ABCI (dashpay/drive:4): ${diskFullMessage}`);
+      expect(process.exitCode).to.equal(1);
+    });
+
+    // The registry chooses this text. Printed as it arrives, an escape sequence
+    // in it can rewrite lines already on screen, hide what follows or address
+    // the terminal itself, and an unbounded message pushes the rest of the
+    // output out of the operator's scrollback.
+    it('should not let the registry write escape sequences to the terminal', async function it() {
+      const hostile = `\u001b[2J\u001b[1;1HImage is up to date\u0007${'A'.repeat(5000)}`;
+
+      mockDockerResponse = { errorDetail: { message: hostile }, error: hostile };
+
+      this.sinon.stub(console, 'log');
+
+      await runUpdate();
+
+      expect(stderr).to.not.contain('\u001b');
+      expect(stderr).to.not.contain('\u0007');
+      expect(stderr).to.contain('Image is up to date');
+      expect(stderr.length).to.be.below(2000);
+    });
+
+    it('should show images built from local sources as built locally', async function it() {
+      mockServicesList = [
+        { name: 'fake', image: 'fake', title: 'FAKE' },
+        {
+          name: 'drive_abci', image: 'drive:local', title: 'Drive ABCI', isBuiltLocally: true,
+        },
+      ];
+
+      const consoleLog = this.sinon.stub(console, 'log');
+
+      await runUpdate();
+
+      expect(mockDocker.pull).to.have.been.calledOnceWith('fake');
+
+      const output = JSON.parse(consoleLog.firstCall.firstArg);
+
+      expect(output).to.have.lengthOf(2);
+      expect(output[1]).to.deep.equal({
+        name: 'drive_abci',
+        title: 'Drive ABCI',
+        image: 'drive:local',
+        updated: 'built locally',
+      });
+
+      expect(process.exitCode).to.equal(0);
     });
   });
 
