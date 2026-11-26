@@ -1,11 +1,10 @@
 use dashcore::Transaction;
-use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::ReservationToken;
 
 use super::SignedCoreTransaction;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use crate::wallet::reservations::{broadcast_releasing_on_rejection, reservation_expired};
+use crate::wallet::reservations::reservation_expired;
 use crate::{CoreWallet, PlatformWalletError};
 
 /// Outcome of [`CoreWallet::dispatch_unexpired`] — the guarded
@@ -40,8 +39,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// echo/IS-lock/confirmation events the wait needs — held across the
     /// await, the guard starves the pipeline and every dispatch rides the
     /// full acceptance timeout to an ambiguous verdict while the whole
-    /// manager stalls behind tokio's write-preferring queue. (Same
-    /// lock-free shape as `broadcast_releasing_on_rejection`.)
+    /// manager stalls behind tokio's write-preferring queue.
     ///
     /// What spans the await instead is the **in-broadcast pin**
     /// ([`WalletGeneration::pin_in_broadcast`](super::WalletGeneration::pin_in_broadcast)),
@@ -275,11 +273,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// Returns the transaction ID on success.
     ///
-    /// This plain form does **not** reconcile the funding account's UTXO
-    /// reservation on failure. Prefer
-    /// [`broadcast_transaction_releasing_reservation`](Self::broadcast_transaction_releasing_reservation)
-    /// for the build-then-broadcast send path, where a `build_signed`
-    /// reserved the selected inputs and a failed broadcast must release them.
+    /// This plain form does **not** reconcile a funding reservation on
+    /// failure. A transaction built through
+    /// [`finalize_transaction`](Self::finalize_transaction) reserved its
+    /// inputs; send it with
+    /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction),
+    /// which releases them on a definitive rejection.
+    ///
+    /// Neither method checks that the wallet is still registered: a
+    /// transaction of a removed or re-created wallet is sent all the same.
+    /// The caller establishes that, as the FFI entry point does: on the
+    /// `CoreWallet` that finalized the transaction, hold
+    /// [`generation_payment_guard`](Self::generation_payment_guard) from an
+    /// [`is_current_generation`](Self::is_current_generation) check until the
+    /// broadcast returns.
     pub async fn broadcast_transaction(
         &self,
         transaction: &Transaction,
@@ -290,37 +297,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             .map_err(Into::into)
     }
 
-    /// Broadcast a signed transaction, reconciling the funding account's UTXO
-    /// reservation on failure.
-    ///
-    /// `build_signed` reserves the selected inputs in the funding account's
-    /// `ReservationSet` and leaves the reservation held on success (expecting
-    /// this broadcast). On a definitive rejection the reservation is released
-    /// so an immediate retry can reselect those inputs; on an ambiguous
-    /// failure it is kept. See
-    /// [`broadcast_releasing_on_rejection`](crate::wallet::reservations::broadcast_releasing_on_rejection)
-    /// for the full rationale.
-    ///
-    /// `account_type`/`account_index` identify the funding account handed to
-    /// `set_funding` when the transaction was built.
-    pub async fn broadcast_transaction_releasing_reservation(
-        &self,
-        account_type: StandardAccountType,
-        account_index: u32,
-        transaction: &Transaction,
-    ) -> Result<dashcore::Txid, PlatformWalletError> {
-        broadcast_releasing_on_rejection(
-            self.broadcaster.as_ref(),
-            &self.wallet_manager,
-            &self.wallet_id,
-            account_type,
-            account_index,
-            transaction,
-        )
-        .await
-        .map_err(Into::into)
-    }
-
     /// Broadcast a raw signed `transaction` for the deferred-payment
     /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry), reconciling the
     /// funding reservation on failure.
@@ -328,11 +304,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Same policy as
     /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction):
     /// a definitive [`BroadcastError::Rejected`] releases the reservation for an
-    /// immediate rebuild; an ambiguous `MaybeSent` keeps it. Unlike the
-    /// `StandardAccountType`-typed
-    /// [`broadcast_transaction_releasing_reservation`](Self::broadcast_transaction_releasing_reservation)
-    /// used by the immediate send path, this takes an [`AccountTypePreference`]
-    /// so it ALSO reconciles a CoinJoin-funded deferred payment — one whose
+    /// immediate rebuild; an ambiguous `MaybeSent` keeps it. It takes the
+    /// concrete funding accounts rather than a `StandardAccountType`, so it
+    /// ALSO reconciles a CoinJoin-funded deferred payment — one whose
     /// `build_signed`/`finalize` reserved the selected inputs but which has no
     /// `StandardAccountType`, and whose reservation would otherwise stay held
     /// until the TTL backstop.
@@ -396,17 +370,13 @@ mod tests {
     use super::GuardedDispatch;
     use dashcore::{Address as DashAddress, Network, Transaction};
     use key_wallet::account::account_type::StandardAccountType;
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use key_wallet::signer::Signer;
-    use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
-        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
-        RejectFirstBroadcaster, WalletSigner,
+        funded_wallet_manager, AlwaysOkBroadcaster, RejectFirstBroadcaster, WalletSigner,
     };
     use crate::wallet::core::{CoreWallet, SpendObservationHandler};
     use crate::wallet::platform_wallet::WalletId;
@@ -429,68 +399,6 @@ mod tests {
         let outputs = vec![(recipient, 1_000_000u64)];
 
         (core, signer, outputs)
-    }
-
-    /// Build and sign a payment the way the split send path does: `build_signed`
-    /// reserves the selected inputs in the funding account's `ReservationSet`,
-    /// leaving the reservation held for the subsequent broadcast. Mirrors the
-    /// FFI `core_wallet_tx_builder_*` sequence.
-    async fn build_signed_tx<B: TransactionBroadcaster, S: Signer>(
-        core: &CoreWallet<B>,
-        account_type: StandardAccountType,
-        account_index: u32,
-        outputs: &[(DashAddress, u64)],
-        signer: &S,
-    ) -> Result<Transaction, PlatformWalletError> {
-        let mut wm = core.wallet_manager.write().await;
-        let (wallet, info) = wm
-            .get_wallet_and_info_mut(&core.wallet_id())
-            .expect("wallet present in manager");
-
-        let current_height = info.core_wallet.synced_height();
-
-        let (managed_account, account) = match account_type {
-            StandardAccountType::BIP44Account => (
-                info.core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get_mut(&account_index)
-                    .expect("bip44 managed account"),
-                wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .expect("bip44 account"),
-            ),
-            StandardAccountType::BIP32Account => (
-                info.core_wallet
-                    .accounts
-                    .standard_bip32_accounts
-                    .get_mut(&account_index)
-                    .expect("bip32 managed account"),
-                wallet
-                    .accounts
-                    .standard_bip32_accounts
-                    .get(&account_index)
-                    .expect("bip32 account"),
-            ),
-        };
-
-        let mut builder = TransactionBuilder::new()
-            .set_current_height(current_height)
-            .set_selection_strategy(SelectionStrategy::LargestFirst)
-            .add_funding(managed_account, account);
-        for (addr, amount) in outputs {
-            builder = builder.add_output(addr, *amount);
-        }
-
-        let (tx, _fee) = builder
-            .build_signed(signer, |addr| {
-                managed_account.address_derivation_path(&addr)
-            })
-            .await
-            .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-        Ok(tx)
     }
 
     /// Atomically fund + reserve + sign a `SignedCoreTransaction` the way the
@@ -1495,92 +1403,5 @@ mod tests {
             panic!("a definitively rejected send must leave its inputs free, got {error:?}")
         });
         core.abandon_transaction(&rebuilt).await;
-    }
-
-    /// A pre-send broadcast rejection must release the UTXO reservation taken
-    /// while building the transaction, so an immediate retry can reselect those
-    /// inputs instead of failing with spurious insufficient funds until the TTL
-    /// backstop. Covers both funds-account arms of the release path.
-    #[tokio::test]
-    async fn broadcast_releases_reservation_on_rejection() {
-        for account_type in [
-            StandardAccountType::BIP44Account,
-            StandardAccountType::BIP32Account,
-        ] {
-            let broadcaster = Arc::new(RejectFirstBroadcaster::new());
-            let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
-
-            // First attempt: build + sign reserve the input, broadcast is rejected.
-            let tx = build_signed_tx(&core, account_type, 0, &outputs, &signer)
-                .await
-                .expect("first build should succeed");
-            let first = core
-                .broadcast_transaction_releasing_reservation(account_type, 0, &tx)
-                .await;
-            assert!(
-                matches!(first, Err(PlatformWalletError::TransactionBroadcast(_))),
-                "first broadcast should surface the rejection for {account_type:?}, got {first:?}"
-            );
-
-            // Immediate retry: the build only succeeds if the failed broadcast
-            // released the reservation. With the leak, coin selection sees no
-            // spendable UTXO and the build fails.
-            let retry_tx = build_signed_tx(&core, account_type, 0, &outputs, &signer).await;
-            assert!(
-                retry_tx.is_ok(),
-                "retry build after a released reservation should succeed for \
-                 {account_type:?}, got {retry_tx:?}"
-            );
-            let second = core
-                .broadcast_transaction_releasing_reservation(
-                    account_type,
-                    0,
-                    &retry_tx.expect("retry tx"),
-                )
-                .await;
-            assert!(
-                second.is_ok(),
-                "retry broadcast should succeed for {account_type:?}, got {second:?}"
-            );
-        }
-    }
-
-    /// An *ambiguous* broadcast failure — the network may already have accepted
-    /// the transaction — must NOT release the reservation: retrying would risk a
-    /// double-spend. The reservation is kept, so an immediate retry fails at the
-    /// build stage (no spendable UTXO) rather than reaching broadcast again.
-    #[tokio::test]
-    async fn broadcast_keeps_reservation_on_ambiguous_failure() {
-        for account_type in [
-            StandardAccountType::BIP44Account,
-            StandardAccountType::BIP32Account,
-        ] {
-            let broadcaster = Arc::new(AlwaysMaybeSentBroadcaster);
-            let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
-
-            let tx = build_signed_tx(&core, account_type, 0, &outputs, &signer)
-                .await
-                .expect("first build should succeed");
-            let first = core
-                .broadcast_transaction_releasing_reservation(account_type, 0, &tx)
-                .await;
-            assert!(
-                matches!(
-                    first,
-                    Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
-                ),
-                "first broadcast should surface the ambiguous failure for \
-                 {account_type:?}, got {first:?}"
-            );
-
-            // Reservation kept: the retry cannot reselect the reserved input and
-            // fails while building, never reaching the broadcaster again.
-            let second = build_signed_tx(&core, account_type, 0, &outputs, &signer).await;
-            assert!(
-                matches!(second, Err(PlatformWalletError::TransactionBuild(_))),
-                "retry build must fail with the reservation kept for \
-                 {account_type:?}, got {second:?}"
-            );
-        }
     }
 }
