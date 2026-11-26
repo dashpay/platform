@@ -688,11 +688,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     funding_type,
                     consume_invitation_voucher,
                 );
+                let requested_identity = match recipient {
+                    Some(AssetLockRecipient::Identity(identity)) => Some(identity),
+                    _ => None,
+                };
                 if !invitation_reclaim {
-                    let requested_identity = match recipient {
-                        Some(AssetLockRecipient::Identity(identity)) => Some(identity),
-                        _ => None,
-                    };
                     validate_existing_asset_lock_role(
                         out_point,
                         funding_type,
@@ -703,13 +703,42 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         recorded_identity,
                     )?;
                 }
+                // Checked again on the row the resume claims, under the same
+                // guard: the row read above may since have been removed by
+                // rejection cleanup and recreated at this outpoint by a build
+                // for another recipient.
+                let authorize = |current: &TrackedResumeMetadata| {
+                    if current.status.is_consumed() {
+                        return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+                    }
+                    if authorized_invitation_reclaim(
+                        current.funding_type,
+                        funding_type,
+                        consume_invitation_voucher,
+                    ) {
+                        return Ok(());
+                    }
+                    validate_existing_asset_lock_role(
+                        out_point,
+                        funding_type,
+                        destination_index,
+                        requested_identity,
+                        current.funding_type,
+                        current.identity_index,
+                        current.identity_recipient,
+                    )
+                };
                 on_out_point(out_point);
                 // 300s is a window for the record or a mined-height lookup to
                 // prove the lock, not a finality timeout: on expiry the caller
                 // falls back to an unbounded ChainLock wait, so a resumed
                 // broadcast lock never fails just because IS was slow.
                 match self
-                    .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
+                    .resume_authorized_asset_lock(
+                        &out_point,
+                        Some(Duration::from_secs(300)),
+                        &authorize,
+                    )
                     .await
                 {
                     Ok((proof, path)) => Ok(FundingResolution::Resolved(ResolvedFunding {

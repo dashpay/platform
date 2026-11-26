@@ -27,6 +27,7 @@ use super::super::input_cap_violation;
 use super::super::manager::AssetLockManager;
 use super::super::orchestration::UNCONFIRMED_BROADCAST_PROOF_TIMEOUT;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
+use super::tracking::{ResumeAuthorization, TrackedResumeMetadata};
 
 // ---------------------------------------------------------------------------
 // Blocking accessor (for synchronous / evo-tool contexts)
@@ -926,9 +927,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         timeout: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        self.resume_authorized_asset_lock(out_point, timeout, &|_| Ok(()))
+            .await
+    }
+
+    /// [`Self::resume_asset_lock`] for a lock `authorize` must approve, run
+    /// on the tracked row under the wallet read guard the resume claims its
+    /// dispatch window under ([`Self::claim_resume_dispatch`]).
+    ///
+    /// Authorization read before the resume, a separate guard, could approve
+    /// a row that rejection cleanup then removed and another build recreated
+    /// at the same outpoint, paying another recipient: deterministic signing
+    /// over the same inputs and key gives the same transaction. Under the
+    /// claim's guard the row approved is the one kept for the resume.
+    pub(crate) async fn resume_authorized_asset_lock(
+        &self,
+        out_point: &OutPoint,
+        timeout: Option<Duration>,
+        authorize: &ResumeAuthorization<'_>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         let transport_missed = AtomicBool::new(false);
         let result = self
-            .resume_asset_lock_with(out_point, timeout, &transport_missed)
+            .resume_asset_lock_with(out_point, timeout, &transport_missed, authorize)
             .await;
         if transport_missed.load(Ordering::Relaxed) {
             if let Some(deferred_from) = self.status_needing_a_send(out_point).await {
@@ -945,7 +965,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         timeout: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
-        self.resume_asset_lock_with(out_point, timeout, &AtomicBool::new(false))
+        self.resume_asset_lock_with(out_point, timeout, &AtomicBool::new(false), &|_| Ok(()))
             .await
     }
 
@@ -956,6 +976,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         timeout: Option<Duration>,
         transport_missed: &AtomicBool,
+        authorize: &ResumeAuthorization<'_>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
@@ -981,6 +1002,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index = lock.account_index,
                 "resume_asset_lock: lock looked up"
             );
+            authorize(&TrackedResumeMetadata::of(lock))?;
             // A drain's lock is settled under the drain persistence contract
             // whichever path resumes it (same-UUID resume, the generic
             // exact-outpoint resume behind "Finish now", a readiness-deferred

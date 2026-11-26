@@ -116,12 +116,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| TrackedResumeMetadata {
-                funding_type: lock.funding_type,
-                identity_index: lock.identity_index,
-                status: lock.status.clone(),
-                identity_recipient: lock.identity_recipient,
-            })
+            .map(TrackedResumeMetadata::of)
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.
@@ -229,8 +224,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // checked above is still the wallet's, and the serial gate keeps any
         // other assignment out; once dropped, the generation check below
         // still keeps a replacement wallet from taking the recipient. Nothing
-        // else sets a recipient on a tracked lock. Sync may have moved the
-        // lock meanwhile: it is published only where it still applies.
+        // else sets a recipient on a tracked lock but a build, which records
+        // it with the row. Sync may have moved the lock meanwhile, or the row
+        // may have been recreated for another recipient: it is published
+        // only where it still applies.
         let wallet_manager = Arc::clone(&self.wallet_manager);
         let wallet_id = self.wallet_id;
         let generation = Arc::clone(generation);
@@ -245,8 +242,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             if lock.status.is_consumed() {
                 return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
             }
-            lock.identity_recipient = Some(identity);
-            Ok(())
+            // The row may not be the one assigned: rejection cleanup can
+            // remove that one and a build for another identity recreate the
+            // same outpoint (same inputs and key, deterministic signing) with
+            // its own recipient, which the store keeps. Never overwrite it.
+            match lock.identity_recipient {
+                Some(recorded) if recorded != identity => {
+                    Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                        out_point,
+                        recorded,
+                        requested: identity,
+                    })
+                }
+                _ => {
+                    lock.identity_recipient = Some(identity);
+                    Ok(())
+                }
+            }
         })
         .await
         .map_err(|error| {
@@ -909,3 +921,19 @@ pub(crate) struct TrackedResumeMetadata {
     pub status: AssetLockStatus,
     pub identity_recipient: Option<Identifier>,
 }
+
+impl TrackedResumeMetadata {
+    pub(crate) fn of(lock: &TrackedAssetLock) -> Self {
+        Self {
+            funding_type: lock.funding_type,
+            identity_index: lock.identity_index,
+            status: lock.status.clone(),
+            identity_recipient: lock.identity_recipient,
+        }
+    }
+}
+
+/// Approves or refuses a resume of the tracked row it is shown
+/// ([`AssetLockManager::resume_authorized_asset_lock`]).
+pub(crate) type ResumeAuthorization<'a> =
+    dyn Fn(&TrackedResumeMetadata) -> Result<(), PlatformWalletError> + Send + Sync + 'a;
