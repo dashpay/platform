@@ -474,6 +474,40 @@ describe('DockerCompose service selection', () => {
       expect(await dockerCompose.isNodeRunning({}, { serviceNames: ['drive_abci'] })).to.be.true();
     });
 
+    // Stop, reindex and the full reset ask about the services the config
+    // enables. Passed to Compose by name, one with no container (a sidecar
+    // never started) made Compose before 2.15 fail, which read as nothing
+    // running while Core was up, and each caller would have to know that.
+    it('should find a running Core next to an enabled service with no container', async () => {
+      const nodeCompose = new DockerCompose(docker, null, null, () => ({
+        COMPOSE_PROJECT_NAME: 'dashmate_project_node',
+      }), () => [
+        { name: 'core', profiles: ['core'] },
+        { name: 'core_tor', profiles: ['core'] },
+        { name: 'drive_abci', profiles: ['platform'] },
+      ]);
+      sandbox.stub(nodeCompose, 'throwErrorIfNotInstalled').resolves();
+
+      sandbox.stub(compose, 'ps').callsFake(async ({ commandOptions }) => {
+        const namedServices = commandOptions.flat().filter((option) => ['core', 'core_tor', 'drive_abci'].includes(option));
+        if (namedServices.includes('core_tor')) {
+          // eslint-disable-next-line prefer-promise-reject-errors
+          return Promise.reject({ exitCode: 1, out: '', err: 'no such service: core_tor\n' });
+        }
+
+        return { data: { json: [{ Service: 'core', State: 'running' }] } };
+      });
+
+      expect(await nodeCompose.isNodeRunning({})).to.be.true();
+
+      // A profile filter picks services and enables no profile: the config's
+      // own make up the model, which without Core can be invalid.
+      expect(await nodeCompose.isNodeRunning({}, { profiles: ['platform'] })).to.be.false();
+      compose.ps.getCalls().forEach(({ args: [{ composeOptions }] }) => {
+        expect(composeOptions).to.deep.equal([]);
+      });
+    });
+
     it('should report nothing running for an empty selection', async () => {
       listContainers([{ Service: 'core', State: 'running' }]);
 

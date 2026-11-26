@@ -528,12 +528,11 @@ export default function resetNodeTaskFactory(
    * @return {Promise<void>}
    */
   async function assertServicesAreStopped(config, ctx, plan) {
-    // Named services are picked from the project's container list rather than
-    // passed to Compose, which before 2.15 fails for a service with no
-    // container, and that failure reads as nothing running.
+    // A Platform-only reset asks about every Platform service, whether the
+    // config enables it or not.
     const options = ctx.isPlatformOnlyReset
       ? { serviceNames: plan.serviceNames, profiles: plan.profiles }
-      : { serviceNames: getServiceList(config).map(({ name }) => name) };
+      : undefined;
 
     if (await dockerCompose.isNodeRunning(config, options)) {
       throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');

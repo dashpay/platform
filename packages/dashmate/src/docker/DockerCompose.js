@@ -140,14 +140,11 @@ export default class DockerCompose {
       ));
     }
 
-    const filterServiceNames = serviceList.map((service) => service.name);
-
-    const serviceContainers = await this.getContainersList(config, {
-      filterServiceNames,
-    });
-
-    return serviceContainers
-      .find((container) => container.State === 'running') !== undefined;
+    // The config's own profiles make up the model, so every service it
+    // enables is in the listing. The filter's profiles are not enabled: a
+    // selection without Core makes the project invalid when a selected
+    // service depends on Core.
+    return this.#isAnyServiceRunning(config, serviceList.map((service) => service.name));
   }
 
   /**
