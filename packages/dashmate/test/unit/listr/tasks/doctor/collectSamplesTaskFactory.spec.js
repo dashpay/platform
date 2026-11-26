@@ -1001,6 +1001,30 @@ describe('collectSamplesTaskFactory', () => {
       expect(onDisk.getCode()).to.equal(`${handWritten}-code`);
     });
 
+    // The config copy hides secret fields field by field and leaves other
+    // values as they are, since doctor reads them back. Nothing reads the
+    // free text an operator writes, and a secret can be repeated there.
+    it('should mask a config secret repeated in the description or the contact address', async () => {
+      const secret = 'repeatedSecret7Qx';
+
+      config.set('core.rpc.users.dapi.password', secret);
+      config.set('description', `node, rpc password ${secret}`);
+      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', `ops+${secret}@example.com`);
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain(secret);
+
+      const restoredConfig = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getDashmateConfig();
+
+      const masked = '*'.repeat(secret.length);
+
+      expect(restoredConfig.get('description')).to.equal(`node, rpc password ${masked}`);
+      expect(restoredConfig.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+        .to.equal(`ops+${masked}@example.com`);
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the

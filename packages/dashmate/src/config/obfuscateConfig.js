@@ -283,10 +283,15 @@ export function getConfigSecretValues(config) {
 
 /**
  * @param {Config} config
+ * @param {function(string): string} [scrubFreeText] - masks secrets known
+ *   from elsewhere in free text the operator writes, such as the node
+ *   description. No other value is passed to it: the copy has to keep the
+ *   values the config is made of, which a secret can be spelled like.
  * @return {Config}
  */
 export default function obfuscateConfig(
   config,
+  scrubFreeText = (text) => text,
 ) {
   const identity = getOperatorIdentity();
 
@@ -313,7 +318,15 @@ export default function obfuscateConfig(
     // config is made of, which it can be spelled like: an account named
     // `info` or `production` would otherwise change a log level or the
     // environment, or make the copy invalid.
-    const namesOperator = isLocalPath(value) || FREE_TEXT_FIELD_NAMES.includes(field);
+    const isFreeText = FREE_TEXT_FIELD_NAMES.includes(field);
+
+    // Before the operator's identity is masked, which could rewrite part of
+    // a secret
+    if (isFreeText) {
+      value = scrubFreeText(value);
+    }
+
+    const namesOperator = isLocalPath(value) || isFreeText;
 
     value = maskOperatorIdentity(
       value,

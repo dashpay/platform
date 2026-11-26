@@ -275,7 +275,7 @@ export default function collectSamplesTaskFactory(
           title: 'Configuration',
           task: async (ctx) => {
             ctx.samples.setDashmateVersion(DASHMATE_VERSION);
-            ctx.samples.setDashmateConfig(obfuscateConfig(config));
+            ctx.samples.setDashmateConfig(obfuscateConfig(config, scrub));
 
             // Tenderdash takes its ID from the node key, which the sampled
             // config has redacted. The ID itself is public: Tenderdash
