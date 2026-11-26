@@ -371,6 +371,29 @@ describe('DockerCompose service selection', () => {
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
     });
 
+    // Docker labels a volume with the key Compose created it for. Created for
+    // a key no Platform service mounts, it was made for something else that
+    // may still use it, even if that is not in the model the reset sees.
+    it('should accept only the label of a key a given service mounts', async () => {
+      dockerVolumeLabels.dashmate_project_node_archive = composeLabels('dashmate_project_node', 'archive_data');
+
+      describeServices(
+        {
+          dashmate_helper: [{ type: 'volume', source: 'archive_data', target: '/archive' }],
+          drive_abci: [{ type: 'volume', source: 'drive_alias', target: '/archive' }],
+        },
+        {
+          archive_data: { name: 'dashmate_project_node_archive' },
+          drive_alias: { name: 'dashmate_project_node_archive' },
+        },
+      );
+
+      expect(await getOwnedVolumeNames({
+        serviceNames: ['drive_abci'],
+        removedServiceNames: ['drive_abci', 'dashmate_helper'],
+      })).to.deep.equal([]);
+    });
+
     // Only a missing volume means there is nothing to remove.
     it('should fail when Docker cannot tell whose a volume is', async () => {
       docker.getVolume.callsFake(() => ({

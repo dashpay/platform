@@ -478,7 +478,9 @@ export default class DockerCompose {
    * @typedef {Object} VolumeCandidate
    * @property {string} name - the volume's Docker name
    * @property {string} project - the Compose project that creates it
-   * @property {string[]} keys - the Compose keys that name it
+   * @property {string[]} keys - the Compose keys the given services mount it
+   *  under: Docker labels a volume with the key Compose created it for, and
+   *  one created for another key was made for something else
    */
 
   /**
@@ -562,14 +564,19 @@ export default class DockerCompose {
       .flatMap(([, service]) => getMountedKeys(service))
       .map(getDockerName));
 
-    const names = new Set(serviceNames
-      .flatMap((serviceName) => getMountedKeys(services[serviceName]))
-      .map(getDockerName));
+    const mountedKeys = Array.from(new Set(serviceNames
+      .flatMap((serviceName) => getMountedKeys(services[serviceName]))));
+
+    const names = new Set(mountedKeys.map(getDockerName));
 
     return Array.from(names)
       .filter((name) => !namesMountedElsewhere.has(name))
       .filter((name) => !Array.from(keysByName.get(name)).some((key) => volumes[key]?.external))
-      .map((name) => ({ name, project: projectName, keys: Array.from(keysByName.get(name)) }));
+      .map((name) => ({
+        name,
+        project: projectName,
+        keys: mountedKeys.filter((key) => getDockerName(key) === name),
+      }));
   }
 
   /**
