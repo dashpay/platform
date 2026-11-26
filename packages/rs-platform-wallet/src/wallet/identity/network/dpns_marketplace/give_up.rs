@@ -725,7 +725,7 @@ impl IdentityWallet {
         .cloned()
         .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
             identity_id: *identity_id,
-            purpose: Purpose::AUTHENTICATION,
+            purposes: vec![Purpose::AUTHENTICATION],
             security_levels,
             key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: format!("a DPNS {} transition", document_type_names.join(" + ")),

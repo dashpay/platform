@@ -116,18 +116,18 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
-    /// No key of the identity can sign `transition`: none has `purpose`, one of
+    /// No key of the identity can sign `transition`: none has one of `purposes`, one of
     /// `security_levels` and one of `key_types` while also being enabled, unexpired and inside
     /// its contract bounds.
     /// It stays so until an identity update adds such a key. A key that qualifies but that the
     /// signer cannot use is the signer-unavailable error instead.
     #[error(
-        "identity {identity_id} has no usable {purpose} key of type {key_types:?} at security \
-         level {security_levels:?} to sign {transition}"
+        "identity {identity_id} has no usable key with purpose in {purposes:?} \
+         of type {key_types:?} at security level {security_levels:?} to sign {transition}"
     )]
     NoUsableSigningKey {
         identity_id: Identifier,
-        purpose: Purpose,
+        purposes: Vec<Purpose>,
         security_levels: Vec<SecurityLevel>,
         key_types: Vec<KeyType>,
         transition: String,

@@ -968,11 +968,12 @@ pub(super) mod tests {
                 &error,
                 PlatformWalletError::NoUsableSigningKey {
                     identity_id,
-                    purpose: Purpose::AUTHENTICATION,
+                    purposes,
                     security_levels,
                     key_types,
                     ..
                 } if *identity_id == identity
+                    && purposes == &[Purpose::AUTHENTICATION]
                     && security_levels == &[level]
                     && key_types == &WALLET_SIGNING_KEY_TYPES
             ),

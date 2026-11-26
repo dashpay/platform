@@ -161,7 +161,7 @@ impl IdentityWallet {
             .map(|key| key.id())
             .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                 identity_id: *identity_id,
-                purpose: Purpose::AUTHENTICATION,
+                purposes: vec![Purpose::AUTHENTICATION],
                 security_levels: MASTER_SIGNING_LEVELS.to_vec(),
                 key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: "an identity update".to_string(),

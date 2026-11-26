@@ -339,7 +339,7 @@ impl IdentityWallet {
         let signing_key = document_signing_key(&identity, signer, required_level, scope)?
             .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                 identity_id: *signing_identity_id,
-                purpose: Purpose::AUTHENTICATION,
+                purposes: vec![Purpose::AUTHENTICATION],
                 security_levels: SecurityLevel::accepted_for_requirement(required_level),
                 key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a {} document transition", document_type.name()),

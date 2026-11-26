@@ -138,7 +138,7 @@ fn select_erase_key(
         .cloned()
         .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
             identity_id: identity.id(),
-            purpose: Purpose::AUTHENTICATION,
+            purposes: vec![Purpose::AUTHENTICATION],
             security_levels: SecurityLevel::accepted_for_requirement(requirement),
             key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: format!("a {} document transition", document_type.name()),
@@ -524,9 +524,9 @@ mod tests {
         assert!(matches!(
             select_erase_key(&identity, &document_type, contract.id(), &signer),
             Err(PlatformWalletError::NoUsableSigningKey {
-                purpose: dpp::identity::Purpose::AUTHENTICATION,
+                purposes,
                 ..
-            })
+            }) if purposes == [Purpose::AUTHENTICATION]
         ));
     }
 

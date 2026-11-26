@@ -171,7 +171,7 @@ impl IdentityWallet {
             contract_signing_key(&identity, signer, &CONTRACT_CREATE_SIGNING_LEVELS)?
                 .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                     identity_id: *owner_identity_id,
-                    purpose: Purpose::AUTHENTICATION,
+                    purposes: vec![Purpose::AUTHENTICATION],
                     security_levels: CONTRACT_CREATE_SIGNING_LEVELS.to_vec(),
                     key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a contract-create state transition".to_string(),
@@ -398,7 +398,7 @@ impl IdentityWallet {
             contract_signing_key(&identity, signer, &CONTRACT_UPDATE_SIGNING_LEVELS)?
                 .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                     identity_id: *owner_identity_id,
-                    purpose: Purpose::AUTHENTICATION,
+                    purposes: vec![Purpose::AUTHENTICATION],
                     security_levels: CONTRACT_UPDATE_SIGNING_LEVELS.to_vec(),
                     key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a contract-update state transition".to_string(),

@@ -137,7 +137,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             token_signing_key(&identity, token_contract_id, token_position, signer, action)?
                 .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                     identity_id: *identity_id,
-                    purpose: Purpose::AUTHENTICATION,
+                    purposes: token_signing_purposes(action).to_vec(),
                     security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
                     key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: format!("a token transition of contract {token_contract_id}"),
@@ -419,6 +419,41 @@ mod signing_tests {
             .await
             .unwrap_err();
         assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+    }
+
+    #[tokio::test]
+    async fn should_report_every_accepted_purpose_when_no_token_key_is_usable() {
+        let identity = identity_with_keys(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        let wallet = wallet_with_identity(identity).await;
+        for (action, accepts_transfer) in [
+            (TokenTransitionActionType::Transfer, true),
+            (TokenTransitionActionType::Claim, true),
+            (TokenTransitionActionType::Burn, false),
+        ] {
+            let error = wallet
+                .identity()
+                .token_resolve_signing_key(
+                    &identity_id,
+                    Identifier::default(),
+                    0,
+                    &KeyFilter(|_| true),
+                    action,
+                )
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey { .. }
+            ));
+            let message = error.to_string();
+            assert!(message.contains("AUTHENTICATION"), "{message}");
+            assert_eq!(message.contains("TRANSFER"), accepts_transfer, "{message}");
+        }
     }
 
     #[tokio::test]

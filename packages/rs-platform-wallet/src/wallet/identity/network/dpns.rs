@@ -243,7 +243,7 @@ impl IdentityWallet {
         )?
         .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
             identity_id: *identity_id,
-            purpose: Purpose::AUTHENTICATION,
+            purposes: vec![Purpose::AUTHENTICATION],
             security_levels: SecurityLevel::accepted_for_requirement(requirement),
             key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: "a DPNS name registration".to_string(),

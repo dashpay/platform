@@ -1892,7 +1892,7 @@ mod tests {
         let identity_id = Identifier::from([7; 32]);
         let mut result = PlatformWalletFFIResult::from(PlatformWalletError::NoUsableSigningKey {
             identity_id,
-            purpose: dpp::identity::Purpose::AUTHENTICATION,
+            purposes: vec![dpp::identity::Purpose::AUTHENTICATION],
             security_levels: vec![dpp::identity::SecurityLevel::CRITICAL],
             key_types: vec![dpp::identity::KeyType::ECDSA_SECP256K1],
             transition: "an identity update".to_string(),

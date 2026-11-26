@@ -1229,7 +1229,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         .cloned()
         .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
             identity_id: *sender_identity_id,
-            purpose: Purpose::AUTHENTICATION,
+            purposes: vec![Purpose::AUTHENTICATION],
             security_levels: SecurityLevel::accepted_for_requirement(
                 prepared.signing_security_level_requirement(),
             ),
