@@ -312,6 +312,20 @@ describe('obfuscateConfig', () => {
     expect(JSON.stringify(obfuscated)).to.not.contain(homePath);
   });
 
+  it('should keep the config valid when HOME is the root of the file system', function it() {
+    this.sinon.stub(os, 'homedir').returns('/');
+
+    const config = getBaseConfigFactory()();
+
+    config.set(
+      'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+      'https://acme.example.com/directory',
+    );
+
+    expect(obfuscateConfig(config).get('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl'))
+      .to.equal('https://acme.example.com/directory');
+  });
+
   // Free text is where an operator writes their own name, and nothing reads
   // it as a value
   it('should mask the account name in the description and contact addresses', function it() {

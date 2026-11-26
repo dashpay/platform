@@ -103,8 +103,14 @@ export default function maskOperatorIdentity(
 
   let masked = value;
 
-  // Longest first, so a home directory inside another is masked whole
-  const homes = [...new Set([...(homePaths ?? []), homePath].filter(Boolean))]
+  // Longest first, so a home directory inside another is masked whole. A
+  // trailing separator is not part of the directory, and the root of the file
+  // system - the home of some service accounts - names nobody: masking it
+  // would rewrite every path and URL in the text.
+  const homes = [...new Set([...(homePaths ?? []), homePath]
+    .filter(Boolean)
+    .map((home) => home.replace(/[\\/]+$/, ''))
+    .filter((home) => home !== '' && !/^[A-Za-z]:$/.test(home)))]
     .sort((a, b) => b.length - a.length);
 
   for (const home of homes) {

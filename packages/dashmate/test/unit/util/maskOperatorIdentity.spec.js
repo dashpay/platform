@@ -98,4 +98,18 @@ describe('maskOperatorIdentity', () => {
       { username: 'bob', homePath: '/home/alice', homePaths: ['/home/alice/nested', '/srv/dash-data', '/home/alice'] },
     )).to.equal('a ~/x b ~/y c ~/z');
   });
+
+  // A service account can have the root of the file system as its home, and
+  // masking that would rewrite every path and URL in the text
+  it('should not treat the root of the file system as a home directory', () => {
+    expect(maskOperatorIdentity(
+      'https://example.com/a /var/log/b',
+      { username: 'bob', homePath: '/', homePaths: ['/', 'C:\\'] },
+    )).to.equal('https://example.com/a /var/log/b');
+  });
+
+  it('should mask a home directory given with a trailing separator', () => {
+    expect(maskOperatorIdentity('/home/alice/x', { username: 'bob', homePaths: ['/home/alice/'] }))
+      .to.equal('~/x');
+  });
 });
