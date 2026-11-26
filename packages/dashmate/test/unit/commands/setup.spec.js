@@ -9,6 +9,7 @@ import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdas
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
 import MuteOneLineError from '../../../src/oclif/errors/MuteOneLineError.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
+import { issueCertificate } from '../../../src/test/certificateFixtures.js';
 
 describe('Setup command', () => {
   let homeDir;
@@ -330,6 +331,29 @@ describe('Setup command', () => {
       });
 
       expect(error.message).to.include('certificate chain file path is not valid');
+    });
+
+    // The certificate is installed after Core has synced, hours later: what
+    // is installed then is what was checked now.
+    it('should hand the file certificate it checked to the task, not its paths alone', async function it() {
+      this.timeout(30000);
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      useConfigs([fullnode]);
+      const { pem, keyPem } = issueCertificate({ ip: '1.2.3.4' });
+      const chainFile = writeSecret('chain.pem', pem);
+      const privateKeyFile = writeSecret('key.pem', keyPem);
+
+      const error = await setupPlatform({
+        'ssl-provider': 'file',
+        'ssl-chain-file': chainFile,
+        'ssl-private-key-file': privateKeyFile,
+      });
+
+      expect(error).to.be.null();
+      expect(platformContext.validatedCertificatePair).to.deep.equal({
+        certificateFile: pem,
+        privateKeyFile: keyPem,
+      });
     });
 
     it('should hand a complete set of answers to the task without prompting', async () => {

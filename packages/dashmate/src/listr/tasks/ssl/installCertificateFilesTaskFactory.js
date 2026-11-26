@@ -1,9 +1,10 @@
-import fs from 'fs';
 import { Listr } from 'listr2';
 
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import validateFileExists from '../../prompts/validators/validateFileExists.js';
-import validateCertificateFilePaths from '../../prompts/validators/validateCertificateFilePaths.js';
+import validateCertificateFilePaths, {
+  readCertificateFilePair,
+} from '../../prompts/validators/validateCertificateFilePaths.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask
@@ -18,6 +19,10 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
    * certificate check, which offers an operator with their own certificate the
    * chance to replace it before it suggests changing authority.
    *
+   * What is installed is what was checked: the pair a caller read and checked
+   * in advance (ctx.validatedCertificatePair), or else the files read once
+   * each here and checked before anything is written.
+   *
    * @typedef {installCertificateFilesTask}
    * @param {Config} config
    * @param {Object} [options]
@@ -31,7 +36,7 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
         task: async (ctx, task) => {
           let form = ctx.fileCertificateProviderForm;
 
-          if (!ctx.fileCertificateProviderForm) {
+          if (!ctx.validatedCertificatePair && !ctx.fileCertificateProviderForm) {
             form = await promptOrThrow(task, {
               type: 'form',
               header: `  To configure SSL certificates, you need to provide a certificate chain file
@@ -55,8 +60,11 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
             }, { interactive });
           }
 
-          ctx.certificateFile = fs.readFileSync(form.chainFilePath, 'utf8');
-          ctx.privateKeyFile = fs.readFileSync(form.privateFilePath, 'utf8');
+          const { certificateFile, privateKeyFile } = ctx.validatedCertificatePair
+            ?? readCertificateFilePair(form);
+
+          ctx.certificateFile = certificateFile;
+          ctx.privateKeyFile = privateKeyFile;
 
           return saveCertificateTask(config);
         },

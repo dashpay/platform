@@ -19,7 +19,7 @@ import isInteractiveSession from '../util/isInteractiveSession.js';
 import promptOrThrow from '../util/promptOrThrow.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import validateIPv4 from '../listr/prompts/validators/validateIPv4.js';
-import validateCertificateFilePaths from '../listr/prompts/validators/validateCertificateFilePaths.js';
+import { readCertificateFilePair } from '../listr/prompts/validators/validateCertificateFilePaths.js';
 import createPortValidators, { findPortCollision } from '../listr/prompts/validators/createPortValidators.js';
 import { getCertificateProviders } from '../listr/tasks/setup/regular/configureSSLCertificateTaskFactory.js';
 
@@ -651,9 +651,13 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         throw new Error('--ssl-provider file needs both --ssl-chain-file and --ssl-private-key-file');
       }
 
-      const validity = validateCertificateFilePaths({ chainFilePath, privateFilePath });
-      if (validity !== true) {
-        throw new Error(`--ssl-chain-file, --ssl-private-key-file: ${validity}`);
+      // Installed after Core has synced, which can take hours: what is
+      // installed then is what is checked now, not the files as they are by
+      // that time.
+      try {
+        answers.validatedCertificatePair = readCertificateFilePair({ chainFilePath, privateFilePath });
+      } catch (e) {
+        throw new Error(`--ssl-chain-file, --ssl-private-key-file: ${e.message}`);
       }
 
       const keyWarning = getReadableByOthersWarning(privateFilePath, '--ssl-private-key-file');
