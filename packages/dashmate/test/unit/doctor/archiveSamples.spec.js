@@ -500,6 +500,29 @@ describe('archiveSamples', () => {
       expect(fs.readFileSync(takenPath, 'utf8')).to.equal('not ours');
     });
 
+    // Once the archive file is open, only a finished or failed pack closes
+    // it. A failure before packing starts, such as listing the staged
+    // samples, must not leave the file open or behind.
+    it('should not open the archive file when the staged samples cannot be listed', async function it() {
+      const { readdirSync } = fs;
+      this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => {
+        if (path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+
+        return readdirSync(dirPath, ...args);
+      });
+      const openSync = this.sinon.spy(fs, 'openSync');
+
+      await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
+
+      const partialOpens = openSync.getCalls().filter((call) => String(call.args[0]).endsWith('.partial'));
+
+      expect(partialOpens).to.be.empty();
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+    });
+
     describe('when packing fails', () => {
       beforeEach(function beforeEach() {
         // Root reads a file whatever its mode, and Windows cannot revoke read

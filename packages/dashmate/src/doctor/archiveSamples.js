@@ -94,6 +94,11 @@ export default async function archiveSamples(samples, folderPath, config) {
       }
     }
 
+    // The staging directory's own entry is left out: it would carry the
+    // private mode onto whatever directory the archive is extracted into.
+    // Listed before the archive file is opened, which only packing closes.
+    const stagedFiles = fs.readdirSync(archiveDir);
+
     // Packed under a name only this run uses and renamed once complete, so a
     // failure never leaves a truncated archive under the report's name and
     // never touches a file this run did not create.
@@ -106,9 +111,7 @@ export default async function archiveSamples(samples, folderPath, config) {
     const output = fs.createWriteStream(null, { fd: fs.openSync(partialFilePath, 'wx', 0o600) });
 
     try {
-      // The staging directory's own entry is left out: it would carry the
-      // private mode onto whatever directory the archive is extracted into.
-      // pipeline closes the file when packing fails, so it can be removed.
+      // pipeline closes the file when packing fails, so it can be removed
       await pipeline(
         create(
           {
@@ -118,7 +121,7 @@ export default async function archiveSamples(samples, folderPath, config) {
             // that ran the report, which the samples themselves have masked
             portable: true,
           },
-          fs.readdirSync(archiveDir),
+          stagedFiles,
         ),
         output,
       );
