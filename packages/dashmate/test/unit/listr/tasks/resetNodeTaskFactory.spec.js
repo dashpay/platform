@@ -245,4 +245,83 @@ describe('resetNodeTaskFactory', () => {
       expect(fs.existsSync(homeDir.joinPath('local', 'platform', 'drive', 'tenderdash', 'config.toml'))).to.be.true();
     });
   });
+
+  describe('a path it cannot remove', () => {
+    let lockedDirectories;
+
+    /**
+     * Make a directory read-only, so the entries in it cannot be removed, the
+     * way a directory Docker creates as root is for the operator
+     *
+     * @param {...string} segments
+     * @return {string}
+     */
+    function lockDirectory(...segments) {
+      const directoryPath = homeDir.joinPath(...segments);
+      fs.chmodSync(directoryPath, 0o555);
+      lockedDirectories.push(directoryPath);
+
+      return directoryPath;
+    }
+
+    beforeEach(function beforeEach() {
+      // Permissions do not bind root.
+      if (process.getuid?.() === 0) {
+        this.skip();
+      }
+
+      lockedDirectories = [];
+
+      writeFile('testnet', 'core', 'dash.conf');
+      writeFile('testnet', 'platform', 'drive', 'tenderdash', 'config.toml');
+      writeFile('testnet', 'platform', 'gateway', 'ssl', 'bundle.crt');
+      writeFile('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      writeFile('testnet', 'platform', 'gateway', 'rate_limiter', 'rate_limiter.yaml');
+    });
+
+    afterEach(() => {
+      lockedDirectories
+        ?.filter((directoryPath) => fs.existsSync(directoryPath))
+        .forEach((directoryPath) => fs.chmodSync(directoryPath, 0o755));
+    });
+
+    // A reset that leaves Platform files behind and reports success leaves the
+    // next start or setup to run on them unnoticed. It must fail, and say
+    // exactly what is left and how to finish.
+    it('should fail and name each path it could not remove', async () => {
+      const sslPath = lockDirectory('testnet', 'platform', 'gateway', 'ssl');
+      const rateLimiterPath = lockDirectory('testnet', 'platform', 'gateway', 'rate_limiter');
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(sslPath);
+      expect(error.message).to.include(rateLimiterPath);
+      expect(error.message).to.include('run the reset again');
+
+      // Everything removable is removed, so only the named paths are left.
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform', 'drive'))).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'core', 'dash.conf'))).to.be.true();
+    });
+
+    // Removing an empty directory needs only its parent to be writable, so a
+    // read-only one that Docker created for a missing mount source is removed.
+    it('should remove an empty directory it cannot write', async () => {
+      fs.mkdirSync(homeDir.joinPath('testnet', 'platform', 'gateway', 'envoy.yaml'));
+      lockDirectory('testnet', 'platform', 'gateway', 'envoy.yaml');
+
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(fs.existsSync(homeDir.joinPath('testnet', 'platform'))).to.be.false();
+    });
+
+    it('should fail when it cannot remove a config it removes', async () => {
+      const sslPath = lockDirectory('testnet', 'platform', 'gateway', 'ssl');
+
+      await expect(reset({ isHardReset: true, removeConfig: true }))
+        .to.be.rejectedWith(sslPath);
+    });
+  });
 });

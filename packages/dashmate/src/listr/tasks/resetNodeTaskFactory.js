@@ -5,6 +5,9 @@ import wait from '../../util/wait.js';
 import resolveConfigDirectory from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
+// More paths than this are counted rather than listed.
+const MAX_REPORTED_PATHS = 10;
+
 /**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
@@ -34,32 +37,134 @@ export default function resetNodeTaskFactory(
   }
 
   /**
-   * Remove path but ignore permission issues to avoid failing reset on root-owned directories.
+   * @param {Error} e
+   * @return {boolean}
+   */
+  function isPermissionError(e) {
+    return e?.code === 'EACCES' || e?.code === 'EPERM';
+  }
+
+  /**
+   * Remove a path and everything under it, as far as permissions allow
+   *
+   * Removal goes on past what it may not remove, so one run removes all it can
+   * and returns every path left behind. The entries of a directory this user
+   * cannot write cannot be removed, so such a directory is returned once rather
+   * than entry by entry, unless it is empty: removing an empty directory needs
+   * only its parent to be writable. Symbolic links are removed, never followed.
    *
    * @param {string} targetPath
-   * @param {Object} [task]
+   * @return {string[]} paths left in place for lack of permission
    */
-  function removePathSafely(targetPath, task) {
-    try {
-      fs.rmSync(targetPath, {
-        recursive: true,
-        force: true,
-      });
-    } catch (e) {
-      if (e?.code === 'EACCES' || e?.code === 'EPERM') {
-        const message = `Skipping removal of '${targetPath}' due to insufficient permissions`;
+  function removePathAsFarAsPermitted(targetPath) {
+    const deniedPaths = [];
 
-        if (task) {
-          // eslint-disable-next-line no-param-reassign
-          task.output = message;
-        } else if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.warn(message);
+    /**
+     * @param {string} currentPath
+     * @return {boolean} whether the path is gone
+     */
+    function remove(currentPath) {
+      let stats;
+      try {
+        stats = fs.lstatSync(currentPath);
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          return true;
         }
-      } else if (e?.code !== 'ENOENT') {
+
         throw e;
       }
+
+      const isDirectory = stats.isDirectory();
+      let canRemoveEntries = true;
+
+      if (isDirectory) {
+        try {
+          // eslint-disable-next-line no-bitwise
+          fs.accessSync(currentPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
+        } catch (e) {
+          if (!isPermissionError(e)) {
+            throw e;
+          }
+
+          canRemoveEntries = false;
+        }
+
+        if (canRemoveEntries) {
+          const isEmptied = fs.readdirSync(currentPath)
+            .map((entry) => remove(path.join(currentPath, entry)))
+            .every((isRemoved) => isRemoved);
+
+          if (!isEmptied) {
+            return false;
+          }
+        }
+      }
+
+      try {
+        if (isDirectory) {
+          fs.rmdirSync(currentPath);
+        } else {
+          fs.unlinkSync(currentPath);
+        }
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          return true;
+        }
+
+        // A directory whose entries it could not remove still has them.
+        const isLockedDirectory = !canRemoveEntries
+          && (e.code === 'ENOTEMPTY' || e.code === 'EEXIST');
+
+        if (isPermissionError(e) || isLockedDirectory) {
+          deniedPaths.push(currentPath);
+
+          return false;
+        }
+
+        throw e;
+      }
+
+      return true;
     }
+
+    remove(targetPath);
+
+    return deniedPaths;
+  }
+
+  /**
+   * Remove a path and everything under it, or fail naming what is left
+   *
+   * The config is saved only when the command succeeds, so after this error
+   * config.json is as it was and the reset can be run again.
+   *
+   * @param {string} targetPath
+   */
+  function removePath(targetPath) {
+    const deniedPaths = removePathAsFarAsPermitted(targetPath);
+
+    if (deniedPaths.length === 0) {
+      return;
+    }
+
+    const shownPaths = deniedPaths.slice(0, MAX_REPORTED_PATHS)
+      .map((deniedPath) => `  '${deniedPath}'`);
+
+    if (deniedPaths.length > MAX_REPORTED_PATHS) {
+      shownPaths.push(`  and ${deniedPaths.length - MAX_REPORTED_PATHS} more`);
+    }
+
+    // Starting the node first would let Docker create the removed mount
+    // sources again, as root.
+    throw new Error([
+      `Could not remove ${deniedPaths.length} path(s) under '${targetPath}' for lack of permission:`,
+      ...shownPaths,
+      'They are probably owned by root, created by a container. Remove them with sufficient',
+      'rights, or fix their ownership or permissions, for example:',
+      `  sudo rm -rf '${targetPath}'`,
+      'then run the reset again. Do not start the node before the reset has completed.',
+    ].join('\n'));
   }
 
   /**
@@ -191,18 +296,18 @@ export default function resetNodeTaskFactory(
       {
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
-        task: (_, task) => {
+        task: () => {
           const serviceConfigsPath = resolveConfigDirectory(homeDir, config.getName());
 
           configFile.removeConfig(config.getName());
 
-          removePathSafely(serviceConfigsPath, task);
+          removePath(serviceConfigsPath);
         },
       },
       {
         title: `Reset config ${config.getName()}`,
         enabled: (ctx) => !ctx.removeConfig && ctx.isHardReset,
-        task: (ctx, task) => {
+        task: (ctx) => {
           const groupName = config.get('group');
           const defaultConfigName = groupName || config.getName();
 
@@ -235,13 +340,13 @@ export default function resetNodeTaskFactory(
               serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
             }
 
-            removePathSafely(serviceConfigsPath, task);
+            removePath(serviceConfigsPath);
           } else {
             // Delete config if no base config
             configFile.removeConfig(config.getName());
 
             // Remove service configs
-            removePathSafely(configDirectory, task);
+            removePath(configDirectory);
           }
         },
       },
