@@ -53,12 +53,13 @@ The command collects diagnostic information and creates an archive, with the nod
   Masked: secrets in the current node configuration (private keys, passwords,
   API keys, build arguments, command-line option values, credentials in URLs),
   the values of container environment variables, your home directory, and your
-  user name in logs, paths, the node description and contact addresses. The
-  commands containers run and what their health checks print are left out.
-  Copies of those config secrets in logs, RPC responses, messages, paths and
-  the node description are masked when they are 8 characters or longer. The
-  values doctor decides on, such as certificate status codes, dates and
-  fingerprints, are kept as they are.
+  user name in logs and paths. The commands containers run, what their health
+  checks print, and the node description and the Let's Encrypt contact address
+  in the config copy are left out; a log can still quote the contact address.
+  Copies of those config secrets in logs, RPC responses, messages and paths are
+  masked when they are 8 characters or longer. The values doctor decides on,
+  such as certificate status codes, dates and fingerprints, are kept as they
+  are.
 
   The archive can still contain other sensitive text, such as earlier passwords,
   short values, or a secret spelled like one of those kept values, so review it
