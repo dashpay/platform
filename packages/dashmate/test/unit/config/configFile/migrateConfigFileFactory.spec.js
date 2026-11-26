@@ -744,7 +744,7 @@ describe('migrateConfigFileFactory', () => {
   // or build of dashpay/dashd, rather than the `23` tag earlier releases stored,
   // would otherwise stay on Core 23 after the upgrade. The 5.1 prereleases before
   // this one stamped configs without moving those images, so their formats move too.
-  ['5.0.3', '5.1.0-dev.1', '5.1.0-dev.3', '5.1.0-dev.4'].forEach((fromVersion) => {
+  ['5.0.3', '5.1.0-dev.1', '5.1.0-dev.3', '5.1.0-dev.4', '5.1.0-rc.1'].forEach((fromVersion) => {
     it(`should move a node on any Core 23 image of dashpay/dashd to Core 24 from config format ${fromVersion}`, function it() {
       const warn = this.sinon.stub(console, 'warn');
 
@@ -786,6 +786,22 @@ describe('migrateConfigFileFactory', () => {
       for (const [name, options] of Object.entries(migrated.configs)) {
         expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
       }
+    });
+  });
+
+  // 5.1.0-rc.1 was released without this migration and stamps configs with its own
+  // version, so the move has to run for that format whichever release ships it.
+  ['5.1.0-rc.2', '5.1.0'].forEach((release) => {
+    it(`should move a Core 23 pin stamped by 5.1.0-rc.1 when ${release} ships the move`, function it() {
+      this.sinon.stub(console, 'warn');
+
+      const configFileData = getConfigFileDataWrittenBy('5.1.0-rc.1', null);
+      configFileData.configs.mainnet.core.docker.image = 'dashpay/dashd:23.0.2';
+
+      const migrated = migrateConfigFile(configFileData, '5.1.0-rc.1', release);
+
+      expect(migrated.configs.mainnet.core.docker.image).to.equal('dashpay/dashd:24');
+      expect(migrated.configFormatVersion).to.equal(release);
     });
   });
 
@@ -850,7 +866,7 @@ describe('migrateConfigFileFactory', () => {
     // The same reason as for the `23` tag: Core 24 discards the sporks Core 23
     // stored, and dashmate signs a local network's sporks only while setting it up.
     const warn = this.sinon.stub(console, 'warn');
-    const fromVersion = '5.1.0-dev.4';
+    const fromVersion = '5.1.0-rc.1';
 
     const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
     for (const name of ['local_seed', 'local_1']) {

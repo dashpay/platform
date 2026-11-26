@@ -1945,9 +1945,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      // Runs for formats before 5.1.0-dev.5, including configs every earlier 5.1
-      // prerelease stamped.
-      '5.1.0-dev.5': (configFile) => {
+      // Runs for formats before 5.1.0-rc.2, including configs every earlier 5.1
+      // prerelease stamped, up to 5.1.0-rc.1.
+      '5.1.0-rc.2': (configFile) => {
         // Platform 5.1 needs Dash Core 24. Move nodes on any Core 23 image of
         // dashpay/dashd to the Core image this release ships: the `23` tag earlier
         // releases stored, and any Core 23 release or build an operator pinned
