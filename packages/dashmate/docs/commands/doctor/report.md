@@ -17,15 +17,17 @@ dashmate doctor report [--config=<name>] [--verbose]
 
 ## Description
 
-This command collects comprehensive diagnostic information about your Dash node and creates an obfuscated archive that can be used for troubleshooting and debugging.
+This command collects comprehensive diagnostic information about your Dash node and creates an archive, with the node's secrets masked, that can be used for troubleshooting and debugging.
 
 The archive contains:
 - System information (OS, memory, CPU, disk usage)
-- Node configuration (with sensitive data obfuscated)
+- Node configuration (with its secrets masked)
 - Service logs, metrics, and status
 - Docker container information (environment variable names only, without their values)
 
-All sensitive data like private keys and passwords is automatically obfuscated to protect your security and privacy. Secret values from the node configuration, such as RPC passwords and keys, are also masked wherever else they appear in the archive, including service logs. Values shorter than 8 characters are not searched for, because they would match unrelated text.
+Secrets in the current node configuration, such as private keys, passwords, API keys, build arguments and credentials in URLs, are masked in the archive's copy of the configuration. The values of container environment variables are left out, and your user name and home directory are masked. Copies of the configuration's secrets elsewhere in the archive, including service logs, are masked when they are 8 characters or longer; shorter values are not searched for, because they would match unrelated text.
+
+Logs can still contain other sensitive text, such as earlier passwords or short values, so review the archive before you share it. The rest is diagnostic data about your node, such as its addresses, host details, certificate settings and logs, and is shared with whoever you send the archive to.
 
 Before creating the archive, the command asks for your confirmation. The generated archive is compressed with TAR/GZIP and saved to the current working directory.
 

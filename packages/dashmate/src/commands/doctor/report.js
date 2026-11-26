@@ -9,7 +9,7 @@ import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 export default class ReportCommand extends ConfigBaseCommand {
   static description = `Dashmate node diagnostic report
 
-The command collects diagnostic information and creates an obfuscated archive for further investigation`;
+The command collects diagnostic information and creates an archive, with the node's secrets masked, for further investigation`;
 
   static flags = {
     ...ConfigBaseCommand.flags,
@@ -48,9 +48,16 @@ The command collects diagnostic information and creates an obfuscated archive fo
   - The node configuration
   - Service logs, metrics and status
 
-  Secrets such as private keys, passwords and API keys are masked.
-  Everything else is diagnostic data about your node, including its addresses,
-  host details, certificate settings and logs, and is shared with whoever you send the archive to.
+  Masked: secrets in the current node configuration (private keys, passwords,
+  API keys, build arguments, credentials in URLs), the values of container
+  environment variables, and your user name and home directory. Copies of those
+  config secrets in logs and other collected data are masked when they are
+  8 characters or longer.
+
+  Logs can still contain other sensitive text, such as earlier passwords or short
+  values, so review the archive before you share it. The rest is diagnostic data
+  about your node, including its addresses, host details, certificate settings
+  and logs, and is shared with whoever you send the archive to.
 
   The archive will be compressed with TAR/GZIP and placed in {bold.cyanBright ${process.cwd()}}
   You can use it to analyze the node's condition yourself or send it to the Dash Core Group support team ({underline.cyanBright support@dash.org}) for help.\n`,
