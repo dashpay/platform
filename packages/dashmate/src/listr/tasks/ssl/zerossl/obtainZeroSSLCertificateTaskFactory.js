@@ -181,12 +181,15 @@ export default function obtainZeroSSLCertificateTaskFactory(
           // A saved certificate was requested with the key on disk, and
           // renewal requests the next one with the request written here: one
           // for a new key would be issued for a key this node does not keep.
+          // Its public key comes from the private key itself: given the file,
+          // Node would read a certificate that follows the key instead.
           if (ctx.isPrivateKeyFilePresent) {
             const privateKey = fs.readFileSync(ctx.privateKeyFilePath, 'utf8');
 
             ctx.keyPair = {
               privateKey,
-              publicKey: crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }),
+              publicKey: crypto.createPublicKey(crypto.createPrivateKey(privateKey))
+                .export({ type: 'spki', format: 'pem' }),
             };
 
             // eslint-disable-next-line no-param-reassign

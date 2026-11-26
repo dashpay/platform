@@ -163,8 +163,11 @@ function readCertificateRequest(csrFilePath, privateKeyFilePath) {
     return usable;
   }
 
+  // Given the file, Node would read a certificate that follows the key
   try {
-    return request.publicKey.equals(crypto.createPublicKey(privateKeyPem)) ? usable : unusable;
+    return request.publicKey.equals(crypto.createPublicKey(crypto.createPrivateKey(privateKeyPem)))
+      ? usable
+      : unusable;
   } catch {
     return unusable;
   }

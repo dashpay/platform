@@ -653,6 +653,16 @@ describe('validateZeroSslCertificateFactory', () => {
           expect(result.data.isCsrFilePresent).to.be.false();
         });
 
+        // The gateway loads the key from private.key, whatever follows it.
+        it('should compare the request with the key, not a certificate after it', async () => {
+          fs.writeFileSync(path.join(sslConfigDir, 'private.key'), `${ecKeyPem}${pair.pem}`);
+          fs.writeFileSync(csrFilePath, createCertificateRequest(ecKeyPem));
+
+          const result = await validateZeroSslCertificate(config, expirationDays);
+
+          expect(result.data.isCsrFilePresent).to.be.true();
+        });
+
         it('should renew with the request on disk', async function it() {
           const ecRequest = createCertificateRequest(ecKeyPem);
           fs.writeFileSync(csrFilePath, ecRequest);

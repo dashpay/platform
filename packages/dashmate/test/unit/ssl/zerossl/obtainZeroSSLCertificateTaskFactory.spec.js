@@ -587,6 +587,23 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(asSpki(forge.pki.publicKeyToPem(request.publicKey))).to.equal(asSpki(pair.keyPem));
     });
 
+    // The gateway loads the key from private.key, whatever follows it.
+    it('should write the request for the key, not a certificate after it', async function it() {
+      this.timeout(30000);
+      fs.writeFileSync(privateKeyFilePath, `${pair.keyPem}${other.pem}`);
+      fs.rmSync(path.join(sslConfigDir, 'csr.pem'));
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      const request = forge.pki.certificationRequestFromPem(
+        fs.readFileSync(path.join(sslConfigDir, 'csr.pem'), 'utf8'),
+      );
+      const asSpki = (pem) => crypto.createPublicKey(pem).export({ type: 'spki', format: 'pem' });
+
+      expect(request.verify()).to.be.true();
+      expect(asSpki(forge.pki.publicKeyToPem(request.publicKey))).to.equal(asSpki(pair.keyPem));
+    });
+
     // Renewal sends csr.pem to ZeroSSL as it is: a request a full disk cut
     // short would fail every renewal of the certificate installed here.
     it('should write a new certificate request for the key on disk over one cut short', async function it() {
