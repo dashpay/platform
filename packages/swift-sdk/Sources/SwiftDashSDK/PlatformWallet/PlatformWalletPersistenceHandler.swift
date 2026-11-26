@@ -319,6 +319,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// like all other mutable handler state.
     private var deferredPaymentUpserts: [(ownerIdentityId: Data, payments: [DashPayPayment])] = []
 
+    /// Identities a round removed, to delete once the round has committed.
+    ///
+    /// SwiftData fatals in `save()` when deleting an identity has to null a
+    /// child's non-optional inverse (DPNS names, the DashPay rows), also when
+    /// the children are deleted in that same save; see
+    /// `PersistentIdentity.deleteChildrenWithRequiredInverse(in:)`. A round
+    /// has one save, so it cannot delete the children first, and staging only
+    /// the children's deletes in it is not safe either: SwiftData fatals when
+    /// a failed round rolls them back. So the round stages nothing for a
+    /// removed identity and `endChangeset` deletes it, children first
+    /// (`PersistentIdentity.deleteChildrenFirst`), right after a successful
+    /// commit. A failed round drops the list. Never survives a round.
+    /// Confined to `serialQueue` like all other mutable handler state.
+    private var deferredIdentityRowDeletes: [Data] = []
+
     public convenience init(modelContainer: ModelContainer, network: Network? = nil) {
         self.init(
             modelContainer: modelContainer,
@@ -3622,6 +3637,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // on both paths — after the commit its entries are ordinary saved
             // rows the store fetch finds on its own, and after a rollback the
             // context has un-inserted every one of them.
+            var committed = false
             defer {
                 if self.roundUtxoCreditTally.total > 0 {
                     // Counts only: the outpoints themselves are wallet
@@ -3644,6 +3660,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 self.roundIndex = nil
                 self.roundAdvancedFinalityBoundary = false
                 self.inChangeset = false
+                self.drainDeferredIdentityRowDeletes(walletId: walletId, committed: committed)
                 self.drainDeferredBackfills()
             }
             if success {
@@ -3686,6 +3703,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
                 do {
                     try backgroundContext.save()
+                    committed = true
                     committedRoundGeneration &+= 1
                     SDKLogger.event(
                         "persistence_changeset_committed",
@@ -3747,6 +3765,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Delete the identities the round parked in
+    /// `deferredIdentityRowDeletes`, each children first in saves of its own,
+    /// when the round committed; drop the list when it did not. Must be
+    /// called on `serialQueue` with `inChangeset` already cleared.
+    ///
+    /// A failure here leaves the identity's row. The round stays committed:
+    /// Rust has removed the identity already, and the host's own row delete
+    /// after the removal call takes the leftover row.
+    private func drainDeferredIdentityRowDeletes(walletId: Data, committed: Bool) {
+        guard !deferredIdentityRowDeletes.isEmpty else { return }
+        let pending = deferredIdentityRowDeletes
+        deferredIdentityRowDeletes.removeAll()
+        guard committed else { return }
+        for identityId in pending {
+            do {
+                let descriptor = FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate { $0.identityId == identityId }
+                )
+                if let row = try backgroundContext.fetch(descriptor).first {
+                    try PersistentIdentity.deleteChildrenFirst(row, in: backgroundContext)
+                }
+            } catch {
+                SDKLogger.event(
+                    "persistence_identity_row_delete_failed",
+                    category: .persistence,
+                    severity: .error,
+                    fields: [
+                        "identity_reference": .reference(identityId),
+                        "wallet_reference": .reference(walletId),
+                    ],
+                    error: error
+                )
+            }
+        }
+    }
+
     // MARK: - Identity scalar persistence
 
     /// Upsert / remove rows from `PersistentIdentity` in response to
@@ -3755,7 +3809,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Mapping:
     /// - Each `upsert.identity_id` gets an upsert on
     ///   `PersistentIdentity` keyed by that unique column.
-    /// - Each `removed` id drops the matching row.
+    /// - Each `removed` id drops the matching row and its children; inside a
+    ///   round they go right after the round's save (see
+    ///   `deferredIdentityRowDeletes`).
     ///
     /// Public keys are written by `persistIdentityKeys` on a paired
     /// callback; this path only touches the identity row itself.
@@ -3937,7 +3993,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             // A failed fetch fails the changeset rather than reading as an
             // absent row, which would strand the identity and its sidecar.
-            if let existing = try backgroundContext.fetch(descriptor).first {
+            if inChangeset {
+                // Deleted after the round's save; see
+                // `deferredIdentityRowDeletes`.
+                deferredIdentityRowDeletes.append(identityId)
+            } else if let existing = try backgroundContext.fetch(descriptor).first {
                 try PersistentDashpayPaymentAddresses.removeOwned(in: backgroundContext,
                     networkRaw: existing.networkRaw, ownerIdentityId: identityId)
                 backgroundContext.delete(existing)

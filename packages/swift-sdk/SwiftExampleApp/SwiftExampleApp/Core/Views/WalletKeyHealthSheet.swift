@@ -368,6 +368,13 @@ enum WalletKeyHealthChecker {
     ///
     /// Ordering, so a failed delete cannot leave a listed identity
     /// whose keys are gone:
+    ///  0. Remove the identity from the running wallets
+    ///     (`removeFromLiveWallets`,
+    ///     `PlatformWalletManager.removeIdentityFromLiveWallets`), so a
+    ///     later sync cannot store its row again. A refusal throws
+    ///     `IdentityLiveWalletRemovalRefused` and nothing is deleted.
+    ///     Accepted, the persistence handler may already have deleted
+    ///     the rows, so step 1 reads the row again by id.
     ///  1. Delete the identity's SwiftData rows children first
     ///     (`PersistentIdentity.deleteChildrenFirst`): the children
     ///     with a non-optional inverse to it are deleted and saved
@@ -393,14 +400,22 @@ enum WalletKeyHealthChecker {
     @MainActor
     static func deleteOrphan(
         identity: PersistentIdentity,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        removeFromLiveWallets: (Data) throws -> Bool
     ) throws -> OrphanDeleteOutcome {
         // Snapshot the id and public keys BEFORE the delete: once the
         // row is removed its accessors are invalid.
         let identityId = identity.identityId
         let publicKeys = identity.publicKeys.map(\.publicKeyData)
 
-        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
+        do {
+            _ = try removeFromLiveWallets(identityId)
+        } catch {
+            throw IdentityLiveWalletRemovalRefused(reason: error)
+        }
+        if let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId) {
+            try PersistentIdentity.deleteChildrenFirst(row, in: modelContext)
+        }
 
         var keychainError: Error?
         do {
@@ -434,6 +449,7 @@ struct WalletKeyHealthSheet: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var walletManager: PlatformWalletManager
 
     @State private var reports: [WalletIdentityKeyHealthReport] = []
     @State private var isRunning = false
@@ -659,7 +675,8 @@ struct WalletKeyHealthSheet: View {
         do {
             let outcome = try WalletKeyHealthChecker.deleteOrphan(
                 identity: report.identityRow,
-                modelContext: modelContext
+                modelContext: modelContext,
+                removeFromLiveWallets: { try walletManager.removeIdentityFromLiveWallets(identityId: $0) }
             )
             // SwiftData side succeeded → drop the now-deleted row
             // from the report list regardless of the keychain
@@ -679,6 +696,8 @@ struct WalletKeyHealthSheet: View {
                 actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
                 errorMessage = nil
             }
+        } catch let refusal as IdentityLiveWalletRemovalRefused {
+            errorMessage = "Delete failed: \(refusal.reason.localizedDescription). Nothing was deleted."
         } catch {
             // SwiftData delete failed (the in-memory `reports`
             // list is still authoritative); surface as a hard
