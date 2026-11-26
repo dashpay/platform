@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import tenderdashSeeds from '../../../configs/defaults/tenderdashSeeds.js';
+import getDefaultSeedUpdates from '../../../src/tenderdash/getDefaultSeedUpdates.js';
 import {
   generateSnapshot, fetchSnapshot, checkSnapshot, QUORUM_URLS,
 } from '../../../src/tenderdash/seedSnapshot.js';
@@ -60,6 +62,31 @@ describe('quorum-server Tenderdash seeds', () => {
     random.resetHistory();
     expect(generateSnapshot(response, 'mainnet', first, NOW)).to.deep.equal(second);
     expect(random.callCount).to.equal(24);
+  });
+
+  it('should refresh a historical stock set without self only for the omitted node', () => {
+    response.data = response.data.slice(0, 5);
+    const first = generateSnapshot(response, 'mainnet', previous, NOW);
+    const [self, ...seeds] = first.seeds;
+    response.data[0].platformP2PPort += 1;
+    response.data[1].platformP2PPort += 1;
+    const second = generateSnapshot(response, 'mainnet', first, NOW);
+    const latest = generateSnapshot(response, 'mainnet', second, NOW);
+
+    const config = id => ({
+      network: 'mainnet', platform: { drive: { tenderdash: { node: { id }, p2p: { seeds } } } },
+    });
+    const original = tenderdashSeeds.mainnet;
+    tenderdashSeeds.mainnet = latest;
+    try {
+      expect(getDefaultSeedUpdates({
+        owner: config(self.id),
+        other: config(seeds[0].id),
+        unset: config(null),
+      })).to.deep.equal([['owner', latest.seeds.slice(1)]]);
+    } finally {
+      tenderdashSeeds.mainnet = original;
+    }
   });
 
   it('should use an alternate registered endpoint when peers share a primary host', () => {

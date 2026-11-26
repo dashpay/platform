@@ -114,6 +114,10 @@ export function generateSnapshot(response, network, previous, now = Date.now() /
     seeds,
     previousSeedSetHashes: [...new Set([
       ...previous.previousSeedSetHashes, seedSetHash(previous.seeds),
+      ...previous.seeds.map(({ id }) => seedSetHash(
+        previous.seeds.filter(seed => seed.id !== id),
+        id,
+      )),
     ])].sort(),
   };
   checkSnapshot(snapshot, network, now);

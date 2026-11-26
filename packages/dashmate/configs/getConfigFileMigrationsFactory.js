@@ -46,6 +46,11 @@ function parseCoreImage(image) {
   };
 }
 
+function getDefaultTenderdashSeeds(tenderdash, defaultConfig) {
+  return defaultConfig.getStored('platform.drive.tenderdash.p2p.seeds')
+    .filter(seed => seed.id !== tenderdash.node?.id);
+}
+
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
@@ -274,7 +279,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.p2p.seeds = testnet.getStored('platform.drive.tenderdash.p2p.seeds');
+              const { tenderdash } = options.platform.drive;
+              tenderdash.p2p.seeds = getDefaultTenderdashSeeds(tenderdash, testnet);
             }
           });
         return configFile;
@@ -882,7 +888,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.mempool = base.getStored('platform.drive.tenderdash.mempool');
               options.platform.drive.tenderdash.genesis = base.getStored('platform.drive.tenderdash.genesis');
             } else if (options.network === NETWORK_MAINNET) {
-              options.platform.drive.tenderdash.p2p = mainnet.getStored('platform.drive.tenderdash.p2p');
+              const { tenderdash } = options.platform.drive;
+              tenderdash.p2p = {
+                ...mainnet.getStored('platform.drive.tenderdash.p2p'),
+                seeds: getDefaultTenderdashSeeds(tenderdash, mainnet),
+              };
               options.platform.drive.tenderdash.mempool = mainnet.getStored('platform.drive.tenderdash.mempool');
               options.platform.drive.tenderdash.genesis = mainnet.getStored('platform.drive.tenderdash.genesis');
 
@@ -948,7 +958,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (options.network === NETWORK_MAINNET && name !== 'base') {
-              options.platform.drive.tenderdash.p2p.seeds = mainnet.getStored('platform.drive.tenderdash.p2p.seeds');
+              const { tenderdash } = options.platform.drive;
+              tenderdash.p2p.seeds = getDefaultTenderdashSeeds(tenderdash, mainnet);
             }
 
             repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1-dev');
@@ -1119,11 +1130,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_MAINNET && name !== 'base') {
-              options.platform.drive.tenderdash.p2p.seeds = mainnet.getStored('platform.drive.tenderdash.p2p.seeds');
+              const { tenderdash } = options.platform.drive;
+              tenderdash.p2p.seeds = getDefaultTenderdashSeeds(tenderdash, mainnet);
             }
 
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.p2p.seeds = testnet.getStored('platform.drive.tenderdash.p2p.seeds');
+              const { tenderdash } = options.platform.drive;
+              tenderdash.p2p.seeds = getDefaultTenderdashSeeds(tenderdash, testnet);
             }
           });
         return configFile;

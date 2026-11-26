@@ -72,11 +72,15 @@ describe('ConfigFileJsonRepository', () => {
       try {
         const data = JSON.parse(seedConfigFile());
         data.configs.base.network = network;
-        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        const { tenderdash } = data.configs.base.platform.drive;
+        const self = { id: 'e'.repeat(40), host: '192.0.2.1', port: 26656 };
+        const peer = { id: 'f'.repeat(40), host: '192.0.2.2', port: 26656 };
+        tenderdash.node.id = self.id;
+        tenderdash.p2p.seeds = originalDefaults.seeds;
         const original = JSON.stringify(data);
         fs.writeFileSync(configFilePath, original);
         tenderdashSeeds[network].previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
-        tenderdashSeeds[network].seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+        tenderdashSeeds[network].seeds = [self, peer];
         const repository = new ConfigFileJsonRepository(
           identityMigration,
           homeDir,
@@ -85,14 +89,14 @@ describe('ConfigFileJsonRepository', () => {
         );
         expect(() => repository.readAndMigrate({}, ([config]) => {
           expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.equal(true);
-          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(tenderdashSeeds[network].seeds);
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal([peer]);
           throw new Error('render failed');
         })).to.throw('render failed');
         expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
         repository.readAndMigrate({}, configs => expect(configs).to.have.length(1));
         const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
         expect(saved.configFormatVersion).to.equal(CURRENT_FORMAT_VERSION);
-        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal(tenderdashSeeds[network].seeds);
+        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal([peer]);
         repository.readAndMigrate({}, () => { throw new Error('must not render twice'); });
       } finally {
         tenderdashSeeds[network] = originalDefaults;
