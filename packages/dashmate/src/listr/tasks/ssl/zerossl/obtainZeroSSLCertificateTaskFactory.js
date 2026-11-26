@@ -137,7 +137,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
                 + ' using the obtain command with the --force flag and revoke the previous'
                 + ' certificate in the ZeroSSL dashboard');
             case ERRORS.CSR_FILE_IS_NOT_PRESENT:
-              throw new Error(`Certificate request file not found in ${ctx.csrFilePath}.\n`
+              throw new Error(`Certificate request file ${ctx.csrFilePath} is missing or cannot be used.\n`
                 + 'To renew certificate please use the obtain'
                 + ' command with the --force flag, and revoke the previous certificate in'
                 + ' the ZeroSSL dashboard');

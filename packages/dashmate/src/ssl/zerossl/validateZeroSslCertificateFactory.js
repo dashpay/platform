@@ -1,5 +1,7 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import forge from 'node-forge';
 import findCertificatePairProblem from '../findCertificatePairProblem.js';
 import { findPrivateKeyProblem } from '../selectLeafCertificate.js';
 
@@ -68,6 +70,73 @@ function isPrivateKeyUsable(filePath) {
   }
 
   return findPrivateKeyProblem(privateKeyPem) === null;
+}
+
+/**
+ * Whether the certificate request on disk can renew the certificate
+ *
+ * Renewal sends csr.pem to ZeroSSL as it is, so it has to parse, be signed
+ * by its own key, and carry the public key of the private key on disk: a
+ * full disk can cut it short, and a request for another key asks for a
+ * certificate this node cannot serve. A request that is not a regular file,
+ * or that this process cannot read, is left as it is, and so is one whose
+ * key this process cannot read, once it parses.
+ *
+ * @param {string} csrFilePath
+ * @param {string} privateKeyFilePath
+ * @return {boolean}
+ */
+function isCsrUsable(csrFilePath, privateKeyFilePath) {
+  let stats;
+  try {
+    stats = fs.statSync(csrFilePath, { throwIfNoEntry: false });
+  } catch {
+    return true;
+  }
+
+  if (stats === undefined) {
+    return false;
+  }
+
+  if (!stats.isFile()) {
+    return true;
+  }
+
+  let csrPem;
+  try {
+    csrPem = fs.readFileSync(csrFilePath, 'utf8');
+  } catch {
+    return true;
+  }
+
+  let request;
+  try {
+    request = forge.pki.certificationRequestFromPem(csrPem);
+
+    if (!request.verify()) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  if (!isRegularFile(privateKeyFilePath)) {
+    return true;
+  }
+
+  let privateKeyPem;
+  try {
+    privateKeyPem = fs.readFileSync(privateKeyFilePath, 'utf8');
+  } catch {
+    return true;
+  }
+
+  try {
+    return crypto.createPublicKey(forge.pki.publicKeyToPem(request.publicKey))
+      .equals(crypto.createPublicKey(privateKeyPem));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -165,7 +234,7 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
     // Check if certificate files are present. Only what they show is kept
     // here: doctor archives this data.
-    data.isCsrFilePresent = fs.existsSync(data.csrFilePath);
+    data.isCsrFilePresent = isCsrUsable(data.csrFilePath, data.privateKeyFilePath);
     data.isPrivateKeyFilePresent = isPrivateKeyUsable(data.privateKeyFilePath);
     data.isBundleFilePresent = data.isPrivateKeyFilePresent
       && isBundleKept(data.bundleFilePath, data.privateKeyFilePath);

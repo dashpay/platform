@@ -12,6 +12,7 @@ import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
+import generateCsr from '../../../../../src/ssl/zerossl/generateCsr.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
@@ -70,7 +71,7 @@ describe('collectSamplesTaskFactory', () => {
     await tasks.run({ samples });
   }
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     originalUser = process.env.USER;
     homeDir = HomeDir.createTemp();
 
@@ -87,11 +88,16 @@ describe('collectSamplesTaskFactory', () => {
     const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
 
     fs.mkdirSync(sslDir, { recursive: true });
-    fs.writeFileSync(path.join(sslDir, 'csr.pem'), 'csr', 'utf8');
     // Dashmate writes the key accessible to its owner only, and doctor reports
-    // one that is not - so the fixture has to be what a healthy node has
-    const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-    fs.writeFileSync(path.join(sslDir, 'private.key'), privateKey.export({ type: 'pkcs8', format: 'pem' }), {
+    // one that is not - so the fixture has to be what a healthy node has: an
+    // RSA key and the certificate request renewal sends for it
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    fs.writeFileSync(path.join(sslDir, 'csr.pem'), await generateCsr({ publicKey, privateKey }, EXTERNAL_IP), 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'private.key'), privateKey, {
       encoding: 'utf8',
       mode: 0o600,
     });

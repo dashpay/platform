@@ -176,7 +176,7 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
             and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CSR_FILE_IS_NOT_PRESENT]: {
-                description: chalk`ZeroSSL certificate request file not found in ${ssl?.data?.csrFilePath}.
+                description: chalk`ZeroSSL certificate request file ${ssl?.data?.csrFilePath} is missing or cannot be used.
 This makes auto-renewal impossible.`,
                 solution: chalk`If you need auto renew, please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,
