@@ -1293,10 +1293,31 @@ impl StateTransition {
                 ShieldFromAssetLockTransition::V0(_) => 12..=13,
                 ShieldFromAssetLockTransition::V1(_) => 14..=LATEST_VERSION,
             },
-            // Every other type is active in a range its contents cannot change, defined once on
-            // the type. The fallback is unreachable, since the type answers for every type this
-            // match leaves to it; it would keep a gap inactive, never active.
-            _ => self
+            // These types are active in a range their contents cannot change, defined once on the
+            // type. Each is named here so a new type cannot compile without a range decision. The
+            // fallback is unreachable, since the type answers for every one of them; it would keep
+            // a gap inactive, never active.
+            StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::ShieldFromIdentity(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
+            | StateTransition::PrivateDocumentCreateFromShieldedPool(_) => self
                 .state_transition_type()
                 .fixed_active_version_range()
                 .unwrap_or(NO_VERSION),

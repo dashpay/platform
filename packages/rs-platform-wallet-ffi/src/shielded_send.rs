@@ -298,7 +298,9 @@ impl From<&ShieldedSpendPlan> for ShieldedSpendPlanFFI {
             },
             core_fee_per_byte: match plan.kind {
                 ShieldedSpendKind::Withdrawal { core_fee_per_byte } => core_fee_per_byte,
-                _ => 0,
+                ShieldedSpendKind::Transfer
+                | ShieldedSpendKind::Unshield
+                | ShieldedSpendKind::IdentityTopUp => 0,
             },
             amount: plan.amount,
             recipient_amount: plan.recipient_amount,

@@ -831,7 +831,9 @@ pub fn plan_spend(
                 ShieldedSpendKind::Withdrawal { .. } => {
                     sweep.min(platform_version.system_limits.max_withdrawal_amount)
                 }
-                _ => sweep,
+                ShieldedSpendKind::Transfer
+                | ShieldedSpendKind::Unshield
+                | ShieldedSpendKind::IdentityTopUp => sweep,
             }
         }
     };
@@ -840,7 +842,9 @@ pub fn plan_spend(
         ShieldedSpendKind::Withdrawal { core_fee_per_byte } => {
             ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?
         }
-        _ => amount,
+        ShieldedSpendKind::Transfer
+        | ShieldedSpendKind::Unshield
+        | ShieldedSpendKind::IdentityTopUp => amount,
     };
     let (selected, total_input, fee) = select_notes_with_fee(
         unspent,
