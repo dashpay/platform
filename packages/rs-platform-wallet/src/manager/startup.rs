@@ -821,8 +821,9 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         wm.get_wallet_info(wallet_id)
             .and_then(|info| info.identity_manager.identity_scan_state(wallet_id))
             .is_some_and(|state| {
+                // A carried unlocated gap cannot clear while page-bound indices remain.
                 !state.complete
-                    && (state.unlocated_gap
+                    && ((state.unlocated_gap && state.failed_indices.is_empty())
                         || state.failed_indices.iter().any(|index| {
                             !ambiguous.iter().any(|ambiguity| {
                                 ambiguity.identity_index == *index && ambiguity.more_candidates
@@ -2480,16 +2481,35 @@ mod tests {
 
     #[tokio::test]
     async fn should_not_retry_a_scan_incomplete_only_because_of_the_candidate_page_bound() {
-        assert_candidate_page_bound_attempts(false, 1).await;
+        assert_candidate_page_bound_attempts(false, false, 1).await;
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
+    async fn should_not_retry_the_candidate_page_bound_with_a_carried_unlocated_gap() {
+        assert_candidate_page_bound_attempts(false, true, 1).await;
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn should_retry_a_probe_failure_alongside_the_candidate_page_bound() {
-        assert_candidate_page_bound_attempts(true, DISCOVERY_BACKOFF.len() as u32 + 1).await;
+        for unlocated_gap in [false, true] {
+            assert_candidate_page_bound_attempts(
+                true,
+                unlocated_gap,
+                DISCOVERY_BACKOFF.len() as u32 + 1,
+            )
+            .await;
+        }
     }
 
-    async fn assert_candidate_page_bound_attempts(probe_failure: bool, expected_attempts: u32) {
+    async fn assert_candidate_page_bound_attempts(
+        probe_failure: bool,
+        unlocated_gap: bool,
+        expected_attempts: u32,
+    ) {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        if unlocated_gap {
+            manager.record_identity_scan_cut_off(&wallet_id).await;
+        }
         let mut sdk = manager.sdk().clone();
         answer_index_with_owned_candidates(&mut sdk, 0, 1).await;
         answer_index_with_owned_candidates(&mut sdk, 1, MASTER_KEY_HASH_MAX_PAGES as u8 + 1).await;
@@ -2515,6 +2535,7 @@ mod tests {
                 .identity_scan_state(&wallet_id)
                 .unwrap();
             assert!(!verdict.complete);
+            assert_eq!(verdict.unlocated_gap, unlocated_gap);
             assert_eq!(
                 verdict.failed_indices,
                 if probe_failure { vec![1, 2] } else { vec![1] }

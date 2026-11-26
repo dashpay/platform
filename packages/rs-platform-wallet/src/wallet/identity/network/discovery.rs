@@ -32,7 +32,8 @@ pub(crate) const MASTER_KEY_HASH_MAX_PAGES: usize = 8;
 /// one lookup reads.
 ///
 /// An index whose candidates were all read is answered in the scan verdict.
-/// A known identity and a complete verdict allow startup's warm shortcut.
+/// A known identity allows startup's warm shortcut when the scan verdict is
+/// complete or absent; a recorded incomplete verdict forces another scan.
 /// Startup scans again when no identity is known.
 /// Resumed discovery starts after the highest registered identity index, so
 /// ambiguity beyond it can be probed again; no ambiguity cursor is stored.
@@ -1001,8 +1002,8 @@ impl ScanTally {
     /// verified as the wallet's own. Advances the miss counter, so the scan
     /// still terminates. The index is answered unless candidates were left
     /// unread. This does not advance the resume position, which follows the
-    /// highest registered identity index. Startup's warm shortcut also needs
-    /// a known identity and a complete verdict.
+    /// highest registered identity index. Startup's warm shortcut needs a
+    /// known identity and a scan verdict that is complete or absent.
     fn record_ambiguity(&mut self, ambiguity: AmbiguousIdentity) {
         self.ambiguous.push(ambiguity);
         self.consecutive_misses += 1;
