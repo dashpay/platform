@@ -132,6 +132,27 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(fs.existsSync(path.join(dir, 'notes.txt'))).to.be.true();
   });
 
+  // The directory was found in one temp directory; by the time the operator
+  // agrees, that path can lead somewhere else
+  it('should not remove anything once the temp directory is no longer the one it was found in', () => {
+    makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    const elsewhere = path.join(testRoot, 'elsewhere');
+    fs.mkdirSync(elsewhere, { mode: 0o700 });
+    const other = makeStagingDir(legacyName, elsewhere);
+
+    fs.renameSync(tempDir, path.join(testRoot, 'moved'));
+    fs.symlinkSync(elsewhere, tempDir);
+
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.be.empty();
+    expect(failed).to.have.lengthOf(1);
+    expect(fs.existsSync(other)).to.be.true();
+  });
+
   // A record of any other size is not one an earlier version wrote, and
   // whatever it holds instead is not read
   it('should not read a collection date of any other size than a record', function it() {

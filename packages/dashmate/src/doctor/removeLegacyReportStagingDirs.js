@@ -387,13 +387,22 @@ export function removeLegacyReportStagingDirs(dirs) {
     const state = { restricted: false };
 
     try {
+      // The path was resolved when the directory was found; if it leads
+      // anywhere else now, or what holds it can be changed by others, nothing
+      // under it is the directory the operator agreed to remove
+      const tempDir = path.dirname(dir);
+
+      if (fs.realpathSync.native(tempDir) !== tempDir || !isGuardedPath(tempDir, uid)) {
+        throw new Error(`${tempDir} is no longer the directory ${path.basename(dir)} was found in`);
+      }
+
       const stat = fs.lstatSync(dir);
 
       if (!stat.isDirectory() || stat.uid !== uid) {
         throw new Error(`${dir} is no longer a directory of the current user`);
       }
 
-      verifyStagingDir(dir, uid, fs.lstatSync(path.dirname(dir)).dev, state);
+      verifyStagingDir(dir, uid, fs.lstatSync(tempDir).dev, state);
 
       fs.rmSync(dir, { recursive: true, force: true });
 
