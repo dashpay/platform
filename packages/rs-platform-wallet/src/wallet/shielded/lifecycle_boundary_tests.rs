@@ -24,8 +24,8 @@ use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSe
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
 use crate::changeset::{
-    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence, ShieldedSubwalletStartState,
+    ClientStartState, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet, PlatformWalletPersistence, ShieldedSubwalletStartState,
 };
 use crate::error::PlatformWalletError;
 use crate::events::{EventHandler, PlatformEventHandler};
@@ -57,6 +57,8 @@ struct BoundaryHost {
     wipes: AtomicUsize,
     wiped_exclusively: AtomicBool,
     fail_wipe: AtomicBool,
+    /// Fails the next load as a host reports a busy database: retryable.
+    busy_load: AtomicBool,
     /// Parks the next viewing-key store until released.
     store_gate: Mutex<Option<mpsc::Receiver<()>>>,
     /// Parks the next load until released.
@@ -85,6 +87,7 @@ impl BoundaryHost {
             wipes: AtomicUsize::new(0),
             wiped_exclusively: AtomicBool::new(true),
             fail_wipe: AtomicBool::new(false),
+            busy_load: AtomicBool::new(false),
             store_gate: Mutex::default(),
             load_gate: Mutex::default(),
             coordinator: Mutex::default(),
@@ -169,6 +172,12 @@ impl PlatformWalletPersistence for BoundaryHost {
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.event("load");
+        if self.busy_load.swap(false, Ordering::SeqCst) {
+            return Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "injected busy host",
+            ));
+        }
         let gate = self.load_gate.lock().unwrap().take();
         if let Some(gate) = gate {
             let _ = gate.recv();
@@ -1062,6 +1071,46 @@ async fn should_refuse_a_clear_and_keep_the_sync_loop_while_an_operation_is_admi
         coordinator.store().read().await.tree_size().expect("size"),
         0
     );
+}
+
+/// A Clear whose host is busy for now fails as a refused one does, before
+/// the manager does anything: the sync loop keeps running, nothing is reset
+/// and the host is not asked to wipe. The same Clear goes through on a retry.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_fail_a_clear_and_keep_the_sync_loop_while_the_host_is_busy() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, _wallet, coordinator) = configured(&host, &dir).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .append_commitment(&[7u8; 32], true)
+        .expect("a leaf");
+    manager.shielded_sync_arc().start();
+    let epoch = coordinator.clear_epoch().await;
+
+    host.busy_load.store(true, Ordering::SeqCst);
+    let busy = manager.clear_shielded().await;
+    assert!(
+        matches!(&busy, Err(PlatformWalletError::PersisterLoad(e)) if e.is_transient()),
+        "{busy:?}"
+    );
+    assert!(
+        manager.shielded_sync().is_running(),
+        "a Clear that failed on a busy host does not stop the sync loop"
+    );
+    assert_eq!(host.wipe_count(), 0);
+    assert_eq!(coordinator.clear_epoch().await, epoch);
+    assert_eq!(
+        coordinator.store().read().await.tree_size().expect("size"),
+        1,
+        "nothing was reset"
+    );
+
+    manager.clear_shielded().await.expect("the retry");
+    assert_eq!(host.wipe_count(), 1);
+    assert!(!manager.shielded_sync().is_running());
 }
 
 /// A funding's confirmed activity row, as the recorder builds it.

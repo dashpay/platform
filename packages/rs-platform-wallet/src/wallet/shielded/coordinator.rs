@@ -582,6 +582,10 @@ pub(crate) struct ShieldedRemovalAdmission<'a> {
 /// dropped. Dropped without [`clear`](Self::clear), nothing was changed.
 pub(crate) struct ShieldedClearAdmission<'a> {
     coordinator: &'a NetworkShieldedCoordinator,
+    /// The identity accounts the host's viewing key rows record
+    /// ([`read_host`](Self::read_host)), for the Clear to keep before the
+    /// host wipes those rows.
+    host_identity_accounts: BTreeMap<WalletId, BTreeSet<u32>>,
     // Declared before the guard, so the mark is reset before the admission
     // is released: nothing reads a Clear as admitted once it is not.
     _held: ClearAdmissionMark<'a>,
@@ -606,12 +610,31 @@ impl Drop for ClearAdmissionMark<'_> {
 }
 
 impl ShieldedClearAdmission<'_> {
+    /// Read from `host` the identity accounts its viewing key rows record,
+    /// which the Clear keeps before the host wipes those rows
+    /// ([`NetworkShieldedCoordinator::host_identity_accounts`]).
+    ///
+    /// Done before the caller stops the sync loop, as the admission is
+    /// asked for: a host that is busy for now fails here with nothing
+    /// changed and the loop still running. No bind or account add writes a
+    /// viewing key row between this read and the wipe, as none is admitted
+    /// while this admission lives.
+    pub(crate) fn read_host(
+        &mut self,
+        host: &dyn PlatformWalletPersistence,
+    ) -> Result<(), PlatformWalletError> {
+        self.host_identity_accounts = self.coordinator.host_identity_accounts(host)?;
+        Ok(())
+    }
+
     /// Run the Clear this admits.
     pub(crate) async fn clear(
         self,
         host: &dyn PlatformWalletPersistence,
     ) -> Result<(), PlatformWalletError> {
-        self.coordinator.clear_admitted(host).await
+        self.coordinator
+            .clear_admitted(host, self.host_identity_accounts)
+            .await
     }
 }
 
@@ -848,6 +871,7 @@ impl NetworkShieldedCoordinator {
             .try_write()
             .map(|operations| ShieldedClearAdmission {
                 coordinator: self,
+                host_identity_accounts: BTreeMap::new(),
                 _held: ClearAdmissionMark::set(&self.clear_admission_held),
                 _operations: operations,
             })
@@ -861,7 +885,9 @@ impl NetworkShieldedCoordinator {
         &self,
         host: &dyn PlatformWalletPersistence,
     ) -> Result<(), PlatformWalletError> {
-        self.try_admit_clear()?.clear(host).await
+        let mut admission = self.try_admit_clear()?;
+        admission.read_host(host)?;
+        admission.clear(host).await
     }
 
     /// [`admit`](Self::admit) without waiting: `Ok(None)` while a Clear holds
@@ -1612,11 +1638,11 @@ impl NetworkShieldedCoordinator {
     /// retry may read it, and the wipe would delete rows it never saw. That
     /// failure is returned as the host classified it
     /// ([`PlatformWalletError::PersisterLoad`]), and the Clear stops with
-    /// nothing reset. So does a write that fails.
-    async fn keep_host_identity_accounts(
+    /// nothing reset.
+    fn host_identity_accounts(
         &self,
         host: &dyn PlatformWalletPersistence,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<BTreeMap<WalletId, BTreeSet<u32>>, PlatformWalletError> {
         let start = match host.load() {
             Ok(start) => start,
             Err(e) if e.is_transient() => return Err(PlatformWalletError::from_load_failure(e)),
@@ -1626,7 +1652,7 @@ impl NetworkShieldedCoordinator {
                     "the host snapshot could not be read before Clear; its identity accounts \
                      are not kept"
                 );
-                return Ok(());
+                return Ok(BTreeMap::new());
             }
         };
         let mut found: BTreeMap<WalletId, BTreeSet<u32>> = BTreeMap::new();
@@ -1642,6 +1668,17 @@ impl NetworkShieldedCoordinator {
                     .insert(id.account_index);
             }
         }
+        Ok(found)
+    }
+
+    /// Keep `found`, the identity accounts a Clear read from the host
+    /// ([`Self::host_identity_accounts`]), before it has the host wipe the
+    /// rows that record them. A write that fails aborts the Clear with
+    /// nothing reset.
+    async fn keep_host_identity_accounts(
+        &self,
+        found: BTreeMap<WalletId, BTreeSet<u32>>,
+    ) -> Result<(), PlatformWalletError> {
         for (wallet_id, accounts) in found {
             let unkept: BTreeSet<u32> = {
                 let kept = self.identity_accounts.read().await;
@@ -2314,6 +2351,7 @@ impl NetworkShieldedCoordinator {
     async fn clear_admitted(
         &self,
         host: &dyn PlatformWalletPersistence,
+        host_identity_accounts: BTreeMap<WalletId, BTreeSet<u32>>,
     ) -> Result<(), PlatformWalletError> {
         let Ok(mut clear_state) =
             tokio::time::timeout(COORDINATOR_DRAIN_BUDGET, self.admission.write()).await
@@ -2328,7 +2366,8 @@ impl NetworkShieldedCoordinator {
         // mutex without an admission (see the `lifecycle` field doc).
         let _lifecycle = self.lifecycle.lock().await;
 
-        self.keep_host_identity_accounts(host).await?;
+        self.keep_host_identity_accounts(host_identity_accounts)
+            .await?;
 
         let was_pending = clear_state.host_wipe_pending;
         if let Err(e) = self.store.write().await.set_host_wipe_pending(true) {

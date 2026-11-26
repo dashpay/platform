@@ -1282,10 +1282,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // running, and held through the wipe: an operation that arrives while
         // the pass drains waits for this Clear instead of overtaking it.
         let coordinator = self.shielded_coordinator().await;
-        let admission = coordinator
+        let mut admission = coordinator
             .as_deref()
             .map(NetworkShieldedCoordinator::try_admit_clear)
             .transpose()?;
+        // The host is read here too, before the sync loop is stopped: a host
+        // that is busy for now fails the Clear with the loop still running
+        // and nothing changed, like a refusal above.
+        if let Some(admission) = admission.as_mut() {
+            admission.read_host(&*self.persister)?;
+        }
         // Hold the registry's per-key clearing latch across the WHOLE
         // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
         // (and any registry (re)start) is a no-op, so no fresh pass can

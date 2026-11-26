@@ -2176,9 +2176,20 @@ async fn should_stop_a_clear_whose_host_is_busy_and_let_one_through_whose_host_c
         SubwalletId::new(other, retired),
         vec![2; 96],
     )]));
+    let epoch = coordinator.clear_epoch().await;
     *persister.fail_next_load.lock().unwrap() = true;
     coordinator.clear(&*persister).await.expect("clear");
+    assert_eq!(coordinator.clear_epoch().await, epoch + 1);
     assert!(coordinator.kept_identity_accounts(other).await.is_empty());
+    assert!(
+        !persister
+            .load()
+            .expect("load after Clear")
+            .shielded
+            .viewing_keys
+            .contains_key(&SubwalletId::new(other, retired)),
+        "the non-retryable read failure must not prevent the host wipe"
+    );
 }
 
 /// A host rebind passes only ordinary accounts (FFI and host SDKs cap the
