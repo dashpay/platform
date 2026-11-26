@@ -1224,6 +1224,44 @@ pub enum PlatformWalletError {
     #[error("Insufficient shielded balance: available {available}, required {required}")]
     ShieldedInsufficientBalance { available: u64, required: u64 },
 
+    /// A spend run against a `ShieldedSpendPlan` selected different notes, or a
+    /// different fee, than the plan: the wallet's notes changed since it was made (a sync
+    /// added or spent one, or another spend reserved one), or the spend is priced at another
+    /// protocol version than the plan. Nothing is built or broadcast and no note stays
+    /// reserved; plan again and confirm the new fee. `fresh_selection` is the selection the
+    /// notes make now, only when the spend actually ran one; `None` when it has none to quote:
+    /// the notes no longer make any selection, or the protocol version or the fee moved, which
+    /// a new plan prices from a selection of its own.
+    #[error("{}", describe_plan_change(.fresh_selection.as_ref()))]
+    ShieldedPlanChanged {
+        fresh_selection: Option<ShieldedFreshSelection>,
+    },
+
+    /// The notes cover the spend only with more notes than one shielded transition can spend
+    /// (`max_shielded_actions_per_transition`). Refused before any note was reserved or anything
+    /// built; a smaller amount, or merging notes first, fits.
+    #[error("Shielded spend needs {needed} notes, more than the {max} one transition can spend")]
+    ShieldedSpendTooManyNotes { needed: usize, max: usize },
+
+    /// A shielded withdrawal's amount (the reserve for Core) is below the protocol minimum for
+    /// its Core fee rate or above the maximum. Refused before any note was reserved or anything
+    /// built; consensus would reject it after the proof.
+    #[error("Shielded withdrawal amount {amount} is outside the allowed range {min} to {max}")]
+    ShieldedWithdrawalAmountOutOfRange { amount: u64, min: u64, max: u64 },
+
+    /// The network runs a protocol version this SDK has no tables for, so an operation priced
+    /// or built at it (a shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan; not a private document create) cannot be. Nothing is built or
+    /// broadcast and no note stays reserved: a version verified before the spend refuses it
+    /// before any note is reserved or the network asked, and one the spend learns from its
+    /// anchor fetch releases its notes. A retry does not lift it: only an SDK that knows the
+    /// version does, so a host asks the user to update the app.
+    #[error(
+        "The network runs protocol version {network}, which this SDK does not support \
+         (it supports up to {latest_supported}); update the app"
+    )]
+    NetworkProtocolVersionUnsupported { network: u32, latest_supported: u32 },
+
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.
     /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),
@@ -1818,6 +1856,10 @@ impl PlatformWalletError {
             | Self::AssetLockFundsAwaitingFinality { .. }
             | Self::ShieldedNoUnspentNotes
             | Self::ShieldedInsufficientBalance { .. }
+            | Self::ShieldedPlanChanged { .. }
+            | Self::ShieldedSpendTooManyNotes { .. }
+            | Self::ShieldedWithdrawalAmountOutOfRange { .. }
+            | Self::NetworkProtocolVersionUnsupported { .. }
             | Self::PlatformShieldCapacityExceeded { .. }
             | Self::ShieldedMerkleWitnessUnavailable(_)
             | Self::ShieldedNoRecordedAnchor(_)
@@ -2193,6 +2235,12 @@ impl PlatformWalletError {
                 | Self::AssetLockInputConflict { .. }
                 | Self::ShieldedNoUnspentNotes
                 | Self::ShieldedInsufficientBalance { .. }
+                // A plan to make again, an amount to change, an app to
+                // update: the same call meets the same refusal.
+                | Self::ShieldedPlanChanged { .. }
+                | Self::ShieldedSpendTooManyNotes { .. }
+                | Self::ShieldedWithdrawalAmountOutOfRange { .. }
+                | Self::NetworkProtocolVersionUnsupported { .. }
                 | Self::PlatformShieldCapacityExceeded { .. }
                 | Self::ShieldedKeyDerivation(_)
                 | Self::ShieldedNotBound
@@ -2302,6 +2350,28 @@ pub(crate) fn sdk_payment_delivery(error: &dash_sdk::Error) -> PaymentDelivery {
             PaymentDelivery::NotSent
         }
         _ => PaymentDelivery::MaybeSent,
+    }
+}
+
+/// The selection a planned spend's notes make now, when it no longer matches the plan: what a
+/// new plan of the same spend would select, at the same protocol version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShieldedFreshSelection {
+    pub fee: u64,
+    pub note_count: usize,
+}
+
+/// [`PlatformWalletError::ShieldedPlanChanged`]'s message: the fresh selection when the spend
+/// ran one, never a quote it did not select.
+fn describe_plan_change(fresh_selection: Option<&ShieldedFreshSelection>) -> String {
+    match fresh_selection {
+        Some(ShieldedFreshSelection { fee, note_count }) => format!(
+            "Shielded spend plan changed: the notes now select {note_count} notes for a fee of \
+             {fee}; plan the spend again"
+        ),
+        None => "Shielded spend plan changed: the notes, the protocol version or the fee no \
+                 longer match the plan; plan the spend again"
+            .to_string(),
     }
 }
 
@@ -3227,7 +3297,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 126;
+    const VARIANT_COUNT: usize = 130;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -3362,6 +3432,10 @@ mod payment_delivery_tests {
             E::InvitationAlreadyClaimed { .. } => 123,
             E::InvitationKeysAlreadyRegistered { .. } => 124,
             E::InvitationNotReady(_) => 125,
+            E::ShieldedPlanChanged { .. } => 126,
+            E::ShieldedSpendTooManyNotes { .. } => 127,
+            E::ShieldedWithdrawalAmountOutOfRange { .. } => 128,
+            E::NetworkProtocolVersionUnsupported { .. } => 129,
         }
     }
 
@@ -3734,6 +3808,28 @@ mod payment_delivery_tests {
                 MaybeSent,
             ),
             (E::ShieldedNoUnspentNotes, NotSent),
+            (
+                E::ShieldedPlanChanged {
+                    fresh_selection: None,
+                },
+                NotSent,
+            ),
+            (E::ShieldedSpendTooManyNotes { needed: 20, max: 6 }, NotSent),
+            (
+                E::ShieldedWithdrawalAmountOutOfRange {
+                    amount: 1,
+                    min: 2,
+                    max: 3,
+                },
+                NotSent,
+            ),
+            (
+                E::NetworkProtocolVersionUnsupported {
+                    network: 99,
+                    latest_supported: 15,
+                },
+                NotSent,
+            ),
             (
                 E::ShieldedInsufficientBalance {
                     available: 1,

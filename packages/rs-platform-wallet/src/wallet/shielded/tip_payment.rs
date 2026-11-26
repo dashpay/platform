@@ -746,6 +746,7 @@ impl PlatformWallet {
             amount,
             memo,
             prover,
+            None,
             || self.ensure_tip_source_selects(seed, source, account),
         )
         .await
