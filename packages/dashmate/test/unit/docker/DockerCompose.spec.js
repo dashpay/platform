@@ -318,6 +318,20 @@ describe('DockerCompose service selection', () => {
         .to.be.rejectedWith("did not describe service 'drive_abci'");
     });
 
+    // The lookup can be the reset's first contact with Docker, before any
+    // running-services check and always with --force. Docker's own guidance
+    // (not installed, not started, no permission) must show there too, not
+    // the raw error of the Compose command or the socket.
+    it('should check Docker is available before it asks Compose', async () => {
+      dockerCompose.throwErrorIfNotInstalled.rejects(new Error("Can't connect to Docker Engine: permission denied"));
+      sandbox.stub(compose, 'execCompose').rejects(new Error('unexpected call'));
+
+      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.be.rejectedWith("Can't connect to Docker Engine");
+
+      expect(compose.execCompose).to.not.have.been.called();
+    });
+
     it('should not ask Compose about an empty selection', async () => {
       sandbox.stub(compose, 'execCompose').rejects(new Error('unexpected call'));
 

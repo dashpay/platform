@@ -498,6 +498,8 @@ export default class DockerCompose {
       return [];
     }
 
+    await this.throwErrorIfNotInstalled();
+
     let project;
     try {
       const { out } = await dockerCompose.execCompose('config', serviceNames, {
