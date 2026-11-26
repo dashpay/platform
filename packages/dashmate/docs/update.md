@@ -23,64 +23,27 @@ Install the new version of dashmate the same way you installed it originally (se
 
 #### Debian package
 
-<!-- The Debian download and install blocks below also appear in installation.md. Keep both copies identical. -->
-
-If you installed dashmate from the Debian package, download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest).
-This installs stable releases only: the snippet below reads `releases/latest`, which leaves prereleases out.
-If you run a prerelease, use the [prerelease download](#downloading-a-prerelease-package) below instead.
-
-The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on into a new private directory, so no other user can replace it before it is installed.
-Download it before you stop the node, so a failed download never leaves the node stopped:
+On Debian and Ubuntu, update dashmate with apt from Dash's apt repository. dashmate packages from 5.1.0-rc.2 on add the repository when they are installed, so it is configured whether you installed dashmate from the repository or from a downloaded package (see [A host without the repository](#a-host-without-the-repository) for older ones).
+Download the new package before you stop the node, so a failed download never leaves the node stopped:
 
 ```bash
-DASHMATE_DEB=""
-DASHMATE_DEB_URL="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
-  | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
-  | head -n 1)"
-DASHMATE_DEB_DIR="$(mktemp -d)"
-if [ -n "$DASHMATE_DEB_URL" ] && [ -n "$DASHMATE_DEB_DIR" ] && [ -d "$DASHMATE_DEB_DIR" ] \
-  && curl -fL -o "$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")" "$DASHMATE_DEB_URL"; then
-  DASHMATE_DEB="$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")"
-  echo "Downloaded $DASHMATE_DEB"
-else
-  echo "Could not download the dashmate package. Try again later." >&2
-fi
+sudo apt update && sudo apt install --only-upgrade --download-only dashmate
 ```
 
-##### Downloading a prerelease package
-
-To install a prerelease, open that release's page under [GitHub releases](https://github.com/dashpay/platform/releases) and copy the link to the `.deb` file for your architecture (`dpkg --print-architecture` prints it).
-Download it with this block instead of the one above, replacing the example link with the one you copied.
-As with a stable release, download it before you stop the node:
+apt keeps the downloaded package in its cache. After stopping the node with `dashmate stop` (see the examples below), install it:
 
 ```bash
-DASHMATE_DEB=""
-DASHMATE_DEB_URL="https://github.com/dashpay/platform/releases/download/v5.1.0-dev.3/dashmate_5.1.0.dev.3-1_amd64.deb"
-DASHMATE_DEB_DIR="$(mktemp -d)"
-if [ -n "$DASHMATE_DEB_DIR" ] && [ -d "$DASHMATE_DEB_DIR" ] \
-  && curl -fL -o "$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")" "$DASHMATE_DEB_URL"; then
-  DASHMATE_DEB="$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")"
-  echo "Downloaded $DASHMATE_DEB"
-else
-  echo "Could not download the dashmate package. Check the link and try again." >&2
-fi
+sudo apt install --only-upgrade dashmate
 ```
 
-##### Installing the downloaded package
+Use these commands rather than `sudo apt upgrade`, which installs the new dashmate as well, but while the node is still running.
+If the download step prints `dashmate is already the newest version`, apt has nothing newer to install: a prerelease is installed only if you [follow prereleases](installation.md#prereleases).
 
-After stopping the node with `dashmate stop` (see the examples below), install the package that either download block saved. It is installed by its path, and nothing is installed if the download failed:
+##### A host without the repository
 
-```bash
-if [ -n "$DASHMATE_DEB" ] && [ -f "$DASHMATE_DEB" ]; then
-  sudo apt install "$DASHMATE_DEB"
-else
-  echo "No downloaded dashmate package found, so nothing was installed. Run the download step again in this shell." >&2
-fi
-```
-
-> **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
-> You can ignore this error message:
-> N: Download is performed unsandboxed as root as file '/tmp/tmp.k3Jd8sQw2L/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+dashmate packages older than 5.1.0-rc.2 do not add the repository, so on a host that runs one, `/etc/apt/sources.list.d/dashmate.sources` does not exist and apt finds no new dashmate.
+Add the repository once with the [commands in the installation guide](installation.md#debian-and-ubuntu-dashs-apt-repository), which end with `sudo apt update` and install nothing, then update as above.
+You can also download the new package from the GitHub releases page with the [download block in the installation guide](installation.md#debian-package-from-the-github-releases-page) before you stop the node, and install it after `dashmate stop` with the [install block](installation.md#installing-the-downloaded-package). It adds the repository, so later updates come through apt.
 
 #### Node package
 
@@ -94,7 +57,7 @@ npm install -g dashmate
 
 Run the steps one at a time in the same shell, and stop at the first one that fails:
 
-* With the Debian package, run `dashmate stop` only after the download printed `Downloaded ...`.
+* With the Debian package, run `dashmate stop` only after the download step finished without an error.
 * Before `dashmate update`, check that `dashmate --version` shows the new version.
 * If a step after `dashmate stop` fails, run `dashmate start` to bring the node back on the version it has, then fix the problem and start over.
 
@@ -180,7 +143,7 @@ A node that does not run Platform (`platform.enable` is `false`) can skip the re
 
 As with any update, run the steps one at a time in the same shell, and stop at the first one that fails:
 
-* With the Debian package, run `dashmate stop` only after the download printed `Downloaded ...`.
+* With the Debian package, run `dashmate stop` only after the download step finished without an error.
 * Check that `dashmate --version` shows the new version before you reset Platform data.
 * If a step fails before `dashmate reset --platform`, nothing has been removed: run `dashmate start` to bring the node back on the version it has, then fix the problem and start over.
 * If `dashmate reset --platform` or a later step fails, fix the problem, run that step again and finish the remaining steps in order. Running the reset again is safe. The node starts with an empty Platform chain, which is what the restarted network needs.
