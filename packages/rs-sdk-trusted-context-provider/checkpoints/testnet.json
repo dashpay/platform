@@ -1,7 +1,7 @@
 {
   "network": 1,
-  "height": 1597368,
-  "block_hash": "0000004693a8a54a3219bd4e09791964f7bb17b0004af74f411af6d22d3c24d2",
-  "masternode_root": "a3394af364901b860603bbc580fe0e27c8dd3ce054528748ac277dfff596bb6d",
-  "quorum_root": "07247c58004bdfb21c9fee6a6bda8781d019e8f156a03f7dbdd801dae322079f"
+  "height": 1598328,
+  "block_hash": "000000033a428b0634bb8cf08ba926c3582eaabd5dbb6574eeff9c9e0ee1898c",
+  "masternode_root": "b9bc8b3a10e5a4f625af27627c7305a1e7e799e517f6285ba2d8a345011060b2",
+  "quorum_root": "e151c7f1a99c9a939f3874e0cffc340d3e94818418de8ce67402b6d64c81e64c"
 }
