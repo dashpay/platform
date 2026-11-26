@@ -5,6 +5,8 @@ import path from 'path';
 import wait from '../../util/wait.js';
 import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
+import quoteShellArgument from '../../util/quoteShellArgument.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 // More paths than this are counted rather than listed.
 const MAX_REPORTED_PATHS = 10;
@@ -16,6 +18,41 @@ const MAX_VOLUME_REMOVAL_ATTEMPTS = 10;
 // The helper keeps certificate renewal state in the Platform directory, so a
 // Platform reset removes it with the Platform services; start brings it back.
 const HELPER_SERVICE_NAME = 'dashmate_helper';
+
+// A backslash, and what a terminal acts on rather than shows: C0 controls,
+// DEL and C1 controls.
+// eslint-disable-next-line no-control-regex
+const ESCAPED_FOR_DISPLAY = /[\\\u0000-\u001f\u007f-\u009f]/gu;
+
+const DISPLAY_ESCAPES = {
+  '\\': '\\\\',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+};
+
+/**
+ * Show text from the filesystem on one line, as it is but for what a terminal
+ * would act on, which is escaped
+ *
+ * A line break in a file name would otherwise start a line of the message
+ * that reads like the rest of it.
+ *
+ * @param {string} text
+ * @return {string}
+ */
+function escapeForDisplay(text) {
+  return String(text).replace(ESCAPED_FOR_DISPLAY, (character) => DISPLAY_ESCAPES[character]
+    ?? `\\x${character.codePointAt(0).toString(16).padStart(2, '0')}`);
+}
+
+/**
+ * @param {string} shownPath
+ * @return {string} the path quoted and on one line, for reading, not pasting
+ */
+function formatPath(shownPath) {
+  return `'${escapeForDisplay(shownPath).replace(/'/g, "\\'")}'`;
+}
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -229,7 +266,7 @@ export default function resetNodeTaskFactory(
    */
   function formatDeniedPaths(deniedPaths) {
     const lines = deniedPaths.slice(0, MAX_REPORTED_PATHS)
-      .map((deniedPath) => `  '${deniedPath}'`);
+      .map((deniedPath) => `  ${formatPath(deniedPath)}`);
 
     if (deniedPaths.length > MAX_REPORTED_PATHS) {
       lines.push(`  and ${deniedPaths.length - MAX_REPORTED_PATHS} more`);
@@ -298,12 +335,18 @@ export default function resetNodeTaskFactory(
     // holds.
     const parentPath = path.dirname(targetPath);
     const remedy = deniedPaths.includes(parentPath)
-      ? [`  sudo chown ${uid}:${gid} '${parentPath}'`, `  chmod u+rwx '${parentPath}'`]
-      : [`  sudo chown -R ${uid}:${gid} '${targetPath}'`, `  chmod -R u+rwX '${targetPath}'`];
+      ? [
+        `  sudo chown ${uid}:${gid} ${quoteShellArgument(parentPath)}`,
+        `  chmod u+rwx ${quoteShellArgument(parentPath)}`,
+      ]
+      : [
+        `  sudo chown -R ${uid}:${gid} ${quoteShellArgument(targetPath)}`,
+        `  chmod -R u+rwX ${quoteShellArgument(targetPath)}`,
+      ];
 
     throw new Error([
       `Cannot reset config '${config.getName()}': this user cannot remove`
-        + ` ${deniedPaths.length} path(s) under '${targetPath}':`,
+        + ` ${deniedPaths.length} path(s) under ${formatPath(targetPath)}:`,
       ...formatDeniedPaths(deniedPaths),
       'They are probably owned by root, created by a container, or read-only.',
       'Nothing has been changed. Give them to this user and make them writable, for example:',
@@ -332,7 +375,7 @@ export default function resetNodeTaskFactory(
     // missing mount sources, as root.
     const recovery = [
       'then render the service files again and run the reset again:',
-      `  dashmate config render --config ${config.getName()}`,
+      `  dashmate config render ${renderConfigFlag(config.getName())}`,
     ];
 
     // A group reset that fails here has already reset the members before
@@ -349,7 +392,7 @@ export default function resetNodeTaskFactory(
       deniedPaths = removePathAsFarAsPermitted(targetPath);
     } catch (e) {
       throw new Error([
-        `Could not remove '${targetPath}': ${e.message}`,
+        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(e.message)}`,
         'Fix the cause,',
         ...recovery,
       ].join('\n'));
@@ -360,10 +403,10 @@ export default function resetNodeTaskFactory(
     }
 
     throw new Error([
-      `Could not remove ${deniedPaths.length} path(s) under '${targetPath}' for lack of permission:`,
+      `Could not remove ${deniedPaths.length} path(s) under ${formatPath(targetPath)} for lack of permission:`,
       ...formatDeniedPaths(deniedPaths),
       'Remove them with sufficient rights, for example:',
-      `  sudo rm -rf '${targetPath}'`,
+      `  sudo rm -rf ${quoteShellArgument(targetPath)}`,
       ...recovery,
     ].join('\n'));
   }
@@ -390,10 +433,10 @@ export default function resetNodeTaskFactory(
         `Cannot reset Platform only for config '${name}': dashmate has no Platform defaults`
           + ` for '${defaultConfigName}' to restore.`,
         'To remove Platform services and data and keep the config, run it without --hard:',
-        `  dashmate reset --config ${name} --platform`,
+        `  dashmate reset ${renderConfigFlag(name)} --platform`,
         'and set Platform options with \'dashmate config set\'.',
         'To remove the whole config, Core included:',
-        `  dashmate reset --config ${name} --hard`,
+        `  dashmate reset ${renderConfigFlag(name)} --hard`,
       ].join('\n'));
     }
 
@@ -407,9 +450,9 @@ export default function resetNodeTaskFactory(
         `Cannot reset Platform only and remove config '${config.getName()}': its Core`
           + ' settings would go with it.',
         'To remove Platform services and data and keep the configs:',
-        `  dashmate group reset --group ${groupName} --platform`,
+        `  dashmate group reset --group ${quoteShellArgument(groupName)} --platform`,
         'To remove the configs, Core included, and set the network up again:',
-        `  dashmate group reset --group ${groupName} --hard`,
+        `  dashmate group reset --group ${quoteShellArgument(groupName)} --hard`,
       ].join('\n'));
     }
 

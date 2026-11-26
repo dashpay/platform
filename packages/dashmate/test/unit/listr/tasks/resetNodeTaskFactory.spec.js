@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Listr } from 'listr2';
 import { asValue } from 'awilix';
@@ -13,6 +14,7 @@ import getTestnetConfigFactory from '../../../../configs/defaults/getTestnetConf
 import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
 import getMainnetConfigFactory from '../../../../configs/defaults/getMainnetConfigFactory.js';
 import resetNodeTaskFactory from '../../../../src/listr/tasks/resetNodeTaskFactory.js';
+import quoteShellArgument from '../../../../src/util/quoteShellArgument.js';
 import GroupResetCommand from '../../../../src/commands/group/reset.js';
 import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
@@ -463,7 +465,7 @@ describe('resetNodeTaskFactory', () => {
       );
 
       expect(error.message).to.include(`'${configPath}'`);
-      expect(error.message).to.include(`chmod u+rwx '${configPath}'`);
+      expect(error.message).to.include(`chmod u+rwx ${quoteShellArgument(configPath)}`);
       expect(dockerCompose.rm).to.not.have.been.called();
     });
 
@@ -479,7 +481,7 @@ describe('resetNodeTaskFactory', () => {
         (e) => e,
       );
 
-      expect(error.message).to.include(`chmod u+rwx '${configPath}'`);
+      expect(error.message).to.include(`chmod u+rwx ${quoteShellArgument(configPath)}`);
       expect(error.message).to.not.include('chmod -R');
       expect(dockerCompose.rm).to.not.have.been.called();
     });
@@ -493,7 +495,7 @@ describe('resetNodeTaskFactory', () => {
       const configPath = lockDirectory('testnet');
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
-        .to.be.rejectedWith(`chmod u+rwx '${configPath}'`);
+        .to.be.rejectedWith(`chmod u+rwx ${quoteShellArgument(configPath)}`);
 
       expect(dockerCompose.rm).to.not.have.been.called();
     });
@@ -511,6 +513,107 @@ describe('resetNodeTaskFactory', () => {
         .to.be.rejectedWith(/and 2 more/);
 
       expect(lockedPaths).to.have.lengthOf(12);
+    });
+
+    /**
+     * Move the test to a home directory whose path a shell must be given
+     * quoted, with the same files as the one it replaces
+     */
+    function useHomeDirWithApostrophe() {
+      homeDir.remove();
+      homeDir = new HomeDir(fs.mkdtempSync(path.join(os.tmpdir(), "dashmate-o'brien-")));
+
+      useConfigs([config]);
+
+      writeFile('testnet', 'core', 'dash.conf');
+      writeFile('testnet', 'platform', 'drive', 'tenderdash', 'config.toml');
+      writeFile('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+    }
+
+    // The commands are there to be pasted. Nothing validates the home
+    // directory's path, and a quote in it ended the quoting early.
+    it('should quote the paths in the commands it gives for a shell', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe();
+
+      const sslPath = lockDirectory('testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const quotedPlatformPath = `'${platformPath.split("'").join("'\\''")}'`;
+      const { uid, gid } = os.userInfo();
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`  sudo chown -R ${uid}:${gid} ${quotedPlatformPath}\n`);
+      expect(error.message).to.include(`  chmod -R u+rwX ${quotedPlatformPath}\n`);
+      expect(error.message).to.include(`  '${sslPath.split("'").join("\\'")}'\n`);
+    });
+
+    it('should quote the path in the removal it advises once removal has begun', async function test() {
+      useHomeDirWithApostrophe();
+
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
+          error.code = 'EPERM';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith(`  sudo rm -rf '${platformPath.split("'").join("'\\''")}'\n`);
+    });
+
+    // A file name can hold a line break or a terminal control sequence. Shown
+    // as it is, the rest of the name would read as a line of the message, an
+    // instruction to run included.
+    it('should show each path it cannot remove on one line', async function test() {
+      skipAsRoot(this);
+
+      const lockedName = 'locked\nsudo rm -rf ~\u001b[2K';
+      writeFile('testnet', 'platform', lockedName, 'file');
+      lockDirectory('testnet', 'platform', lockedName);
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      expect(lines).to.include(`  '${platformPath}${path.sep}locked\\nsudo rm -rf ~\\x1b[2K'`);
+      expect(lines.filter((line) => line.startsWith('sudo rm'))).to.be.empty();
+      expect(error.message).to.not.include('\u001b');
+    });
+
+    it('should show a filesystem error on one line', async function test() {
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error('EIO: i/o error\nRun: curl example.invalid | sh');
+          error.code = 'EIO';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include('EIO: i/o error\\nRun: curl example.invalid | sh');
+      expect(error.message.split('\n').filter((line) => line.startsWith('Run:'))).to.be.empty();
     });
 
     // A link out of the config's directory, to another node's files or the
