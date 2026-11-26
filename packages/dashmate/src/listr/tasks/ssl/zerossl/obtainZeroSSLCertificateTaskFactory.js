@@ -376,7 +376,21 @@ and all Dash service ports listed above.`);
         title: 'Save certificate request file',
         enabled: (ctx) => !ctx.isCsrFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.csrFilePath, ctx.csr, 'utf8');
+          // Written beside it and renamed over it: a link where the request
+          // goes is replaced rather than written through, so one that points
+          // at the private key cannot overwrite the key.
+          const temporaryFilePath = `${ctx.csrFilePath}.${process.pid}.tmp`;
+
+          fs.rmSync(temporaryFilePath, { force: true });
+
+          try {
+            fs.writeFileSync(temporaryFilePath, ctx.csr, { encoding: 'utf8', flag: 'wx' });
+            fs.renameSync(temporaryFilePath, ctx.csrFilePath);
+          } catch (e) {
+            fs.rmSync(temporaryFilePath, { force: true });
+
+            throw e;
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.csrFilePath;

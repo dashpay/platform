@@ -611,6 +611,23 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(asSpki(forge.pki.publicKeyToPem(written.publicKey))).to.equal(asSpki(pair.keyPem));
     });
 
+    // A link where the request goes is replaced, not written through: one
+    // that points at the key would lose the key the certificate was issued for.
+    it('should replace a link where the certificate request goes rather than write through it', async function it() {
+      this.timeout(30000);
+      const csrFilePath = path.join(sslConfigDir, 'csr.pem');
+      fs.rmSync(csrFilePath);
+      fs.symlinkSync(privateKeyFilePath, csrFilePath);
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(pair.keyPem);
+      expect(fs.lstatSync(csrFilePath).isSymbolicLink()).to.be.false();
+      expect(() => forge.pki.certificationRequestFromPem(fs.readFileSync(csrFilePath, 'utf8')))
+        .to.not.throw();
+      expect(fs.readdirSync(sslConfigDir)).to.have.members(['bundle.crt', 'csr.pem', 'private.key']);
+    });
+
     // Renewal saves the new certificate's ID before it installs the bundle,
     // and the bundle of the certificate it replaces still serves. A retry
     // after a rejected download has to install the saved certificate rather
