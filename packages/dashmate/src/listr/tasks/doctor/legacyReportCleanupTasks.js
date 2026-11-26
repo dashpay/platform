@@ -1,5 +1,6 @@
 import {
   findLegacyReportStagingDirs,
+  releaseLegacyReportStagingDirs,
   removeLegacyReportStagingDirs,
 } from '../../../doctor/removeLegacyReportStagingDirs.js';
 
@@ -61,21 +62,31 @@ export default function createLegacyReportCleanupTasks(tempDir) {
       title: 'Remove files left by earlier reports',
       enabled: (ctx) => ctx.legacyReportDirs?.length > 0,
       task: async (ctx, task) => {
-        const agreed = await task.prompt({
-          type: 'toggle',
-          name: 'confirm',
-          header: `  Earlier dashmate versions left these directories behind while creating reports:
+        let agreed;
+
+        try {
+          agreed = await task.prompt({
+            type: 'toggle',
+            name: 'confirm',
+            header: `  Earlier dashmate versions left these directories behind while creating reports:
 
 ${ctx.legacyReportDirs.map(({ dir }) => `  - ${dir}`).join('\n')}
 
   They hold nothing but the files those versions wrote. A report you unpacked
   there yourself looks the same, so they are only removed if you agree.\n`,
-          message: 'Remove them?',
-          enabled: 'Yes',
-          disabled: 'No',
-        });
+            message: 'Remove them?',
+            enabled: 'Yes',
+            disabled: 'No',
+          });
+        } catch (error) {
+          releaseLegacyReportStagingDirs(ctx.legacyReportDirs);
+
+          throw error;
+        }
 
         if (!agreed) {
+          releaseLegacyReportStagingDirs(ctx.legacyReportDirs);
+
           task.skip('Left in place');
 
           return;

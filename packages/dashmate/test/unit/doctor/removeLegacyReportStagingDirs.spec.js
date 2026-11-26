@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import {
   findLegacyReportStagingDirs,
+  releaseLegacyReportStagingDirs,
   removeLegacyReportStagingDirs,
 } from '../../../src/doctor/removeLegacyReportStagingDirs.js';
 
@@ -113,6 +114,53 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(left).to.be.empty();
     expect(scanFailure).to.be.null();
     expect(fs.existsSync(dir)).to.be.true();
+
+    releaseLegacyReportStagingDirs(found);
+  });
+
+  // A directory that was closed and deleted can have its identity given to a
+  // new one, which would then pass for it. One that is held open keeps its
+  // identity, whatever happens at its path, until it is let go.
+  it('should hold each directory it found open until it is removed or let go', () => {
+    const first = makeStagingDir(legacyName);
+    const second = makeStagingDir('dashmate-report-2026-01-03T00:00:00.000Z');
+
+    const { found: unordered } = findLegacyReportStagingDirs(tempDir);
+
+    // Listed in whatever order the file system returns
+    const found = [first, second].map((target) => unordered.find(({ dir: foundDir }) => foundDir === target));
+
+    expect(found.every(Boolean)).to.be.true();
+    expect(unordered).to.have.lengthOf(2);
+
+    found.forEach(({ dir: foundDir, handle }) => {
+      const held = fs.fstatSync(handle);
+      const atPath = fs.lstatSync(foundDir);
+
+      expect([held.dev, held.ino]).to.deep.equal([atPath.dev, atPath.ino]);
+    });
+
+    const handles = found.map(({ handle }) => handle);
+
+    expect(removeLegacyReportStagingDirs([found[0]]).removed).to.deep.equal([first]);
+    expect(() => fs.fstatSync(handles[0])).to.throw().with.property('code', 'EBADF');
+
+    releaseLegacyReportStagingDirs([found[1]]);
+    expect(() => fs.fstatSync(handles[1])).to.throw().with.property('code', 'EBADF');
+    expect(fs.existsSync(second)).to.be.true();
+
+    // Let go of once: a handle number is handed out again, and closing it
+    // twice would close whatever was opened under it since
+    const reopened = [fs.openSync(second, 'r'), fs.openSync(second, 'r')];
+
+    try {
+      releaseLegacyReportStagingDirs(found);
+      removeLegacyReportStagingDirs([found[0]]);
+
+      reopened.forEach((handle) => expect(() => fs.fstatSync(handle)).to.not.throw());
+    } finally {
+      reopened.forEach((handle) => fs.closeSync(handle));
+    }
   });
 
   // Time passes between finding a directory and the operator agreeing to
@@ -212,6 +260,21 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(failed[0].error.message).to.equal(
       `${dir} is not the directory that was found there; it is now in ${moved}`,
     );
+  });
+
+  // The directory held is the one checked: it is opened once, and checked
+  // through that handle, rather than opened again after the check
+  it('should hold the handle it checked the directory through', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    const openSync = this.sinon.spy(fs, 'openSync');
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    expect(found.map(({ dir: foundDir }) => foundDir)).to.deep.equal([dir]);
+    expect(openSync.getCalls().filter(({ args: [target] }) => target === dir)).to.have.lengthOf(1);
+
+    releaseLegacyReportStagingDirs(found);
   });
 
   it('should remove its empty holding directory and report why when it cannot move a directory there', function it() {

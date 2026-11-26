@@ -138,8 +138,12 @@ function isGuardedPath(dir, uid) {
  * @param {string} dir
  * @param {number} uid
  * @param {number} dev
+ * @param {Object} [options]
+ * @param {boolean} [options.keepOpen] - keep the handle open and return it,
+ *   unless the directory fails a check
+ * @return {number|undefined} the open handle, when it is kept
  */
-function closeDirectory(dir, uid, dev) {
+function closeDirectory(dir, uid, dev, { keepOpen = false } = {}) {
   // eslint-disable-next-line no-bitwise
   const flags = fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_DIRECTORY;
 
@@ -176,9 +180,19 @@ function closeDirectory(dir, uid, dev) {
     if ((stat.mode & 0o7777) !== 0o700) {
       fs.fchmodSync(fd, 0o700);
     }
-  } finally {
+  } catch (error) {
     fs.closeSync(fd);
+
+    throw error;
   }
+
+  if (keepOpen) {
+    return fd;
+  }
+
+  fs.closeSync(fd);
+
+  return undefined;
 }
 
 /**
@@ -267,8 +281,12 @@ function readCollectionDate(datePath, length) {
  * @param {number} tempDev
  * @param {{restricted: boolean}} state - set once the directory is closed to
  *   other users, so a caller leaving it in place can say so
+ * @param {Object} [options]
+ * @param {boolean} [options.hold] - keep the handle the directory was checked
+ *   through open and return it, if it passes
+ * @return {number|undefined} the handle, when it is held
  */
-function verifyStagingDir(dir, uid, tempDev, state) {
+function verifyStagingDir(dir, uid, tempDev, state, { hold = false } = {}) {
   const name = path.basename(dir);
 
   // Something mounted in its place is not what an earlier version left
@@ -278,16 +296,49 @@ function verifyStagingDir(dir, uid, tempDev, state) {
 
   // Closed first, so that a directory left in place for any reason below
   // still keeps its samples from other users
-  closeDirectory(dir, uid, tempDev);
+  const handle = closeDirectory(dir, uid, tempDev, { keepOpen: hold });
   // eslint-disable-next-line no-param-reassign
   state.restricted = true;
 
-  checkStagingTree(dir, uid, tempDev, 0);
+  try {
+    checkStagingTree(dir, uid, tempDev, 0);
 
-  const time = name.slice(LEGACY_STAGING_DIR_PREFIX.length);
+    const time = name.slice(LEGACY_STAGING_DIR_PREFIX.length);
 
-  if (readCollectionDate(path.join(dir, 'date.txt'), Buffer.byteLength(time)) !== time) {
-    throw new Error(`${path.join(dir, 'date.txt')} does not record the time ${name} is named after`);
+    if (readCollectionDate(path.join(dir, 'date.txt'), Buffer.byteLength(time)) !== time) {
+      throw new Error(`${path.join(dir, 'date.txt')} does not record the time ${name} is named after`);
+    }
+  } catch (error) {
+    if (handle !== undefined) {
+      fs.closeSync(handle);
+    }
+
+    throw error;
+  }
+
+  return handle;
+}
+
+/**
+ * Let go of a found directory, once: its handle's number can be handed out
+ * again as soon as it is closed, so a second close could close another file
+ *
+ * @param {{handle: number|null}} found - as found by findLegacyReportStagingDirs
+ */
+function releaseFound(found) {
+  const { handle } = found;
+
+  if (typeof handle !== 'number') {
+    return;
+  }
+
+  // eslint-disable-next-line no-param-reassign
+  found.handle = null;
+
+  try {
+    fs.closeSync(handle);
+  } catch {
+    // Nothing is held any more either way
   }
 }
 
@@ -310,12 +361,15 @@ function verifyStagingDir(dir, uid, tempDev, state) {
  *
  * @param {string} tempDir - the directory reports were staged in
  * @return {{
- *   found: {dir: string, dev: number, ino: number, tempDev: number, tempIno: number}[],
+ *   found: {dir: string, dev: number, ino: number, tempDev: number, tempIno: number,
+ *     handle: number}[],
  *   left: {dir: string, error: Error, restricted: boolean}[],
  *   recovery: {dir: string}[],
  *   scanFailure: {dir: string, error: Error}|null,
  * }} each found directory with its identity and its temp directory's, so a
- *   different directory put at the same path is not taken for it;
+ *   different directory put at the same path is not taken for it, and an
+ *   open handle on it, which keeps that identity its own: every one is to be
+ *   passed to removeLegacyReportStagingDirs or releaseLegacyReportStagingDirs;
  *   `restricted` says whether a directory left in place was closed to other
  *   users; `recovery` lists the directories removals left behind;
  *   `scanFailure` says the temp directory itself could not be looked in
@@ -386,7 +440,18 @@ export function findLegacyReportStagingDirs(tempDir) {
       const stat = fs.lstatSync(dir);
 
       if (stat.isDirectory() && stat.uid === uid) {
-        verifyStagingDir(dir, uid, tempStat.dev, state);
+        // Kept open until the directory is removed or let go of. While it is
+        // open, the system gives its identity to no other directory, even
+        // once it is deleted, so a directory put at its path later can never
+        // pass for it.
+        const handle = verifyStagingDir(dir, uid, tempStat.dev, state, { hold: true });
+        const held = fs.fstatSync(handle);
+
+        if (held.dev !== stat.dev || held.ino !== stat.ino) {
+          fs.closeSync(handle);
+
+          throw new Error(`${dir} changed while it was looked at`);
+        }
 
         found.push({
           dir,
@@ -394,6 +459,7 @@ export function findLegacyReportStagingDirs(tempDir) {
           ino: stat.ino,
           tempDev: tempStat.dev,
           tempIno: tempStat.ino,
+          handle,
         });
       }
     } catch (error) {
@@ -465,12 +531,22 @@ function removeVerified(dir, { dev, ino }, uid, tempDev, state) {
 }
 
 /**
- * Remove staging directories the operator agreed to remove. Each one is
- * checked again first, so one that changed since it was found is left in
- * place.
+ * Let go of staging directories that were found and are not to be removed
  *
- * @param {{dir: string, dev: number, ino: number, tempDev: number, tempIno: number}[]} dirs
- *   as found by findLegacyReportStagingDirs
+ * @param {{handle: number|null}[]} dirs - as found by findLegacyReportStagingDirs;
+ *   each is let go of once, however often it is passed
+ */
+export function releaseLegacyReportStagingDirs(dirs) {
+  dirs.forEach(releaseFound);
+}
+
+/**
+ * Remove staging directories the operator agreed to remove, and let go of
+ * each once done with it. Each one is checked again first, so one that
+ * changed since it was found is left in place.
+ *
+ * @param {{dir: string, dev: number, ino: number, tempDev: number, tempIno: number,
+ *   handle: number|null}[]} dirs - as found by findLegacyReportStagingDirs
  * @return {{removed: string[], failed: {dir: string, error: Error, restricted: boolean}[]}}
  */
 export function removeLegacyReportStagingDirs(dirs) {
@@ -479,14 +555,17 @@ export function removeLegacyReportStagingDirs(dirs) {
 
   // Nothing is found where ownership cannot be told, so nothing can be agreed to
   if (dirs.length === 0 || typeof process.getuid !== 'function') {
+    releaseLegacyReportStagingDirs(dirs);
+
     return { removed, failed };
   }
 
   const uid = process.getuid();
 
-  for (const {
-    dir, dev, ino, tempDev, tempIno,
-  } of dirs) {
+  for (const found of dirs) {
+    const {
+      dir, dev, ino, tempDev, tempIno,
+    } = found;
     const state = { restricted: false };
 
     try {
@@ -521,6 +600,8 @@ export function removeLegacyReportStagingDirs(dirs) {
       removed.push(dir);
     } catch (error) {
       failed.push({ dir, error, restricted: state.restricted });
+    } finally {
+      releaseFound(found);
     }
   }
 
