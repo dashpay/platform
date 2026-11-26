@@ -190,6 +190,7 @@ impl PlatformAddressWallet {
             asset_lock_signer,
             settings,
             RecipientOwnership::AllOwned,
+            false,
             on_asset_lock_built,
         )
         .await
@@ -283,6 +284,7 @@ impl PlatformAddressWallet {
             asset_lock_signer,
             settings,
             RecipientOwnership::ExternalExplicitOutputs,
+            false,
             on_asset_lock_built,
         )
         .await
@@ -351,7 +353,10 @@ impl PlatformAddressWallet {
         let platform_account_index = self
             .account_holding_remainder(&out_point, &recipients)
             .await?;
-        self.fund_from_asset_lock_external(
+        // The row the resume claims must still record these recipients
+        // (`recipients_from_row`): one recreated at the outpoint by an owned
+        // funding records none and is refused before anything is sent.
+        self.fund_from_asset_lock_inner(
             AssetLockFunding::FromExistingAssetLock {
                 out_point,
                 consume_invitation_voucher: false,
@@ -361,6 +366,8 @@ impl PlatformAddressWallet {
             address_signer,
             asset_lock_signer,
             settings,
+            RecipientOwnership::ExternalExplicitOutputs,
+            true,
             None,
         )
         .await
@@ -426,6 +433,7 @@ impl PlatformAddressWallet {
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
         ownership: RecipientOwnership,
+        recipients_from_row: bool,
         on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
@@ -491,18 +499,27 @@ impl PlatformAddressWallet {
             proof,
             path,
             tracked_out_point,
-        } = match self
-            .asset_locks
-            .resolve_funding_with_is_timeout_fallback(
-                funding,
-                AssetLockFundingType::AssetLockAddressTopUp,
-                /* destination_index */ 0,
-                recipient,
-                asset_lock_signer,
-                on_asset_lock_built,
-            )
-            .await?
-        {
+        } = match if recipients_from_row {
+            self.asset_locks
+                .resolve_funding_to_recorded_recipients(
+                    funding,
+                    AssetLockFundingType::AssetLockAddressTopUp,
+                    recipient,
+                    asset_lock_signer,
+                )
+                .await?
+        } else {
+            self.asset_locks
+                .resolve_funding_with_is_timeout_fallback(
+                    funding,
+                    AssetLockFundingType::AssetLockAddressTopUp,
+                    /* destination_index */ 0,
+                    recipient,
+                    asset_lock_signer,
+                    on_asset_lock_built,
+                )
+                .await?
+        } {
             FundingResolution::Resolved(rf) => rf,
             FundingResolution::IsTimeout { out_point } => {
                 tracing::warn!(
@@ -2750,6 +2767,63 @@ mod tests {
             )
             .await
             .expect("a lock without recipients resumes through the owned path");
+        assert!(matches!(resolved, FundingResolution::Resolved(_)));
+    }
+
+    /// A resume to the recipients read from a row needs the row it claims to
+    /// still record them. A row recreated at the outpoint by an owned funding
+    /// records none: the old payees are refused there before anything is
+    /// sent, while a caller naming its own payees for such a row (a legacy
+    /// external payment) still resumes it.
+    #[tokio::test]
+    async fn should_refuse_old_payees_for_a_row_an_owned_funding_recreated() {
+        let (_manager, wallet, _persister, recipients, mut row, signer) =
+            external_payment_with_recorded_row().await;
+        let old_payees = PlatformAddressRecipients::new(recipients).unwrap();
+        row.platform_address_recipients = None;
+        restart_with_failed_submit(&wallet, &chain_locked(row.clone())).await;
+        let resume = || AssetLockFunding::FromExistingAssetLock {
+            out_point: row.out_point,
+            consume_invitation_voucher: false,
+        };
+
+        let Err(refused) = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_to_recorded_recipients(
+                resume(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                Some(AssetLockRecipient::PlatformAddresses(old_payees.clone())),
+                &signer,
+            )
+            .await
+        else {
+            panic!("the replacement row does not record the old payees");
+        };
+        assert!(
+            matches!(refused, PlatformWalletError::InvalidParameter(_)),
+            "{refused:?}"
+        );
+        let tracked = wallet.platform().asset_locks.list_tracked_locks().await;
+        let lock = tracked
+            .iter()
+            .find(|lock| lock.out_point == row.out_point)
+            .expect("a refused resume leaves the lock tracked");
+        assert!(!lock.status.is_consumed(), "nothing was sent");
+
+        let resolved = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                resume(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                Some(AssetLockRecipient::PlatformAddresses(old_payees)),
+                &signer,
+                None,
+            )
+            .await
+            .expect("a caller naming its own payees still resumes a row without recipients");
         assert!(matches!(resolved, FundingResolution::Resolved(_)));
     }
 
