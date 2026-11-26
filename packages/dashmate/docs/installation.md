@@ -20,30 +20,62 @@ Installing the Linux, MacOS, or Windows packages from the [GitHub releases page]
 
 ### Debian package
 
+<!-- The Debian download and install blocks below also appear in update.md. Keep both copies identical. -->
+
 Download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest).
-The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on:
+This installs stable releases only: the snippet below reads `releases/latest`, which leaves prereleases out.
+If you run a prerelease, use the [prerelease download](#downloading-a-prerelease-package) below instead.
+
+The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on into a new private directory, so no other user can replace it before it is installed:
 
 ```bash
-DASHMATE_DEB="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
+DASHMATE_DEB=""
+DASHMATE_DEB_URL="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
   | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
   | head -n 1)"
-if [ -z "$DASHMATE_DEB" ]; then
-  echo "Could not find a dashmate .deb for this architecture in the latest release" >&2
+DASHMATE_DEB_DIR="$(mktemp -d)"
+if [ -n "$DASHMATE_DEB_URL" ] && [ -n "$DASHMATE_DEB_DIR" ] && [ -d "$DASHMATE_DEB_DIR" ] \
+  && curl -fL -o "$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")" "$DASHMATE_DEB_URL"; then
+  DASHMATE_DEB="$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")"
+  echo "Downloaded $DASHMATE_DEB"
 else
-  curl -fLO "$DASHMATE_DEB"
+  echo "Could not download the dashmate package. Try again later." >&2
 fi
 ```
 
-Install the package that was just downloaded:
+#### Downloading a prerelease package
+
+To install a prerelease, open that release's page under [GitHub releases](https://github.com/dashpay/platform/releases) and copy the link to the `.deb` file for your architecture (`dpkg --print-architecture` prints it).
+Download it with this block instead of the one above, replacing the example link with the one you copied:
 
 ```bash
-sudo apt update
-sudo apt install "./$(basename "$DASHMATE_DEB")"
+DASHMATE_DEB=""
+DASHMATE_DEB_URL="https://github.com/dashpay/platform/releases/download/v5.1.0-dev.3/dashmate_5.1.0.dev.3-1_amd64.deb"
+DASHMATE_DEB_DIR="$(mktemp -d)"
+if [ -n "$DASHMATE_DEB_DIR" ] && [ -d "$DASHMATE_DEB_DIR" ] \
+  && curl -fL -o "$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")" "$DASHMATE_DEB_URL"; then
+  DASHMATE_DEB="$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")"
+  echo "Downloaded $DASHMATE_DEB"
+else
+  echo "Could not download the dashmate package. Check the link and try again." >&2
+fi
+```
+
+#### Installing the downloaded package
+
+Install the package that either download block saved. It is installed by its path, and nothing is installed if the download failed:
+
+```bash
+if [ -n "$DASHMATE_DEB" ] && [ -f "$DASHMATE_DEB" ]; then
+  sudo apt install "$DASHMATE_DEB"
+else
+  echo "No downloaded dashmate package found, so nothing was installed. Run the download step again in this shell." >&2
+fi
 ```
 
 > **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
 > You can ignore this error message:
-> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+> N: Download is performed unsandboxed as root as file '/tmp/tmp.k3Jd8sQw2L/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 
 #### Dash's apt repository
 
