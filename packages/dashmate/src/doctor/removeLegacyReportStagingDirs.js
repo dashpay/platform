@@ -217,25 +217,102 @@ function checkStagingTree(dir, uid, dev, depth) {
 }
 
 /**
- * Remove the directories earlier versions staged reports in and left behind.
+ * Read a staging directory's record of when it was collected, refusing a
+ * file of any other size than such a record: whatever it holds instead is
+ * not read
+ *
+ * @param {string} datePath
+ * @param {number} length - the size of the record expected
+ * @return {string|null} the record, or null when there is none of that size
+ */
+function readCollectionDate(datePath, length) {
+  let fd;
+
+  try {
+    // eslint-disable-next-line no-bitwise
+    fd = fs.openSync(datePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  } catch {
+    return null;
+  }
+
+  try {
+    const stat = fs.fstatSync(fd);
+
+    if (!stat.isFile() || stat.size !== length) {
+      return null;
+    }
+
+    const buffer = Buffer.alloc(length);
+
+    return fs.readSync(fd, buffer, 0, length, 0) === length ? buffer.toString('utf8') : null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Check that a directory is one an earlier version staged a report in: a
+ * real directory of the user's own, on the temp directory's file system,
+ * closed to other users before anything in it is read, holding exactly the
+ * files earlier versions wrote, and recording the time it is named after.
+ *
+ * @param {string} dir
+ * @param {number} uid
+ * @param {number} tempDev
+ * @param {{restricted: boolean}} state - set once the directory is closed to
+ *   other users, so a caller leaving it in place can say so
+ */
+function verifyStagingDir(dir, uid, tempDev, state) {
+  const name = path.basename(dir);
+
+  // Something mounted in its place is not what an earlier version left
+  if (fs.lstatSync(dir).dev !== tempDev) {
+    throw new Error(`${dir} is on another file system`);
+  }
+
+  // Closed first, so that a directory left in place for any reason below
+  // still keeps its samples from other users
+  closeDirectory(dir, uid, tempDev);
+  // eslint-disable-next-line no-param-reassign
+  state.restricted = true;
+
+  checkStagingTree(dir, uid, tempDev, 0);
+
+  const time = name.slice(LEGACY_STAGING_DIR_PREFIX.length);
+
+  if (readCollectionDate(path.join(dir, 'date.txt'), Buffer.byteLength(time)) !== time) {
+    throw new Error(`${path.join(dir, 'date.txt')} does not record the time ${name} is named after`);
+  }
+}
+
+/**
+ * Find the directories earlier versions staged reports in and left behind.
+ * Nothing is removed: what is found is for the operator to agree to remove.
  *
  * Only real directories under the earlier name that belong to the user
- * running dashmate are removed. A link under that name is left alone, so
+ * running dashmate are looked at. A link under that name is left alone, so
  * nothing it points to is touched, and so is anything another user owns.
- * Nothing is removed from a temp directory others could swap entries in, and
+ * Nothing is looked at in a temp directory others could swap entries in, and
  * nothing where the operating system has no user ids to compare.
  *
+ * Every directory looked at is closed to other users first. One that does
+ * not hold exactly what an earlier version staged is left in place.
+ *
  * @param {string} tempDir - the directory reports were staged in
- * @return {{removed: string[], failed: {dir: string, error: Error, restricted: boolean}[]}}
- *   `restricted` says whether a directory left in place was closed to other
- *   users
+ * @return {{
+ *   found: string[],
+ *   left: {dir: string, error: Error, restricted: boolean}[],
+ *   scanFailure: {dir: string, error: Error}|null,
+ * }} `restricted` says whether a directory left in place was closed to other
+ *   users; `scanFailure` says the temp directory itself could not be looked
+ *   in
  */
-export default function removeLegacyReportStagingDirs(tempDir) {
-  const removed = [];
-  const failed = [];
+export function findLegacyReportStagingDirs(tempDir) {
+  const found = [];
+  const left = [];
 
   if (typeof process.getuid !== 'function') {
-    return { removed, failed };
+    return { found, left, scanFailure: null };
   }
 
   const uid = process.getuid();
@@ -263,46 +340,66 @@ export default function removeLegacyReportStagingDirs(tempDir) {
     tempDev = fs.lstatSync(resolvedTempDir).dev;
     names = fs.readdirSync(resolvedTempDir);
   } catch (error) {
-    return { removed, failed: [{ dir: resolvedTempDir ?? tempDir, error }] };
+    return { found, left, scanFailure: { dir: resolvedTempDir ?? tempDir, error } };
   }
 
   for (const name of names.filter(isLegacyStagingDirName)) {
     const dir = path.join(resolvedTempDir, name);
-
-    let restricted = false;
+    const state = { restricted: false };
 
     try {
       // Not followed: a link is reported as a link, never as its target
       const stat = fs.lstatSync(dir);
 
       if (stat.isDirectory() && stat.uid === uid) {
-        // Something mounted in its place is not what an earlier version left
-        if (stat.dev !== tempDev) {
-          throw new Error(`${dir} is on another file system`);
-        }
+        verifyStagingDir(dir, uid, tempDev, state);
 
-        // Closed first, so that a directory left in place for any reason
-        // below still keeps its samples from other users
-        closeDirectory(dir, uid, tempDev);
-        restricted = true;
-
-        checkStagingTree(dir, uid, tempDev, 0);
-
-        // Every staging directory recorded the time it is named after; one
-        // whose record says otherwise, or has none, is not one of them
-        const datePath = path.join(dir, 'date.txt');
-
-        if (!fs.existsSync(datePath)
-          || fs.readFileSync(datePath, 'utf8') !== name.slice(LEGACY_STAGING_DIR_PREFIX.length)) {
-          throw new Error(`${datePath} does not record the time ${name} is named after`);
-        }
-
-        fs.rmSync(dir, { recursive: true, force: true });
-
-        removed.push(dir);
+        found.push(dir);
       }
     } catch (error) {
-      failed.push({ dir, error, restricted });
+      left.push({ dir, error, restricted: state.restricted });
+    }
+  }
+
+  return { found, left, scanFailure: null };
+}
+
+/**
+ * Remove staging directories the operator agreed to remove. Each one is
+ * checked again first, so one that changed since it was found is left in
+ * place.
+ *
+ * @param {string[]} dirs - as found by findLegacyReportStagingDirs
+ * @return {{removed: string[], failed: {dir: string, error: Error, restricted: boolean}[]}}
+ */
+export function removeLegacyReportStagingDirs(dirs) {
+  const removed = [];
+  const failed = [];
+
+  // Nothing is found where ownership cannot be told, so nothing can be agreed to
+  if (dirs.length === 0 || typeof process.getuid !== 'function') {
+    return { removed, failed };
+  }
+
+  const uid = process.getuid();
+
+  for (const dir of dirs) {
+    const state = { restricted: false };
+
+    try {
+      const stat = fs.lstatSync(dir);
+
+      if (!stat.isDirectory() || stat.uid !== uid) {
+        throw new Error(`${dir} is no longer a directory of the current user`);
+      }
+
+      verifyStagingDir(dir, uid, fs.lstatSync(path.dirname(dir)).dev, state);
+
+      fs.rmSync(dir, { recursive: true, force: true });
+
+      removed.push(dir);
+    } catch (error) {
+      failed.push({ dir, error, restricted: state.restricted });
     }
   }
 

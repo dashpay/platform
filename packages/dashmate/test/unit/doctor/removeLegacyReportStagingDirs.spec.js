@@ -1,9 +1,26 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import removeLegacyReportStagingDirs from '../../../src/doctor/removeLegacyReportStagingDirs.js';
+import {
+  findLegacyReportStagingDirs,
+  removeLegacyReportStagingDirs,
+} from '../../../src/doctor/removeLegacyReportStagingDirs.js';
 
 describe('removeLegacyReportStagingDirs', () => {
+  /**
+   * Find what earlier versions left and remove all of it, as an operator who
+   * agrees to remove everything found would
+   *
+   * @param {string} root
+   * @return {{removed: string[], failed: Object[], scanFailure: Object|null}}
+   */
+  function cleanUp(root) {
+    const { found, left, scanFailure } = findLegacyReportStagingDirs(root);
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    return { removed, failed: [...left, ...failed], scanFailure };
+  }
+
   const legacyName = 'dashmate-report-2026-01-01T00:00:00.000Z';
 
   let testRoot;
@@ -78,11 +95,59 @@ describe('removeLegacyReportStagingDirs', () => {
   it('should remove a staging directory an earlier version left behind', () => {
     const dir = makeStagingDir(legacyName);
 
-    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed, failed } = cleanUp(tempDir);
 
     expect(removed).to.deep.equal([dir]);
     expect(failed).to.be.empty();
     expect(fs.existsSync(dir)).to.be.false();
+  });
+
+  // What is found is the operator's to agree to remove, so finding it
+  // removes nothing
+  it('should find a staging directory without removing it', () => {
+    const dir = makeStagingDir(legacyName);
+
+    const { found, left, scanFailure } = findLegacyReportStagingDirs(tempDir);
+
+    expect(found).to.deep.equal([dir]);
+    expect(left).to.be.empty();
+    expect(scanFailure).to.be.null();
+    expect(fs.existsSync(dir)).to.be.true();
+  });
+
+  // Time passes between finding a directory and the operator agreeing to
+  // remove it
+  it('should leave a directory that changed after it was found', () => {
+    const dir = makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'written after');
+
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.be.empty();
+    expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
+      .to.deep.equal([[dir, true]]);
+    expect(fs.existsSync(path.join(dir, 'notes.txt'))).to.be.true();
+  });
+
+  // A record of any other size is not one an earlier version wrote, and
+  // whatever it holds instead is not read
+  it('should not read a collection date of any other size than a record', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    fs.writeFileSync(path.join(dir, 'date.txt'), 'x'.repeat(1024 * 1024));
+
+    const readFileSync = this.sinon.spy(fs, 'readFileSync');
+    const readSync = this.sinon.spy(fs, 'readSync');
+
+    const { found, left } = findLegacyReportStagingDirs(tempDir);
+
+    expect(found).to.be.empty();
+    expect(left.map(({ dir: leftDir }) => leftDir)).to.deep.equal([dir]);
+    expect(readFileSync).to.not.have.been.calledWith(path.join(dir, 'date.txt'));
+    expect(readSync).to.not.have.been.called();
   });
 
   it('should leave a link under that name, and what it points to, alone', () => {
@@ -91,7 +156,7 @@ describe('removeLegacyReportStagingDirs', () => {
     const link = path.join(tempDir, legacyName);
     fs.symlinkSync(outsideDir, link);
 
-    const { removed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed } = cleanUp(tempDir);
 
     expect(removed).to.be.empty();
     expect(fs.lstatSync(link).isSymbolicLink()).to.be.true();
@@ -103,7 +168,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
     stubLstatOf(this.sinon, dir, { uid: process.getuid() + 1 });
 
-    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed, failed } = cleanUp(tempDir);
 
     expect(removed).to.be.empty();
     // Passed over, not refused: it is simply not one of the user's own
@@ -118,7 +183,7 @@ describe('removeLegacyReportStagingDirs', () => {
     // where the temp directory is on another
     stubLstatOf(this.sinon, tempDir, { dev: fs.lstatSync(tempDir).dev + 1 });
 
-    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed, failed } = cleanUp(tempDir);
 
     expect(removed).to.be.empty();
     expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
@@ -139,7 +204,7 @@ describe('removeLegacyReportStagingDirs', () => {
     const file = path.join(tempDir, 'dashmate-report-2026-01-02T00:00:00.000Z');
     fs.writeFileSync(file, 'a file, not a staging directory');
 
-    const { removed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed } = cleanUp(tempDir);
 
     expect(removed).to.be.empty();
     kept.forEach((dir) => expect(fs.existsSync(dir)).to.be.true());
@@ -153,7 +218,7 @@ describe('removeLegacyReportStagingDirs', () => {
     this.sinon.stub(process, 'getuid').value(undefined);
     const readdirSync = this.sinon.spy(fs, 'readdirSync');
 
-    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed, failed } = cleanUp(tempDir);
 
     expect(removed).to.be.empty();
     expect(failed).to.be.empty();
@@ -173,7 +238,7 @@ describe('removeLegacyReportStagingDirs', () => {
       return rmSync(target, options);
     });
 
-    const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+    const { removed, failed } = cleanUp(tempDir);
 
     expect(removed).to.deep.equal([second]);
     expect(failed.map(({ dir, error }) => [dir, error.message]))
@@ -188,10 +253,11 @@ describe('removeLegacyReportStagingDirs', () => {
 
       fs.chmodSync(tempDir, 0o777);
 
-      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed, failed, scanFailure } = cleanUp(tempDir);
 
       expect(removed).to.be.empty();
-      expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([tempDir]);
+      expect(failed).to.be.empty();
+      expect(scanFailure.dir).to.equal(tempDir);
       expect(fs.existsSync(dir)).to.be.true();
     });
 
@@ -202,7 +268,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
       fs.chmodSync(tempDir, 0o1777);
 
-      const { removed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed } = cleanUp(tempDir);
 
       expect(removed).to.deep.equal([dir]);
     });
@@ -212,10 +278,11 @@ describe('removeLegacyReportStagingDirs', () => {
 
       fs.chmodSync(testRoot, 0o777);
 
-      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed, failed, scanFailure } = cleanUp(tempDir);
 
       expect(removed).to.be.empty();
-      expect(failed).to.have.lengthOf(1);
+      expect(failed).to.be.empty();
+      expect(scanFailure).to.not.be.null();
       expect(fs.existsSync(dir)).to.be.true();
     });
 
@@ -228,10 +295,11 @@ describe('removeLegacyReportStagingDirs', () => {
       const dir = makeStagingDir(legacyName);
       const other = makeStagingDir(legacyName, path.join(outsideDir, 'tmp'));
 
-      const { removed, failed } = removeLegacyReportStagingDirs(`${outsideDir}/link/../tmp`);
+      const { removed, failed, scanFailure } = cleanUp(`${outsideDir}/link/../tmp`);
 
       expect(removed).to.be.empty();
-      expect(failed).to.have.lengthOf(1);
+      expect(failed).to.be.empty();
+      expect(scanFailure).to.not.be.null();
       expect(fs.existsSync(dir)).to.be.true();
       expect(fs.existsSync(other)).to.be.true();
     });
@@ -242,7 +310,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
       const dir = makeStagingDir(legacyName);
 
-      const { removed } = removeLegacyReportStagingDirs(link);
+      const { removed } = cleanUp(link);
 
       expect(removed).to.deep.equal([dir]);
     });
@@ -272,7 +340,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
         change(dir);
 
-        const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+        const { removed, failed } = cleanUp(tempDir);
 
         expect(removed).to.be.empty();
         expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
@@ -292,7 +360,7 @@ describe('removeLegacyReportStagingDirs', () => {
       const fchmodSync = this.sinon.spy(fs, 'fchmodSync');
       const readdirSync = this.sinon.spy(fs, 'readdirSync');
 
-      const { removed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed } = cleanUp(tempDir);
 
       expect(removed).to.deep.equal([dir]);
 
@@ -315,7 +383,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
       fs.chmodSync(dir, 0o355);
 
-      const { removed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed } = cleanUp(tempDir);
 
       expect(removed).to.deep.equal([dir]);
     });
@@ -329,7 +397,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
       stubLstatOf(this.sinon, entry, { uid: process.getuid() + 1 });
 
-      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed, failed } = cleanUp(tempDir);
 
       expect(removed).to.be.empty();
       expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
@@ -345,7 +413,7 @@ describe('removeLegacyReportStagingDirs', () => {
 
       stubLstatOf(this.sinon, mountPoint, { dev: fs.lstatSync(dir).dev + 1 });
 
-      const { removed, failed } = removeLegacyReportStagingDirs(tempDir);
+      const { removed, failed } = cleanUp(tempDir);
 
       expect(removed).to.be.empty();
       expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);

@@ -3,8 +3,8 @@ import process from 'process';
 import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
 import chalk from 'chalk';
-import removeLegacyReportStagingDirs from '../../doctor/removeLegacyReportStagingDirs.js';
 import Samples from '../../doctor/Samples.js';
+import createLegacyReportCleanupTasks from '../../listr/tasks/doctor/legacyReportCleanupTasks.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
@@ -74,34 +74,9 @@ The command collects diagnostic information and creates an archive, with the nod
             }
           },
         },
-        {
-          // Earlier versions left each report's files in the temp directory.
-          // Only removed once the operator has agreed to a report, so nothing
-          // is removed by a run they decline.
-          title: 'Remove files left by earlier reports',
-          task: async (ctx, task) => {
-            const { removed, failed } = removeLegacyReportStagingDirs(os.tmpdir());
-
-            const lines = [
-              ...removed.map((dir) => `Removed ${dir}`),
-              ...failed.map(({ dir, error, restricted }) => (
-                `Left ${dir}, ${restricted ? 'closed to other users' : 'could not close it to other users'}: ${error.message}`
-              )),
-            ];
-
-            if (lines.length === 0) {
-              task.skip('Nothing to remove');
-
-              return;
-            }
-
-            // eslint-disable-next-line no-param-reassign
-            task.output = lines.join('\n');
-          },
-          options: {
-            persistentOutput: true,
-          },
-        },
+        // Only looked for once the operator has agreed to a report, so a run
+        // they decline touches nothing
+        ...createLegacyReportCleanupTasks(os.tmpdir()),
         {
           title: 'Collecting samples',
           task: async () => collectSamplesTask(config),
