@@ -25,16 +25,33 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
     buffer = scrub(data);
     filetype = '.txt';
   } else {
+    // What a free-text field holds is free text all the way down
+    const freeText = new WeakSet();
+
     // Scrubbed value by value rather than as text, so keys, numbers and the
     // structure are left alone and doctor can still read the sample back. In
     // a sample whose fields are facts doctor decides on, only its free text.
     buffer = JSON.stringify(
       data,
-      (key, value) => (
-        typeof value === 'string' && (freeTextFields === null || freeTextFields.includes(key))
-          ? scrub(value)
-          : value
-      ),
+      function scrubFreeText(key, value) {
+        const isFreeText = freeTextFields === null
+          || freeText.has(this)
+          || freeTextFields.includes(key);
+
+        if (!isFreeText) {
+          return value;
+        }
+
+        if (typeof value === 'string') {
+          return scrub(value);
+        }
+
+        if (typeof value === 'object' && value !== null) {
+          freeText.add(value);
+        }
+
+        return value;
+      },
       2,
     );
     filetype = '.json';

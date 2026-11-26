@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -10,6 +11,7 @@ import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
 import analyseCoreFactory from '../../../../../src/doctor/analyse/analyseCoreFactory.js';
+import analyseGatewayCertificateFactory from '../../../../../src/doctor/analyse/analyseGatewayCertificateFactory.js';
 import analyseServiceContainersFactory from '../../../../../src/doctor/analyse/analyseServiceContainersFactory.js';
 import archiveSamples from '../../../../../src/doctor/archiveSamples.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
@@ -960,6 +962,197 @@ describe('collectSamplesTaskFactory', () => {
         expect(record.appliesTo({ provider: 'letsencrypt' })).to.be.true();
         expect(sample.detail).to.equal(`challenge failed with ${'*'.repeat('letsencrypt'.length)} in the way`);
       });
+    });
+
+    /**
+     * @param {Object} sinon
+     * @param {Object} overrides
+     * @param {Function} [overrides.validateLetsEncryptCertificate]
+     * @param {Function} [overrides.checkGatewayCertificate]
+     */
+    function useCollector(sinon, {
+      validateLetsEncryptCertificate = sinon.stub().resolves({}),
+      checkGatewayCertificate = checkGatewayCertificateFactory(homeDir),
+    }) {
+      collectSamplesTask = collectSamplesTaskFactory(
+        dockerCompose,
+        sinon.stub().returns(rpcClient),
+        sinon.stub().resolves('127.0.0.1'),
+        sinon.stub().returns({ request: sinon.stub().resolves({}) }),
+        getServiceList,
+        sinon.stub().resolves({}),
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+        validateLetsEncryptCertificate,
+        checkGatewayCertificate,
+        new RenewalRecordRepository(homeDir),
+      );
+    }
+
+    // Doctor chooses the problem to report by the SSL check's error code, live
+    // and when it reads a report back, so a secret spelled like the code must
+    // not change it. What comes with the code is display text, and is still
+    // scrubbed.
+    it('should keep the SSL error code when a secret is spelled like it', async function it() {
+      const code = 'CERTIFICATE_IP_MISMATCH';
+      const masked = '*'.repeat(code.length);
+
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      config.set('core.rpc.users.dapi.password', code);
+
+      useCollector(this.sinon, {
+        validateLetsEncryptCertificate: this.sinon.stub().resolves({
+          error: code,
+          data: { externalIp: EXTERNAL_IP, legoCertPath: `/srv/lego/${code}/cert.crt` },
+        }),
+      });
+
+      const archivePath = await collectAndArchive();
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        const ssl = collected.getServiceInfo('gateway', 'ssl');
+
+        expect(ssl.error).to.equal(code);
+        expect(ssl.data.legoCertPath).to.equal(`/srv/lego/${masked}/cert.crt`);
+        expect(analyseConfig(collected).map((problem) => problem.getDescription()))
+          .to.include(`Let's Encrypt certificate does not match external IP ${EXTERNAL_IP}.`);
+      });
+    });
+
+    // Doctor decides on the installed certificate's status, reason codes,
+    // dates and fingerprint. Its messages are display text with paths in
+    // them, and are still scrubbed.
+    it('should keep the facts of the installed certificate when a secret is spelled like one', async function it() {
+      const validFrom = new Date('2026-11-01T00:00:00Z');
+      const validTo = new Date('2026-12-01T00:00:00Z');
+      const fingerprint256 = 'AB:CD:EF:01:23:45:67:89';
+
+      config.set('core.rpc.users.dapi.password', 'CHECKS_PASSED');
+      config.set('core.rpc.users.tenderdash.password', 'PROVIDER_MISMATCH');
+      config.set('core.rpc.users.quorum_list.password', fingerprint256);
+
+      useCollector(this.sinon, {
+        checkGatewayCertificate: () => ({
+          status: 'CHECKS_PASSED',
+          reasons: [],
+          warnings: [{
+            code: 'PROVIDER_MISMATCH',
+            message: 'Issued by letsencrypt, see /srv/PROVIDER_MISMATCH/notes',
+          }],
+          skipped: ['IDENTITY'],
+          provider: 'zerossl',
+          installed: { validFrom, validTo, fingerprint256 },
+          expiresInDays: 5,
+        }),
+      });
+
+      const archivePath = await collectAndArchive();
+      const restored = (await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'installedCertificate');
+
+      [samples.getServiceInfo('gateway', 'installedCertificate'), restored].forEach((installed) => {
+        expect(installed).to.deep.equal({
+          status: 'CHECKS_PASSED',
+          reasons: [],
+          warnings: [{
+            code: 'PROVIDER_MISMATCH',
+            message: `Issued by letsencrypt, see /srv/${'*'.repeat('PROVIDER_MISMATCH'.length)}/notes`,
+          }],
+          skipped: ['IDENTITY'],
+          provider: 'zerossl',
+          expiresInDays: 5,
+          validTo: validTo.toUTCString(),
+          validFrom: validFrom.toUTCString(),
+          fingerprint256,
+        });
+      });
+    });
+
+    // A certificate not issued for this node's address cannot be reinstalled,
+    // so the reason code decides whether the repair forces a new one
+    it('should keep a reason code that decides the repair when a secret is spelled like it', async function it() {
+      config.set('core.rpc.users.dapi.password', 'IP_MISMATCH');
+
+      useCollector(this.sinon, {
+        checkGatewayCertificate: () => ({
+          status: 'INVALID',
+          reasons: [{ code: 'IP_MISMATCH', message: "The installed certificate is not issued for this node's address" }],
+          warnings: [],
+          skipped: [],
+          provider: 'zerossl',
+          installed: {
+            validFrom: new Date('2026-11-01T00:00:00Z'),
+            validTo: new Date('2026-12-01T00:00:00Z'),
+            fingerprint256: 'AB:CD:EF:01:23:45:67:89',
+          },
+          expiresInDays: 5,
+        }),
+      });
+
+      const archivePath = await collectAndArchive();
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        const repairs = analyseGatewayCertificateFactory()(collected)
+          .filter((problem) => problem.getDescription().includes('not issued for this node'))
+          .map((problem) => problem.getSolution());
+
+        expect(repairs).to.have.lengthOf(1);
+        expect(repairs[0]).to.contain('--force');
+      });
+    });
+
+    // Doctor only advises loading the saved certificate when the one it
+    // judged on disk is the one the gateway probe read, by fingerprint
+    it('should keep the fingerprints doctor compares when a secret is part of one', async () => {
+      const { cert, key } = createCertificateForTest({
+        ip: EXTERNAL_IP, days: 30, serialNumber: '7A1B2C3D4E5F',
+      });
+      const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), cert, 'utf8');
+      fs.writeFileSync(path.join(sslDir, 'private.key'), key, 'utf8');
+
+      const server = tls.createServer({ cert, key }, (socket) => socket.end());
+      const liveSockets = [];
+      server.on('secureConnection', (socket) => liveSockets.push(socket));
+
+      await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+
+      config.set('platform.gateway.listeners.dapiAndDrive.port', server.address().port);
+
+      const { fingerprint256, serialNumber } = new crypto.X509Certificate(cert);
+
+      config.set('core.rpc.users.dapi.password', fingerprint256.slice(0, 23));
+      // Nothing decides on the serial number, so it is scrubbed like the
+      // rest of what the gateway presents
+      config.set('core.rpc.users.tenderdash.password', serialNumber);
+
+      let archivePath;
+
+      try {
+        archivePath = await collectAndArchive();
+      } finally {
+        liveSockets.forEach((socket) => socket.destroy());
+        await new Promise((resolve) => { server.close(resolve); });
+      }
+
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        const served = collected.getServiceInfo('gateway', 'servedCertificate');
+
+        expect(collected.getServiceInfo('gateway', 'installedCertificate').fingerprint256)
+          .to.equal(fingerprint256);
+        expect(served.certificate.fingerprint256).to.equal(fingerprint256);
+        expect(served.onDisk.fingerprint256).to.equal(fingerprint256);
+      });
+
+      expect(samples.getServiceInfo('gateway', 'servedCertificate').certificate.serialNumber)
+        .to.equal(serialNumber);
+      expect(restored.getServiceInfo('gateway', 'servedCertificate').certificate.serialNumber)
+        .to.equal('*'.repeat(serialNumber.length));
     });
 
     // The provider and the code of a renewal record are kept as they are,

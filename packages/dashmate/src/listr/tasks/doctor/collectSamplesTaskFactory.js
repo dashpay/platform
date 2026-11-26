@@ -51,7 +51,9 @@ async function fetchTextOrError(url) {
  * @param {Object} data - mutated in place
  * @param {function(string): string} scrub - masks the config's secrets
  * @param {string[]|null} [freeTextFields] - the only fields to rewrite, for
- *   a sample whose other fields are facts doctor decides on
+ *   a sample whose other fields are facts doctor decides on. Matched by the
+ *   name of the field holding each value, which is all the samples given one
+ *   here need: the SSL check's free text is its `data`, rewritten whole.
  */
 function obfuscateOperatorName(data, scrub, freeTextFields = null) {
   const identity = getOperatorIdentity();
@@ -453,7 +455,11 @@ export default function collectSamplesTaskFactory(
                   // hands to whoever is helping them, so the path stays - it is
                   // what makes the problem actionable - and the name in it does
                   // not.
-                  obfuscateOperatorName(installed, scrub);
+                  obfuscateOperatorName(
+                    installed,
+                    scrub,
+                    getSampleFreeTextFields('gateway', 'installedCertificate'),
+                  );
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },

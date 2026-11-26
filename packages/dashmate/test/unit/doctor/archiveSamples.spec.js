@@ -308,6 +308,37 @@ describe('archiveSamples', () => {
       expect(inspect.Config.Labels.quoted).to.match(/^"\*+"$/);
     });
 
+    // In a sample whose fields doctor decides on, a free-text field is
+    // scrubbed with everything in it, however deep, and nothing else is
+    it('should scrub all of a free-text field of a fact sample and keep its facts', async () => {
+      const code = 'CERTIFICATE_IP_MISMATCH';
+
+      config.set('core.rpc.users.tenderdash.password', code);
+
+      samples.setServiceInfo('gateway', 'ssl', {
+        error: code,
+        data: {
+          legoCertPath: `/srv/${code}/cert.crt`,
+          certificate: { ipAddresses: [`10.0.0.1 ${code}`] },
+        },
+      });
+
+      const archivePath = await archiveSamples(samples, archiveRoot, config);
+
+      const ssl = (await unarchiveSamplesFactory(() => [{ name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'ssl');
+
+      const masked = '*'.repeat(code.length);
+
+      expect(ssl).to.deep.equal({
+        error: code,
+        data: {
+          legoCertPath: `/srv/${masked}/cert.crt`,
+          certificate: { ipAddresses: [`10.0.0.1 ${masked}`] },
+        },
+      });
+    });
+
     // A secret can be spelled like a field name or be all digits. Masking it
     // in the serialized text would rename every such key - the config then
     // fails validation on the way back in - or break numbers that contain it.
