@@ -559,8 +559,9 @@ export default function resetNodeTaskFactory(
         },
       },
       {
+        // Checked again with a prepared plan: a group member can be started
+        // while the members before it are reset.
         title: 'Check services are not running',
-        enabled: () => preparedPlan === undefined,
         skip: (ctx) => ctx.isForce,
         task: (ctx) => assertServicesAreStopped(config, ctx, plan),
       },

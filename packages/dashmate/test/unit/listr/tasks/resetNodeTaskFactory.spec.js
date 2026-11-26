@@ -170,6 +170,20 @@ describe('resetNodeTaskFactory', () => {
       expect(dockerCompose.isNodeRunning).to.not.have.been.called();
     });
 
+    // A member can be started while the members before it are reset, after
+    // the group's check found it stopped.
+    it('should look at running services again when it resets a member', async () => {
+      const ctx = { isPlatformOnlyReset: true, isForce: false, keepData: true };
+      const plan = await resetNodeTask.prepare(config, ctx);
+
+      dockerCompose.isNodeRunning.resolves(true);
+
+      await expect(new Listr([{ task: () => resetNodeTask(config, plan) }], { renderer: 'silent' }).run(ctx))
+        .to.be.rejectedWith('Running services detected');
+
+      expect(dockerCompose.rm).to.not.have.been.called();
+    });
+
     it('should refuse what the reset itself refuses', async () => {
       await expect(resetNodeTask.prepare(config, {
         isPlatformOnlyReset: true, isHardReset: true, removeConfig: true, isForce: true,
