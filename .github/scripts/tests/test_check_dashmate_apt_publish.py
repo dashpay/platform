@@ -12,8 +12,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / 'scripts/release/check_dashmate_apt_publish.sh'
 TAG = 'v5.1.0-rc.2'
-AMD64 = 'a' * 64
-ARM64 = 'b' * 64
+# The bytes of the two debs the run verified, and their sha256s.
+DEBS = {'amd64': b'the amd64 deb the run built', 'arm64': b'the arm64 deb the run built'}
+AMD64 = hashlib.sha256(DEBS['amd64']).hexdigest()
+ARM64 = hashlib.sha256(DEBS['arm64']).hexdigest()
+REPOSITORY = 'https://apt.services.dash.org/dashmate'
 SUMS = (f'{"c" * 64}  dashmate-v5.1.0-rc.2-3a5da22021-linux-x64.tar.gz\n'
         f'{AMD64}  dashmate_5.1.0.rc.2-1_amd64.deb\n'
         f'{ARM64}  dashmate_5.1.0.rc.2-1_arm64.deb\n').encode()
@@ -55,6 +58,20 @@ directory = args[args.index('--dir') + 1]
 os.makedirs(directory, exist_ok=True)
 shutil.copy(os.environ['GH_SUMS'], os.path.join(directory, 'SHA256SUMS'))
 '''
+# `curl` serves the repository's pool from CURL_POOL, by path, and fails as curl -f does on a 404.
+CURL_STUB = '''#!/usr/bin/env python3
+import json, os, shutil, sys
+args = sys.argv[1:]
+with open(os.environ['CALLS'], 'a') as log:
+    log.write(json.dumps(['curl'] + args) + '\\n')
+url, output = args[-1], args[args.index('-o') + 1]
+base = os.environ['REPOSITORY'] + '/'
+source = os.path.join(os.environ['CURL_POOL'], url[len(base):]) if url.startswith(base) else ''
+if not os.path.isfile(source):
+    print(f'curl: (22) The requested URL returned error: 404', file=sys.stderr)
+    sys.exit(22)
+shutil.copy(source, output)
+'''
 DOCKER_STUB = '''#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ['CALLS'], 'a') as log:
@@ -74,17 +91,27 @@ class CheckDashmateAptPublishTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp)
         (self.tmp / 'bin').mkdir()
-        for name, stub in (('gh', GH_STUB), ('docker', DOCKER_STUB)):
+        for name, stub in (('gh', GH_STUB), ('docker', DOCKER_STUB), ('curl', CURL_STUB)):
             (self.tmp / 'bin' / name).write_text(stub)
             (self.tmp / 'bin' / name).chmod(0o755)
 
-    def check(self, *args, sums=SUMS, served=SERVED, **env):
+    def pool(self, debs=None):
+        """The repository's pool, holding the deb each served record names."""
+        shutil.rmtree(self.tmp / 'pool', ignore_errors=True)
+        for arch, data in (DEBS if debs is None else debs).items():
+            path = self.tmp / 'pool' / f'pool/main/d/dashmate/dashmate_5.1.0~rc.2-1_{arch}.deb'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+
+    def check(self, *args, sums=SUMS, served=SERVED, debs=None, **env):
         (self.tmp / 'SHA256SUMS').write_bytes(sums)
         (self.tmp / 'served').write_text(served)
+        self.pool(debs)
         environment = {'PATH': f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}", 'HOME': str(self.tmp),
                        'TMPDIR': str(self.tmp), 'CALLS': str(self.tmp / 'calls'),
                        'GH_SUMS': str(self.tmp / 'SHA256SUMS'), 'DOCKER_OUTPUT': str(self.tmp / 'served'),
-                       'CONTAINER_MUST': json.dumps(CONTAINER_MUST), **env}
+                       'CONTAINER_MUST': json.dumps(CONTAINER_MUST), 'CURL_POOL': str(self.tmp / 'pool'),
+                       'REPOSITORY': REPOSITORY, **env}
         return subprocess.run(['/bin/bash', str(SCRIPT), *args], capture_output=True, text=True,
                               env=environment, timeout=30)
 
@@ -108,6 +135,47 @@ class CheckDashmateAptPublishTests(unittest.TestCase):
         docker = [call for call in self.calls() if call[0] == 'docker']
         self.assertEqual(len(docker), 1)
         self.assertIn('SUITE=testing', docker[0])
+        # each deb is downloaded from the path its record names and hashed
+        self.assertEqual(sorted(call[-1] for call in self.calls() if call[0] == 'curl'),
+                         [f'{REPOSITORY}/pool/main/d/dashmate/dashmate_5.1.0~rc.2-1_{arch}.deb'
+                          for arch in ('amd64', 'arm64')])
+
+    def test_should_refuse_a_deb_the_repository_does_not_serve_as_the_index_lists_it(self):
+        # A signed index can list the right sha256 while the file itself is missing or other bytes.
+        for case, debs, arch in (('a missing arm64 deb', {'amd64': DEBS['amd64']}, 'arm64'),
+                                 ('other bytes for the amd64 deb', dict(DEBS, amd64=b'other bytes'), 'amd64')):
+            with self.subTest(case):
+                result = self.check(*self.args(), debs=debs)
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(f'the {arch} deb', result.stderr)
+                self.assertIn('the release is not done, report it to infra', result.stderr)
+                self.assertNotIn(f'testing serves the verified deb: {arch}', result.stdout)
+
+    def test_should_refuse_a_record_whose_file_name_is_not_a_pool_path(self):
+        for filename in ('../../../etc/passwd', 'https://elsewhere.example/dashmate.deb', 'pool/a/../../x.deb', '',
+                         # a real pool path with more after it is not that path
+                         'pool/main/d/dashmate/dashmate_5.1.0~rc.2-1_amd64.deb extra',
+                         'pool/main/d/dashmate/dashmate_5.1.0~rc.2-1_amd64.deb\t'):
+            with self.subTest(filename):
+                served = SERVED.replace('Filename: pool/main/d/dashmate/dashmate_5.1.0~rc.2-1_amd64.deb',
+                                        f'Filename: {filename}')
+                (self.tmp / 'calls').unlink(missing_ok=True)
+                result = self.check(*self.args(), served=served)
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('the amd64 record in testing names', result.stderr)
+                self.assertEqual([call for call in self.calls() if call[0] == 'curl'], [])
+
+    def test_should_check_every_record_that_lists_the_verified_sha256(self):
+        # Two records with the deb's sha256: both files must be there with those bytes.
+        twice = SERVED.replace(stanza('amd64', '5.1.0~rc.1-1', 'd' * 64),
+                               stanza('amd64', '5.1.0~rc.2-1', AMD64).replace('rc.2-1_amd64.deb', 'rc.2-1+b1_amd64.deb'))
+        result = self.check(*self.args(), served=twice)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('could not download the amd64 deb pool/main/d/dashmate/dashmate_5.1.0~rc.2-1+b1_amd64.deb',
+                      result.stderr)
 
     def test_should_refuse_a_release_whose_sha256sums_is_not_the_verified_one(self):
         # The digest comes from the run's checksums job; any other manifest proves nothing.

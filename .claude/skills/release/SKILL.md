@@ -140,7 +140,8 @@ gh run view <run-id> --repo dashpay/platform --json jobs \
 
 **The apt check.** A green job or infra's word is not yet proof: report the release as in apt only once this check passes for each suite it belongs in. It needs Docker. The script checks two things:
 - the release's `SHA256SUMS` still has the sha256 the checksums job logged (read it as in the handoff above, with the automatic publish too);
-- a throwaway apt client finds, in the suite's verified Packages indexes, the sha256 `SHA256SUMS` lists for the amd64 deb and for the arm64 deb, after checking that the signed Release names that suite.
+- a throwaway apt client finds, in the suite's verified Packages indexes, the sha256 `SHA256SUMS` lists for the amd64 deb and for the arm64 deb, after checking that the signed Release names that suite;
+- each deb those records name is downloaded from the repository and has that sha256, so a listed deb that is missing or has other bytes fails the check.
 
 The apt client verifies the suite's signature against the archive keyring, pinned by the sha256 infra published on #4246. A bad or expired signature fails the check, which is not the same as a missing deb. Any failure means the release is not done: report it to infra. The CDN can serve the previous index for a minute or so after a publish:
 

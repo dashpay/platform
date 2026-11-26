@@ -8,7 +8,8 @@ Checks that an apt suite of the dashmate repository serves exactly the debs a re
 The release's SHA256SUMS must still have the sha256 that the run's Release Dashmate checksums job
 logged when it attached the file. Then a throwaway apt client in Docker, which verifies the suite's
 signature against the archive keyring, must find the sha256 that SHA256SUMS lists for the amd64
-deb and for the arm64 deb.
+deb and for the arm64 deb, and each deb the suite's index names is downloaded from the repository
+and must have that sha256.
 
   Options:
   --tag=TAG                  - release tag, e.g. v5.1.0
@@ -76,7 +77,7 @@ DIGEST="$(echo "${DIGEST}" | tr 'A-F' 'a-f')"
 digest_pattern='^[0-9a-f]{64}$'
 [[ "${DIGEST}" =~ ${digest_pattern} ]] || usage_error "--sha256sums-sha256 must be a sha256, got '${DIGEST}'"
 
-for tool in gh docker; do
+for tool in gh docker curl; do
   command -v "${tool}" > /dev/null 2>&1 || fail "${tool} is not installed"
 done
 
@@ -144,18 +145,20 @@ SERVED="$(docker run --rm -e SUITE="${SUITE}" -e KEYRING_URL="${KEYRING_URL}" -e
     done
   ')" || fail "the apt client could not read the ${SUITE} suite; the release is not done, report it to infra"
 
-# One `<architecture> <version> <sha256>` line per dashmate record that its own architecture's
-# index lists.
-RECORDS="$(echo "${SERVED}" | awk '
+# One tab-separated `<architecture> <version> <sha256> <file name>` line per dashmate record that
+# its own architecture's index lists. The file name is the whole field, spaces included, so the
+# path check below sees all of it.
+RECORDS="$(printf '%s\n' "${SERVED}" | awk 'BEGIN {OFS = "\t"}
   function emit() {
-    if (package == "dashmate" && arch != "" && sha != "" && ("x" arch) == ("x" index_arch)) print arch, version, sha
-    package = arch = version = sha = ""
+    if (package == "dashmate" && arch != "" && sha != "" && ("x" arch) == ("x" index_arch)) print arch, version, sha, filename
+    package = arch = version = sha = filename = ""
   }
   /^### index / {emit(); index_arch = $3; next}
   /^Package: / {package = $2}
   /^Architecture: / {arch = $2}
   /^Version: / {version = $2}
   /^SHA256: / {sha = $2}
+  /^Filename: / {filename = substr($0, 11)}
   /^$/ {emit()}
   END {emit()}')"
 
@@ -163,8 +166,28 @@ for pair in "amd64 ${AMD64}" "arm64 ${ARM64}"; do
   arch="${pair%% *}"
   want="${pair#* }"
   # Compared as strings: awk would compare two all-digit sha256s as numbers.
-  found="$(echo "${RECORDS}" | awk -v arch="${arch}" -v sha="${want}" '("x" $1) == ("x" arch) && ("x" $3) == ("x" sha)')"
+  found="$(printf '%s\n' "${RECORDS}" | awk -F '\t' -v arch="${arch}" -v sha="${want}" '("x" $1) == ("x" arch) && ("x" $3) == ("x" sha)')"
   [ -n "${found}" ] \
-    || fail "${SUITE} does not serve the ${arch} deb that SHA256SUMS lists (${want}); it serves: $(echo "${RECORDS}" | awk -v arch="${arch}" '("x" $1) == ("x" arch) {print $2 " " $3}' | paste -sd ',' -); the release is not done, report it to infra"
-  echo "${SUITE} serves the verified deb: ${found}"
+    || fail "${SUITE} does not serve the ${arch} deb that SHA256SUMS lists (${want}); it serves: $(printf '%s\n' "${RECORDS}" | awk -v arch="${arch}" '("x" $1) == ("x" arch) {print $2 " " $3}' | paste -sd ',' -); the release is not done, report it to infra"
+  # The index only lists the deb: every file a matching record names must be there, with those bytes.
+  # Split by hand: read with a tab in IFS would strip tabs around the file name.
+  while IFS= read -r record; do
+    version="${record#*$'\t'}"
+    filename="${version#*$'\t'}"
+    filename="${filename#*$'\t'}"
+    version="${version%%$'\t'*}"
+    case "${filename}" in
+      pool/*.deb) ;;
+      *) fail "the ${arch} record in ${SUITE} names '${filename}', not a deb in the pool; the release is not done, report it to infra" ;;
+    esac
+    case "${filename}" in
+      *..* | *[!A-Za-z0-9._+~/-]*) fail "the ${arch} record in ${SUITE} names '${filename}', not a plain pool path; the release is not done, report it to infra" ;;
+    esac
+    curl -fsSL --proto '=https' --max-time 600 -o "${WORK_DIR}/${arch}.deb" "${REPOSITORY_URL}/${filename}" \
+      || fail "could not download the ${arch} deb ${filename} that ${SUITE} lists; the release is not done, report it to infra"
+    served_sum="$("${sha256[@]}" "${WORK_DIR}/${arch}.deb" | cut -d' ' -f1)"
+    [ "${served_sum}" = "${want}" ] \
+      || fail "the ${arch} deb ${filename} in ${SUITE} has sha256 ${served_sum}, not the ${want} that SHA256SUMS lists; the release is not done, report it to infra"
+    echo "${SUITE} serves the verified deb: ${arch} ${version} ${want}, downloaded and checked (${filename})"
+  done <<< "${found}"
 done
