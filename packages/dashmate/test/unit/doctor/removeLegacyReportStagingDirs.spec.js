@@ -262,6 +262,27 @@ describe('removeLegacyReportStagingDirs', () => {
     );
   });
 
+  // Once let go of, a directory's identity can be given to another one, so
+  // an agreement to remove it can no longer be carried out
+  it('should not touch a directory it is asked to remove after letting go of it', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    releaseLegacyReportStagingDirs(found);
+
+    const lstatSync = this.sinon.spy(fs, 'lstatSync');
+
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.be.empty();
+    expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
+      .to.deep.equal([[dir, false]]);
+    expect(lstatSync.getCalls().filter(({ args: [target] }) => target === dir)).to.be.empty();
+    expect(fs.readdirSync(tempDir)).to.deep.equal([legacyName]);
+    expect(fs.existsSync(path.join(dir, 'date.txt'))).to.be.true();
+  });
+
   // The directory held is the one checked: it is opened once, and checked
   // through that handle, rather than opened again after the check
   it('should hold the handle it checked the directory through', function it() {

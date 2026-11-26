@@ -569,6 +569,13 @@ export function removeLegacyReportStagingDirs(dirs) {
     const state = { restricted: false };
 
     try {
+      // Once let go of, its identity can be given to another directory, so
+      // nothing at its path is known to be the one found, and it is not
+      // looked at
+      if (typeof found.handle !== 'number') {
+        throw new Error(`${dir} was let go of after it was found, so it is no longer known to be the directory found there`);
+      }
+
       // The path was resolved when the directory was found; if it leads
       // anywhere else now, or what holds it can be changed by others, nothing
       // under it is the directory the operator agreed to remove
