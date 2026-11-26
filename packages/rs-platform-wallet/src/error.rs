@@ -1399,8 +1399,9 @@ pub enum PlatformWalletError {
     /// credit pool note, the next shielded sync checkpoints the tree at its
     /// size. For a token pool note, a sync gets past it only when its scan
     /// reads the missing positions: the scan resumes from the lowest account
-    /// watermark, so a gap in the kept leaves below it stays until the pool is
-    /// scanned from the start, as after a Clear. Only these cases: a store
+    /// watermark rounded down to a chunk boundary, so a gap in the kept leaves
+    /// before that point stays until a scan starts at or before it (a Clear
+    /// restarts the scan from position 0). Only these cases: a store
     /// that cannot produce the path (unreadable, poisoned, a position the tree
     /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
     /// which no sync repairs. FFI mirror:
