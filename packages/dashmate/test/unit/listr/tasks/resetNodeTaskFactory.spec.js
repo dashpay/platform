@@ -149,6 +149,31 @@ describe('resetNodeTaskFactory', () => {
     titles.forEach((title) => expect(title).to.be.a('string').and.not.empty());
   });
 
+  // A group reset runs this for every member before it resets any, so a
+  // running member stops it before the others are reset.
+  describe('the check a group reset runs first', () => {
+    it('should refuse while the services the reset removes are running', async () => {
+      dockerCompose.isNodeRunning.resolves(true);
+
+      await expect(resetNodeTask.assertCanBeReset(config, { isPlatformOnlyReset: true, isForce: false }))
+        .to.be.rejectedWith('Running services detected');
+    });
+
+    it('should not look at running services when forced', async () => {
+      dockerCompose.isNodeRunning.resolves(true);
+
+      await resetNodeTask.assertCanBeReset(config, { isPlatformOnlyReset: true, isForce: true });
+
+      expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+    });
+
+    it('should refuse what the reset itself refuses', async () => {
+      await expect(resetNodeTask.assertCanBeReset(config, {
+        isPlatformOnlyReset: true, isHardReset: true, removeConfig: true, isForce: true,
+      })).to.be.rejectedWith('Cannot reset Platform only and remove config');
+    });
+  });
+
   describe('a config without defaults', () => {
     let corePath;
     let platformPath;
@@ -261,6 +286,24 @@ describe('resetNodeTaskFactory', () => {
       expect(dockerCompose.rm).to.not.have.been.called();
       expect(configFile.isConfigExists('local_1')).to.be.true();
       expect(fs.existsSync(homeDir.joinPath('local_1', 'core', 'dash.conf'))).to.be.true();
+    });
+
+    // The members before it were already reset, and their files are gone.
+    it('should say to render the other members too when removal fails', async function test() {
+      const filePath = homeDir.joinPath('local_1', 'platform', 'drive', 'tenderdash', 'config.toml');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((removedPath) => {
+        if (removedPath === filePath) {
+          const error = new Error(`EIO: i/o error, unlink '${removedPath}'`);
+          error.code = 'EIO';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, removedPath);
+      });
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith("every config of group 'local'");
     });
 
     it('should remove only its own directory on a full hard reset', async () => {

@@ -69,10 +69,16 @@ export default class GroupResetCommand extends GroupBaseCommand {
     const tasks = new Listr(
       [
         {
+          // Members are reset one after another, so a member that cannot be
+          // reset would otherwise be found only after the others were.
+          title: 'Check the reset can be done',
+          task: (ctx) => Promise.all(
+            configGroup.map((config) => resetNodeTask.assertCanBeReset(config, ctx)),
+          ),
+        },
+        {
           title: `Reset ${groupName} nodes`,
-          task: (ctx) => {
-            ctx.removeConfig = ctx.isHardReset && groupName === PRESET_LOCAL;
-
+          task: () => {
             const resetTasks = configGroup.map((config) => ({
               title: `Reset ${config.getName()} node`,
               task: () => resetNodeTask(config),
@@ -113,6 +119,7 @@ export default class GroupResetCommand extends GroupBaseCommand {
         isForce,
         isPlatformOnlyReset,
         isVerbose,
+        removeConfig: isHardReset && groupName === PRESET_LOCAL,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

@@ -322,8 +322,16 @@ export default function resetNodeTaskFactory(
     const recovery = [
       'then render the service files again and run the reset again:',
       `  dashmate config render --config ${config.getName()}`,
-      'Do not start the node before the reset has completed.',
     ];
+
+    // A group reset that fails here has already reset the members before
+    // this one, and their service files are gone too.
+    const groupName = config.get('group');
+    if (groupName) {
+      recovery.push(`and the same for every config of group '${groupName}' it reset before this one.`);
+    }
+
+    recovery.push('Do not start the node before the reset has completed.');
 
     let deniedPaths;
     try {
@@ -350,6 +358,90 @@ export default function resetNodeTaskFactory(
   }
 
   /**
+   * Refuse a reset that cannot be done, before it changes anything
+   *
+   * @param {Config} config
+   * @param {Object} ctx - the reset's context: isPlatformOnlyReset,
+   *  isHardReset, removeConfig
+   */
+  function assertNodeCanBeReset(config, ctx) {
+    // A hard Platform reset restores the Platform options from the defaults
+    // of the config's preset or group. Without them there is nothing to
+    // restore, so refuse before any service is touched rather than fall
+    // back to removing the whole config, Core included.
+    const defaultConfigName = config.get('group') || config.getName();
+
+    if (ctx.isPlatformOnlyReset && ctx.isHardReset && !ctx.removeConfig
+      && !defaultConfigs.has(defaultConfigName)) {
+      const name = config.getName();
+
+      throw new Error([
+        `Cannot reset Platform only for config '${name}': dashmate has no Platform defaults`
+          + ` for '${defaultConfigName}' to restore.`,
+        'To remove Platform services and data and keep the config, run it without --hard:',
+        `  dashmate reset --config ${name} --platform`,
+        'and set Platform options with \'dashmate config set\'.',
+        'To remove the whole config, Core included:',
+        `  dashmate reset --config ${name} --hard`,
+      ].join('\n'));
+    }
+
+    // `group reset --hard` removes the local group's configs. With
+    // --platform that would take their Core settings too and leave Core's
+    // containers and data without a config.
+    if (ctx.isPlatformOnlyReset && ctx.removeConfig) {
+      const groupName = config.get('group');
+
+      throw new Error([
+        `Cannot reset Platform only and remove config '${config.getName()}': its Core`
+          + ' settings would go with it.',
+        'To remove Platform services and data and keep the configs:',
+        `  dashmate group reset --group ${groupName} --platform`,
+        'To remove the configs, Core included, and set the network up again:',
+        `  dashmate group reset --group ${groupName} --hard`,
+      ].join('\n'));
+    }
+
+    assertPathCanBeRemoved(config, ctx);
+  }
+
+  /**
+   * Refuse a reset while the services it removes are running
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {Promise<void>}
+   */
+  async function assertServicesAreStopped(config, ctx) {
+    const options = ctx.isPlatformOnlyReset
+      ? selectPlatformServices(config)
+      : { profiles: [] };
+
+    if (await dockerCompose.isNodeRunning(config, options)) {
+      throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
+    }
+  }
+
+  /**
+   * Everything the reset checks before it changes anything, the running
+   * services included unless the reset is forced
+   *
+   * A group reset runs this for every member before it resets any of them.
+   *
+   * @typedef {function} assertResetCanStart
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {Promise<void>}
+   */
+  async function assertResetCanStart(config, ctx) {
+    assertNodeCanBeReset(config, ctx);
+
+    if (!ctx.isForce) {
+      await assertServicesAreStopped(config, ctx);
+    }
+  }
+
+  /**
    * @typedef {resetNodeTask}
    * @param {Config} config
    */
@@ -359,59 +451,12 @@ export default function resetNodeTaskFactory(
         // The default renderer shows a failed task's error in place of its
         // title, and nothing for a task without one.
         title: 'Check the reset can be done',
-        task: (ctx) => {
-          // A hard Platform reset restores the Platform options from the defaults
-          // of the config's preset or group. Without them there is nothing to
-          // restore, so refuse before any service is touched rather than fall
-          // back to removing the whole config, Core included.
-          const defaultConfigName = config.get('group') || config.getName();
-
-          if (ctx.isPlatformOnlyReset && ctx.isHardReset && !ctx.removeConfig
-            && !defaultConfigs.has(defaultConfigName)) {
-            const name = config.getName();
-
-            throw new Error([
-              `Cannot reset Platform only for config '${name}': dashmate has no Platform defaults`
-                + ` for '${defaultConfigName}' to restore.`,
-              'To remove Platform services and data and keep the config, run it without --hard:',
-              `  dashmate reset --config ${name} --platform`,
-              'and set Platform options with \'dashmate config set\'.',
-              'To remove the whole config, Core included:',
-              `  dashmate reset --config ${name} --hard`,
-            ].join('\n'));
-          }
-
-          // `group reset --hard` removes the local group's configs. With
-          // --platform that would take their Core settings too and leave Core's
-          // containers and data without a config.
-          if (ctx.isPlatformOnlyReset && ctx.removeConfig) {
-            const groupName = config.get('group');
-
-            throw new Error([
-              `Cannot reset Platform only and remove config '${config.getName()}': its Core`
-                + ' settings would go with it.',
-              'To remove Platform services and data and keep the configs:',
-              `  dashmate group reset --group ${groupName} --platform`,
-              'To remove the configs, Core included, and set the network up again:',
-              `  dashmate group reset --group ${groupName} --hard`,
-            ].join('\n'));
-          }
-
-          assertPathCanBeRemoved(config, ctx);
-        },
+        task: (ctx) => assertNodeCanBeReset(config, ctx),
       },
       {
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
-        task: async (ctx) => {
-          const options = ctx.isPlatformOnlyReset
-            ? selectPlatformServices(config)
-            : { profiles: [] };
-
-          if (await dockerCompose.isNodeRunning(config, options)) {
-            throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
-          }
-        },
+        task: (ctx) => assertServicesAreStopped(config, ctx),
       },
       {
         title: 'Remove all services and associated data',
@@ -550,6 +595,8 @@ export default function resetNodeTaskFactory(
       },
     ]);
   }
+
+  resetNodeTask.assertCanBeReset = assertResetCanStart;
 
   return resetNodeTask;
 }
