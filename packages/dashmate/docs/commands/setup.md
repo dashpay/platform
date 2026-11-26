@@ -98,7 +98,7 @@ dashmate setup --platform testnet
 
 # The same, unattended, with the node key read from stdin
 dashmate setup --platform testnet --non-interactive --ssl-provider letsencrypt \
-  --platform-node-key-file - < node-key
+  --platform-node-key-file - < node-key-testnet
 ```
 
 ## Related Commands

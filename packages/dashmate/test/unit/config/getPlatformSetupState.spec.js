@@ -4,6 +4,7 @@ import getPlatformSetupState, {
   describePlatformSetupState,
 } from '../../../src/config/getPlatformSetupState.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
+import renderNodeKeyBackup from '../../../src/config/renderNodeKeyBackup.js';
 
 describe('getPlatformSetupState', () => {
   let homeDir;
@@ -140,13 +141,14 @@ describe('getPlatformSetupState', () => {
       expect(text).to.include('dashmate reset --platform --hard --config testnet');
     });
 
-    // The umask stays in a subshell: left in the operator's shell, the reset
-    // that follows would render files the Platform containers cannot read.
-    it('should give the backup of a masternode key in a subshell', () => {
+    // The reset deletes the key and the registration names it, so the way
+    // back starts with a backup, and setup is given that same file.
+    it('should give the backup of a masternode key, and setup the backup file', () => {
       const text = describePlatformSetupState(stateOf(setUp('testnet', { masternode: true })), 'testnet');
+      const { backupCommand, setupCommand } = renderNodeKeyBackup('testnet');
 
-      expect(text).to.include('(umask 077; dashmate config get platform.drive.tenderdash.node.key'
-        + ' --config testnet > node-key)');
+      expect(text).to.include(`    ${backupCommand}`)
+        .and.include(`  ${setupCommand}`);
     });
 
     // Without a key the command writes "null" over the operator's backup.

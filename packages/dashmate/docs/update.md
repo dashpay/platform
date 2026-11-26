@@ -101,13 +101,13 @@ $ dashmate start
 
 `dashmate reset --platform --hard` also sets every Platform option back to the preset's defaults: the node key, the Platform ports, the certificate provider and the certificate. Nothing of Platform survives it. On mainnet it also disables Platform, because the mainnet preset does. Set Platform up again with `dashmate setup --platform`, which configures only Platform and leaves Core as it is.
 
-An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a file only you can read. The parentheses keep the `umask` from staying set in your shell:
+An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a new file only you can read, named after the config. `set -C` makes the shell refuse to overwrite a file that exists, so an earlier backup is never lost, and the parentheses keep the `umask` from staying set in your shell. Check that the file is not empty before you reset:
 
 ```bash
 $ dashmate stop --platform --config testnet            # skip if Platform is not running
-$ (umask 077; dashmate config get platform.drive.tenderdash.node.key --config testnet > node-key)
+$ (umask 077 && set -C && dashmate config get platform.drive.tenderdash.node.key --config testnet > node-key-testnet)
 $ dashmate reset --platform --hard --config testnet
-$ dashmate setup --platform testnet --platform-node-key-file node-key
+$ dashmate setup --platform --config testnet --platform-node-key-file node-key-testnet
 $ dashmate update --config testnet                     # now pulls the Platform images
 $ dashmate start --platform --config testnet           # or `dashmate start --config testnet` if Core is stopped
 ```
@@ -124,7 +124,7 @@ Unattended, with the key read from stdin rather than the command line:
 
 ```bash
 $ dashmate setup --platform testnet --non-interactive --ssl-provider letsencrypt \
-    --platform-node-key-file - < node-key
+    --platform-node-key-file - < node-key-testnet
 ```
 
 See [setup](./commands/setup.md#platform-only-setup) for every flag.

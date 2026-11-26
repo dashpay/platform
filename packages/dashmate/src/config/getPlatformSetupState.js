@@ -1,5 +1,6 @@
 import path from 'path';
 import renderConfigFlag from '../util/renderConfigFlag.js';
+import renderNodeKeyBackup, { NODE_KEY_PATH } from './renderNodeKeyBackup.js';
 
 export const PLATFORM_SETUP_STATE = {
   CORE_NOT_SET_UP: 'CORE_NOT_SET_UP',
@@ -9,8 +10,6 @@ export const PLATFORM_SETUP_STATE = {
 };
 
 const VOLUME_MARKER_PREFIX = 'Docker volume ';
-
-const NODE_KEY_PATH = 'platform.drive.tenderdash.node.key';
 
 const PRESET_NAMES = ['mainnet', 'testnet'];
 
@@ -193,18 +192,22 @@ export function describePlatformSetupState({ state, markers, certificateId }, co
 
         // Only a masternode's key counts as configuration, and it is the one
         // the registration names. A backup line without a key would write
-        // "null" over the operator's backup.
-        if (markers.includes(NODE_KEY_PATH)) {
+        // "null" into the backup.
+        const keyBackup = markers.includes(NODE_KEY_PATH)
+          ? renderNodeKeyBackup(configName)
+          : null;
+
+        if (keyBackup) {
           lines.push(
-            '  back the node key up, into a file only you can read:',
-            `    (umask 077; dashmate config get ${NODE_KEY_PATH} ${flag} > node-key)`,
+            '  back the node key up, into a new file only you can read:',
+            `    ${keyBackup.backupCommand}`,
           );
         }
 
         lines.push(
           `  dashmate stop --platform ${flag}    (if Platform is running)`,
           `  dashmate reset --platform --hard ${flag}`,
-          `  ${setupCommand}`,
+          `  ${keyBackup ? keyBackup.setupCommand : setupCommand}`,
         );
 
         return lines.join('\n');

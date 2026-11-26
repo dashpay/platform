@@ -3,7 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
-import renderConfigFlag from '../util/renderConfigFlag.js';
+import renderNodeKeyBackup from '../config/renderNodeKeyBackup.js';
 
 export default class ResetCommand extends ConfigBaseCommand {
   // Reconfigures the node: changes configuration repeatedly while doing long,
@@ -59,13 +59,9 @@ export default class ResetCommand extends ConfigBaseCommand {
     // Printed under --force too: a scripted reset never sees the confirmation.
     if (isPlatformOnlyReset && isHardReset && config.get('core.masternode.enable')
       && config.get('platform.drive.tenderdash.node.key') !== null) {
-      const flag = renderConfigFlag(config.getName());
       const nodeId = config.get('platform.drive.tenderdash.node.id');
-
-      // The umask stays inside the subshell: left set in the operator's shell,
-      // it would give the files the reset renders next modes the Platform
-      // containers cannot read.
-      const backup = `  (umask 077; dashmate config get platform.drive.tenderdash.node.key ${flag} > node-key)`;
+      const { backupCommand, setupCommand } = renderNodeKeyBackup(config.getName());
+      const backup = `  ${backupCommand}`;
 
       const lines = isForce
         ? [
@@ -84,8 +80,10 @@ export default class ResetCommand extends ConfigBaseCommand {
 
       process.stderr.write([
         ...lines,
+        'It refuses to overwrite a file that exists. Check that the file is not empty before you'
+          + ' reset.',
         'After the reset, set Platform up again with:',
-        `  dashmate setup --platform ${flag} --platform-node-key-file node-key`,
+        `  ${setupCommand}`,
         '',
         '',
       ].join('\n'));

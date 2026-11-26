@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import ResetCommand from '../../../src/commands/reset.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
+import renderNodeKeyBackup from '../../../src/config/renderNodeKeyBackup.js';
 
 describe('Reset command', () => {
   let homeDir;
@@ -56,11 +57,11 @@ describe('Reset command', () => {
 
       await reset(config, { platform: true, hard: true, force: true });
 
-      // In a subshell: a umask left in the operator's shell would give the
-      // files the reset renders modes the Platform containers cannot read.
+      const { backupCommand, setupCommand } = renderNodeKeyBackup('testnet');
+
       expect(stderr).to.include(config.get('platform.drive.tenderdash.node.id'))
-        .and.include('(umask 077; dashmate config get platform.drive.tenderdash.node.key --config testnet > node-key)')
-        .and.include('dashmate setup --platform --config testnet --platform-node-key-file node-key');
+        .and.include(`  ${backupCommand}\n`)
+        .and.include(`  ${setupCommand}\n`);
       expect(stderr).to.not.include(config.get('platform.drive.tenderdash.node.key'));
       expect(resetNodeTask).to.have.been.calledOnceWith(config);
     });
