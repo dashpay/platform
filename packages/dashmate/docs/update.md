@@ -206,7 +206,7 @@ On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet
 * A configuration with no defaults of its own (any name other than `mainnet` or `testnet`, outside the `local` group) has nothing to reset to, so the hard reset removes the whole configuration.
 
 `dashmate setup` does not repair any of this: it refuses to run for a preset that is already configured, so it cannot be re-run on a configured node.
-The reset it suggests instead, `dashmate reset --config <preset> --hard`, also removes the Core data and the whole configuration, so it is not a way back for an evonode either.
+The reset it suggests instead, `dashmate reset --config <preset> --hard`, also removes the Core data and sets the preset's whole configuration, Core and Platform settings alike, back to the defaults, so it is not a way back for an evonode either.
 
 ## Local Network Updates
 
