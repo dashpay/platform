@@ -7,6 +7,7 @@ import assertPlatformCanStartFactory from '../../../src/config/assertPlatformCan
 import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
+import { issueCertificate } from '../../../src/test/certificateFixtures.js';
 
 describe('assertPlatformCanStart', () => {
   let homeDir;
@@ -158,6 +159,21 @@ describe('assertPlatformCanStart', () => {
   // ZeroSSL saves the answers, TLS still off, when it creates the
   // certificate, before the certificate is verified and installed.
   describe('a fullnode whose ZeroSSL setup stopped half-way', () => {
+    let pair;
+    let other;
+    let sslDir;
+
+    before(function before() {
+      // RSA key generation is slow in pure JS.
+      this.timeout(30000);
+      pair = issueCertificate({ ip: '1.2.3.4' });
+      other = issueCertificate({ ip: '1.2.3.4' });
+    });
+
+    beforeEach(() => {
+      sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+    });
+
     /**
      * @return {Promise<Config>} a reset Evo fullnode with ZeroSSL's mid-run save
      */
@@ -171,12 +187,12 @@ describe('assertPlatformCanStart', () => {
     }
 
     /**
-     * @param {string[]} fileNames
+     * @param {Object} files - content by file name
      */
-    function installCertificateFiles(fileNames) {
-      const sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+    function installCertificateFiles(files) {
       fs.mkdirSync(sslDir, { recursive: true });
-      fileNames.forEach((fileName) => fs.writeFileSync(path.join(sslDir, fileName), fileName));
+      Object.entries(files)
+        .forEach(([fileName, content]) => fs.writeFileSync(path.join(sslDir, fileName), content));
     }
 
     // The gateway mounts both files. Without them it serves no TLS, and the
@@ -192,25 +208,85 @@ describe('assertPlatformCanStart', () => {
 
     it('should refuse it with only one of the certificate files', async () => {
       const config = await stoppedAfterZeroSslSave();
-      installCertificateFiles(['bundle.crt']);
+      installCertificateFiles({ 'bundle.crt': pair.pem });
 
       expect(refusalOf(config).remedy).to.include('dashmate ssl obtain --force --config testnet');
+    });
+
+    // Compose creates a missing bind-mount source as a directory, so a start
+    // before the fix left these. ssl obtain cannot write a file over them.
+    it('should refuse it while directories stand where the certificate files go', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      fs.mkdirSync(path.join(sslDir, 'bundle.crt'), { recursive: true });
+      fs.mkdirSync(path.join(sslDir, 'private.key'));
+
+      const { remedy } = refusalOf(config);
+
+      expect(remedy).to.include(`rmdir ${path.join(sslDir, 'bundle.crt')}`)
+        .and.include(`rmdir ${path.join(sslDir, 'private.key')}`)
+        .and.include('dashmate ssl obtain --force --config testnet');
+      expect(remedy.indexOf('rmdir')).to.be.below(remedy.indexOf('ssl obtain'));
+    });
+
+    it('should refuse it with links that point nowhere', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.symlinkSync(path.join(sslDir, 'gone.crt'), path.join(sslDir, 'bundle.crt'));
+      fs.symlinkSync(path.join(sslDir, 'gone.key'), path.join(sslDir, 'private.key'));
+
+      expect(refusalOf(config).remedy).to.include('dashmate ssl obtain --force --config testnet');
+    });
+
+    // The gateway cannot serve a pair that does not load or match.
+    it('should refuse it with a pair the gateway cannot serve', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': other.keyPem });
+
+      expect(refusalOf(config).problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
+
+      installCertificateFiles({ 'bundle.crt': '', 'private.key': '' });
+
+      expect(refusalOf(config)).to.not.be.null();
     });
 
     // TLS works from the installed pair: only renewal is not managed yet,
     // which update reports.
     it('should start once the issued certificate is installed', async () => {
       const config = await stoppedAfterZeroSslSave();
-      installCertificateFiles(['bundle.crt', 'private.key']);
+      installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': pair.keyPem });
 
       expect(refusalOf(config)).to.be.null();
       expect(assertPlatformCanStart.findPendingSetup(config).remedy)
         .to.include('dashmate ssl obtain --config testnet');
     });
 
+    // Rootful Docker mounts what the CLI user may not read: files the user
+    // cannot look at are not proof that they do not work.
+    it('should start with certificate files the CLI user cannot read', async function it() {
+      if (process.getuid?.() === 0) {
+        this.skip();
+      }
+
+      const config = await stoppedAfterZeroSslSave();
+      const protectedDir = homeDir.joinPath('protected');
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.mkdirSync(protectedDir);
+      fs.writeFileSync(path.join(protectedDir, 'bundle.crt'), pair.pem);
+      fs.writeFileSync(path.join(protectedDir, 'private.key'), pair.keyPem);
+      fs.symlinkSync(path.join(protectedDir, 'bundle.crt'), path.join(sslDir, 'bundle.crt'));
+      fs.symlinkSync(path.join(protectedDir, 'private.key'), path.join(sslDir, 'private.key'));
+      fs.chmodSync(protectedDir, 0o000);
+
+      try {
+        expect(refusalOf(config)).to.be.null();
+      } finally {
+        fs.chmodSync(protectedDir, 0o700);
+      }
+    });
+
     it('should start once the setup is finished', async () => {
       const config = await stoppedAfterZeroSslSave();
-      installCertificateFiles(['bundle.crt', 'private.key']);
+      installCertificateFiles({ 'bundle.crt': pair.pem, 'private.key': pair.keyPem });
       config.set('platform.gateway.ssl.enabled', true);
 
       expect(refusalOf(config)).to.be.null();
@@ -403,6 +479,25 @@ describe('assertPlatformCanStart', () => {
     });
 
     expect(refusalOf(config).message).to.include('dashmate config render --config testnet');
+  });
+
+  // ssl obtain cannot write a certificate file over a directory that a
+  // start of Compose left in its place.
+  it('should tell a masternode to remove directories where the certificate files go', () => {
+    const config = setUp('testnet', { masternode: true });
+    config.set('platform.gateway.ssl.enabled', false);
+    config.set('platform.gateway.ssl.provider', 'zerossl');
+    config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+    config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+    renderNodeKey(config);
+    const sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+    fs.mkdirSync(path.join(sslDir, 'bundle.crt'), { recursive: true });
+    fs.mkdirSync(path.join(sslDir, 'private.key'));
+
+    const { remedy } = refusalOf(config);
+
+    expect(remedy).to.include(`rmdir ${path.join(sslDir, 'bundle.crt')}`)
+      .and.include('dashmate ssl obtain --force --config testnet');
   });
 
   // `config render` writes the saved identity, but TLS stays off.

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import selectPlatformServices from '../docker/selectPlatformServices.js';
+import selectLeafCertificate from '../ssl/selectLeafCertificate.js';
 
 // Container states in which a service is not doing anything.
 const STOPPED_STATES = ['exited', 'created'];
@@ -42,6 +43,68 @@ export function findCertificateFiles(homeDir, configName) {
   return CERTIFICATE_FILE_NAMES
     .map((fileName) => path.join(sslDir, fileName))
     .filter(isPresent);
+}
+
+/**
+ * @param {string} filePath
+ * @return {{ kind: string, content?: Buffer }} kind is 'file' with its
+ *  content, 'missing', 'directory', 'other', or 'unknown' when this process
+ *  cannot look
+ */
+function inspectFile(filePath) {
+  let stats;
+  try {
+    stats = fs.statSync(filePath);
+  } catch (e) {
+    // A link that points nowhere is missing too.
+    return { kind: e.code === 'ENOENT' || e.code === 'ENOTDIR' ? 'missing' : 'unknown' };
+  }
+
+  if (stats.isDirectory()) {
+    return { kind: 'directory' };
+  }
+
+  if (!stats.isFile()) {
+    return { kind: 'other' };
+  }
+
+  try {
+    return { kind: 'file', content: fs.readFileSync(filePath) };
+  } catch {
+    return { kind: 'unknown' };
+  }
+}
+
+/**
+ * Whether the gateway can serve TLS from the certificate files of a config,
+ * as far as this process can tell
+ *
+ * The gateway bind-mounts both files. A missing one, a link that points
+ * nowhere and a directory, which Docker creates for a missing mount source,
+ * serve nothing, and neither does a pair that does not load or match. A file
+ * this process cannot read counts as usable: Docker running as root mounts
+ * files the operator's user cannot read.
+ *
+ * @param {HomeDir} homeDir
+ * @param {string} configName
+ * @return {{ isUsable: boolean, directories: string[] }} directories stand
+ *  where a file goes
+ */
+export function inspectCertificateFiles(homeDir, configName) {
+  const sslDir = homeDir.joinPath(configName, 'platform', 'gateway', 'ssl');
+
+  const paths = CERTIFICATE_FILE_NAMES.map((fileName) => path.join(sslDir, fileName));
+  const [bundle, key] = paths.map(inspectFile);
+
+  const directories = paths.filter((filePath, index) => [bundle, key][index].kind === 'directory');
+
+  let isUsable = [bundle, key].every(({ kind }) => kind === 'file' || kind === 'unknown');
+
+  if (isUsable && bundle.kind === 'file' && key.kind === 'file') {
+    isUsable = !selectLeafCertificate(bundle.content.toString('utf8'), key.content.toString('utf8')).error;
+  }
+
+  return { isUsable, directories };
 }
 
 /**

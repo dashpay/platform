@@ -3,12 +3,12 @@ import renderConfigFlag from '../util/renderConfigFlag.js';
 import getPlatformSetupState, {
   PLATFORM_SETUP_STATE,
   describePlatformSetupState,
-  hasCertificateFiles,
 } from './getPlatformSetupState.js';
-import { findCertificateFiles } from './getPlatformArtefactsFactory.js';
+import { findCertificateFiles, inspectCertificateFiles } from './getPlatformArtefactsFactory.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
 import findLocalGroupConfigsNotRebuilt, { LOCAL_GROUP_MEMBER_NAME } from './findLocalGroupConfigsNotRebuilt.js';
 import { PRESET_LOCAL, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
+import quoteShellArgument, { isShellQuotable } from '../util/quoteShellArgument.js';
 
 const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 
@@ -53,6 +53,37 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
       defaultConfig: defaultConfigs.has(name) ? defaultConfigs.get(name) : undefined,
       certificateFiles: findCertificateFiles(homeDir, name),
     });
+  }
+
+  /**
+   * How to finish a ZeroSSL setup that stopped half-way, from the
+   * certificate files as they are
+   *
+   * @param {Object} setupState
+   * @param {string} name
+   * @param {{ isUsable: boolean, directories: string[] }} certificate
+   * @return {string}
+   */
+  function describeInterruptedSetup(setupState, name, certificate) {
+    // Files the gateway cannot serve are not an installed certificate.
+    const remedy = describePlatformSetupState(
+      certificate.isUsable ? setupState : { ...setupState, markers: [] },
+      name,
+    );
+
+    if (certificate.directories.length === 0) {
+      return remedy;
+    }
+
+    // ssl obtain cannot write a file over them.
+    return [
+      'Docker created directories where the gateway\'s certificate files go, as it does for a'
+        + ' file it mounts that is missing. Remove them first:',
+      ...certificate.directories.map((directory) => (isShellQuotable(directory)
+        ? `  rmdir ${quoteShellArgument(directory)}`
+        : `  rmdir ${JSON.stringify(directory)}    (escaped, not to paste)`)),
+      remedy,
+    ].join('\n');
   }
 
   /**
@@ -123,13 +154,16 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
       // ZeroSSL saves the answers when it creates the certificate, and a
       // failed verification leaves no certificate behind. Once the issued pair
       // is installed the gateway serves TLS, and only renewal waits.
-      if (setupState.state === PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED
-        && !hasCertificateFiles(setupState)) {
-        refuse(
-          name,
-          'its Platform setup did not finish, and the gateway has no certificate',
-          describePlatformSetupState(setupState, name),
-        );
+      if (setupState.state === PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED) {
+        const certificate = inspectCertificateFiles(homeDir, name);
+
+        if (!certificate.isUsable) {
+          refuse(
+            name,
+            'its Platform setup did not finish, and the gateway has no certificate',
+            describeInterruptedSetup(setupState, name, certificate),
+          );
+        }
       }
 
       return;
@@ -194,7 +228,11 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, c
 
     // Rendering again would not finish it: TLS is still off.
     if (setupState.state === PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED) {
-      refuse(name, 'its Platform setup did not finish', describePlatformSetupState(setupState, name));
+      refuse(
+        name,
+        'its Platform setup did not finish',
+        describeInterruptedSetup(setupState, name, inspectCertificateFiles(homeDir, name)),
+      );
     }
 
     if (readRenderedNodeId(config) !== id) {

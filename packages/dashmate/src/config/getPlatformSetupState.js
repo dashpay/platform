@@ -131,7 +131,7 @@ export default function getPlatformSetupState(config, {
  * @param {{ markers: string[] }} setupState
  * @return {boolean}
  */
-export function hasCertificateFiles({ markers }) {
+function hasCertificateFiles({ markers }) {
   return CERTIFICATE_FILE_NAMES
     .every((fileName) => markers.some((marker) => path.basename(marker) === fileName));
 }
