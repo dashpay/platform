@@ -23,9 +23,9 @@ The archive contains:
 - System information (OS, memory, CPU, disk usage)
 - Node configuration (with sensitive data obfuscated)
 - Service logs, metrics, and status
-- Docker container information
+- Docker container information (environment variable names only, without their values)
 
-All sensitive data like private keys and passwords is automatically obfuscated to protect your security and privacy.
+All sensitive data like private keys and passwords is automatically obfuscated to protect your security and privacy. Secret values from the node configuration, such as RPC passwords and keys, are also masked wherever else they appear in the archive, including service logs. Values shorter than 8 characters are not searched for, because they would match unrelated text.
 
 Before creating the archive, the command asks for your confirmation. The generated archive is compressed with TAR/GZIP and saved to the current working directory.
 
