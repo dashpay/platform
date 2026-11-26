@@ -109,10 +109,23 @@ describe('DockerCompose service selection', () => {
   let sandbox;
   let docker;
   let dockerCompose;
+  let dockerVolumeLabels;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
-    docker = { listContainers: sandbox.stub().resolves([]) };
+    dockerVolumeLabels = {};
+    docker = {
+      listContainers: sandbox.stub().resolves([]),
+      getVolume: sandbox.stub().callsFake((name) => ({
+        inspect: async () => {
+          if (!Object.hasOwn(dockerVolumeLabels, name)) {
+            throw Object.assign(new Error(`no such volume: ${name}`), { statusCode: 404 });
+          }
+
+          return { Name: name, Labels: dockerVolumeLabels[name] };
+        },
+      })),
+    };
     dockerCompose = new DockerCompose(docker, null, null, () => ({
       COMPOSE_PROJECT_NAME: 'dashmate_project_node',
     }), () => []);
@@ -122,13 +135,31 @@ describe('DockerCompose service selection', () => {
   afterEach(() => sandbox.restore());
 
   describe('getVolumeNames', () => {
+    /**
+     * Docker's labels on a volume Compose created for a project
+     *
+     * @param {string} project
+     * @param {string} volume - the volume's key in the Compose file
+     * @return {Object}
+     */
+    function composeLabels(project, volume) {
+      return {
+        'com.docker.compose.project': project,
+        'com.docker.compose.volume': volume,
+      };
+    }
+
     // Compose loads the services the named ones depend on, Core for the
     // quorum list, and their volumes with them.
     it('should return only the named services\' own volumes', async () => {
+      dockerVolumeLabels.dashmate_project_node_core_data = composeLabels('dashmate_project_node', 'core_data');
+      dockerVolumeLabels.dashmate_project_node_drive_tenderdash = composeLabels('dashmate_project_node', 'drive_tenderdash');
+
       sandbox.stub(compose, 'execCompose').resolves({
         exitCode: 0,
         err: '',
         out: JSON.stringify({
+          name: 'dashmate_project_node',
           services: {
             core: { volumes: [{ type: 'volume', source: 'core_data', target: '/home/dash' }] },
             drive_tenderdash: {
@@ -157,6 +188,122 @@ describe('DockerCompose service selection', () => {
       expect(compose.execCompose).to.have.been.calledOnce();
       expect(compose.execCompose.firstCall.args[0]).to.equal('config');
       expect(compose.execCompose.firstCall.args[1]).to.deep.equal(['drive_tenderdash', 'quorum_list']);
+    });
+
+    /**
+     * @param {Object[]} mounts - the drive_abci service's volumes
+     * @param {Object} volumes - the project's volume definitions
+     */
+    function describeDriveAbci(mounts, volumes) {
+      sandbox.stub(compose, 'execCompose').resolves({
+        exitCode: 0,
+        err: '',
+        out: JSON.stringify({
+          name: 'dashmate_project_node',
+          services: { drive_abci: { volumes: mounts } },
+          volumes,
+        }),
+      });
+    }
+
+    // An override can mount a volume this project did not create into a
+    // Platform service. Being mounted there does not make it Platform data.
+    it('should never return an external volume', async () => {
+      dockerVolumeLabels.operator_logs = composeLabels('dashmate_project_node', 'operator_logs');
+
+      describeDriveAbci(
+        [{ type: 'volume', source: 'operator_logs', target: '/var/log/operator' }],
+        { operator_logs: { name: 'operator_logs', external: true } },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
+    });
+
+    // A volume given an explicit name can be one another project created
+    // and uses. Only Docker's labels tell whose it is.
+    it('should return only volumes Compose created for this project and mount', async () => {
+      dockerVolumeLabels.shared_cache = composeLabels('other_project', 'shared_cache');
+      dockerVolumeLabels.renamed_data = composeLabels('dashmate_project_node', 'other_key');
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeDriveAbci(
+        [
+          { type: 'volume', source: 'shared_cache', target: '/cache' },
+          { type: 'volume', source: 'renamed_data', target: '/renamed' },
+          { type: 'volume', source: 'drive_abci_data', target: '/data' },
+          { type: 'volume', source: 'unlabeled', target: '/unlabeled' },
+        ],
+        {
+          shared_cache: { name: 'shared_cache' },
+          renamed_data: { name: 'renamed_data' },
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+          unlabeled: { name: 'unlabeled' },
+        },
+      );
+      dockerVolumeLabels.unlabeled = {};
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    // Docker gives no labels at all for a volume nothing labelled.
+    it('should leave out a volume with no labels', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = null;
+
+      describeDriveAbci(
+        [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
+        { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
+    });
+
+    // Two keys can name the same Docker volume, and Docker labels it with
+    // the key Compose created it for.
+    it('should return a volume two keys name when Docker labels it with either', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      describeDriveAbci(
+        [
+          { type: 'volume', source: 'drive_abci_data', target: '/data' },
+          { type: 'volume', source: 'drive_abci_alias', target: '/alias' },
+        ],
+        {
+          drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+          drive_abci_alias: { name: 'dashmate_project_node_drive_abci_data' },
+        },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal(['dashmate_project_node_drive_abci_data']);
+    });
+
+    // Only a missing volume means there is nothing to remove.
+    it('should fail when Docker cannot tell whose a volume is', async () => {
+      docker.getVolume.callsFake(() => ({
+        inspect: () => Promise.reject(Object.assign(new Error('Docker unavailable'), { statusCode: 500 })),
+      }));
+
+      describeDriveAbci(
+        [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
+        { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
+      );
+
+      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.be.rejectedWith('Docker unavailable');
+    });
+
+    // Nothing to remove for a volume that was never created.
+    it('should leave out a volume Docker does not have', async () => {
+      describeDriveAbci(
+        [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
+        { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
+      );
+
+      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
     });
 
     // A service missing from the description has volumes nobody would remove.

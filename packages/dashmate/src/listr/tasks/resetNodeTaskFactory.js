@@ -3,9 +3,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import wait from '../../util/wait.js';
-import resolveConfigDirectory from '../../config/resolve-config-directory.js';
+import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 import selectPlatformServices from '../../docker/selectPlatformServices.js';
+import quoteShellArgument from '../../util/quoteShellArgument.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 // More paths than this are counted rather than listed.
 const MAX_REPORTED_PATHS = 10;
@@ -17,6 +19,41 @@ const MAX_VOLUME_REMOVAL_ATTEMPTS = 10;
 // The helper keeps certificate renewal state in the Platform directory, so a
 // Platform reset removes it with the Platform services; start brings it back.
 const HELPER_SERVICE_NAME = 'dashmate_helper';
+
+// A backslash, and what a terminal acts on rather than shows: C0 controls,
+// DEL and C1 controls.
+// eslint-disable-next-line no-control-regex
+const ESCAPED_FOR_DISPLAY = /[\\\u0000-\u001f\u007f-\u009f]/gu;
+
+const DISPLAY_ESCAPES = {
+  '\\': '\\\\',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+};
+
+/**
+ * Show text from the filesystem on one line, as it is but for what a terminal
+ * would act on, which is escaped
+ *
+ * A line break in a file name would otherwise start a line of the message
+ * that reads like the rest of it.
+ *
+ * @param {string} text
+ * @return {string}
+ */
+function escapeForDisplay(text) {
+  return String(text).replace(ESCAPED_FOR_DISPLAY, (character) => DISPLAY_ESCAPES[character]
+    ?? `\\x${character.codePointAt(0).toString(16).padStart(2, '0')}`);
+}
+
+/**
+ * @param {string} shownPath
+ * @return {string} the path quoted and on one line, for reading, not pasting
+ */
+function formatPath(shownPath) {
+  return `'${escapeForDisplay(shownPath).replace(/'/g, "\\'")}'`;
+}
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -197,7 +234,7 @@ export default function resetNodeTaskFactory(
    */
   function formatDeniedPaths(deniedPaths) {
     const lines = deniedPaths.slice(0, MAX_REPORTED_PATHS)
-      .map((deniedPath) => `  '${deniedPath}'`);
+      .map((deniedPath) => `  ${formatPath(deniedPath)}`);
 
     if (deniedPaths.length > MAX_REPORTED_PATHS) {
       lines.push(`  and ${deniedPaths.length - MAX_REPORTED_PATHS} more`);
@@ -220,6 +257,13 @@ export default function resetNodeTaskFactory(
     const configDirectory = resolveConfigDirectory(homeDir, config.getName());
 
     if (!ctx.removeConfig && !ctx.isHardReset) {
+      return null;
+    }
+
+    // Old config files may hold a config under a name that is now reserved.
+    // Its directory would be a file the repository owns, such as the config
+    // file itself, so the entry is reset or removed and the path never is.
+    if (!isConfigNameAvailable(config.getName())) {
       return null;
     }
 
@@ -247,7 +291,16 @@ export default function resetNodeTaskFactory(
       return;
     }
 
-    const deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
+    let deniedPaths;
+    try {
+      deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
+    } catch (e) {
+      throw new Error([
+        `Cannot reset config '${config.getName()}': could not inspect ${formatPath(targetPath)}:`
+          + ` ${escapeForDisplay(e.message)}`,
+        'Nothing has been changed. Fix the cause and run the reset again.',
+      ].join('\n'));
+    }
 
     if (deniedPaths.length === 0) {
       return;
@@ -259,12 +312,18 @@ export default function resetNodeTaskFactory(
     // holds.
     const parentPath = path.dirname(targetPath);
     const remedy = deniedPaths.includes(parentPath)
-      ? [`  sudo chown ${uid}:${gid} '${parentPath}'`, `  chmod u+rwx '${parentPath}'`]
-      : [`  sudo chown -R ${uid}:${gid} '${targetPath}'`, `  chmod -R u+rwX '${targetPath}'`];
+      ? [
+        `  sudo chown ${uid}:${gid} ${quoteShellArgument(parentPath)}`,
+        `  chmod u+rwx ${quoteShellArgument(parentPath)}`,
+      ]
+      : [
+        `  sudo chown -R ${uid}:${gid} ${quoteShellArgument(targetPath)}`,
+        `  chmod -R u+rwX ${quoteShellArgument(targetPath)}`,
+      ];
 
     throw new Error([
       `Cannot reset config '${config.getName()}': this user cannot remove`
-        + ` ${deniedPaths.length} path(s) under '${targetPath}':`,
+        + ` ${deniedPaths.length} path(s) under ${formatPath(targetPath)}:`,
       ...formatDeniedPaths(deniedPaths),
       'They are probably owned by root, created by a container, or read-only.',
       'Nothing has been changed. Give them to this user and make them writable, for example:',
@@ -279,17 +338,21 @@ export default function resetNodeTaskFactory(
    * The config is saved only when the command succeeds, so after this error
    * config.json is as it was.
    *
-   * @param {string} targetPath
+   * @param {string|null} targetPath - null when there is nothing to remove
    * @param {Config} config
    */
   function removePath(targetPath, config) {
+    if (targetPath === null) {
+      return;
+    }
+
     // Part of the service files may be gone by the time removal fails, and
     // Compose needs them to load the project, so they are rendered again
     // before the reset is. Starting the node first would let Docker create the
     // missing mount sources, as root.
     const recovery = [
       'then render the service files again and run the reset again:',
-      `  dashmate config render --config ${config.getName()}`,
+      `  dashmate config render ${renderConfigFlag(config.getName())}`,
     ];
 
     // A group reset that fails here has already reset the members before
@@ -306,7 +369,7 @@ export default function resetNodeTaskFactory(
       deniedPaths = removePathAsFarAsPermitted(targetPath);
     } catch (e) {
       throw new Error([
-        `Could not remove '${targetPath}': ${e.message}`,
+        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(e.message)}`,
         'Fix the cause,',
         ...recovery,
       ].join('\n'));
@@ -317,10 +380,10 @@ export default function resetNodeTaskFactory(
     }
 
     throw new Error([
-      `Could not remove ${deniedPaths.length} path(s) under '${targetPath}' for lack of permission:`,
+      `Could not remove ${deniedPaths.length} path(s) under ${formatPath(targetPath)} for lack of permission:`,
       ...formatDeniedPaths(deniedPaths),
       'Remove them with sufficient rights, for example:',
-      `  sudo rm -rf '${targetPath}'`,
+      `  sudo rm -rf ${quoteShellArgument(targetPath)}`,
       ...recovery,
     ].join('\n'));
   }
@@ -347,10 +410,10 @@ export default function resetNodeTaskFactory(
         `Cannot reset Platform only for config '${name}': dashmate has no Platform defaults`
           + ` for '${defaultConfigName}' to restore.`,
         'To remove Platform services and data and keep the config, run it without --hard:',
-        `  dashmate reset --config ${name} --platform`,
+        `  dashmate reset ${renderConfigFlag(name)} --platform`,
         'and set Platform options with \'dashmate config set\'.',
         'To remove the whole config, Core included:',
-        `  dashmate reset --config ${name} --hard`,
+        `  dashmate reset ${renderConfigFlag(name)} --hard`,
       ].join('\n'));
     }
 
@@ -364,9 +427,22 @@ export default function resetNodeTaskFactory(
         `Cannot reset Platform only and remove config '${config.getName()}': its Core`
           + ' settings would go with it.',
         'To remove Platform services and data and keep the configs:',
-        `  dashmate group reset --group ${groupName} --platform`,
+        `  dashmate group reset --group ${quoteShellArgument(groupName)} --platform`,
         'To remove the configs, Core included, and set the network up again:',
-        `  dashmate group reset --group ${groupName} --hard`,
+        `  dashmate group reset --group ${quoteShellArgument(groupName)} --hard`,
+      ].join('\n'));
+    }
+
+    // A hard reset that keeps a config under a name that is now reserved makes
+    // the command render its service files into a directory that cannot
+    // exist, which fails only once the services are gone.
+    if (ctx.isHardReset && !ctx.removeConfig && defaultConfigs.has(defaultConfigName)
+      && !isConfigNameAvailable(config.getName())) {
+      throw new Error([
+        `Cannot reset config '${config.getName()}': Dashmate now reserves this name, so the config`
+          + ' cannot have service files.',
+        'Remove the config instead:',
+        `  dashmate config remove ${quoteShellArgument(config.getName())}`,
       ].join('\n'));
     }
 
@@ -374,16 +450,57 @@ export default function resetNodeTaskFactory(
   }
 
   /**
+   * What a reset removes besides the config's files, worked out before it
+   * removes anything
+   *
+   * @typedef {Object} ResetPlan
+   * @property {string[]} [serviceNames] - the Platform services a Platform-only
+   *  reset checks and removes
+   * @property {string[]} [profiles] - the profiles to enable next to them
+   * @property {string[]} [volumeNames] - the volumes it removes after them
+   */
+
+  /**
+   * Refuse a reset that cannot be done and work out what it removes, while
+   * nothing has changed
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {Promise<ResetPlan>}
+   */
+  async function planReset(config, ctx) {
+    assertNodeCanBeReset(config, ctx);
+
+    if (!ctx.isPlatformOnlyReset) {
+      return {};
+    }
+
+    const { serviceNames, profiles } = selectPlatformServices(getServiceList, config);
+
+    // Compose fails to describe the project when service files are missing.
+    // Looked up now, that failure comes while nothing has been removed.
+    const volumeNames = ctx.keepData
+      ? []
+      : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
+
+    return { serviceNames, profiles, volumeNames };
+  }
+
+  /**
    * Refuse a reset while the services it removes are running
    *
    * @param {Config} config
    * @param {Object} ctx
+   * @param {ResetPlan} plan
    * @return {Promise<void>}
    */
-  async function assertServicesAreStopped(config, ctx) {
+  async function assertServicesAreStopped(config, ctx, plan) {
+    // Named services are picked from the project's container list rather than
+    // passed to Compose, which before 2.15 fails for a service with no
+    // container, and that failure reads as nothing running.
     const options = ctx.isPlatformOnlyReset
-      ? selectPlatformServices(getServiceList, config)
-      : { profiles: [] };
+      ? { serviceNames: plan.serviceNames, profiles: plan.profiles }
+      : { serviceNames: getServiceList(config).map(({ name }) => name) };
 
     if (await dockerCompose.isNodeRunning(config, options)) {
       throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -392,39 +509,51 @@ export default function resetNodeTaskFactory(
 
   /**
    * Everything the reset checks before it changes anything, the running
-   * services included unless the reset is forced
+   * services included unless the reset is forced, and what it will remove
    *
-   * A group reset runs this for every member before it resets any of them.
+   * A group reset runs this for every member before it resets any of them,
+   * and gives each member's reset its plan.
    *
-   * @typedef {function} assertResetCanStart
+   * @typedef {function} prepareReset
    * @param {Config} config
    * @param {Object} ctx
-   * @return {Promise<void>}
+   * @return {Promise<ResetPlan>}
    */
-  async function assertResetCanStart(config, ctx) {
-    assertNodeCanBeReset(config, ctx);
+  async function prepareReset(config, ctx) {
+    const plan = await planReset(config, ctx);
 
     if (!ctx.isForce) {
-      await assertServicesAreStopped(config, ctx);
+      await assertServicesAreStopped(config, ctx, plan);
     }
+
+    return plan;
   }
 
   /**
    * @typedef {resetNodeTask}
    * @param {Config} config
+   * @param {ResetPlan} [preparedPlan] - from prepareReset, which has already
+   *  checked the reset
    */
-  function resetNodeTask(config) {
+  function resetNodeTask(config, preparedPlan = undefined) {
+    let plan = preparedPlan;
+
     return new Listr([
       {
         // The default renderer shows a failed task's error in place of its
         // title, and nothing for a task without one.
         title: 'Check the reset can be done',
-        task: (ctx) => assertNodeCanBeReset(config, ctx),
+        enabled: () => preparedPlan === undefined,
+        task: async (ctx) => {
+          plan = await planReset(config, ctx);
+        },
       },
       {
+        // Checked again with a prepared plan: a group member can be started
+        // while the members before it are reset.
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
-        task: (ctx) => assertServicesAreStopped(config, ctx),
+        task: (ctx) => assertServicesAreStopped(config, ctx, plan),
       },
       {
         title: 'Remove all services and associated data',
@@ -446,7 +575,7 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const { serviceNames, profiles } = selectPlatformServices(getServiceList, config);
+          const { serviceNames, profiles, volumeNames } = plan;
 
           const removeOptions = {
             serviceNames: [...serviceNames, HELPER_SERVICE_NAME],
@@ -459,12 +588,6 @@ export default function resetNodeTaskFactory(
             // eslint-disable-next-line no-param-reassign
             task.title = 'Remove platform services and keep associated data';
           }
-
-          // Looked up first: Compose fails to describe the project when service
-          // files are missing, and then nothing has been removed yet.
-          const volumeNames = ctx.keepData
-            ? []
-            : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
 
           await dockerCompose.rm(config, removeOptions);
 
@@ -564,7 +687,7 @@ export default function resetNodeTaskFactory(
     ]);
   }
 
-  resetNodeTask.assertCanBeReset = assertResetCanStart;
+  resetNodeTask.prepare = prepareReset;
 
   return resetNodeTask;
 }
