@@ -475,11 +475,16 @@ export default class DockerCompose {
   }
 
   /**
-   * Get the Docker names of the volumes the given services mount
+   * Get the Docker names of the volumes Compose created for the given services
    *
    * Compose also loads the services these depend on, so the project's volume
    * list would include theirs (Core's data, for a Platform service that depends
    * on Core). Only the given services' own mounts are read.
+   *
+   * A mounted volume is not necessarily the project's own: an override can
+   * mount an external volume, or one that another project created under the
+   * same explicit name. Only a volume Docker labels as created by this project
+   * for that mount is returned, and an external one never is.
    *
    * @param {Config} config
    * @param {Object} options
@@ -506,6 +511,7 @@ export default class DockerCompose {
     }
 
     const { services, volumes = {} } = project;
+    const projectName = project.name ?? this.#generateEnvs(config).COMPOSE_PROJECT_NAME;
 
     const mounts = serviceNames.flatMap((serviceName) => {
       // Without the service its volumes are unknown, and skipping it would
@@ -517,11 +523,38 @@ export default class DockerCompose {
       return services[serviceName].volumes ?? [];
     });
 
-    const volumeNames = mounts
+    const candidates = new Map();
+    mounts
       .filter((mount) => mount.type === 'volume' && mount.source)
-      .map((mount) => volumes[mount.source]?.name ?? `${project.name}_${mount.source}`);
+      .filter((mount) => !volumes[mount.source]?.external)
+      .forEach((mount) => {
+        const name = volumes[mount.source]?.name ?? `${projectName}_${mount.source}`;
 
-    return Array.from(new Set(volumeNames));
+        candidates.set(name, mount.source);
+      });
+
+    const ownedNames = await Promise.all(
+      Array.from(candidates).map(async ([name, key]) => {
+        let labels;
+        try {
+          ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
+        } catch (e) {
+          // Never created, so nothing to remove
+          if (e.statusCode === 404) {
+            return null;
+          }
+
+          throw e;
+        }
+
+        const isOwned = labels?.['com.docker.compose.project'] === projectName
+          && labels?.['com.docker.compose.volume'] === key;
+
+        return isOwned ? name : null;
+      }),
+    );
+
+    return ownedNames.filter((name) => name !== null);
   }
 
   /**

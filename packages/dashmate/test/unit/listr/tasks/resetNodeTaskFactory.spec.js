@@ -673,6 +673,9 @@ describe('resetNodeTaskFactory', () => {
     };
 
     let composeCalls;
+    let serviceVolumes;
+    let volumeDefinitions;
+    let dockerVolumeLabels;
     let removedVolumes;
     let runningContainers;
     let configFailure;
@@ -680,6 +683,44 @@ describe('resetNodeTaskFactory', () => {
     let platformConfig;
     let projectName;
     let diContainer;
+
+    /**
+     * Name the volumes as Compose does and label them as Docker does for the
+     * ones Compose created for the project: with the project and the key
+     */
+    function createProjectVolumes() {
+      volumeDefinitions = {};
+      dockerVolumeLabels = {};
+      Object.values(serviceVolumes).flat()
+        .filter(({ type }) => type === 'volume')
+        .forEach(({ source }) => {
+          volumeDefinitions[source] = { name: `docker_${source}` };
+          dockerVolumeLabels[`docker_${source}`] = {
+            'com.docker.compose.project': projectName,
+            'com.docker.compose.volume': source,
+          };
+        });
+    }
+
+    /**
+     * A Docker volume as the Docker API gives it
+     *
+     * @param {string} name
+     * @param {function(): Promise<void>} remove
+     * @return {Object}
+     */
+    function dockerVolume(name, remove) {
+      return {
+        inspect: async () => {
+          if (!dockerVolumeLabels[name]) {
+            throw Object.assign(new Error(`no such volume: ${name}`), { statusCode: 404 });
+          }
+
+          return { Name: name, Labels: dockerVolumeLabels[name] };
+        },
+        remove,
+      };
+    }
 
     beforeEach(async function beforeEach() {
       diContainer = await createDIContainer({ DASHMATE_HOME_DIR: homeDir.getPath() });
@@ -693,16 +734,17 @@ describe('resetNodeTaskFactory', () => {
 
       projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
 
+      serviceVolumes = structuredClone(SERVICE_VOLUMES);
+      createProjectVolumes();
+
       removedVolumes = [];
       runningContainers = [];
       configFailure = null;
       configFailureConfigName = null;
       diContainer.register({
         docker: asValue({
-          getVolume: (name) => ({
-            remove: async () => {
-              removedVolumes.push(name);
-            },
+          getVolume: (name) => dockerVolume(name, async () => {
+            removedVolumes.push(name);
           }),
         }),
       });
@@ -737,23 +779,19 @@ describe('resetNodeTaskFactory', () => {
         }
 
         if (command === 'config' && commandOptions.includes('--volumes')) {
-          return { exitCode: 0, err: '', out: Object.values(SERVICE_VOLUMES).flat().map(({ source }) => source).join('\n') };
+          return { exitCode: 0, err: '', out: Object.values(serviceVolumes).flat().map(({ source }) => source).join('\n') };
         }
 
         if (command === 'config') {
           const services = Object.fromEntries(
             [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
-              .map((name) => [name, { volumes: SERVICE_VOLUMES[name] }]),
-          );
-
-          const volumes = Object.fromEntries(
-            Object.values(SERVICE_VOLUMES).flat()
-              .filter(({ type }) => type === 'volume')
-              .map(({ source }) => [source, { name: `docker_${source}` }]),
+              .map((name) => [name, { volumes: serviceVolumes[name] }]),
           );
 
           return {
-            exitCode: 0, err: '', out: JSON.stringify({ name: projectName, services, volumes }),
+            exitCode: 0,
+            err: '',
+            out: JSON.stringify({ name: projectName, services, volumes: volumeDefinitions }),
           };
         }
 
@@ -868,6 +906,32 @@ describe('resetNodeTaskFactory', () => {
       expect(selectedProfiles(configCall.composeOptions)).to.have.members(ALL_PROFILES);
     });
 
+    // An override can mount into a Platform service a volume the operator
+    // manages, or one another project created under the same explicit name.
+    // Neither is this project's Platform data, and once the containers are
+    // gone nothing holds them in use.
+    it('should keep an external volume and another project\'s volume a Platform service mounts', async () => {
+      serviceVolumes.gateway = [
+        { type: 'volume', source: 'operator_logs', target: '/var/log/operator' },
+        { type: 'volume', source: 'shared_cache', target: '/var/cache/shared' },
+      ];
+      volumeDefinitions.operator_logs = { name: 'operator_logs', external: true };
+      volumeDefinitions.shared_cache = { name: 'shared_cache' };
+      dockerVolumeLabels.operator_logs = {};
+      dockerVolumeLabels.shared_cache = {
+        'com.docker.compose.project': 'other_project',
+        'com.docker.compose.volume': 'shared_cache',
+      };
+
+      await platformReset();
+
+      expect(removedVolumes).to.have.members([
+        'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+    });
+
     // Compose cannot describe the project while service files it needs are
     // missing. Finding that out after the removal would leave the containers
     // gone and the volumes in place.
@@ -914,17 +978,15 @@ describe('resetNodeTaskFactory', () => {
       let attempts = 0;
       diContainer.register({
         docker: asValue({
-          getVolume: (name) => ({
-            remove: async () => {
-              attempts += 1;
+          getVolume: (name) => dockerVolume(name, async () => {
+            attempts += 1;
 
-              if (name === 'docker_drive_abci_data' && attempts === 1) {
-                // eslint-disable-next-line no-throw-literal
-                throw { statusCode: 409 };
-              }
+            if (name === 'docker_drive_abci_data' && attempts === 1) {
+              // eslint-disable-next-line no-throw-literal
+              throw { statusCode: 409 };
+            }
 
-              removedVolumes.push(name);
-            },
+            removedVolumes.push(name);
           }),
         }),
       });
@@ -946,6 +1008,7 @@ describe('resetNodeTaskFactory', () => {
       platformConfig.set('platform.quorumList.enabled', true);
       platformConfig.set('platform.gateway.rateLimiter.metrics.enabled', true);
       projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
+      createProjectVolumes();
 
       await platformReset({ isHardReset: true });
 
@@ -979,10 +1042,8 @@ describe('resetNodeTaskFactory', () => {
       const clock = this.sinon.useFakeTimers();
       diContainer.register({
         docker: asValue({
-          getVolume: () => ({
-            // eslint-disable-next-line prefer-promise-reject-errors
-            remove: () => Promise.reject({ statusCode: 409 }),
-          }),
+          // eslint-disable-next-line prefer-promise-reject-errors
+          getVolume: (name) => dockerVolume(name, () => Promise.reject({ statusCode: 409 })),
         }),
       });
 
