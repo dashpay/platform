@@ -33,11 +33,16 @@ function writeSampleFile(archiveDir, service, filename, data) {
 /**
  * @param {Samples} samples
  * @param {string} folderPath
+ * @return {Promise<string>} - path of the created archive
  */
 export default async function archiveSamples(samples, folderPath) {
   const tempDir = os.tmpdir();
-  const archiveName = `dashmate-report-${samples.date.toISOString()}`;
+  // Windows does not allow ':' in file names. The exact collection time is
+  // kept in the archive's date sample, so the name only has to be readable.
+  const timestamp = samples.date.toISOString().replace(/:/g, '-');
+  const archiveName = `dashmate-report-${timestamp}`;
   const archiveDir = path.join(tempDir, archiveName);
+  const archiveFilePath = path.join(folderPath, `${archiveName}.tar.gz`);
 
   writeSampleFile(archiveDir, null, 'date', samples.date.toISOString());
   writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo());
@@ -57,8 +62,10 @@ export default async function archiveSamples(samples, folderPath) {
     {
       cwd: archiveDir,
       gzip: true,
-      file: path.join(folderPath, `${archiveName}.tar.gz`),
+      file: archiveFilePath,
     },
     ['.'],
   );
+
+  return archiveFilePath;
 }
