@@ -141,6 +141,14 @@ describe('resetNodeTaskFactory', () => {
     expect(config.get('platform.drive.tenderdash.node')).to.deep.equal({ id: null, key: null });
   });
 
+  // The default renderer shows a failed task's error in place of its title
+  // and nothing for a task without one, and the command mutes the error.
+  it('should give every step a title, so its errors are shown', () => {
+    const titles = resetNodeTask(config).tasks.map((task) => task.title);
+
+    titles.forEach((title) => expect(title).to.be.a('string').and.not.empty());
+  });
+
   describe('a config without defaults', () => {
     let corePath;
     let platformPath;

@@ -107,6 +107,9 @@ export default class ResetCommand extends ConfigBaseCommand {
         renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
           showTimer: isVerbose,
+          // Errors explain what to do next on several lines; truncating them
+          // to the terminal width would cut the commands off.
+          formatOutput: 'wrap',
           clearOutput: false,
           collapse: false,
           showSubtasks: true,

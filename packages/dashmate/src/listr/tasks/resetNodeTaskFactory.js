@@ -208,6 +208,9 @@ export default function resetNodeTaskFactory(
   function resetNodeTask(config) {
     return new Listr([
       {
+        // The default renderer shows a failed task's error in place of its
+        // title, and nothing for a task without one.
+        title: 'Check the reset can be done',
         task: (ctx) => {
           // A hard reset may still clear the Platform data a node ran with before
           // Platform was disabled, as a mainnet hard reset leaves it.
