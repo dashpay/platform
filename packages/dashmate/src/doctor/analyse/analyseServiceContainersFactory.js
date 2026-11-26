@@ -27,8 +27,10 @@ export default function analyseServiceContainersFactory(
       const dockerInspect = samples.getServiceInfo(service.name, 'dockerInspect');
       // systeminformation returns stats as an array with one entry per
       // requested container, and one container is requested per service.
-      // The array is empty when Docker returned no stats for it.
-      const [dockerStats] = samples.getServiceInfo(service.name, 'dockerStats') ?? [];
+      // The array is empty when Docker returned no stats for it. An archived
+      // sample is read back unchecked, so anything else counts as no stats.
+      const dockerStatsSample = samples.getServiceInfo(service.name, 'dockerStats');
+      const dockerStats = Array.isArray(dockerStatsSample) ? dockerStatsSample[0] : undefined;
 
       if (!dockerInspect) {
         continue;

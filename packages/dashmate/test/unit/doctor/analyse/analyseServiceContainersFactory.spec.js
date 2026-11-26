@@ -72,4 +72,22 @@ describe('analyseServiceContainersFactory', () => {
 
     expect(analyseServiceContainers(samples)).to.be.empty();
   });
+
+  // An archive is read back without checking each sample's shape, and one
+  // unexpected sample must not cost the operator the rest of the diagnosis
+  it('should still analyse the other services when one has stats of an unexpected shape', () => {
+    analyseServiceContainers = analyseServiceContainersFactory(() => [
+      { name: 'core', title: 'Core' },
+      { name: 'drive_abci', title: 'Drive ABCI' },
+    ]);
+
+    samples.setServiceInfo('core', 'dockerStats', { cpuStats: {} });
+    samples.setServiceInfo('drive_abci', 'dockerInspect', { State: { Running: true } });
+    samples.setServiceInfo('drive_abci', 'dockerStats', dockerContainerStats({ cpu: 0.1, memory: 0.9 }));
+
+    const problems = analyseServiceContainers(samples);
+
+    expect(problems.map((problem) => problem.getDescription()))
+      .to.deep.equal(['Service Drive ABCI is consuming 90.00% RAM.']);
+  });
 });
