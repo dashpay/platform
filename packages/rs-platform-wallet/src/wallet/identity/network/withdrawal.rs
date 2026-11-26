@@ -188,27 +188,7 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
-        if let Some((address, owner_key)) = to_address
-            .as_ref()
-            .zip(signing_withdrawal_key_to_use)
-            .filter(|(_, key)| key.purpose() == Purpose::OWNER)
-        {
-            check_signing_key_eligibility(
-                owner_key,
-                &[Purpose::TRANSFER, Purpose::OWNER],
-                &CREDIT_SIGNING_LEVELS,
-                &PLATFORM_SIGNING_KEY_TYPES,
-                SigningScope::NonBatch,
-            )?;
-            // Drive rejects the output script before expiry; local signer access is irrelevant.
-            return Err(ConsensusError::from(
-                WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
-                    CoreScript::new(address.script_pubkey()),
-                    owner_key.id(),
-                ),
-            )
-            .into());
-        }
+        check_withdrawal_destination(to_address.as_ref(), signing_withdrawal_key_to_use)?;
 
         // Automatic selection considers OWNER only for the identity's payout address.
         let signing_key = credit_signing_key(
@@ -229,6 +209,34 @@ impl IdentityWallet {
             )
             .await
     }
+}
+
+/// Refuse an explicit OWNER key with a destination before expiry or signer availability.
+pub(crate) fn check_withdrawal_destination(
+    to_address: Option<&DashAddress>,
+    signing_key: Option<&IdentityPublicKey>,
+) -> Result<(), dash_sdk::Error> {
+    if let Some((address, owner_key)) = to_address
+        .zip(signing_key)
+        .filter(|(_, key)| key.purpose() == Purpose::OWNER)
+    {
+        check_signing_key_eligibility(
+            owner_key,
+            &[Purpose::TRANSFER, Purpose::OWNER],
+            &CREDIT_SIGNING_LEVELS,
+            &PLATFORM_SIGNING_KEY_TYPES,
+            SigningScope::NonBatch,
+        )?;
+        // Drive rejects the output script before expiry; local signer access is irrelevant.
+        return Err(ConsensusError::from(
+            WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                CoreScript::new(address.script_pubkey()),
+                owner_key.id(),
+            ),
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// Select the OWNER-purpose `IdentityPublicKey` on a masternode identity

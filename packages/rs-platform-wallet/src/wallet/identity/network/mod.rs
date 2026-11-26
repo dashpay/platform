@@ -80,7 +80,9 @@ pub use key_selection::{
     WALLET_SIGNING_KEY_TYPES,
 };
 mod withdrawal;
-pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
+pub(crate) use withdrawal::{
+    check_withdrawal_destination, select_owner_withdrawal_key, select_transfer_withdrawal_key,
+};
 
 // DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.
 mod contact_info;

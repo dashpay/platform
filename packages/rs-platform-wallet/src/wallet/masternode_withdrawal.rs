@@ -61,7 +61,8 @@ use crate::broadcast_outcome::{broadcast_tracking_delivery, BroadcastDelivery};
 use crate::error::{PlatformWalletError, SIGNER_KEY_UNAVAILABLE_PREFIX};
 use crate::wallet::core::is_signable_funding_account;
 use crate::wallet::identity::network::{
-    credit_signing_key, select_owner_withdrawal_key, select_transfer_withdrawal_key,
+    check_withdrawal_destination, credit_signing_key, select_owner_withdrawal_key,
+    select_transfer_withdrawal_key,
 };
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::provider_key_at_index::ProviderKeyKind;
@@ -450,6 +451,8 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
         ))
     })?;
 
+    check_withdrawal_destination(destination.as_ref(), Some(&identity_key))?;
+
     let identity_signer = DerivedKeyIdentitySigner {
         signer,
         path,
@@ -799,6 +802,7 @@ mod tests {
     use dash_sdk::dapi_grpc::tonic::{Code, Status};
     use dash_sdk::error::StateTransitionBroadcastError;
     use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSecretKey as SecretKey};
+    use dpp::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
     use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
     use dpp::consensus::ConsensusError;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -1214,18 +1218,24 @@ mod tests {
             "{result:?}"
         );
 
-        let result = withdraw(
+        for key in [
             owner_key.clone(),
-            Some(DashAddress::dummy(Network::Testnet, 1)),
-        )
-        .await;
-        assert!(
-            matches!(
-                refusal(&result),
-                Some(SignatureError::InvalidSignaturePublicKeyPurposeError(_))
-            ),
-            "an OWNER key cannot withdraw to a chosen address: {result:?}"
-        );
+            owner_key.clone().with_limits(None, Some(1)),
+        ] {
+            let destination = DashAddress::dummy(Network::Testnet, 1);
+            let expected = ConsensusError::from(
+                WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                    CoreScript::new(destination.script_pubkey()),
+                    key.id(),
+                ),
+            );
+            let result = withdraw(key, Some(destination)).await;
+            assert!(
+                matches!(&result, Err(PlatformWalletError::Sdk(error))
+                    if error.consensus_error() == Some(&expected)),
+                "an OWNER key cannot withdraw to a chosen address: {result:?}"
+            );
+        }
 
         // The mock answers only the identity fetch, so a key that passes the check fails at
         // the next request, the nonce fetch.
