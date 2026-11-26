@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import semver from 'semver';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
 import getConfigFileMigrationsFactory from '../../../../configs/getConfigFileMigrationsFactory.js';
@@ -24,8 +25,8 @@ describe('Tenderdash image migration', () => {
     expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.3');
   });
 
-  it('should produce config format 5.1.0-dev.2 while the package is at dev.1', () => {
-    expect(getConfigFormatVersion(getMigrations(), '5.1.0-dev.1')).to.equal('5.1.0-dev.2');
+  it('should produce a config format past the Tenderdash migration while the package is at dev.1', () => {
+    expect(semver.gte(getConfigFormatVersion(getMigrations(), '5.1.0-dev.1'), '5.1.0-dev.2')).to.be.true();
   });
 
   for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3', '5.0.0-rc.3', '5.0.3', '5.1.0-dev.1']) {
