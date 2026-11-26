@@ -289,10 +289,22 @@ impl AccountViewingKeys {
         to_user_id: &[u8; 32],
         account_reference: u64,
     ) -> PaymentAddress {
-        let index_key = shielded_contact_index_key(&self.to_fvk_bytes());
-        let index = shielded_contact_index(&index_key, owner_id, to_user_id, account_reference);
+        let index = self.contact_index(owner_id, to_user_id, account_reference);
         self.full_viewing_key
             .address_at(DiversifierIndex::from(index), Scope::External)
+    }
+
+    /// The diversifier index of [`Self::contact_address`] for the same request. Two
+    /// requests get the same address exactly when they get the same index, so a wallet
+    /// compares indices, which cost a hash, to check a new request against earlier ones.
+    pub fn contact_index(
+        &self,
+        owner_id: &[u8; 32],
+        to_user_id: &[u8; 32],
+        account_reference: u64,
+    ) -> [u8; SHIELDED_DIVERSIFIER_INDEX_LEN] {
+        let index_key = shielded_contact_index_key(&self.to_fvk_bytes());
+        shielded_contact_index(&index_key, owner_id, to_user_id, account_reference)
     }
 
     /// The diversifier index a payment address sits at in this account, when it lies

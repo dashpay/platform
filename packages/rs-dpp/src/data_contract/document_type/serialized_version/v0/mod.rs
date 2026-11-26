@@ -128,6 +128,10 @@ pub struct DocumentTypeInSerializationFormatV0 {
     range_countable: bool,
     documents_summable: Option<String>,
     range_summable: bool,
+    /// Whether the type keeps its sums in 128 bits, as the parse decided from the summed
+    /// property's bounds when the type was stored: stored decided, so reading back gives the
+    /// same trees whatever limit a later protocol version holds.
+    big_sums: bool,
     storage: StoredDocumentStorage,
     action_fees: Option<StoredActionFees>,
     documents_can_be_deleted_by_moderators: bool,
@@ -223,6 +227,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable,
             documents_summable,
             range_summable,
+            big_sums,
             index_only,
             action_fees,
             documents_can_be_deleted_by_moderators,
@@ -277,6 +282,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable: *range_countable,
             documents_summable: documents_summable.clone(),
             range_summable: *range_summable,
+            big_sums: *big_sums,
             storage: StoredDocumentStorage::of(*index_only, *private_document)?,
             action_fees: action_fees.as_ref().map(StoredActionFees::from),
             documents_can_be_deleted_by_moderators: *documents_can_be_deleted_by_moderators,
@@ -379,6 +385,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable,
             documents_summable,
             range_summable,
+            big_sums,
             storage,
             action_fees,
             documents_can_be_deleted_by_moderators,
@@ -412,6 +419,11 @@ impl DocumentTypeInSerializationFormatV0 {
         // parse stamped them when the type was stored
         if !indexed_arrays.is_empty() {
             stamp_stored_indexed_arrays(&mut index_structure, &indexed_arrays);
+        }
+        // The levels of the summing indexes carry the width of the type's sums, as the parse
+        // stamped them when the type was stored
+        if big_sums {
+            index_structure.mark_big_sums();
         }
 
         let distinct_from_fields = stored_distinct_from_fields(&flattened_properties);
@@ -488,6 +500,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable,
             documents_summable,
             range_summable,
+            big_sums,
             index_only,
             action_fees: action_fees.map(Into::into),
             documents_can_be_deleted_by_moderators,

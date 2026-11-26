@@ -23,6 +23,9 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   nothing when its format version 1 bytes match the stored contract's, whatever format the
 ///   stored one is in, as contracts are stored compiled from this version
 ///   (`contract_storage_serialization_version` 2).
+/// * **Cached contracts by protocol version** (protocol v15 note 51): with
+///   `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, `get_contract_with_fetch_info` 1 serves a cached
+///   contract only to a reader at the protocol version that parsed it.
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
@@ -102,7 +105,7 @@ use grovedb_version::version::v5::GROVE_V5;
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 (compiled contract storage)
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 (compiled contract storage); get_contract_with_fetch_info 1 (a cached contract only for its parsing protocol version)
         identity: DriveIdentityMethodVersions {
             update: DriveIdentityUpdateMethodVersions {
                 add_new_keys_to_masternode_identity: 1, // changed in v10: a masternode key whose hash the identity already holds a reference for is added without a second one

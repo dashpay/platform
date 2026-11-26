@@ -205,7 +205,8 @@ pub fn derive_platform_node_public_keys(
 ///
 /// # Errors
 /// [`PlatformWalletError::KeyDerivation`] if the `ProviderPlatformKeys`
-/// account derivation path or a hardened child index cannot be built.
+/// account derivation path or a hardened child index cannot be built, or
+/// the pool refuses a key whose address it already holds at another index.
 #[cfg(feature = "eddsa")]
 pub fn populate_platform_node_pool(
     wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
@@ -239,7 +240,6 @@ pub fn populate_platform_node_pool(
             dashcore::PubkeyHash::from_byte_array(key.node_id),
         );
         let address = dashcore::Address::new(network, payload);
-        let script_pubkey = address.script_pubkey();
         let child = key_wallet::bip32::ChildNumber::from_hardened_idx(key.index).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "failed to build hardened child index {}: {e:?}",
@@ -251,17 +251,10 @@ pub fn populate_platform_node_pool(
         let path = key_wallet::bip32::DerivationPath::from(children);
         infos.push(AddressInfo {
             address,
-            script_pubkey,
             public_key: Some(PublicKeyType::EdDSA(key.public_key.to_vec())),
             index: key.index,
             path,
             state: AddressState::Available,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: std::collections::BTreeMap::new(),
         });
     }
 
@@ -270,16 +263,20 @@ pub fn populate_platform_node_pool(
         .managed_account_type_mut()
         .address_pools_mut()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+        .find(|p| p.pool_type() == AddressPoolType::AbsentHardened)
     {
+        // Insert into a copy and keep it only once every key landed, so a
+        // refused key leaves the pool untouched.
+        let mut staged = pool.clone();
         for info in infos {
-            let idx = info.index;
-            pool.address_index.insert(info.address.clone(), idx);
-            pool.script_pubkey_index
-                .insert(info.script_pubkey.clone(), idx);
-            pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-            pool.addresses.insert(idx, info);
+            let index = info.index;
+            staged.insert(info).map_err(|e| {
+                PlatformWalletError::KeyDerivation(format!(
+                    "failed to store platform node key {index} in its pool: {e}"
+                ))
+            })?;
         }
+        *pool = staged;
     }
     Ok(())
 }
@@ -442,7 +439,7 @@ impl PlatformWallet {
                 acct.managed_account_type()
                     .address_pools()
                     .iter()
-                    .filter_map(|pool| pool.highest_generated)
+                    .filter_map(|pool| pool.highest_generated())
                     .max()
             })
             .map(|highest| highest.saturating_add(1))
@@ -477,7 +474,7 @@ impl PlatformWallet {
                 acct.managed_account_type()
                     .address_pools()
                     .iter()
-                    .filter_map(|pool| pool.highest_generated)
+                    .filter_map(|pool| pool.highest_generated())
                     .max()
             })
             .map(|highest| highest.saturating_add(1))
@@ -1116,14 +1113,18 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .iter()
-            .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+            .find(|p| p.pool_type() == AddressPoolType::AbsentHardened)
             .cloned()
             .expect("AbsentHardened pool must exist");
 
-        assert_eq!(pool.addresses.len(), keys.len(), "one row per derived key");
+        assert_eq!(
+            pool.addresses().len(),
+            keys.len(),
+            "one row per derived key"
+        );
         for k in &keys {
             let entry = pool
-                .addresses
+                .addresses()
                 .get(&k.index)
                 .expect("row present at derived index");
             match &entry.public_key {
@@ -1145,7 +1146,7 @@ mod tests {
             );
         }
         assert_eq!(
-            pool.highest_generated,
+            pool.highest_generated(),
             Some(keys.len() as u32 - 1),
             "highest_generated must advance to the last populated index"
         );
@@ -1159,29 +1160,36 @@ mod tests {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
         let wallet = seed_bearing_wallet(Network::Mainnet);
-        let mut keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
+        let keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
             .expect("platform-node derivation");
-        keys[1].index = 1 << 31;
-        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let mut invalid_index = keys.clone();
+        invalid_index[1].index = 1 << 31;
+        // Passes entry construction; the pool refuses the second insert.
+        let mut duplicate_node_id = keys;
+        duplicate_node_id[1].node_id = duplicate_node_id[0].node_id;
 
-        let result = populate_platform_node_pool(&mut wallet_info, &keys, Network::Mainnet);
+        for batch in [invalid_index, duplicate_node_id] {
+            let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
-        assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
-        let account = wallet_info
-            .accounts
-            .provider_platform_keys
-            .as_ref()
-            .expect("managed platform-node account");
-        let pool = account
-            .managed_account_type()
-            .address_pools()
-            .into_iter()
-            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
-            .expect("AbsentHardened pool");
-        assert!(
-            pool.addresses.is_empty(),
-            "an invalid later key must not leave earlier keys inserted"
-        );
+            let result = populate_platform_node_pool(&mut wallet_info, &batch, Network::Mainnet);
+
+            assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_ref()
+                .expect("managed platform-node account");
+            let pool = account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
+                .expect("AbsentHardened pool");
+            assert!(
+                pool.addresses().is_empty(),
+                "a refused later key must not leave earlier keys inserted"
+            );
+        }
     }
 
     /// The secp256k1 (owner / voting) families must derive at the DIP-3

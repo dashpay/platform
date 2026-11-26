@@ -56,13 +56,12 @@ mod tests {
     }
 
     #[test]
-    fn should_load_the_schema_at_the_token_marketplace_test_version() {
-        use platform_version::version::mocks::v5_test::TEST_PLATFORM_V5;
+    fn should_load_the_schema_at_the_token_marketplace_version() {
+        use platform_version::version::v16::PLATFORM_V16;
         use v1::document_types::{ask, bid};
 
-        // The token marketplace starts with protocol version 16, which has no tables yet: the
-        // test version that selects it stands in for it.
-        let schema = load_documents_schemas(&TEST_PLATFORM_V5).expect("schema loads");
+        // The token marketplace starts with protocol version 16.
+        let schema = load_documents_schemas(&PLATFORM_V16).expect("schema loads");
         let declared = |name: &str, properties: &[&str], summed: &str| {
             let document_type = schema
                 .get(name)

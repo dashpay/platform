@@ -100,6 +100,214 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }
     }
 
+    // MARK: - Balance history
+
+    /// One balance change of a wallet address in Platform's recent (not yet
+    /// compacted) zone. Part of `BalanceHistory`.
+    public struct BalanceHistoryEntry: Sendable, Equatable {
+        public enum Change: Sendable, Equatable {
+            /// The block set the balance to this many credits.
+            case set(UInt64)
+            /// The block added this many credits.
+            case added(UInt64)
+        }
+
+        public let blockHeight: UInt64
+        /// Address type (0 = P2PKH, 1 = P2SH).
+        public let addressType: UInt8
+        /// 20-byte address hash.
+        public let hash: Data
+        /// DIP-0018 bech32m form of the address on the wallet's network,
+        /// encoded by Rust.
+        public let address: String
+        public let change: Change
+    }
+
+    /// One compacted balance change of a wallet address: a block range merged
+    /// into one change. Part of `BalanceHistory`.
+    public struct CompactedBalanceHistoryEntry: Sendable, Equatable {
+        /// One addition inside the range.
+        public struct Addition: Sendable, Equatable {
+            public let blockHeight: UInt64
+            public let credits: UInt64
+        }
+
+        public enum Change: Sendable, Equatable {
+            /// The range ended with the balance set to this many credits.
+            case setFinal(UInt64)
+            /// The range only added to the balance: `total` (computed in
+            /// Rust) and each addition, newest block first.
+            case additions(total: UInt64, entries: [Addition])
+        }
+
+        public let startBlockHeight: UInt64
+        public let endBlockHeight: UInt64
+        /// Address type (0 = P2PKH, 1 = P2SH).
+        public let addressType: UInt8
+        /// 20-byte address hash.
+        public let hash: Data
+        /// DIP-0018 bech32m form of the address on the wallet's network,
+        /// encoded by Rust.
+        public let address: String
+        public let change: Change
+    }
+
+    /// The balance change history of this wallet's platform addresses, from
+    /// one `balanceHistory(includeCompacted:)` call.
+    public struct BalanceHistory: Sendable, Equatable {
+        /// Changes in Platform's recent (not yet compacted) zone, newest
+        /// block first.
+        public let recent: [BalanceHistoryEntry]
+        /// Compacted ranges, newest range first. Empty unless compacted
+        /// history was asked for; no block here is also in `recent`.
+        public let compacted: [CompactedBalanceHistoryEntry]
+        /// The height the read reached (decided in Rust). Pass it as the
+        /// `minProvedHeight` of the next read of a history that shows this
+        /// one, so that read never uses an older page.
+        public let provedHeight: UInt64
+    }
+
+    /// Runs the blocking history export off Swift's cooperative pool, like
+    /// `SDK.performBlockingQuery`: each call parks a GCD thread, not a
+    /// cooperative one, for its network round trips.
+    private static let historyQueue = DispatchQueue(
+        label: "org.dash.swift-dash-sdk.platform-address-history",
+        qos: .userInitiated,
+        attributes: .concurrent)
+
+    /// Balance changes of this wallet's platform addresses (every platform
+    /// payment account): the recent zone, and the compacted zone too when
+    /// `includeCompacted` is set.
+    ///
+    /// `minProvedHeight` is the `provedHeight` of the history already shown
+    /// (0 for a first read): the read starts its height floor there, so it
+    /// never uses a page older than what is on screen. A read that cannot
+    /// get a page at its floor throws
+    /// `PlatformWalletError.balanceHistoryInconsistentHeights` (code 83):
+    /// every attempt for one page got a successfully fetched,
+    /// proof-verified reply, each below the floor. Errors from the SDK itself
+    /// (its own stale-node rejection, transport or proof failures) keep
+    /// their existing mapping.
+    ///
+    /// Paging, the wallet-address filter, the height floor and its retries,
+    /// the reconciliation of the two zones (a recent block a compacted range
+    /// covers shows once, in `compacted`), the ordering, each range's total
+    /// and each address's bech32m form all happen in `platform-wallet`
+    /// (`PlatformAddressWallet::balance_history`). Each page is
+    /// proof-verified, so the call goes through the network.
+    public func balanceHistory(includeCompacted: Bool, minProvedHeight: UInt64) async throws -> BalanceHistory {
+        try await withCheckedThrowingContinuation { continuation in
+            Self.historyQueue.async { [self] in
+                do {
+                    // `self` is captured strongly: `deinit` destroys the
+                    // handle, so the wallet must outlive the FFI call.
+                    let history = try withExtendedLifetime(self) {
+                        try Self.readBalanceHistory(
+                            handle: handle, includeCompacted: includeCompacted, minProvedHeight: minProvedHeight)
+                    }
+                    continuation.resume(returning: history)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Call the history export and copy both arrays into Swift values,
+    /// freeing them before returning on every path.
+    private static func readBalanceHistory(
+        handle: Handle, includeCompacted: Bool, minProvedHeight: UInt64
+    ) throws -> BalanceHistory {
+        var recentPtr: UnsafeMutablePointer<AddressBalanceChangeEntryFFI>?
+        var recentCount: UInt = 0
+        var compactedPtr: UnsafeMutablePointer<CompactedAddressBalanceChangeEntryFFI>?
+        var compactedCount: UInt = 0
+        var provedHeight: UInt64 = 0
+        try platform_address_wallet_balance_history(
+            handle, includeCompacted, minProvedHeight, &recentPtr, &recentCount, &compactedPtr,
+            &compactedCount, &provedHeight
+        ).check()
+        defer {
+            platform_address_wallet_free_balance_history(
+                recentPtr, recentCount, compactedPtr, compactedCount)
+        }
+        return BalanceHistory(
+            recent: try recentEntries(recentPtr, count: recentCount),
+            compacted: try compactedEntries(compactedPtr, count: compactedCount),
+            provedHeight: provedHeight
+        )
+    }
+
+    private static func recentEntries(
+        _ entries: UnsafeMutablePointer<AddressBalanceChangeEntryFFI>?, count: UInt
+    ) throws -> [BalanceHistoryEntry] {
+        guard let entries, count > 0 else { return [] }
+        return try (0..<Int(count)).map { i in
+            let entry = entries[i]
+            let change: BalanceHistoryEntry.Change
+            switch entry.kind {
+            case 0: change = .set(entry.credits)  // ADDRESS_BALANCE_CHANGE_KIND_FFI_SET
+            case 1: change = .added(entry.credits)  // ADDRESS_BALANCE_CHANGE_KIND_FFI_ADDED
+            default:
+                throw PlatformWalletError.deserialization(
+                    "Unknown balance change kind \(entry.kind)"
+                )
+            }
+            return BalanceHistoryEntry(
+                blockHeight: entry.block_height,
+                addressType: entry.address.address_type,
+                hash: withUnsafeBytes(of: entry.address.hash) { Data($0) },
+                address: try addressString(entry.address_bech32m),
+                change: change
+            )
+        }
+    }
+
+    private static func compactedEntries(
+        _ entries: UnsafeMutablePointer<CompactedAddressBalanceChangeEntryFFI>?, count: UInt
+    ) throws -> [CompactedBalanceHistoryEntry] {
+        guard let entries, count > 0 else { return [] }
+        return try (0..<Int(count)).map { i in
+            let entry = entries[i]
+            let change: CompactedBalanceHistoryEntry.Change
+            switch entry.kind {
+            case 0:  // COMPACTED_ADDRESS_BALANCE_CHANGE_KIND_FFI_SET_FINAL
+                change = .setFinal(entry.credits)
+            case 1:  // COMPACTED_ADDRESS_BALANCE_CHANGE_KIND_FFI_ADDITIONS
+                var additions: [CompactedBalanceHistoryEntry.Addition] = []
+                if let additionsPtr = entry.additions, entry.additions_count > 0 {
+                    additions = (0..<Int(entry.additions_count)).map { j in
+                        CompactedBalanceHistoryEntry.Addition(
+                            blockHeight: additionsPtr[j].block_height,
+                            credits: additionsPtr[j].credits
+                        )
+                    }
+                }
+                change = .additions(total: entry.credits, entries: additions)
+            default:
+                throw PlatformWalletError.deserialization(
+                    "Unknown compacted balance change kind \(entry.kind)"
+                )
+            }
+            return CompactedBalanceHistoryEntry(
+                startBlockHeight: entry.start_block_height,
+                endBlockHeight: entry.end_block_height,
+                addressType: entry.address.address_type,
+                hash: withUnsafeBytes(of: entry.address.hash) { Data($0) },
+                address: try addressString(entry.address_bech32m),
+                change: change
+            )
+        }
+    }
+
+    /// Copy a history entry's Rust-encoded address string.
+    private static func addressString(_ pointer: UnsafeMutablePointer<CChar>?) throws -> String {
+        guard let pointer else {
+            throw PlatformWalletError.deserialization("Balance history entry without an address")
+        }
+        return String(cString: pointer)
+    }
+
     // MARK: - Transfer
 
     /// One recipient row for `transfer(...)`.

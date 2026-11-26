@@ -97,7 +97,8 @@ public enum DashModelContainer {
             PersistentIdentityBalanceMetadata.self,
             PersistentPrivateContactRequestsPosition.self,
             PersistentPrivateShieldedAddress.self,
-            PersistentLockedOutpoint.self
+            PersistentLockedOutpoint.self,
+            PersistentDashpayPaymentAddresses.self
         ]
     }
 
@@ -400,8 +401,13 @@ public enum DashSchemaV4: VersionedSchema {
 /// Current schema: an asset lock records the optional Orchard recipient of its
 /// shielded funding and the optional identity of its unbound identity top-up,
 /// the private contact request sync keeps its scan state (each identity's read
-/// position and its private contacts' shielded addresses), and a wallet keeps
-/// the outpoints it holds out of coin selection.
+/// position and its private contacts' shielded addresses),
+/// a wallet keeps the outpoints it holds out of coin selection,
+/// and an identity records the last check of its stored masternode voting key
+/// and the pro_tx_hash of the masternode it votes for, with which of that
+/// masternode's identities it is.
+/// DashPay payment addresses are stored in their own entity, leaving the
+/// published profile entities unchanged.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

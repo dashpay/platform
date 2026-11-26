@@ -11,6 +11,7 @@ pub mod dump;
 mod executor;
 #[cfg(feature = "mocks")]
 pub mod mock;
+mod mock_error;
 mod request_settings;
 pub mod transport;
 
@@ -32,6 +33,7 @@ use futures::{future::BoxFuture, FutureExt};
 pub use http::Uri;
 #[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]
 pub use http_serde::http::Uri;
+pub use mock_error::MockError;
 pub use request_settings::RequestSettings;
 
 /// A DAPI request could be executed with an initialized [DapiClient].

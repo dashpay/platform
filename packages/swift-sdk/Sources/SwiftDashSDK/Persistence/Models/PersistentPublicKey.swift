@@ -279,7 +279,8 @@ extension PersistentPublicKey {
         }
 
         return IdentityPublicKey(
-            id: KeyID(keyId),
+            // The row stores the protocol `UInt32` id as its bit pattern.
+            id: KeyID(UInt32(bitPattern: keyId)),
             purpose: purpose,
             securityLevel: securityLevel,
             contractBounds: bounds,
@@ -316,7 +317,7 @@ extension PersistentPublicKey {
             kind = 0
         }
         return PersistentPublicKey(
-            keyId: Int32(publicKey.id),
+            keyId: Int32(bitPattern: publicKey.id),
             purpose: publicKey.purpose,
             securityLevel: publicKey.securityLevel,
             keyType: publicKey.keyType,

@@ -26,8 +26,16 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetRecentAddressBalanceChangesResponseV0>, Error> {
-        // Limit the number of blocks we return
-        let limit = Some(100u16);
+        // Limit the number of blocks we return; the proof verifier checks
+        // against the same version-table value. It is 100, the literal used
+        // here before, in every shipped protocol version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_address_balance_changes_max_blocks,
+        );
 
         let response = if prove {
             let proof = if start_height_exclusive {

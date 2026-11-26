@@ -12,7 +12,10 @@
 //!   `nullifier` (the nullifier of the note that action spent) is
 //!   replayed against each subwallet's store via `mark_spent`, so
 //!   spends ride the same note-scan watermark with no separate
-//!   nullifier-sync round-trip.
+//!   nullifier-sync round-trip. A scanned action that spends an
+//!   input of a spend the wallet saved unconfirmed, and is not that
+//!   spend's own action, fails the spend and frees its other notes
+//!   (`SavedSpendInput`).
 //! - [`balances_across`] — pure unspent-balance read against
 //!   the shared store.
 //!
@@ -33,14 +36,20 @@ use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
 use dash_sdk::platform::shielded::{
     sync_shielded_notes_stream, try_decrypt_note, try_recover_outgoing_note,
 };
+use dpp::serialization::PlatformDeserializableTrusted;
+use dpp::state_transition::StateTransition;
 use futures::{Stream, StreamExt};
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
+use super::activity::ShieldedActivityStatus;
+use super::activity_recorder::with_status;
 use super::keys::AccountViewingKeys;
-use super::store::{ShieldedStore, SubwalletId};
+use super::operations::shielded_actions;
+use super::store::{PendingRedrive, ShieldedStore, SubwalletId};
+use super::tips::is_shielded_identity_account;
 use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
 
@@ -53,7 +62,7 @@ use crate::error::PlatformWalletError;
 /// bisects against. Hardcoded rather than imported because
 /// `rs-platform-wallet` doesn't depend on `drive` directly — bump
 /// here and there together if the chunk power ever changes.
-const CHUNK_SIZE: u64 = 2048;
+pub(super) const CHUNK_SIZE: u64 = 2048;
 
 /// In-flight chunk fetches per note-sync stream; tests mock this many chunks.
 const MAX_CONCURRENT_CHUNK_FETCHES: usize = 16;
@@ -104,19 +113,40 @@ impl ShieldedSyncSummary {
     /// Sum of unspent balances across accounts, rejecting an unrepresentable
     /// wallet total even when every individual account balance fits in `u64`.
     pub fn balance_total(&self) -> Result<u64, PlatformWalletError> {
-        self.balances.values().try_fold(0u64, |total, balance| {
-            total.checked_add(*balance).ok_or_else(|| {
-                PlatformWalletError::ShieldedStoreError(
-                    "wallet-wide shielded balance exceeds u64".to_string(),
-                )
-            })
-        })
+        checked_balance_sum(self.balances.values())
+    }
+
+    /// Sum of unspent balances across the ordinary accounts, the ones a send
+    /// from the wallet's ordinary accounts can spend. Identity accounts
+    /// ([`is_shielded_identity_account`]) are bound and scanned with the
+    /// wallet but are left out. Rejects an unrepresentable total as
+    /// [`Self::balance_total`] does.
+    pub fn ordinary_balance_total(&self) -> Result<u64, PlatformWalletError> {
+        checked_balance_sum(
+            self.balances
+                .iter()
+                .filter(|(account, _)| !is_shielded_identity_account(**account))
+                .map(|(_, balance)| balance),
+        )
     }
 
     /// Sum of newly-spent counts across accounts.
     pub fn total_newly_spent(&self) -> usize {
         self.newly_spent_per_account.values().sum()
     }
+}
+
+/// Sum of `balances`, rejecting a total that does not fit in `u64`.
+fn checked_balance_sum<'a>(
+    mut balances: impl Iterator<Item = &'a u64>,
+) -> Result<u64, PlatformWalletError> {
+    balances.try_fold(0u64, |total, balance| {
+        total.checked_add(*balance).ok_or_else(|| {
+            PlatformWalletError::ShieldedStoreError(
+                "wallet-wide shielded balance exceeds u64".to_string(),
+            )
+        })
+    })
 }
 
 /// Result of a multi-subwallet note-sync pass.
@@ -162,6 +192,31 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
+}
+
+/// How a pass of the note scan ended ([`sync_notes_across`]).
+#[derive(Debug)]
+pub(super) enum NoteScan {
+    /// It read the pool to its end, or was cancelled, in which case the
+    /// result is empty.
+    Finished(MultiSyncNotesResult),
+    /// It met a gap between two fetched ranges and published nothing. The
+    /// commitments it read up to the gap stay appended to the local tree.
+    /// The pool holds notes this pass did not read, so the pass is not a
+    /// completed one and the next must not be skipped as caught up. See the
+    /// gap note on [`sync_notes_across`].
+    StoppedAtGap,
+}
+
+impl NoteScan {
+    /// The result of a pass that did not stop at a gap.
+    #[cfg(test)]
+    pub(super) fn finished(self) -> MultiSyncNotesResult {
+        match self {
+            NoteScan::Finished(result) => result,
+            NoteScan::StoppedAtGap => panic!("the pass stopped at a gap"),
+        }
+    }
 }
 
 impl MultiSyncNotesResult {
@@ -217,6 +272,19 @@ impl MultiSyncNotesResult {
 /// skip every append and checkpoint it already made, so what a stop
 /// costs is the download and decryption of the chunks it had consumed.
 /// It is a clean early stop, not an error.
+///
+/// A gap between ranges: ranges are fetched concurrently, each proved at
+/// its own height, so one answered a block earlier can end short of the
+/// next one's start while the next holds notes. The positions between them
+/// were never read. The pass stops there and ends as a cancelled one does:
+/// the commitments it read up to the gap stay appended and checkpointed,
+/// and nothing else is published: it returns [`NoteScan::StoppedAtGap`].
+/// It knows the pool holds
+/// more than it read, so what it read is not a complete scan either: a
+/// receipt in it may be spent by an action past the gap, and the activity
+/// derived from it would be frozen short of a note the next pass finds at
+/// the same proved height. The next pass re-walks from the last completed
+/// watermark.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -224,9 +292,9 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
-) -> Result<MultiSyncNotesResult, PlatformWalletError> {
+) -> Result<NoteScan, PlatformWalletError> {
     if subwallets.is_empty() {
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
@@ -290,21 +358,21 @@ pub(super) async fn sync_notes_from_stream<S, St, F>(
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
     make_stream: F,
-) -> Result<MultiSyncNotesResult, PlatformWalletError>
+) -> Result<NoteScan, PlatformWalletError>
 where
     S: ShieldedStore,
     St: Stream<Item = Result<ShieldedChunkBatch, dash_sdk::Error>>,
     F: FnOnce(u64, u64) -> St,
 {
     if subwallets.is_empty() {
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Nothing has been touched yet, so a stop that landed before the scan
     // costs nothing: skip the lock and the fetch entirely.
     if cancel.is_cancelled() {
         debug!("Shielded note sync cancelled before the scan started");
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Keep the snapshot and streamed consume under one write guard so another
@@ -322,7 +390,7 @@ where
     // of after the unrelated holder is done.
     let Some(mut store) = cancel.run_until_cancelled(store.write()).await else {
         debug!("Shielded note sync cancelled while waiting for the store lock");
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     };
 
     // Snapshot each subwallet's watermark and the shared tree's
@@ -446,14 +514,15 @@ where
     // positions are already in the tree, so they don't advance the
     // commit count beyond `tree_size`).
     let mut leaves_committed: u64 = tree_size;
-    // Cumulative notes scanned across every batch (decrypted + skipped)
-    // — drives the watermark advance and the host-visible scan volume,
-    // exactly as `result.total_notes_scanned` did in the one-shot path.
+    // Cumulative notes scanned across every batch the pass used (decrypted
+    // + skipped): the host-visible scan volume. The watermark is not
+    // computed from it: it is `scanned_to`, the end of the run of positions
+    // read without a gap.
     let mut total_notes_scanned: u64 = 0;
     // Track the last non-empty batch's `(start_index, is_partial)` —
     // diagnostic only. The one-shot path used this to rewind its resume
     // point to the mutable buffer chunk's start; the streaming path's
-    // watermark is `aligned_start + total_notes_scanned` (the partial
+    // watermark is `scanned_to` (the partial
     // chunk is re-fetched via the chunk-boundary realignment at the
     // next pass's start instead), so this value never feeds the
     // watermark — it is surfaced in the completion log for parity with
@@ -477,6 +546,13 @@ where
     // so `mark_spent`'s by-nullifier lookup still resolves.
     let mut scanned_nullifiers: Vec<[u8; 32]> = Vec::new();
 
+    // The notes the saved spends consume, read once: the store's write guard
+    // is held for the whole pass, so no spend saves a record during it. A
+    // scanned action that spends one of them and is not the saved
+    // transition's own puts its spend here (see [`SavedSpendInput`]).
+    let saved_inputs = saved_spend_inputs(&*store, subwallets);
+    let mut spent_elsewhere: SpendsSpentElsewhere = BTreeMap::new();
+
     // The stream lives in this block so it — and the up-to-`max_concurrent`
     // network fetches it holds in flight — is dropped before the finalize
     // below runs, whether the loop ran to the end or was cancelled.
@@ -486,6 +562,11 @@ where
     // proof shows the tree ending within it.
     let mut scanned_to = aligned_start;
     let mut covered_height: Option<u64> = None;
+    // The highest height any batch of this pass was proven at: every spend
+    // the pass applies was seen at or below it.
+    let mut highest_batch_height: Option<u64> = None;
+    // Set when the pass ends at a gap between two ranges (see the loop).
+    let mut stopped_at_gap = false;
     let cancelled = {
         let stream = make_stream(aligned_start, tree_size);
         futures::pin_mut!(stream);
@@ -515,7 +596,29 @@ where
             // so a late chunk proven at a slightly higher block never lowers
             // it. Stays 0 (indeterminate) only if no batch is ever produced.
             total_target = total_target.max(batch.total_count);
+            // Adjacent ranges are fetched concurrently and each is proved at
+            // its own height. One answered a block earlier comes back short
+            // of the next one's start, while the next, answered after the
+            // tree grew, holds notes: the positions between them were never
+            // read. The pass ends at that gap and uses nothing past it: a
+            // commitment appended from there would sit at the wrong position
+            // in the local tree, and a watermark past it would leave the
+            // skipped positions undecrypted for good. It then ends as a
+            // cancelled pass does (below): its tree progress is kept and
+            // nothing else is published. An empty range past the run holds
+            // nothing to use and is passed over, as before.
+            if batch.start_index > scanned_to && !batch.notes.is_empty() {
+                info!(
+                    scanned_to,
+                    next_range = batch.start_index,
+                    "Shielded note sync read a range that starts past the positions read so \
+                     far; stopping at the gap and publishing nothing, the next pass reads it"
+                );
+                stopped_at_gap = true;
+                break false;
+            }
             total_notes_scanned += batch.notes.len() as u64;
+            highest_batch_height = highest_batch_height.max(Some(batch.block_height));
             if batch.start_index <= scanned_to {
                 let end = batch.start_index.saturating_add(batch.notes.len() as u64);
                 scanned_to = scanned_to.max(end);
@@ -548,6 +651,22 @@ where
                         PlatformWalletError::ShieldedSyncFailed("Invalid nullifier length".into())
                     })?;
                 scanned_nullifiers.push(nf_bytes);
+                if let Some(inputs) = saved_inputs.get(&nf_bytes) {
+                    let cmx = <[u8; 32]>::try_from(raw_note.cmx.as_slice()).map_err(|_| {
+                        PlatformWalletError::ShieldedSyncFailed("Invalid cmx length".into())
+                    })?;
+                    for input in inputs.iter().filter(|input| input.cmx != cmx) {
+                        spent_elsewhere
+                            .entry((input.id, input.record.activity_id))
+                            .and_modify(|spend| {
+                                spend.proved_at = spend.proved_at.max(batch.block_height);
+                            })
+                            .or_insert_with(|| SpendSpentElsewhere {
+                                record: Arc::clone(&input.record),
+                                proved_at: batch.block_height,
+                            });
+                    }
+                }
                 let global_pos = batch.start_index + i as u64;
                 if global_pos < tree_size {
                     continue;
@@ -639,7 +758,7 @@ where
 
     // Diagnostic mirror of the SDK's one-shot `next_start_index`
     // (rewinds to the last partial chunk's start). NOT the watermark:
-    // the streaming path persists `aligned_start + total_notes_scanned`
+    // the streaming path persists `scanned_to`
     // below, and re-covers the partial buffer chunk through the
     // chunk-boundary realignment at the next pass's start. The old
     // "next_start_index is 0 — next sync will rescan from the
@@ -692,18 +811,35 @@ where
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
     }
 
-    // A cancelled pass ends here: the appended leaves are checkpointed
-    // (the next pass skips them), and nothing the prefix decrypted is
-    // saved, replayed, watermarked or handed to the caller. See the
-    // cancellation note on `sync_notes_across` for why a consumed prefix
-    // must not reach the ledger.
-    if cancelled {
+    // A cancelled pass, and one that stopped at a gap, ends here: the
+    // appended leaves are checkpointed (the next pass skips them), and
+    // nothing the prefix decrypted is saved, replayed, watermarked or handed
+    // to the caller. See the cancellation and gap notes on
+    // `sync_notes_across` for why a consumed prefix must not reach the
+    // ledger.
+    if cancelled || stopped_at_gap {
         drop(store);
         info!(
             total_scanned = total_notes_scanned,
-            appended, "Shielded note sync stopped; tree progress kept, nothing published"
+            appended,
+            stopped_at_gap,
+            "Shielded note sync stopped; tree progress kept, nothing published"
         );
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(if stopped_at_gap {
+            NoteScan::StoppedAtGap
+        } else {
+            NoteScan::Finished(MultiSyncNotesResult::default())
+        });
+    }
+
+    // Before any spend is applied: one can drop a saved record, and the
+    // height it was seen at must outlive that, even across a restart. Kept
+    // before anything else this pass saves or records, so a failure here
+    // leaves nothing half recorded for a retry to skip.
+    if let (Some(height), false) = (highest_batch_height, scanned_nullifiers.is_empty()) {
+        store
+            .note_spend_scan_height(height)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     }
 
     // Save decrypted notes per subwallet; count new notes per
@@ -814,21 +950,34 @@ where
     )
     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
 
+    // The saved spends another action took an input of never executed and
+    // never can: fail them, and free the notes they still hold once the scan
+    // covers the height that proved it, under the guard that marked the
+    // input spent, so the balances this pass reads count the freed notes.
+    fail_spends_spent_elsewhere(
+        &mut *store,
+        &spent_elsewhere,
+        covered_height,
+        &mut changeset,
+    );
+
     // Advance every subwallet's watermark to the same global
     // tree position so the next sync resumes coherently across
-    // the union. `total_notes_scanned` is accumulated from every
-    // streamed batch's note count — identical to the one-shot path's
-    // `result.total_notes_scanned`.
+    // the union: `scanned_to`, the end of the run of positions this pass
+    // read without a gap from `aligned_start`. A watermark never covers a
+    // position the scan did not read: a pass that met a gap between two
+    // ranges returned above, publishing nothing.
     //
     // Never rewind. `aligned_start` is the MIN watermark across the
     // union, so a pass that re-walks a lagging subwallet's range can
     // end below a subwallet that was already further along; a completed
     // pass reaches the tip, which is at or past every watermark. Only a
-    // completed pass gets here (a cancelled one returned above), so the
+    // completed pass gets here (a cancelled one, and one that stopped at a
+    // gap, returned above), so the
     // write is unconditional: the setter also stamps the scan coverage
     // and the `ScannedThisSession` balance source, which is exactly what
     // reaching the tip means.
-    let new_index = aligned_start + total_notes_scanned;
+    let new_index = scanned_to;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
         let advanced = prior.max(new_index);
@@ -856,13 +1005,13 @@ where
     // rewind), and the host counter is documented as scan throughput,
     // not tree growth.
     let scanned_volume = (aligned_start + total_notes_scanned).saturating_sub(already_have);
-    Ok(MultiSyncNotesResult {
+    Ok(NoteScan::Finished(MultiSyncNotesResult {
         per_subwallet_new_notes,
         per_subwallet_newly_spent: newly_spent_per_subwallet,
         total_scanned: scanned_volume,
         changeset,
         covered_height,
-    })
+    }))
 }
 
 /// Scan-based spend detection: replay the set of nullifiers seen on
@@ -930,6 +1079,199 @@ fn apply_scanned_nullifier_spends<S: ShieldedStore>(
     Ok(newly_spent_per_subwallet)
 }
 
+/// One note a saved spend consumes, as its saved transition spends it.
+///
+/// A spend whose result the wallet could not confirm keeps its signed
+/// transition ([`PendingRedrive`]). Platform records a nullifier once, and
+/// the note item an executed action leaves in the commitment tree holds that
+/// action's nullifier and its output commitment together, under one proof. So
+/// the item the scan reads for one of the spend's inputs names the action
+/// that took the note:
+///
+/// - with the commitment the saved transition pairs with that nullifier, it
+///   is the spend's own action: the spend executed, and the scan confirms
+///   its row once it finds an output the wallet reads;
+/// - with any other commitment, another transition spent the note (a second
+///   device on the same seed). The saved one takes all of its inputs or none,
+///   so it did not execute, and the recorded nullifier keeps it from ever
+///   executing.
+///
+/// The second is read off an action the scan saw, never off one it did not
+/// see: a spend whose own change has not been scanned yet stays pending.
+struct SavedSpendInput {
+    /// The subwallet whose notes the spend consumes.
+    id: SubwalletId,
+    /// The output commitment of the saved transition's action that spends
+    /// the note.
+    cmx: [u8; 32],
+    /// The spend's saved record.
+    record: Arc<PendingRedrive>,
+}
+
+/// A saved spend an action other than its own took an input of.
+struct SpendSpentElsewhere {
+    /// The spend's saved record, as it read when the pass began.
+    record: Arc<PendingRedrive>,
+    /// The highest proved height of a batch that held such an action: the
+    /// transition it belongs to executed at or below it.
+    proved_at: u64,
+}
+
+/// The saved spends an action other than their own took an input of, by
+/// subwallet and activity id.
+type SpendsSpentElsewhere = BTreeMap<(SubwalletId, [u8; 32]), SpendSpentElsewhere>;
+
+/// The inputs of every spend `subwallets` have saved, by nullifier.
+///
+/// A record whose transition does not decode, or does not hold an action
+/// spending one of the record's notes, gives no input: nothing is known about
+/// which action is its own, and it resolves as it did before, by its outputs
+/// or its anchor's expiry.
+fn saved_spend_inputs<S: ShieldedStore>(
+    store: &S,
+    subwallets: &[(SubwalletId, AccountViewingKeys)],
+) -> BTreeMap<[u8; 32], Vec<SavedSpendInput>> {
+    let mut by_nullifier: BTreeMap<[u8; 32], Vec<SavedSpendInput>> = BTreeMap::new();
+    for (id, _) in subwallets {
+        let records = match store.pending_redrives(*id) {
+            Ok(records) => records,
+            Err(e) => {
+                warn!(
+                    wallet_id = %hex::encode(id.wallet_id),
+                    account = id.account_index,
+                    error = %e,
+                    "the saved spends were not read; this pass tells none of them from a \
+                     competing spend"
+                );
+                continue;
+            }
+        };
+        for record in records {
+            // An identity-funded shield consumes no note.
+            if record.nullifiers.is_empty() {
+                continue;
+            }
+            let Ok(transition) = StateTransition::deserialize_from_bytes_trusted(&record.st_bytes)
+            else {
+                continue;
+            };
+            let actions = shielded_actions(&transition);
+            let record = Arc::new(record);
+            for nullifier in &record.nullifiers {
+                let Some(action) = actions.iter().find(|action| action.nullifier == *nullifier)
+                else {
+                    continue;
+                };
+                by_nullifier
+                    .entry(*nullifier)
+                    .or_default()
+                    .push(SavedSpendInput {
+                        id: *id,
+                        cmx: action.cmx,
+                        record: Arc::clone(&record),
+                    });
+            }
+        }
+    }
+    by_nullifier
+}
+
+/// Settle the saved spends an action other than their own took an input of
+/// ([`SavedSpendInput`]). Each can never execute:
+///
+/// - Its saved transition goes: the spent mark dropped it with the note it
+///   spent, and one whose note the store does not hold is dropped here, so
+///   it is never sent again.
+/// - Its pending row reads failed, in the store and on `changeset` for the
+///   host.
+/// - The notes it still holds are released once `covered_height`, what the
+///   pass's scan covers, reaches the height that proved the other action.
+///   The transition that action belongs to executed at or below that height,
+///   and may have spent those notes too, in actions of a range proved before
+///   it executed. Covered through that height, the scan read every one of
+///   its actions and marked the notes they spent. Short of that the notes
+///   stay reserved for the session, and are released when the spend's anchor
+///   expires, as before: with the saved transition gone, no later pass
+///   releases them sooner. A note is released only while its reservation
+///   still carries the spend's activity id, so another attempt's hold on it
+///   stays.
+///
+/// A store call that fails is logged and the rest goes on: what is left (a
+/// record or a reservation) resolves as it did before, at the anchor's
+/// expiry.
+fn fail_spends_spent_elsewhere<S: ShieldedStore>(
+    store: &mut S,
+    spent_elsewhere: &SpendsSpentElsewhere,
+    covered_height: Option<u64>,
+    changeset: &mut ShieldedChangeSet,
+) {
+    for ((id, activity_id), spend) in spent_elsewhere {
+        if let Err(e) = store.clear_redrive(*id, activity_id) {
+            warn!(
+                activity_id = %hex::encode(activity_id),
+                error = %e,
+                "a spend whose input another transition spent kept its saved transition"
+            );
+        }
+        let covered = covered_height.is_some_and(|covered| covered >= spend.proved_at);
+        if covered {
+            match store.stale_pending_spends(*id) {
+                Ok(held) => {
+                    for nullifier in spend.record.nullifiers.iter().filter(|nullifier| {
+                        held.iter().any(|(held_nullifier, _, held_by, _)| {
+                            held_nullifier == *nullifier && *held_by == Some(*activity_id)
+                        })
+                    }) {
+                        if let Err(e) = store.clear_pending(*id, nullifier) {
+                            warn!(
+                                activity_id = %hex::encode(activity_id),
+                                error = %e,
+                                "a note of a spend whose input another transition spent was not \
+                                 released"
+                            );
+                        }
+                    }
+                }
+                Err(e) => warn!(
+                    activity_id = %hex::encode(activity_id),
+                    error = %e,
+                    "the notes of a spend whose input another transition spent were not read; \
+                     they stay reserved"
+                ),
+            }
+        }
+        match store.get_activity_by_entry_id(*id, activity_id) {
+            Ok(Some(entry)) if entry.status == ShieldedActivityStatus::Pending => {
+                let failed = with_status(&entry, ShieldedActivityStatus::Failed, None);
+                if let Err(e) = store.save_activity(*id, &failed) {
+                    warn!(
+                        activity_id = %hex::encode(activity_id),
+                        error = %e,
+                        "the row of a spend whose input another transition spent was not saved \
+                         as failed; the host is still told"
+                    );
+                }
+                changeset.record_activity_entry(*id, failed);
+            }
+            Ok(_) => {}
+            Err(e) => warn!(
+                activity_id = %hex::encode(activity_id),
+                error = %e,
+                "the row of a spend whose input another transition spent was not read; it stays \
+                 pending"
+            ),
+        }
+        info!(
+            wallet_id = %hex::encode(id.wallet_id),
+            account = id.account_index,
+            activity_id = %hex::encode(activity_id),
+            notes_released = covered,
+            "another transition spent an input of a pending shielded spend, which can never \
+             execute; it is failed"
+        );
+    }
+}
+
 /// Multi-subwallet unspent-balance snapshot. Pure read against
 /// the shared store — does not trigger a sync.
 pub(crate) async fn balances_across<S: ShieldedStore>(
@@ -983,7 +1325,7 @@ fn _unused_payment_address(_pa: PaymentAddress) {}
 ///
 /// Format: `recipient(43) || value(8 LE) || rho(32) || rseed(32)` = 115 bytes.
 /// Must be kept in sync with `deserialize_note()` in operations.rs.
-fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
+pub(super) fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
     let mut data = Vec::with_capacity(115);
     data.extend_from_slice(&note.recipient().to_raw_address_bytes());
     data.extend_from_slice(&note.value().inner().to_le_bytes());
@@ -998,6 +1340,7 @@ mod tests {
     use crate::changeset::ShieldedChangeSet;
     use crate::error::PlatformWalletError;
     use crate::wallet::shielded::keys::OrchardKeySet;
+    use crate::wallet::shielded::shielded_identity_account_index;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
     };
@@ -1013,6 +1356,38 @@ mod tests {
         assert_eq!(summary.balance_total().unwrap(), u64::MAX);
         summary.balances.insert(2, 1);
         assert!(matches!(summary.balance_total(),
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("wallet-wide shielded balance exceeds u64")));
+    }
+
+    #[test]
+    fn should_leave_identity_accounts_out_of_the_ordinary_balance() {
+        let identity_account = shielded_identity_account_index(0).unwrap();
+        let summary = ShieldedSyncSummary {
+            balances: BTreeMap::from([(0, 100), (1, 50), (identity_account, 900)]),
+            ..ShieldedSyncSummary::default()
+        };
+        assert_eq!(summary.ordinary_balance_total().unwrap(), 150);
+        assert_eq!(summary.balance_total().unwrap(), 1_050);
+    }
+
+    #[test]
+    fn should_report_zero_ordinary_balance_for_an_empty_summary() {
+        let summary = ShieldedSyncSummary::default();
+        assert_eq!(summary.ordinary_balance_total().unwrap(), 0);
+    }
+
+    #[test]
+    fn should_check_ordinary_balance_overflow() {
+        let identity_account = shielded_identity_account_index(0).unwrap();
+        let mut summary = ShieldedSyncSummary {
+            balances: BTreeMap::from([(0, u64::MAX - 1), (identity_account, u64::MAX)]),
+            ..ShieldedSyncSummary::default()
+        };
+        // The identity account's balance does not count toward the overflow.
+        assert_eq!(summary.ordinary_balance_total().unwrap(), u64::MAX - 1);
+        summary.balances.insert(1, 2);
+        assert!(matches!(summary.ordinary_balance_total(),
             Err(PlatformWalletError::ShieldedStoreError(message))
                 if message.contains("wallet-wide shielded balance exceeds u64")));
     }
@@ -1224,3 +1599,13 @@ mod cancel_tests;
 
 #[cfg(test)]
 mod concurrent_sync_tests;
+
+/// A pass that meets a gap between two fetched ranges publishes nothing, and
+/// the next pass finds every note.
+#[cfg(test)]
+mod range_gap_tests;
+
+/// A pending spend whose input another transition spent is failed from the
+/// action the scan reads for it, and one that landed is not.
+#[cfg(test)]
+mod spent_elsewhere_tests;

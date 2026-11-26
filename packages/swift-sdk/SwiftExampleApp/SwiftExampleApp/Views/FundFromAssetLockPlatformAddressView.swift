@@ -663,6 +663,13 @@ struct FundFromAssetLockPlatformAddressView: View {
     }
 
     private func submit() {
+        // A rebuild counts this funding before it stops SPV, so neither a
+        // fresh nor a resumed funding may start once it has reserved its
+        // slot: it would wait for a ChainLock that never comes.
+        if let refusal = AppState.fundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+            submitError = SubmitError(message: refusal)
+            return
+        }
         guard
             let platformAcct = platformAccountIndex,
             let hash = selectedRecipientHash

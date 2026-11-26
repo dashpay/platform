@@ -474,8 +474,10 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 /// lock is never consumed into the wallet instead of paying the payee.
 /// [`platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer`]
 /// resumes it without the host naming them. A Platform-address lock that
-/// records none is the wallet's own and pays whatever recipient set the
-/// caller passes, as before.
+/// records none pays whatever recipient set the caller passes, as before: it
+/// is an owned funding or an external payment tracked before recipients were
+/// recorded, which the wallet cannot tell apart, so the host resumes the
+/// latter to the payees it saved with the payment.
 ///
 /// ## `fee_strategy` / `fee_strategy_count` are IGNORED
 ///
@@ -614,10 +616,12 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_ext
 /// Refused before anything is submitted for a lock that is not tracked
 /// (`ErrorAssetLockNotTracked`), of another funding type
 /// (`ErrorAssetLockFundingMismatch`), consumed (`ErrorAssetLockAlreadyConsumed`),
-/// recording no recipients (an owned funding, resumed with
-/// [`platform_address_wallet_resume_fund_from_asset_lock_signer`]:
-/// `ErrorInvalidParameter`), or whose remainder address no platform payment
-/// account of the wallet holds.
+/// recording no recipients (`ErrorInvalidParameter`: an owned funding, or an
+/// external payment tracked before recipients were recorded; the host resumes
+/// the latter to the payees it saved with the payment, and only a lock it
+/// knows funds the wallet's own addresses with
+/// [`platform_address_wallet_resume_fund_from_asset_lock_signer`]), or whose
+/// remainder address no platform payment account of the wallet holds.
 ///
 /// # Safety
 /// - `out_point` must be non-null, properly aligned, and point to one fully

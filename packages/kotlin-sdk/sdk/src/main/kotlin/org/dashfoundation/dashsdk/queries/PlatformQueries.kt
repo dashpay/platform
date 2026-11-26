@@ -14,6 +14,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.QueriesNative
+import org.dashfoundation.dashsdk.voting.ContestedIndexValue
 
 /**
  * Read-only Platform query surface, grouped like the Swift SDK's lazy
@@ -54,12 +55,13 @@ class Identities internal constructor(private val sdk: Sdk) {
      * object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key maps to
      * the credits left as a decimal string; a key without a budget, or that the
      * identity does not have, maps to null. Raising a budget with
-     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount.
+     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount. Each key id
+     * is the bit pattern of its `u32` id, as Room stores it, so an id past [Int.MAX_VALUE]
+     * is passed as the negative [Int] it is stored as; the answer keys it as the `u32`.
      */
     suspend fun fetchKeysRemainingBudgets(identityId: String, keyIds: List<Int>): String? =
         sdk.queryGate.op {
             require(keyIds.isNotEmpty()) { "keyIds must hold at least one key id" }
-            require(keyIds.all { it >= 0 }) { "every key id must be non-negative, got $keyIds" }
             mapNativeErrors {
                 QueriesNative.identityFetchKeysRemainingBudgets(
                     sdk.handle,
@@ -188,9 +190,92 @@ class Addresses internal constructor(private val sdk: Sdk) {
 class Voting internal constructor(private val sdk: Sdk) {
 
     /**
-     * Contested resources for a contract/document-type/index. [resultType]
-     * is the rs-sdk-ffi u8 enum discriminant; the index-value JSON bounds and
-     * [orderAscending] mirror the iOS catalog. Returns JSON, or null.
+     * Load the masternode [wireOrderProTxHash] for voting, with the voting key of
+     * [votingAddress] when one is given (`dash_sdk_masternode_load_for_voting`, rs-sdk's
+     * `load_masternode_for_voting`, which holds the rule): its owner identity when Platform
+     * holds one, or else, for a masternode without an owner identity (a shared masternode),
+     * its voter identity when Platform proves the owner absent and the voter holding the
+     * enabled voting key. Port of Swift `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`
+     * (`SDK+MasternodeVotingLoad.swift`).
+     *
+     * @param wireOrderProTxHash the masternode's 32-byte pro_tx_hash in **wire order**.
+     * @throws DashSdkError when nothing is proved (the owner identity, or the voter identity
+     *   after a proved-absent owner, could not be fetched), and
+     *   [DashSdkError.InvalidParameter] for a value of the wrong length.
+     */
+    suspend fun loadMasternodeForVoting(
+        wireOrderProTxHash: ByteArray,
+        votingAddress: org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress?,
+    ): org.dashfoundation.dashsdk.voting.MasternodeVotingLoad {
+        if (wireOrderProTxHash.size != 32) {
+            throw DashSdkError.InvalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        return sdk.queryGate.op {
+            org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckCodec.decodeLoad(
+                mapNativeErrors {
+                    org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative.loadForVoting(
+                        sdk.handle,
+                        wireOrderProTxHash,
+                        votingAddress?.bytes,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
+     * Whether the voting key with [votingAddress] can vote for the masternode
+     * [wireOrderProTxHash], as Platform's state proves it
+     * (`dash_sdk_masternode_check_voting_key`, rs-sdk's `check_masternode_voting_key`). Port of
+     * Swift `SDK.checkMasternodeVotingKey(proTxHash:votingAddress:)`
+     * (`SDK+MasternodeVotingKeyCheck.swift`).
+     *
+     * One proof-verified fetch of the masternode's voter identity; no Core or SPV sync. A
+     * failed fetch is [org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck.Undetermined],
+     * not a throw. A masternode registered, or a voting key changed, in the last few blocks
+     * reads as Invalid until Platform processes the masternode list update.
+     *
+     * @param wireOrderProTxHash the masternode's 32-byte pro_tx_hash in **wire order**, as the
+     *   vote calls take it, not the byte order of the hex Core displays.
+     * @throws DashSdkError.InvalidParameter for a value of the wrong length.
+     */
+    suspend fun checkMasternodeVotingKey(
+        wireOrderProTxHash: ByteArray,
+        votingAddress: org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress,
+    ): org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck {
+        if (wireOrderProTxHash.size != 32) {
+            throw DashSdkError.InvalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        return sdk.queryGate.op {
+            org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckCodec.decodeCheck(
+                mapNativeErrors {
+                    org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative.checkVotingKey(
+                        sdk.handle,
+                        wireOrderProTxHash,
+                        votingAddress.bytes,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
+     * Contested resources for a contract/document-type/index. The index-value
+     * JSON bounds ([startIndexValuesJson], [endIndexValuesJson], each a JSON
+     * array of strings) and [orderAscending] mirror the iOS catalog. Returns
+     * JSON, or null.
+     *
+     * Index values are strings the FFI reads in this order: a value starting
+     * with a backslash (`\`) is text with that one backslash removed; else a
+     * `0x`-prefixed value is hex bytes; else the value is text. Encode text
+     * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
+     * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     * In the JSON array the backslash is itself escaped:
+     * `["dash", "\\0xf0rd"]`.
+     *
+     * Each returned resource carries `id` and `index_values`, already encoded
+     * this way (see [ContestedIndexValue] for when they can be passed back
+     * unchanged).
      */
     suspend fun contestedResources(
         contractId: String,
@@ -219,6 +304,20 @@ class Voting internal constructor(private val sdk: Sdk) {
      * Vote state (contenders + tallies) for a contested resource.
      * [indexValuesJson] is a JSON array of the index path values;
      * [resultType] is the u8 enum discriminant. Returns JSON, or null.
+     *
+     * Every JSON field except `contenders` may be absent, so read each as
+     * optional, not as zero: a contender's `vote_count` is left out when its
+     * tally was not read (documents-only result type); `abstain_vote_tally`
+     * and `lock_vote_tally` are left out when not returned; `winner_info`
+     * (with `block_info`) is present only once the poll has ended.
+     *
+     * Index values are strings the FFI reads in this order: a value starting
+     * with a backslash (`\`) is text with that one backslash removed; else a
+     * `0x`-prefixed value is hex bytes; else the value is text. Encode text
+     * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
+     * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     * In the JSON array the backslash is itself escaped:
+     * `["dash", "\\0xf0rd"]`.
      */
     suspend fun contestedResourceVoteState(
         contractId: String,
@@ -243,7 +342,18 @@ class Voting internal constructor(private val sdk: Sdk) {
         }
     }
 
-    /** Voters who voted for a specific contestant, as JSON, or null. */
+    /**
+     * Voters who voted for a specific contestant, as JSON, or null.
+     * [indexValuesJson] is a JSON array of the index path values.
+     *
+     * Index values are strings the FFI reads in this order: a value starting
+     * with a backslash (`\`) is text with that one backslash removed; else a
+     * `0x`-prefixed value is hex bytes; else the value is text. Encode text
+     * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
+     * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     * In the JSON array the backslash is itself escaped:
+     * `["dash", "\\0xf0rd"]`.
+     */
     suspend fun contestedResourceVotersForIdentity(
         contractId: String,
         documentTypeName: String,
@@ -477,6 +587,17 @@ class Dpns internal constructor(private val sdk: Sdk) {
     /** Check label availability; returns the JSON availability object. */
     suspend fun checkAvailability(label: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dpnsCheckAvailability(sdk.handle, label) }
+    }
+
+    /**
+     * Homograph-normalize a DPNS label (`oxford` -> `0xf0rd`), the form
+     * Platform indexes names and contests under. Computed by Rust
+     * (`dash_sdk_dpns_normalize_username`); no network call.
+     */
+    fun normalizeLabel(label: String): String = mapNativeErrors {
+        checkNotNull(QueriesNative.dpnsNormalizeUsername(label)) {
+            "DPNS label normalization returned no value"
+        }
     }
 
     /** Usernames owned by an identity (JSON array). */

@@ -9,8 +9,10 @@ use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::{OutPoint, Txid};
+use dashcore::{Address, OutPoint, Txid};
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
@@ -172,6 +174,37 @@ impl PersistenceError {
     }
 }
 
+/// Why [`PlatformWalletPersistence::store_and_commit`] did not make its
+/// changeset durable. Each variant says where the changeset is, so a caller
+/// never has to guess whether a failed call left something behind.
+#[derive(Debug, thiserror::Error)]
+pub enum StoreAndCommitError {
+    /// The changeset was refused before it was staged: none of it is
+    /// buffered and none of it is on disk, and what the wallet had buffered
+    /// before the call is as it was. Also the answer of a backend that does
+    /// not offer the step
+    /// ([`offers_store_and_commit`](PlatformWalletPersistence::offers_store_and_commit)).
+    ///
+    /// A backend answers this only when the buffer is untouched. One that
+    /// lost what it had buffered while refusing the changeset (a poisoned
+    /// lock, say) answers [`Self::NotCommitted`] with a failure that is not
+    /// transient, which is what tells the caller the buffer is gone.
+    #[error("the changeset was refused before it was staged: {0}")]
+    NotStaged(#[source] PersistenceError),
+    /// The changeset was staged and the commit of the wallet's buffer
+    /// failed, or the backend lost what it had buffered before it could
+    /// stage the changeset. After a [`PersistenceErrorKind::Transient`]
+    /// failure the backend keeps everything it had buffered for the wallet,
+    /// this changeset included, and a later
+    /// [`flush`](PlatformWalletPersistence::flush) or `store_and_commit`
+    /// writes it: the retry is one of those, never the same changeset issued
+    /// again. After any other failure the backend dropped everything it had
+    /// buffered for the wallet, this changeset included, and none of it is
+    /// on disk.
+    #[error("the changeset was not committed: {0}")]
+    NotCommitted(#[source] PersistenceError),
+}
+
 /// Whether a contact's outbound-account marker
 /// (`EstablishedContact::external_account_reference`) can be kept on
 /// `persister` and trusted after a restart.
@@ -212,6 +245,10 @@ where
 ///    **Nuance** section below.
 /// 2. **`flush`** — ensure all buffered deltas for the given `wallet_id`
 ///    are durable, then clear that wallet's buffer.
+///
+/// A backend may also offer the two phases as one step,
+/// [`store_and_commit`](Self::store_and_commit), for a caller that acts on a
+/// record being on disk and so needs an answer for that record alone.
 ///
 /// The trait uses `&self` with a `wallet_id` parameter so a single persister
 /// instance can be shared across all wallets in a [`PlatformWalletManager`].
@@ -298,38 +335,34 @@ pub trait PlatformWalletPersistence: Send + Sync {
         ))
     }
 
-    /// Whether [`commit_durably`](Self::commit_durably) is implemented.
+    /// Clear the used mark of `wallet_id`'s address `address`, at `index` of
+    /// `account_type`'s `pool_type` pool, by itself and at once.
     ///
-    /// **Fail-closed:** the default is `false`, and the wallet then makes a
-    /// changeset durable with a [`store`](Self::store) and a
-    /// [`flush`](Self::flush), which it can vouch for only while it sees every
-    /// flush of the wallet's records. A backend that also drains its buffer
-    /// some other way (on a timer, or through its own API) implements
-    /// [`commit_durably`](Self::commit_durably) instead.
-    fn commits_durably(&self) -> bool {
-        false
-    }
-
-    /// Store `changeset` and commit it together with everything buffered for
-    /// `wallet_id` before it, answering for that one write: `Ok` only once it
-    /// is committed, whoever else drains the buffer meanwhile.
+    /// Only for an address that provably never reached the network: the
+    /// funding key of an asset lock that was never sent and whose row is
+    /// durably gone. Kept used, it would push the next lock of that account
+    /// past the addresses a restore from the seed scans, and a lock there
+    /// would not be found again. The wallet hands it back in memory and calls
+    /// this while it still holds the wallet, so nothing marks the address
+    /// used in between.
     ///
-    /// An `Err` follows [`flush`](Self::flush)'s classification: a transient
-    /// failure keeps the buffer, `changeset` included, for a later flush to
-    /// write; any other drops it. Either way the changeset is not known to be
-    /// durable, and a caller must treat it as possibly still committing.
+    /// Writes buffered before it are committed first, so a used mark already
+    /// stored for the address is not written after the release. Nothing of it
+    /// is buffered. No stored row for that address is `Ok`, nothing changed.
     ///
-    /// Called only when [`commits_durably`](Self::commits_durably) answers
-    /// `true`; the default refuses.
-    fn commit_durably(
+    /// The default does nothing, for a backend that keeps no used mark the
+    /// wallet's own state does not overwrite. A backend that only ever raises
+    /// a stored mark implements it.
+    fn release_unsent_pool_address(
         &self,
         wallet_id: WalletId,
-        changeset: PlatformWalletChangeSet,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
     ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, changeset);
-        Err(PersistenceError::backend(
-            "this backend does not implement commit_durably",
-        ))
+        let _ = (wallet_id, account_type, pool_type, index, address);
+        Ok(())
     }
 
     /// Feature-specific contracts this backend can persist and, where the
@@ -430,6 +463,20 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Write all buffered changesets atomically for the given wallet, then
     /// clear that wallet's buffer.
     ///
+    /// ## Order of concurrent flushes (required)
+    ///
+    /// What a flush took from the buffer MUST reach the disk before anything
+    /// a later flush takes. Two flushes of one wallet that run at once must
+    /// not write in the other order: the older state of a record would land
+    /// over the newer, and a restart would load it. Holding one lock across
+    /// the take and the write, as the SQLite backend does, is enough; a
+    /// backend whose `store` is the commit has nothing to order.
+    ///
+    /// The wallet refuses a store it makes durable when another flush
+    /// returned while it did (`WalletPersister::store_durably`), so those do
+    /// not rest on this. Everything else that is stored and then flushed
+    /// does.
+    ///
     /// # Errors
     ///
     /// Implementations classify failures via
@@ -467,6 +514,109 @@ pub trait PlatformWalletPersistence: Send + Sync {
     // not yet expressible through `flush`. Hosts call `flush` per wallet;
     // a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
+
+    /// Whether this backend offers [`store_and_commit`](Self::store_and_commit).
+    ///
+    /// **Fail-closed:** the default is `false`. A caller that needs a record
+    /// on disk before it acts then stores, flushes, and has to work out from
+    /// what it can observe of the wallet's other flushes whether the two
+    /// calls covered the same changeset. An implementation attests this only
+    /// when its `store_and_commit` keeps the whole contract below.
+    fn offers_store_and_commit(&self) -> bool {
+        false
+    }
+
+    /// Stage `changeset` behind whatever is buffered for `wallet_id` and
+    /// commit that buffer, as one step per wallet, and answer for exactly
+    /// what the call staged.
+    ///
+    /// [`store`](Self::store) followed by [`flush`](Self::flush) is two
+    /// calls, and anything that drains the wallet's buffer can run between
+    /// them: another flush, a commit or a discard the host calls on the
+    /// backend, the wallet's deletion. Such a drain can take the changeset
+    /// and drop it, or put it back, and the caller's own flush then succeeds
+    /// over a buffer that no longer holds it. This is the same work with
+    /// nothing in between.
+    ///
+    /// ## Contract (required of an implementation that offers it)
+    ///
+    /// - **One step.** From before the changeset is staged until its commit
+    ///   has succeeded, or failed and been dealt with, nothing else drains
+    ///   the wallet's buffer: no `flush`, no other `store_and_commit`, and
+    ///   nothing the host can call on the backend itself. A drain that began
+    ///   earlier has finished by then: what it took is written, put back or
+    ///   dropped. A plain `store` may still add to the buffer meanwhile: what
+    ///   it adds shares the fate of this commit or waits for a later flush.
+    /// - **In order.** The commit writes what was buffered before the
+    ///   changeset together with it, in the order it was stored, the
+    ///   changeset after all of it. Nothing a drain took before the step
+    ///   reaches the disk after it, so an older state of a record never lands
+    ///   over the one this call committed.
+    /// - **All or nothing.** A commit that fails leaves nothing of the
+    ///   changeset on disk. A backend that applies a changeset in parts and
+    ///   cannot take the parts back does not offer the step.
+    /// - **An exact answer.** `Ok(())` means the changeset is on disk. Each
+    ///   [`StoreAndCommitError`] variant says where it is instead. The answer
+    ///   holds whatever else was running, so the caller compares nothing
+    ///   around the call.
+    ///
+    /// The step is one step with the wallet's deletion too: it runs wholly
+    /// before it or wholly after. A deletion that follows removes what the
+    /// step committed, as it removes everything else of the wallet's.
+    ///
+    /// ## Scope: one backend instance
+    ///
+    /// Everything above is about this backend instance and the buffer it
+    /// keeps. It orders nothing against another instance over the same
+    /// storage, such as another process that has the same database open:
+    /// that one is a writer of its own, with a buffer of its own, and what
+    /// it writes later lands later, through this step or through `store`
+    /// and `flush` alike. A wallet's records go through one backend
+    /// instance, and whoever lets a second one write them serializes the
+    /// two.
+    ///
+    /// The reentrancy contract of [`store`](Self::store) applies, and the
+    /// call does the I/O of a `flush`.
+    ///
+    /// The default refuses every changeset, staging nothing: a backend that
+    /// attests [`offers_store_and_commit`](Self::offers_store_and_commit)
+    /// without implementing this fails loudly instead of being trusted.
+    fn store_and_commit(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), StoreAndCommitError> {
+        let _ = (wallet_id, changeset);
+        Err(StoreAndCommitError::NotStaged(PersistenceError::backend(
+            "this backend does not offer an atomic store and commit",
+        )))
+    }
+
+    /// How many times this backend has dropped what it had buffered for
+    /// `wallet_id` without writing it, by whatever drained the buffer, or
+    /// wrote it only to delete it again with the wallet's records. It only
+    /// grows. `None`, the default, when the backend does not count them.
+    ///
+    /// The wallet counts the flushes it makes itself, and so learns of a
+    /// drop only when one of those fails. A backend whose buffer can be
+    /// drained any other way (a commit the host calls on the backend, a
+    /// `flush` the host calls directly, a discard) MUST count every
+    /// changeset it drops here, and count it before a later flush of the
+    /// wallet can begin: the wallet then refuses to trust a record that such
+    /// a drain may have taken. Without the count, a record stored and then
+    /// flushed by the wallet is trusted even when the host's own commit took
+    /// it first and failed for good.
+    ///
+    /// Not read for a backend that keeps no buffer, which is one whose
+    /// `store` is the commit ([`Self::store_commits_inline`]) and that does
+    /// not commit a store in one step
+    /// ([`Self::offers_store_and_commit`]): it buffers nothing a flush could
+    /// drop. A backend that offers the step is read whatever its `store`
+    /// does, as it keeps a changeset whose commit failed transiently.
+    fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
+        let _ = wallet_id;
+        None
+    }
 
     /// Replace the persisted tracked-masternode set for `network` with
     /// `records` (whole-set write; the set is user-curated and small).
@@ -734,6 +884,62 @@ mod tests {
             }
         }
         assert!(!BareMinimum.store_transient_is_reissuable());
+    }
+
+    /// Fail-closed: a backend that says nothing about the atomic step does
+    /// not offer it, and its default refuses a changeset as not staged, so a
+    /// caller that used it anyway is told nothing was written.
+    #[test]
+    fn should_not_offer_the_atomic_step_unless_the_backend_attests_it() {
+        struct BareMinimum;
+        impl PlatformWalletPersistence for BareMinimum {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+        assert!(!BareMinimum.offers_store_and_commit());
+        let refused = BareMinimum.store_and_commit([0; 32], PlatformWalletChangeSet::default());
+        assert!(
+            matches!(&refused, Err(StoreAndCommitError::NotStaged(error)) if !error.is_transient()),
+            "{refused:?}"
+        );
+    }
+
+    /// Both ways the atomic step fails carry the backend's error as their
+    /// source, so a caller that walks the chain reaches the typed
+    /// persistence error and, behind it, the backend's own cause.
+    #[test]
+    fn should_keep_the_persistence_error_as_the_source_of_a_failed_atomic_step() {
+        let cause = || {
+            PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "simulated SQLITE_BUSY",
+            )
+        };
+        for failed in [
+            StoreAndCommitError::NotStaged(cause()),
+            StoreAndCommitError::NotCommitted(cause()),
+        ] {
+            let source = StdError::source(&failed)
+                .and_then(|source| source.downcast_ref::<PersistenceError>())
+                .unwrap_or_else(|| panic!("{failed:?} has no persistence error as its source"));
+            assert!(source.is_transient(), "{failed:?}");
+            assert!(
+                StdError::source(source)
+                    .is_some_and(|backend| backend.to_string() == "simulated SQLITE_BUSY"),
+                "the backend's own cause is behind it: {failed:?}"
+            );
+        }
     }
 
     /// Narrowing a verdict must not cost the caller the detail it needs to

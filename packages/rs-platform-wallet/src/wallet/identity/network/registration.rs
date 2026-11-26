@@ -59,12 +59,12 @@
 use std::collections::BTreeMap;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
+use dashcore::OutPoint;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyID;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
@@ -82,6 +82,7 @@ use crate::wallet::asset_lock::orchestration::{
 };
 use crate::wallet::asset_lock::sync::tracking::not_an_unbound_top_up;
 use crate::wallet::asset_lock::{min_top_up_duffs, AssetLockBuiltObserver, AssetLockFunding};
+use crate::wallet::identity::state::manager::NewIdentityKeyOrigin;
 use crate::BlockTime;
 
 use super::*;
@@ -263,6 +264,25 @@ impl IdentityWallet {
             )
             .await?;
 
+        // Steps 4 and 5: Platform has accepted the registration; what is
+        // still owed locally never fails it.
+        self.finish_accepted_registration(&identity, identity_index, tracked_out_point)
+            .await;
+
+        Ok(identity)
+    }
+
+    /// Steps 4 and 5 of [`Self::register_identity_with_funding`]: what the
+    /// wallet still owes locally once Platform has accepted the registration.
+    /// Returns nothing: the identity exists on chain, so nothing here may
+    /// fail the registration, and the lock is consumed whether or not the
+    /// identity could be stored.
+    async fn finish_accepted_registration(
+        &self,
+        identity: &Identity,
+        identity_index: u32,
+        tracked_out_point: Option<OutPoint>,
+    ) {
         // Step 4 (best-effort): bookkeeping — add to local
         // IdentityManager + record key derivation breadcrumbs.
         //
@@ -272,62 +292,20 @@ impl IdentityWallet {
         // and the early return would skip Step 5's `consume_asset_lock`,
         // leaving the spent lock in the Resumable Funding list where a
         // Resume gets Platform's deterministic "lock already consumed"
-        // rejection. A missed local add self-heals on the next identity
-        // re-sync. This mirrors `register_from_addresses` Step 3.
+        // rejection. A missed local add is not restored by a routine
+        // re-sync; see `IdentityManager::record_new_identity`. This mirrors
+        // `register_from_addresses` Step 3.
         {
-            use dpp::identity::accessors::IdentityGettersV0;
-
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => match info.identity_manager.add_identity(
+                Some(info) => info.identity_manager.record_new_identity(
                     identity.clone(),
                     identity_index,
                     self.wallet_id,
+                    NewIdentityKeyOrigin::DerivedAtKeyId,
+                    "register_identity_with_funding",
                     &self.persister,
-                ) {
-                    Ok(()) => {
-                        let wallet_id = self.wallet_id;
-                        let identity_id = identity.id();
-                        let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
-                            .public_keys()
-                            .iter()
-                            .map(|(k, v)| (*k, v.clone()))
-                            .collect();
-
-                        if let Some(managed) =
-                            info.identity_manager.managed_identity_mut(&identity_id)
-                        {
-                            managed.wallet_id = Some(wallet_id);
-                            for (key_id, pub_key) in public_keys {
-                                let key_index = key_id;
-                                managed
-                                    .add_key(
-                                        pub_key,
-                                        Some((wallet_id, identity_index, key_index)),
-                                        &self.persister,
-                                    )
-                                    .map_err(|e| {
-                                        PlatformWalletError::Persistence(format!(
-                                            "identity key not persisted after registration: {e}"
-                                        ))
-                                    })?;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Breadcrumbs are skipped too: `IdentityAlreadyExists`
-                        // can mean an out-of-wallet entry, and stamping
-                        // `wallet_id` on one without moving buckets would
-                        // contradict the manager's location index.
-                        tracing::warn!(
-                            error = %e,
-                            identity_id = %identity.id(),
-                            "register_identity_with_funding: identity registered on \
-                             Platform but local add_identity failed; continuing so \
-                             the spent asset lock is still consumed"
-                        );
-                    }
-                },
+                ),
                 None => {
                     tracing::warn!(
                         identity_id = %identity.id(),
@@ -359,8 +337,6 @@ impl IdentityWallet {
                 );
             }
         }
-
-        Ok(identity)
     }
 }
 
@@ -861,14 +837,114 @@ fn apply_top_up_minimum(
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::wallet_with_signing_keys_on;
     use super::*;
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
     use crate::error::is_instant_lock_timeout;
-    use dashcore::{OutPoint, Txid};
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::wallet::platform_wallet::WalletId;
+    use dashcore::{Transaction, Txid};
+    use std::sync::{Arc, Mutex};
+
+    /// Refuses every changeset that carries an identity and records the rest.
+    #[derive(Default)]
+    struct IdentityRefusingStore(Mutex<Vec<PlatformWalletChangeSet>>);
+
+    impl PlatformWalletPersistence for IdentityRefusingStore {
+        fn store(
+            &self,
+            _: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if changeset.identities.is_some() || changeset.identity_keys.is_some() {
+                return Err(PersistenceError::backend("identity rows refused"));
+            }
+            self.0.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Platform accepted the registration, so the lock is spent. A store
+    /// that refuses the identity must not leave the lock resumable: it is
+    /// consumed in memory and in what reaches the store, and the identity
+    /// is held for the session.
+    #[tokio::test]
+    async fn should_consume_the_asset_lock_when_the_accepted_identity_cannot_be_stored() {
+        let store = Arc::new(IdentityRefusingStore::default());
+        let wallet = wallet_with_signing_keys_on(
+            dash_sdk::SdkBuilder::new_mock().build().unwrap(),
+            store.clone(),
+        )
+        .await;
+        let wallet = wallet.identity();
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet.wallet_id).unwrap();
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    operation_id: None,
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 1,
+                    amount: 10_000,
+                    status: AssetLockStatus::ChainLocked,
+                    proof: None,
+                    shielded_recipient: None,
+                    identity_recipient: None,
+                    platform_address_recipients: None,
+                },
+            );
+        }
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([0xA1; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        store.0.lock().unwrap().clear();
+
+        wallet
+            .finish_accepted_registration(&identity, 1, Some(out_point))
+            .await;
+
+        let wm = wallet.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id).unwrap();
+        assert!(info.identity_manager.identity(&identity.id()).is_some());
+        assert_eq!(
+            info.tracked_asset_locks[&out_point].status,
+            AssetLockStatus::Consumed
+        );
+        let stored = store.0.lock().unwrap();
+        let consumed = stored
+            .iter()
+            .filter_map(|changeset| changeset.asset_locks.as_ref())
+            .find_map(|locks| locks.asset_locks.get(&out_point))
+            .expect("the consumed lock reaches the store");
+        assert_eq!(consumed.status, AssetLockStatus::Consumed);
+    }
 
     use crate::test_support::{
         funded_wallet_manager, platform_wallet_in, platform_wallet_with_sdk, WalletSigner,
     };
-    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
     use crate::wallet::platform_wallet::PlatformWallet;
     use key_wallet::account::account_type::StandardAccountType;
 

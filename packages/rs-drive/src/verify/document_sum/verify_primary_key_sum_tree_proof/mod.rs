@@ -28,7 +28,7 @@ impl DriveDocumentSumQuery<'_> {
         contract_id: [u8; 32],
         document_type_name: &str,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, i64), Error> {
+    ) -> Result<(RootHash, i128), Error> {
         match platform_version
             .drive
             .methods

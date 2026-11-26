@@ -53,11 +53,17 @@ use crate::changeset::{DurableCursors, PlatformWalletPersistence};
 use crate::events::PlatformEventManager;
 #[cfg(test)]
 use crate::spv::SpvRuntime;
+#[cfg(test)]
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 #[cfg(test)]
+use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+#[cfg(test)]
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+#[cfg(test)]
+use crate::wallet::PlatformAddressWallet;
 
 /// The live generation of `wallet_id` in `wallet_manager`, for a test that
 /// builds an `AssetLockManager` over a wallet it registered itself: the
@@ -302,7 +308,7 @@ pub mod core_fixtures {
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
         let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
-        let address = account.next_receive_address(Some(&xpub), true).unwrap();
+        let address = account.next_receive_address(Some(&xpub)).unwrap();
         (wallet, info, address)
     }
 
@@ -356,8 +362,63 @@ pub async fn funded_wallet_manager_with_outputs(
     Arc<WalletGeneration>,
     WalletSigner,
 ) {
-    let mut ctx = TestWalletContext::new_random();
+    funded_wallet_manager_of(TestWalletContext::new_random(), account_type, outputs).await
+}
 
+/// [`funded_wallet_manager`] for the wallet of `seed`, for tests that bind its
+/// shielded side: a bind takes only the seed the wallet was created from.
+#[cfg(all(test, feature = "shielded"))]
+pub(crate) async fn funded_wallet_manager_from_seed(
+    seed: [u8; 64],
+    account_type: StandardAccountType,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    let wallet = Wallet::from_seed_bytes(
+        seed,
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("a wallet from the seed");
+    let mut managed_wallet =
+        ManagedWalletInfo::from_wallet_with_name(&wallet, "Test".to_string(), 0);
+    let xpub = wallet
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("bip44 account")
+        .account_xpub;
+    let receive_address = managed_wallet
+        .first_bip44_managed_account_mut()
+        .expect("bip44 managed account")
+        .next_receive_address(Some(&xpub))
+        .expect("bip44 receive address");
+    let ctx = TestWalletContext {
+        managed_wallet,
+        wallet,
+        receive_address,
+        xpub,
+    };
+    funded_wallet_manager_of(ctx, account_type, &[10_000_000]).await
+}
+
+/// The wallet manager [`funded_wallet_manager_with_outputs`] builds, for the wallet of
+/// `ctx`.
+async fn funded_wallet_manager_of(
+    mut ctx: TestWalletContext,
+    account_type: StandardAccountType,
+    outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
     // `new_random()` already derives a BIP44 receive address; only the
     // BIP32 arm needs a hand-rolled derivation.
     let receive_address = match account_type {
@@ -373,7 +434,7 @@ pub async fn funded_wallet_manager_with_outputs(
             ctx.managed_wallet
                 .first_bip32_managed_account_mut()
                 .expect("bip32 managed account")
-                .next_receive_address(Some(&xpub), true)
+                .next_receive_address(Some(&xpub))
                 .expect("bip32 receive address")
         }
     };
@@ -402,6 +463,7 @@ pub async fn funded_wallet_manager_with_outputs(
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
         tracked_collaterals: Default::default(),
+        funding_issuance_floors: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -592,7 +654,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         ctx.managed_wallet
             .first_bip32_managed_account_mut()
             .expect("bip32 managed account")
-            .next_receive_address(Some(&xpub), true)
+            .next_receive_address(Some(&xpub))
             .expect("bip32 receive address")
     };
 
@@ -629,6 +691,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
         tracked_collaterals: Default::default(),
+        funding_issuance_floors: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -685,11 +748,12 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         network: Network::Testnet,
         account_xpub,
         is_watch_only: false,
-    });
+    })
+    .expect("managed contact account");
     // DashPay accounts are non-standard: one external pool via
     // `next_address_with_info`, not the standard receive/change split.
     let contact_address = managed
-        .next_address_with_info(Some(&account_xpub), true)
+        .next_address_with_info(Some(&account_xpub))
         .expect("contact receive address")
         .address;
     ctx.wallet
@@ -736,6 +800,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
         tracked_collaterals: Default::default(),
+        funding_issuance_floors: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -780,7 +845,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         .managed_wallet
         .first_coinjoin_managed_account_mut()
         .expect("coinjoin managed account")
-        .next_address_with_info(Some(&coinjoin_xpub), true)
+        .next_address_with_info(Some(&coinjoin_xpub))
         .expect("coinjoin receive address")
         .address;
 
@@ -808,6 +873,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
         tracked_collaterals: Default::default(),
+        funding_issuance_floors: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -876,7 +942,7 @@ pub(crate) async fn fund_test_platform_wallet(
         .core_wallet
         .first_bip44_managed_account_mut()
         .expect("bip44 managed account")
-        .next_receive_address(Some(&xpub), true)
+        .next_receive_address(Some(&xpub))
         .expect("bip44 receive address");
     credit_chain_locked(&mut info.core_wallet, wallet, &receive_address, &[value]).await;
 
@@ -1150,7 +1216,7 @@ pub(crate) async fn mnemonic_wallet_manager(
     let receive_address = managed_wallet
         .first_bip44_managed_account_mut()
         .expect("managed BIP44 account 0")
-        .next_receive_address(Some(&xpub), true)
+        .next_receive_address(Some(&xpub))
         .expect("first BIP44 receive address");
 
     let signer = WalletSigner {
@@ -1167,6 +1233,7 @@ pub(crate) async fn mnemonic_wallet_manager(
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
         tracked_collaterals: Default::default(),
+        funding_issuance_floors: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -1246,6 +1313,33 @@ pub(crate) async fn platform_wallet_with_sdk_and_persister(
         Arc::new(AtomicBool::new(false)),
         DurableCursors::default(),
     )
+}
+
+/// A `PlatformAddressWallet` over the wallet `wallet_id` that `wallet_manager`
+/// holds, on `sdk`, with no persistence. The address provider is left
+/// uninitialised, so it suits operations that read only the SDK and the
+/// wallet manager (input planning, address enumeration, history queries).
+#[cfg(test)]
+pub(crate) fn platform_address_wallet_in(
+    sdk: Arc<dash_sdk::Sdk>,
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+) -> PlatformAddressWallet {
+    let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+    let spv = Arc::new(SpvRuntime::new(
+        Arc::clone(&wallet_manager),
+        Arc::new(PlatformEventManager::new(Vec::new())),
+    ));
+    let asset_locks = Arc::new(AssetLockManager::new(
+        Arc::clone(&sdk),
+        Arc::clone(&wallet_manager),
+        wallet_id,
+        Arc::new(Notify::new()),
+        Arc::new(SpvBroadcaster::new(spv)),
+        persister.clone(),
+        wallet_generation(&wallet_manager, &wallet_id),
+    ));
+    PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
 }
 
 /// A valid Orchard payment address, deterministic in `seed_byte`, for tests

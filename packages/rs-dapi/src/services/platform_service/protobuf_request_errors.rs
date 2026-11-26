@@ -3,7 +3,8 @@
 use super::block_proof::tenderdash_commit_json;
 use super::{
     MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
-    MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl, ShieldedProofFailureBudget,
+    MAX_EXECUTION_PROOF_REGISTRATIONS, MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl,
+    ShieldedProofFailureBudget,
 };
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
@@ -80,7 +81,7 @@ impl Drop for Harness {
 
 impl PlatformServiceImpl {
     /// A service around the given Drive client, with no Tenderdash behind it.
-    fn with_test_drive(drive_client: DriveClient) -> Self {
+    pub(super) fn with_test_drive(drive_client: DriveClient) -> Self {
         let config = Arc::new(Config::default());
         let tenderdash_client = Arc::new(TenderdashClient::without_test_connection());
         Self {
@@ -95,6 +96,9 @@ impl PlatformServiceImpl {
             subscriber_manager: Arc::new(SubscriberManager::new()),
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
+            execution_proof_registration_permits: Arc::new(Semaphore::new(
+                MAX_EXECUTION_PROOF_REGISTRATIONS,
             )),
             get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
             get_owner_transactions_permits: Arc::new(Semaphore::new(
@@ -300,7 +304,8 @@ impl StalledTenderdash {
     }
 }
 
-fn channel(io: tokio::io::DuplexStream, uri: &'static str) -> Channel {
+/// A channel over one in-memory connection.
+pub(super) fn channel(io: tokio::io::DuplexStream, uri: &'static str) -> Channel {
     let mut io = Some(io);
     Endpoint::from_static(uri)
         .timeout(Duration::from_secs(5))

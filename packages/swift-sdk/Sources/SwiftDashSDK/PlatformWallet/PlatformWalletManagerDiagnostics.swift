@@ -70,15 +70,13 @@ extension PlatformWalletManager {
     public struct CoreWalletStateSnapshot {
         public let syncedHeight: UInt32
         public let lastProcessedHeight: UInt32
-        public let monitorRevision: UInt64
     }
 
     public func coreWalletState(for walletId: Data) -> CoreWalletStateSnapshot? {
         guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else { return nil }
         var out = CoreWalletStateFFI(
             synced_height: 0,
-            last_processed_height: 0,
-            monitor_revision: 0
+            last_processed_height: 0
         )
         let res = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             platform_wallet_core_wallet_state(handle, raw.baseAddress?.assumingMemoryBound(to: UInt8.self), &out)
@@ -86,8 +84,7 @@ extension PlatformWalletManager {
         guard PlatformWalletResult(res).isSuccess else { return nil }
         return CoreWalletStateSnapshot(
             syncedHeight: out.synced_height,
-            lastProcessedHeight: out.last_processed_height,
-            monitorRevision: out.monitor_revision
+            lastProcessedHeight: out.last_processed_height
         )
     }
 
@@ -234,7 +231,6 @@ extension PlatformWalletManager {
     public struct AccountMetadataSnapshot {
         public let totalTransactions: UInt64
         public let totalUtxos: UInt64
-        public let monitorRevision: UInt64
     }
 
     public func accountMetadata(
@@ -245,8 +241,7 @@ extension PlatformWalletManager {
         var spec = makeAccountSpec(from: balance)
         var out = AccountMetadataFFI(
             total_transactions: 0,
-            total_utxos: 0,
-            monitor_revision: 0
+            total_utxos: 0
         )
         let res = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             platform_wallet_account_metadata(
@@ -262,8 +257,7 @@ extension PlatformWalletManager {
         defer { platform_wallet_account_metadata_free(&out) }
         return AccountMetadataSnapshot(
             totalTransactions: out.total_transactions,
-            totalUtxos: out.total_utxos,
-            monitorRevision: out.monitor_revision
+            totalUtxos: out.total_utxos
         )
     }
 

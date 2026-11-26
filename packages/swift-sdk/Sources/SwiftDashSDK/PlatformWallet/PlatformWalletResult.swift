@@ -274,6 +274,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// identity top-up lock was resumed or assigned to a different identity
     /// than the one its row recorded; nothing was paid.
     case errorAssetLockRecipientMismatch = 61
+    /// A key of a DashPay invitation claim already belongs to another
+    /// identity; the message is a JSON detail naming it.
+    case errorInvitationKeysAlreadyRegistered = 63
+    /// The DashPay invitation's identity is one this wallet already records;
+    /// the message is a JSON detail naming it. Nothing was recorded.
+    case errorInvitationClaimedByThisWallet = 64
+    /// The invitation claim could not verify Platform's answers yet; nothing
+    /// was broadcast. Retry once synced.
+    case errorInvitationNotReady = 65
+    /// The asset lock is not usable yet (not propagated, or not chain-locked
+    /// for a ChainLock proof). Retry later.
+    case errorAssetLockNotChainLocked = 66
     /// The contact requests with that identity came or went privately, so a
     /// public request to it, in reply or as a rotation, would publish the
     /// relationship. Nothing was sent; accept or send it privately.
@@ -340,6 +352,38 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Nothing was stored or paid. Assign it again only after telling the
     /// user, with `acknowledgeUnknownConsumption`.
     case errorAssetLockConsumptionUnknown = 82
+    /// The balance history could not read a page of Platform's address
+    /// balance changes at a height consistent with the pages it had already
+    /// read, within Rust's per-page retry bound: every attempt got a
+    /// successfully fetched, proof-verified reply below that height. No
+    /// history was returned; the read can be made again later. SDK errors
+    /// (stale-node rejection, transport or proof failures) are not this code.
+    case errorBalanceHistoryInconsistentHeights = 83
+    /// A shielded Clear was refused because a shielded operation (a bind, an
+    /// account being added, a token pool transfer or unshield, a DashPay
+    /// profile write, a tip address preparation or a shielded tip being
+    /// sent, or another Clear) is in flight. Clear does not wait for it:
+    /// nothing was changed and sync keeps
+    /// running, so the host keeps its rows. Retry once it has finished.
+    case errorShieldedOperationInProgress = 84
+    /// A shielded tip was refused before anything was selected, built or
+    /// sent: another tip from this wallet is being sent, or an earlier
+    /// shielded payment to the same recipient may still execute. This call
+    /// sent nothing. A shielded sync resolves the earlier payment as executed
+    /// or as unable to execute, so the refusal ending is not a reason to send
+    /// again: reconcile the earlier payment first, and send again only once
+    /// it is known to have failed. Not `errorShieldedSpendUnconfirmed` (18).
+    case errorShieldedTipPending = 85
+    /// A shielded tip started from a saved contact was refused because the
+    /// username now belongs to another identity than the contact's. Nothing
+    /// was sent; the user picks the recipient again.
+    case errorShieldedTipRecipientMismatch = 86
+    /// A local shielded balance read did not finish within its wait budget
+    /// (the wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later. The
+    /// only code of that read that means retry.
+    case errorShieldedBalanceBusy = 87
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -473,6 +517,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockTooManyInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH:
             self = .errorAssetLockRecipientMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_KEYS_ALREADY_REGISTERED:
+            self = .errorInvitationKeysAlreadyRegistered
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_CLAIMED_BY_THIS_WALLET:
+            self = .errorInvitationClaimedByThisWallet
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_NOT_READY:
+            self = .errorInvitationNotReady
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_CHAIN_LOCKED:
+            self = .errorAssetLockNotChainLocked
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY:
             self = .errorPrivateContactRequestNeedsPrivateReply
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED:
@@ -497,6 +549,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockRecipientUnknown
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN:
             self = .errorAssetLockConsumptionUnknown
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS:
+            self = .errorBalanceHistoryInconsistentHeights
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS:
+            self = .errorShieldedOperationInProgress
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING:
+            self = .errorShieldedTipPending
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH:
+            self = .errorShieldedTipRecipientMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BALANCE_BUSY:
+            self = .errorShieldedBalanceBusy
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -727,6 +789,26 @@ public enum PlatformWalletError: LocalizedError {
     /// outpoint, the resume is refused there (`assetLockAlreadyConsumed`) and
     /// nothing is paid twice.
     case assetLockConsumptionUnknown(String)
+    /// The asset lock cannot be used yet: its transaction has not reached the
+    /// queried node, or it needs a ChainLock proof and is not chain-locked
+    /// yet. Retry later. Produced today by `claimInvitation`.
+    case assetLockNotChainLocked(String)
+    /// A key of the DashPay invitation claim is already registered to
+    /// another identity (base58 `identityId`, `nil` when Platform refused the
+    /// broadcast without naming it), so the claim cannot be made with these
+    /// keys. `consensus` is Platform's refusal (40207, or 10501 before
+    /// protocol v11) when it came from the broadcast, `nil` when the claim's
+    /// own lookup found the owner and nothing was sent.
+    case invitationKeysAlreadyRegistered(identityId: String?, consensus: PlatformConsensusError?)
+    /// The invitation's identity (base58 `identityId`) is this wallet's: the
+    /// wallet already records it in one of its registration slots (no key
+    /// the identity holds decides this). Nothing was recorded, and nothing was broadcast
+    /// unless a node that lagged behind let the claim through; load the
+    /// identity like any of the wallet's own.
+    case invitationClaimedByThisWallet(identityId: String)
+    /// The invitation claim could not verify Platform's answers yet (the
+    /// quorum is not verified). Nothing was broadcast; retry once synced.
+    case invitationNotReady(String)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -805,6 +887,43 @@ public enum PlatformWalletError: LocalizedError {
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String)
+    /// `ManagedPlatformAddressWallet.balanceHistory(includeCompacted:)` kept
+    /// getting a page of Platform's address balance changes proved below a
+    /// height it had already read, within Rust's per-page retry bound, so it
+    /// returned no history rather than a partial one. Every attempt got a
+    /// successfully fetched, proof-verified reply below that height; errors
+    /// from the SDK itself (its own stale-node rejection, transport or proof
+    /// failures) keep their existing mapping. Nothing changed; load the
+    /// history again later.
+    case balanceHistoryInconsistentHeights(String)
+    /// `PlatformWalletManager.clearShielded()` was refused at once because a
+    /// shielded operation (a bind, an account being added, a token pool
+    /// transfer or unshield, a DashPay profile write or a tip address
+    /// preparation, or another Clear) is in flight. Clear does not wait for
+    /// it. Nothing was changed: sync keeps running and no shielded state was
+    /// reset, so the host must not wipe its own rows. Clear again once the
+    /// operation has finished.
+    case shieldedOperationInProgress(String)
+    /// `sendShieldedTip` refused the tip with nothing sent: another tip from
+    /// this wallet is being sent, or an earlier shielded payment to the
+    /// recipient may still execute. This call sent nothing, unlike
+    /// `shieldedSpendUnconfirmed`. The earlier payment may be the same tip
+    /// and may pay the recipient: a shielded sync resolves it as executed or
+    /// as unable to execute, so do not send again because the refusal
+    /// ended, only once that payment is known to have failed.
+    case shieldedTipPending(String)
+    /// A shielded tip started from a saved contact was refused because the
+    /// username now belongs to another identity than the contact's: the name
+    /// moved since the contact was saved. Nothing was sent. The user picks
+    /// the recipient again; a tip to the name's new owner starts from the
+    /// name, not from the contact.
+    case shieldedTipRecipientMismatch(String)
+    /// `shieldedIdentityBalance` did not finish within its wait budget (the
+    /// wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later. The
+    /// only error of that read that means retry.
+    case shieldedBalanceBusy(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1009,12 +1128,18 @@ public enum PlatformWalletError: LocalizedError {
 
     /// Platform's verdict when this error is a consensus rejection the wallet
     /// layer left untyped, so a caller can write
-    /// `error.consensusError?.code == 40722` without pattern matching. `nil`
-    /// for every other case, including the typed promotions of specific
-    /// rejections.
+    /// `error.consensusError?.code == 40722` without pattern matching, and
+    /// the refusal behind `.invitationKeysAlreadyRegistered` when Platform
+    /// refused the broadcast. `nil` for every other case, including the
+    /// other typed promotions of specific rejections.
     public var consensusError: PlatformConsensusError? {
-        guard case .consensusRejection(let consensus, _) = self else { return nil }
-        return consensus
+        switch self {
+        case .consensusRejection(let consensus, _),
+             .invitationKeysAlreadyRegistered(_, let consensus?):
+            return consensus
+        default:
+            return nil
+        }
     }
 
     /// What to show a person. For most cases this is still the diagnostic
@@ -1036,12 +1161,17 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
              .assetLockRecipientUnknown(let m), .assetLockConsumptionUnknown(let m),
+             .assetLockNotChainLocked(let m), .invitationNotReady(let m),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
+             .balanceHistoryInconsistentHeights(let m),
+             .shieldedOperationInProgress(let m),
+             .shieldedTipPending(let m), .shieldedTipRecipientMismatch(let m),
+             .shieldedBalanceBusy(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1087,6 +1217,13 @@ public enum PlatformWalletError: LocalizedError {
                 + "could be confirmed. Nothing was purchased."
         case .insufficientIdentityCredits(let identityId, let required, let available):
             return "Identity \(identityId) has \(available) credits but \(required) are required."
+        case .invitationKeysAlreadyRegistered(let identityId, _):
+            guard let identityId else {
+                return "A key of this invitation claim is already registered to another identity."
+            }
+            return "A key of this invitation claim is already registered to identity \(identityId)."
+        case .invitationClaimedByThisWallet(let identityId):
+            return "This invitation was already claimed by this wallet as identity \(identityId)."
         case .contestedNameNotTradable(let label, let endsAtMs):
             if endsAtMs == 0 {
                 return "\"\(label)\" is in an active contested-name vote and cannot be traded "
@@ -1125,8 +1262,9 @@ public enum PlatformWalletError: LocalizedError {
     /// Production callers continue to enter through `init(result:)`.
     ///
     /// `consensus` is Platform's verdict when the result carried one, and is
-    /// consulted on the catch-all code alone: every other code is a
-    /// classification the wallet layer chose deliberately and must keep
+    /// consulted on the catch-all code, where it picks the case, and on code
+    /// 63, which keeps it beside its own classification. Every other code is
+    /// a classification the wallet layer chose deliberately and must keep
     /// reaching its own case.
     init(
         code: PlatformWalletResultCode,
@@ -1163,6 +1301,24 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
         case .errorAssetLockRecipientUnknown: self = .assetLockRecipientUnknown(detail)
         case .errorAssetLockConsumptionUnknown: self = .assetLockConsumptionUnknown(detail)
+        case .errorAssetLockNotChainLocked: self = .assetLockNotChainLocked(detail)
+        case .errorInvitationNotReady: self = .invitationNotReady(detail)
+        // Codes 63/64 carry a stable JSON detail naming the identity; a
+        // payload that does not decode degrades to `.unknown(detail)`.
+        case .errorInvitationKeysAlreadyRegistered:
+            if let d = InvitationErrorDetail.decode(detail) {
+                self = .invitationKeysAlreadyRegistered(
+                    identityId: d.identityId, consensus: consensus
+                )
+            } else {
+                self = .unknown(detail)
+            }
+        case .errorInvitationClaimedByThisWallet:
+            if let identityId = InvitationErrorDetail.decode(detail)?.identityId {
+                self = .invitationClaimedByThisWallet(identityId: identityId)
+            } else {
+                self = .unknown(detail)
+            }
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorShieldedBuildRequired:
@@ -1183,6 +1339,16 @@ public enum PlatformWalletError: LocalizedError {
             self = .publicContactRequestUnconfirmed(detail)
         case .errorIdentityLookupFailed:
             self = .identityLookupFailed(detail)
+        case .errorBalanceHistoryInconsistentHeights:
+            self = .balanceHistoryInconsistentHeights(detail)
+        case .errorShieldedOperationInProgress:
+            self = .shieldedOperationInProgress(detail)
+        case .errorShieldedTipPending:
+            self = .shieldedTipPending(detail)
+        case .errorShieldedTipRecipientMismatch:
+            self = .shieldedTipRecipientMismatch(detail)
+        case .errorShieldedBalanceBusy:
+            self = .shieldedBalanceBusy(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
@@ -1339,6 +1505,22 @@ private enum TradeErrorDetail {
     private static func decode<T: Decodable>(_ type: T.Type, from message: String?) -> T? {
         guard let data = message?.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+}
+
+// MARK: - Invitation-claim error detail decoding
+
+/// Decoder for the JSON detail FFI result codes 63/64 put in the result
+/// `message`: `{"identityId":"<base58>"}`, with `null` when code 63 could not
+/// name the identity.
+private enum InvitationErrorDetail {
+    struct Detail: Decodable {
+        let identityId: String?
+    }
+
+    static func decode(_ message: String?) -> Detail? {
+        guard let data = message?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(Detail.self, from: data)
     }
 }
 

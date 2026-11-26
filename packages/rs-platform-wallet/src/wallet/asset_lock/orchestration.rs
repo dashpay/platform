@@ -532,6 +532,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.resolve_funding_observing_out_point(
+            funding,
+            funding_type,
+            destination_index,
+            recipient,
+            asset_lock_signer,
+            on_built,
+            |_| {},
+        )
+        .await
+    }
+
+    /// Resolve funding, reporting its outpoint once a new lock is admitted for
+    /// dispatch or an existing lock passes its role checks, before either the
+    /// network-acceptance wait or the proof wait.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn resolve_funding_observing_out_point<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        recipient: Option<AssetLockRecipient>,
+        asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_out_point: impl FnOnce(OutPoint) + Send,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
@@ -546,6 +575,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         recipient,
                         asset_lock_signer,
                         on_built,
+                        on_out_point,
                     )
                     .await
                 {
@@ -586,6 +616,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         asset_lock_signer,
                         &operation,
                         on_built,
+                        on_out_point,
                     )
                     .await
                 {
@@ -617,6 +648,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         recipient,
                         asset_lock_signer,
                         on_built,
+                        on_out_point,
                     )
                     .await
                 {
@@ -684,6 +716,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         actual_identity_index,
                     )?;
                 }
+                on_out_point(out_point);
                 // 300s is a window for the record or a mined-height lookup to
                 // prove the lock, not a finality timeout: on expiry the caller
                 // falls back to an unbounded ChainLock wait, so a resumed
@@ -749,8 +782,9 @@ struct RecipientCheck<'a> {
 /// external funding) serves only a funding to exactly those addresses:
 /// anything else is
 /// [`PlatformWalletError::AssetLockPlatformAddressRecipientMismatch`]. One
-/// that records none is the wallet's own and serves any Platform-address
-/// funding. Invitation vouchers never pass this generic validator—the
+/// that records none serves any Platform-address funding: it is an owned
+/// funding or an external one tracked before recipients were recorded, which
+/// the wallet cannot tell apart, so the host picks the payees. Invitation vouchers never pass this generic validator—the
 /// explicit reclaim authorization above is the only bypass.
 fn validate_existing_asset_lock_role(
     out_point: OutPoint,
@@ -997,7 +1031,8 @@ mod tests {
                 }) if o == out_point && *r == recorded
             ));
         }
-        // A lock that records none is the wallet's own: any funding resumes it.
+        // A lock that records none (owned, or tracked before recipients were
+        // recorded) is not refused: any funding resumes it.
         for requested in [Some(&other), None] {
             assert!(validate(requested, None).is_ok());
         }

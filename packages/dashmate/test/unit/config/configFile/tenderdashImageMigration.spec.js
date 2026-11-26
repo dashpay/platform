@@ -20,17 +20,21 @@ describe('Tenderdash image migration', () => {
   const getMigrations = getConfigFileMigrationsFactory(null, defaults);
   const migrateConfigFile = migrateConfigFileFactory(getMigrations);
 
-  it('should use the Tenderdash 2.0.0-dev.2 image for new configurations', () => {
-    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.2');
+  it('should use the Tenderdash 2.0.0-dev.3 image for new configurations', () => {
+    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.3');
   });
 
-  for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3', '5.0.0-rc.3', '5.0.3']) {
+  it('should produce config format 5.1.0-dev.2 while the package is at dev.1', () => {
+    expect(getConfigFormatVersion(getMigrations(), '5.1.0-dev.1')).to.equal('5.1.0-dev.2');
+  });
+
+  for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3', '5.0.0-rc.3', '5.0.3', '5.1.0-dev.1']) {
     it(`should migrate pinned images from config format ${fromVersion}`, () => {
       const configFileData = {
         configFormatVersion: fromVersion,
         configs: {
           mainnet: { platform: { drive: { tenderdash: { docker: { image: 'dashpay/tenderdash:1.8' } } } } },
-          testnet: { platform: { drive: { tenderdash: { docker: { image: 'dashpay/tenderdash:1.8.2' } } } } },
+          testnet: { platform: { drive: { tenderdash: { docker: { image: 'dashpay/tenderdash:2.0.0-dev.2' } } } } },
           withoutPlatform: {},
           withoutDocker: { platform: { drive: { tenderdash: {} } } },
         },
@@ -40,7 +44,7 @@ describe('Tenderdash image migration', () => {
 
       for (const name of ['mainnet', 'testnet']) {
         expect(migrated.configs[name].platform.drive.tenderdash.docker.image)
-          .to.equal('dashpay/tenderdash:2.0.0-dev.2');
+          .to.equal('dashpay/tenderdash:2.0.0-dev.3');
       }
       expect(migrated.configs.withoutPlatform).to.deep.equal({});
       expect(migrated.configs.withoutDocker).to.deep.equal({
@@ -56,7 +60,7 @@ describe('Tenderdash image migration', () => {
 
   describe('P2P settings Tenderdash 2.0 refuses to start with', () => {
     function migrateP2p(configs) {
-      return migrateConfigFile({ configFormatVersion: '5.0.3', configs }, '5.0.3', version).configs;
+      return migrateConfigFile({ configFormatVersion: '5.1.0-dev.1', configs }, '5.1.0-dev.1', version).configs;
     }
 
     function p2pConfig(network, p2p) {

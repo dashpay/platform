@@ -53,6 +53,12 @@ interface ShieldedDao {
     @Query("SELECT * FROM shielded_notes WHERE walletId = :walletId AND isSpent = 0")
     fun observeUnspentNotesByWallet(walletId: ByteArray): Flow<List<ShieldedNoteEntity>>
 
+    @Query("SELECT * FROM shielded_notes WHERE walletId = :walletId AND accountIndex = :accountIndex AND isSpent = 0")
+    fun observeUnspentNotesByWalletAccount(
+        walletId: ByteArray,
+        accountIndex: Int,
+    ): Flow<List<ShieldedNoteEntity>>
+
     @Upsert
     suspend fun upsertNote(note: ShieldedNoteEntity)
 
@@ -139,6 +145,23 @@ interface ShieldedDao {
             "ORDER BY blockHeight DESC, createdAtMs DESC"
     )
     fun observeActivityByWallet(walletId: ByteArray): Flow<List<ShieldedActivityEntity>>
+
+    /**
+     * An identity's top-ups from the shielded pool (kind 9,
+     * `ShieldedActivityKind::IdentityTopUp`) still pending in [walletId], most
+     * recent first, so an interrupted or unconfirmed one is visible when the
+     * top-up screen reopens, also after a restart. Mirrors the
+     * `pendingShieldedTopUps` query of Swift's `TopUpIdentityView`.
+     */
+    @Query(
+        "SELECT * FROM shielded_activities WHERE walletId = :walletId " +
+            "AND kindTag = 9 AND status = 0 AND identityId = :identityId " +
+            "ORDER BY createdAtMs DESC"
+    )
+    fun observePendingIdentityTopUps(
+        walletId: ByteArray,
+        identityId: ByteArray,
+    ): Flow<List<ShieldedActivityEntity>>
 
     /** Load-path whole-table snapshot (see [getAllNotes]). */
     @Query("SELECT * FROM shielded_activities")

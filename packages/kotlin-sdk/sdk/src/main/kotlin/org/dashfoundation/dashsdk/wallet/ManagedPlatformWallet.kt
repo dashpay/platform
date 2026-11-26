@@ -80,6 +80,13 @@ class ManagedPlatformWallet internal constructor(
         get() = org.dashfoundation.dashsdk.tokens.Dashpay(handle, gate)
 
     /**
+     * Reading private document types' entries (protocol version 15) bound to this wallet's
+     * handle — the Kotlin analog of Swift's `ManagedPlatformWallet.readPrivateDocumentEntries`.
+     */
+    val privateDocuments: PrivateDocuments
+        get() = PrivateDocuments(handle, gate)
+
+    /**
      * Data-contract create surface bound to this wallet's handle — the
      * Kotlin analog of Swift's `ManagedPlatformWallet.createDataContract`.
      */

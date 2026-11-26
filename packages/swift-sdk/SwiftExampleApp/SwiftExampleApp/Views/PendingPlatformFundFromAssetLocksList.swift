@@ -11,7 +11,9 @@
 //      `AssetLockAddressTopUp` (4) or `AssetLockShieldedAddressTopUp` (5) —
 //      at a recoverable status (`isVisibleAsResumable`, i.e.
 //      `[1, 3] ∪ {5}`): the crash-recovery case where the user killed the
-//      app between asset-lock broadcast and ST submission.
+//      app between asset-lock broadcast and ST submission. A wallet
+//      drain's Built (0) checkpoint with no Max-transfer marker is also
+//      listed (`isOfferedForResume`).
 //
 // Both top-up funding types belong here because neither has any other
 // recovery home: the identity-side surfaces admit only funding types
@@ -45,6 +47,10 @@ struct PendingPlatformFundFromAssetLocksList: View {
     /// parent (`WalletDetailView`) so this section doesn't run
     /// another `@Query`.
     let assetLocks: [PersistentAssetLock]
+    /// Operation ids of stored Max-transfer markers. Their locks resume
+    /// from `UnfinishedWalletDrainsList` (by the outpoint the drain status
+    /// names), so they are not offered here as well.
+    let drainMarkedOperationIds: Set<UUID>
     /// Bound to the parent's "resume sheet" state. Setting non-nil
     /// presents `FundFromAssetLockPlatformAddressView` in resume mode.
     @Binding var resumingAssetLock: PersistentAssetLock?
@@ -135,8 +141,65 @@ struct PendingPlatformFundFromAssetLocksList: View {
         excludingControllerOutpoints excluded: Set<String>
     ) -> [PersistentAssetLock] {
         assetLocks
-            .filter { Self.isResumableTopUp($0) }
+            .filter {
+                Self.isOfferedForResume(
+                    fundingTypeRaw: $0.fundingTypeRaw,
+                    statusRaw: $0.statusRaw,
+                    operationId: $0.operationId,
+                    markedOperationIds: drainMarkedOperationIds
+                )
+            }
             .filter { !excluded.contains($0.outPointHex) }
+    }
+
+    /// The whole row decision for this list, over plain values.
+    ///
+    /// The drain half is asked of Rust (`WalletDrainRules.lockListingIfKnown`):
+    /// a lock whose operation id has a Max-transfer marker is hidden (it
+    /// resumes from `UnfinishedWalletDrainsList`), and a markerless drain
+    /// checkpoint is offered even at Built, because Rust resumes it by exact
+    /// outpoint by rebroadcasting its transaction. A funding type or status
+    /// Rust does not know is not offered. Everything else follows
+    /// `isResumableTopUp`, which keeps every other Built row out: that one
+    /// is owned by a build still in flight.
+    nonisolated static func isOfferedForResume(
+        fundingTypeRaw: Int,
+        statusRaw: Int,
+        operationId: Data?,
+        markedOperationIds: Set<UUID>
+    ) -> Bool {
+        let hasOperationId = operationId.flatMap {
+            WalletDrainOperationRecord.uuid(fromOperationIdBytes: $0)
+        } != nil
+        let listing = WalletDrainRules.lockListingIfKnown(
+            fundingTypeRaw: fundingTypeRaw,
+            statusRaw: statusRaw,
+            hasOperationId: hasOperationId,
+            hostHoldsStoredId: isClaimedByDrainMarker(
+                operationId: operationId,
+                markedOperationIds: markedOperationIds
+            )
+        )
+        switch listing {
+        case nil, .hidden?:
+            return false
+        case .offered?:
+            return true
+        case .unaffected?:
+            return isResumableTopUp(fundingTypeRaw: fundingTypeRaw, statusRaw: statusRaw)
+        }
+    }
+
+    /// Whether the app holds a Max-transfer marker for this lock's
+    /// operation id: the host fact `isOfferedForResume` passes to Rust.
+    nonisolated static func isClaimedByDrainMarker(
+        operationId: Data?,
+        markedOperationIds: Set<UUID>
+    ) -> Bool {
+        guard let operationId,
+              let uuid = WalletDrainOperationRecord.uuid(fromOperationIdBytes: operationId)
+        else { return false }
+        return markedOperationIds.contains(uuid)
     }
 
     /// Funding-type + status predicate for this surface, extracted as a
@@ -163,8 +226,12 @@ struct PendingPlatformFundFromAssetLocksList: View {
     /// resume surface, and dispatching one here would offer a resume flow
     /// that submits the wrong transition for it.
     nonisolated static func isResumableTopUp<R: AssetLockResumeRow>(_ lock: R) -> Bool {
-        guard lock.fundingTypeRaw == 4 || lock.fundingTypeRaw == 5 else { return false }
-        return lock.isVisibleAsResumable
+        isResumableTopUp(fundingTypeRaw: lock.fundingTypeRaw, statusRaw: lock.statusRaw)
+    }
+
+    nonisolated static func isResumableTopUp(fundingTypeRaw: Int, statusRaw: Int) -> Bool {
+        guard fundingTypeRaw == 4 || fundingTypeRaw == 5 else { return false }
+        return PersistentAssetLock.isVisibleAsResumable(statusRaw: statusRaw)
     }
 }
 
@@ -330,7 +397,8 @@ struct ResumablePlatformFundFromAssetLockRow: View {
         } else {
             // Nothing is driving a fund on this wallet, so every visible row
             // (statusRaw 1/2/3/5, per the list's `isVisibleAsResumable`
-            // filter) is a genuinely-resumable orphan with no driver: a
+            // filter, plus a markerless drain checkpoint at 0, which Rust
+            // rebroadcasts) is a genuinely-resumable orphan with no driver: a
             // proof-ready (`canFundIdentity`, statusRaw 2/3/5) lock submits
             // as soon as a recipient is picked; a Broadcast (statusRaw 1)
             // lock re-enters the finality wait via `resume_asset_lock`.

@@ -234,24 +234,35 @@ struct MultipleChoiceProposalDetailView: View {
                     .foregroundColor(.green)
             }
 
-            Button {
-                actionMessage = nil
-                showVoteSheet = true
-            } label: {
-                Label("Vote as Masternode…", systemImage: "hand.raised.fill")
-            }
-            // An ended vote keeps no votes; Platform refuses one.
-            .disabled(appState.sdk == nil || vote?.result != nil)
-            .accessibilityIdentifier("multipleChoiceProposal.vote")
+            if let result = vote?.result {
+                // An ended vote keeps no votes and takes no choices; Platform
+                // refuses both, so neither is offered once it reports a result.
+                Label(
+                    "Voting closed at block \(result.finalizationBlock.height); no more votes or choices.",
+                    systemImage: "lock.fill"
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("multipleChoiceProposal.votingClosed")
+            } else {
+                Button {
+                    actionMessage = nil
+                    showVoteSheet = true
+                } label: {
+                    Label("Vote as Masternode…", systemImage: "hand.raised.fill")
+                }
+                .disabled(appState.sdk == nil)
+                .accessibilityIdentifier("multipleChoiceProposal.vote")
 
-            Button {
-                actionMessage = nil
-                showEnterChoiceSheet = true
-            } label: {
-                Label("Enter a Choice…", systemImage: "plus.bubble")
+                Button {
+                    actionMessage = nil
+                    showEnterChoiceSheet = true
+                } label: {
+                    Label("Enter a Choice…", systemImage: "plus.bubble")
+                }
+                .disabled(appState.sdk == nil || localSigners.isEmpty)
+                .accessibilityIdentifier("multipleChoiceProposal.enterChoice")
             }
-            .disabled(appState.sdk == nil || localSigners.isEmpty || vote?.result != nil)
-            .accessibilityIdentifier("multipleChoiceProposal.enterChoice")
 
             if localOwner != nil {
                 Button {
@@ -379,9 +390,9 @@ private func captureResult<T: Sendable>(
 
 // MARK: - Masternode vote
 
-/// Picks the answer and takes the masternode credentials, the same way the
-/// yes/no vote sheet does: the pro_tx_hash and the voting private key as
-/// hex, the key in a secure field and never stored. Also reads the
+/// Picks the answer and the masternode that votes, the same way the yes/no
+/// vote sheet does: a masternode or evonode identity loaded with its voting
+/// key, picked in the shared `MasternodeVoterSection`. Also reads the
 /// masternode's current answer.
 private struct MultipleChoiceProposalVoteSheet: View {
     let proposalId: String
@@ -392,6 +403,7 @@ private struct MultipleChoiceProposalVoteSheet: View {
     let onVoted: (String) -> Void
 
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     /// What the picker holds.
@@ -402,8 +414,7 @@ private struct MultipleChoiceProposalVoteSheet: View {
     }
 
     @State private var answer: Answer?
-    @State private var proTxHashHex = ""
-    @State private var votingKeyHex = ""
+    @State private var voter: MasternodeVoter?
     @State private var isCasting = false
     @State private var isLookingUp = false
     @State private var message: String?
@@ -444,22 +455,11 @@ private struct MultipleChoiceProposalVoteSheet: View {
                     Text("When the vote ends the choice with the most votes is kept, unless the votes for none of the choices outnumber it.")
                 }
 
-                Section {
-                    TextField("pro_tx_hash (64 hex chars)", text: $proTxHashHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .accessibilityIdentifier("multipleChoiceProposalVote.proTxHash")
-                    SecureField("voting private key (64 hex chars)", text: $votingKeyHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .accessibilityIdentifier("multipleChoiceProposalVote.votingKey")
-                } header: {
-                    Text("Masternode Credentials")
-                } footer: {
-                    Text("The pro_tx_hash goes in wire order, the reverse of the hex Core displays. The voting public key and signer are derived from the private key on the Rust side; the key bytes are not stored.")
-                }
+                MasternodeVoterSection(
+                    accessibilityPrefix: "multipleChoiceProposalVote",
+                    voter: $voter,
+                    allowsTypedProTxHash: true
+                )
 
                 Section {
                     Button {
@@ -474,10 +474,7 @@ private struct MultipleChoiceProposalVoteSheet: View {
                             Text("Submit Vote")
                         }
                     }
-                    .disabled(
-                        isCasting || isLookingUp || voteChoice == nil
-                            || proTxHashHex.isEmpty || votingKeyHex.isEmpty
-                    )
+                    .disabled(isCasting || isLookingUp || voteChoice == nil || voter?.canCast != true)
                     .accessibilityIdentifier("multipleChoiceProposalVote.submit")
 
                     Button {
@@ -492,7 +489,7 @@ private struct MultipleChoiceProposalVoteSheet: View {
                             Text("Read This Masternode's Answer")
                         }
                     }
-                    .disabled(isCasting || isLookingUp || proTxHashHex.isEmpty)
+                    .disabled(isCasting || isLookingUp || voter == nil)
                     .accessibilityIdentifier("multipleChoiceProposalVote.lookUp")
 
                     if let message {
@@ -511,18 +508,14 @@ private struct MultipleChoiceProposalVoteSheet: View {
                 }
             }
             .interactiveDismissDisabled(isCasting)
+            // A message names the previous voter's answer; drop it.
+            .onChange(of: voter) { _, _ in message = nil }
+            // So does a message read on the previous network.
+            .onChange(of: appState.currentNetwork) { _, _ in message = nil }
+            // Options can publish a new SDK on the same network; an answer
+            // shown from the previous SDK no longer applies.
+            .onChange(of: appState.sdk.map { ObjectIdentifier($0) }) { _, _ in message = nil }
         }
-    }
-
-    /// Decode a 32-byte value typed as 64 hex characters. `Data(hexString:)`
-    /// drops a trailing odd nibble, so the length is checked first, as on the
-    /// yes/no vote sheet.
-    private static func decode32(_ hex: String) -> Data? {
-        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count == 64, let data = Data(hexString: trimmed), data.count == 32 else {
-            return nil
-        }
-        return data
     }
 
     private func describe(_ choice: MultipleChoiceVoteChoice) -> String {
@@ -545,23 +538,35 @@ private struct MultipleChoiceProposalVoteSheet: View {
             show("Select an answer.", isError: true)
             return
         }
-        guard let proTxHash = Self.decode32(proTxHashHex) else {
-            show("pro_tx_hash must be 32 bytes (64 hex characters).", isError: true)
-            return
-        }
-        guard let votingKey = Self.decode32(votingKeyHex) else {
-            show("Voting private key must be 32 bytes (64 hex characters).", isError: true)
-            return
-        }
-
-        isCasting = true
-        defer { isCasting = false }
-        do {
+        guard let voter else { return }
+        let proposalId = proposalId
+        let call = MasternodeVoteCall { proTxHash, votingAddress, signer in
             try await sdk.castMultipleChoiceProposalVote(
                 proposalId: proposalId,
                 choice: choice,
                 proTxHash: proTxHash,
-                votingPrivateKey: votingKey
+                votingAddress: votingAddress,
+                signer: signer
+            )
+        }
+        #if DEBUG
+        .allowingTypedKey { proTxHash, votingPrivateKey in
+            try await sdk.castMultipleChoiceProposalVote(
+                proposalId: proposalId,
+                choice: choice,
+                proTxHash: proTxHash,
+                votingPrivateKey: votingPrivateKey
+            )
+        }
+        #endif
+
+        isCasting = true
+        defer { isCasting = false }
+        do {
+            try await call.run(
+                as: voter,
+                modelContainer: modelContext.container,
+                network: appState.currentNetwork
             )
             onVoted("Vote for \(describe(choice)) accepted by Platform.")
             dismiss()
@@ -575,23 +580,29 @@ private struct MultipleChoiceProposalVoteSheet: View {
             show("SDK not initialized", isError: true)
             return
         }
-        guard let proTxHash = Self.decode32(proTxHashHex) else {
-            show("pro_tx_hash must be 32 bytes (64 hex characters).", isError: true)
-            return
-        }
+        guard let voter else { return }
+        let proTxHash = voter.wireOrderProTxHash
 
         isLookingUp = true
         defer { isLookingUp = false }
         do {
-            if let current = try await sdk.multipleChoiceProposalMasternodeVote(
+            let current = try await sdk.multipleChoiceProposalMasternodeVote(
                 proposalId: proposalId,
                 proTxHash: proTxHash
-            ) {
+            )
+            // The voter or the network changed while the read was in
+            // flight: this answer is not the picked masternode's on the
+            // network now shown.
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
+            if let current {
                 show("Current answer: \(describe(current)).", isError: false)
             } else {
                 show("This masternode has no answer in the vote (none yet, or the vote has ended).", isError: false)
             }
         } catch {
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
             show("Reading the answer failed: \(error.localizedDescription)", isError: true)
         }
     }

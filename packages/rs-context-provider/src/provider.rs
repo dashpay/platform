@@ -224,9 +224,33 @@ pub trait ContextProvider: Send + Sync {
     /// the trusted source then.
     ///
     /// The default, `None`, makes no claim. A provider wrapping another
-    /// forwards this and the two methods below, or the wrapped provider
-    /// reads as one that says nothing, has no mode and no SPV slot.
+    /// forwards this, `policy_revision`, `set_quorum_mode` and
+    /// `spv_source_slot`, or the wrapped provider reads as one that says
+    /// nothing, reports no policy revision, has no mode and no SPV slot.
     fn quorum_source(&self) -> Option<QuorumKeySource> {
+        None
+    }
+
+    /// A revision of which quorum keys this provider accepts to authenticate
+    /// proofs, so a caller can tell whether a proof verified earlier was
+    /// authenticated under the quorum-key policy now in force. It never
+    /// decreases, and increases on every change, such as every
+    /// [`set_quorum_mode`](Self::set_quorum_mode) that changes the mode, so
+    /// the sum of a provider's and its delegates' revisions is one too. It
+    /// never blocks.
+    ///
+    /// It covers quorum keys only. The data contracts and token
+    /// configurations a provider serves can change without it moving, so a
+    /// result read through them must not be reused on its strength.
+    ///
+    /// The default, `None`, makes no claim, and no earlier result may be
+    /// reused. A provider opts in only when it can report every change,
+    /// including those of the providers it delegates quorum lookups to. An
+    /// SPV client published into an [`SpvSourceSlot`] is not tracked: it must
+    /// serve only SPV-verified keys. Neither is a choice between sources
+    /// within one mode, such as Auto moving from the trusted provider to an
+    /// SPV client that became ready.
+    fn policy_revision(&self) -> Option<u64> {
         None
     }
 
@@ -248,6 +272,9 @@ pub trait ContextProvider: Send + Sync {
     }
 }
 
+/// For pointers to a provider, such as `Arc<dyn ContextProvider>`: `as_ref`
+/// must always borrow the same provider, since the SDK checks `network` and
+/// `requires_proofs` once, at install, and `policy_revision` is forwarded.
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     fn get_data_contract(
         &self,
@@ -312,6 +339,10 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
 
     fn quorum_source(&self) -> Option<QuorumKeySource> {
         self.as_ref().quorum_source()
+    }
+
+    fn policy_revision(&self) -> Option<u64> {
+        self.as_ref().policy_revision()
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
@@ -400,6 +431,12 @@ where
         lock.quorum_source()
     }
 
+    /// `None`: the provider inside can be replaced without the revision
+    /// changing.
+    fn policy_revision(&self) -> Option<u64> {
+        None
+    }
+
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.set_quorum_mode(mode)
@@ -480,6 +517,10 @@ impl Default for MockContextProvider {
 
 #[cfg(feature = "mocks")]
 impl ContextProvider for MockContextProvider {
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
     /// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
@@ -606,6 +647,7 @@ mod tests {
     /// heights reported verified.
     #[derive(Default)]
     struct FetchingProvider {
+        revision: u64,
         calls: AtomicUsize,
         asked: Mutex<Option<(u32, [u8; 32], u32)>>,
         verified: Mutex<Vec<Verified>>,
@@ -654,6 +696,10 @@ mod tests {
             Ok(1)
         }
 
+        fn policy_revision(&self) -> Option<u64> {
+            Some(self.revision)
+        }
+
         fn network(&self) -> Option<Network> {
             Some(Network::Testnet)
         }
@@ -681,7 +727,10 @@ mod tests {
     /// would let the SDK accept a provider it must refuse.
     #[test]
     fn should_forward_provider_requirements_through_every_wrapper() {
-        let inner = Arc::new(FetchingProvider::default());
+        let inner = Arc::new(FetchingProvider {
+            revision: 7,
+            ..Default::default()
+        });
         let boxed: Arc<Box<dyn ContextProvider>> =
             Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
         let mutex = std::sync::Mutex::new(Arc::clone(&inner));
@@ -690,6 +739,23 @@ mod tests {
             assert_eq!(provider.network(), Some(Network::Testnet));
             assert!(provider.requires_proofs());
         }
+        assert_eq!(inner.policy_revision(), Some(7));
+        assert_eq!(boxed.policy_revision(), Some(7));
+    }
+
+    #[test]
+    fn should_report_no_policy_revision_through_a_mutex_without_locking_it() {
+        let mutex = Arc::new(Mutex::new(FetchingProvider::default()));
+        let held = mutex.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reader = {
+            let mutex = Arc::clone(&mutex);
+            std::thread::spawn(move || tx.send(mutex.policy_revision()).unwrap())
+        };
+        let revision = rx.recv_timeout(std::time::Duration::from_secs(5));
+        drop(held);
+        reader.join().unwrap();
+        assert_eq!(revision, Ok(None));
     }
 
     /// A provider that does not say where its quorum keys come from is
