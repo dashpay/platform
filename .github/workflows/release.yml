@@ -506,11 +506,11 @@ jobs:
   release-dashmate-packages:
     name: Release Dashmate packages
     needs: build-dashmate-packages
-    # `needs` on a matrix job waits for every leg and reports failure if any
-    # one leg failed, which by default would skip every release leg. Each leg
-    # below needs only its own package type's artifact, so run whenever the
-    # build matrix ran at all: a leg whose build failed then fails at its own
-    # download step, and the other package types still ship.
+    # A release leg needs only its own package type's artifact, so it runs
+    # whenever its build job ran at all rather than only when every build leg
+    # succeeded, the default for `needs` on a matrix job: a leg whose build
+    # failed then fails at its own download step, and the legs of the other
+    # package types still ship.
     if: >-
       !cancelled()
       && github.event_name == 'release'
@@ -653,11 +653,11 @@ jobs:
   release-dashmate-macos:
     name: Release Dashmate packages
     needs: build-dashmate-macos
-    # `needs` on a matrix job waits for every leg and reports failure if any
-    # one leg failed, which by default would skip every release leg. Each leg
-    # below needs only its own package type's artifact, so run whenever the
-    # build matrix ran at all: a leg whose build failed then fails at its own
-    # download step, and the other package types still ship.
+    # A release leg needs only its own package type's artifact, so it runs
+    # whenever its build job ran at all rather than only when every build leg
+    # succeeded, the default for `needs` on a matrix job: a leg whose build
+    # failed then fails at its own download step, and the legs of the other
+    # package types still ship.
     if: >-
       !cancelled()
       && github.event_name == 'release'

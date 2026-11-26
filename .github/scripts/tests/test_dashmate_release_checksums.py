@@ -141,14 +141,16 @@ def legs(name):
 
 def without_legs(name):
     """A Dashmate job's text without what tells a macOS copy from its Linux job: the job id,
-    the build job it needs and its matrix entries."""
+    the build job it needs and its matrix entries. Comparing these texts says nothing about
+    those three; the tests that pin the needs and the legs of each job cover them."""
     lines = job(name).split('\n')
     # A comment above the next job is part of the text up to that job.
     while lines and (not lines[-1].strip() or lines[-1].startswith('  #')):
         lines.pop()
     text = '\n'.join(lines).replace(f'\n  {name}:\n', '\n  JOB:\n', 1)
     for build in BUILD_JOBS:
-        text = text.replace(f'\n    needs: {build}\n', '\n    needs: BUILD\n')
+        for form in [f'\n    needs: {build}\n', f'\n    needs:\n      - {build}\n']:
+            text = text.replace(form, '\n    needs: BUILD\n')
         text = text.replace(f'needs.{build}.result', 'needs.BUILD.result')
     return re.sub(r'(\n          - package_type: \S+\n            os: \S+)+\n', '\n          LEGS\n', text)
 
@@ -664,11 +666,14 @@ class ReleaseChecksumsTests(unittest.TestCase):
         matrix = [leg for name in RELEASE_JOBS for leg in legs(name)]
         # One release leg per package type, across the two release jobs.
         self.assertEqual(sorted(matrix), sorted(OS.items()))
+        # GitHub names each leg after the job and its matrix values, package type first, a
+        # one-entry matrix too: `Release Dashmate packages (deb, ubuntu-24.04)`, the name the
+        # checksums job looks for. scripts/release/sign_dashmate_checksums.sh also finds the
+        # build legs by their name.
         for name in RELEASE_JOBS:
-            # GitHub names each leg after the job and its matrix values, package type first,
-            # a one-entry matrix too: `Release Dashmate packages (deb, ubuntu-24.04)`, the name
-            # the checksums job looks for.
             self.assertIn('\n    name: Release Dashmate packages\n', job(name))
+        for name in BUILD_JOBS:
+            self.assertIn('\n    name: Build Dashmate packages\n', job(name))
         for step in ["Read package checksums from the release legs' logs", 'Generate SHA256SUMS']:
             with self.subTest(step):
                 required = re.search(r'for package_type in ([^;]+); do', step_script(step)).group(1)
@@ -678,10 +683,11 @@ class ReleaseChecksumsTests(unittest.TestCase):
         # A release leg also runs after its build failed, and can then publish the packages an
         # earlier attempt built; checksums of those must not be published as the new build's.
         checksums = job('release-dashmate-checksums')
-        self.assertEqual(needs('release-dashmate-checksums'), BUILD_JOBS + RELEASE_JOBS)
-        condition = re.search(r'\n    if: >-\n((?:      .*\n)+)', checksums).group(1).split()
-        self.assertEqual(' '.join(condition), "!cancelled() && github.event_name == 'release'" + ''.join(
-            f" && needs.{name}.result == 'success'" for name in BUILD_JOBS + RELEASE_JOBS))
+        self.assertEqual(sorted(needs('release-dashmate-checksums')), sorted(BUILD_JOBS + RELEASE_JOBS))
+        condition = ' '.join(re.search(r'\n    if: >-\n((?:      .*\n)+)', checksums).group(1).split())
+        self.assertEqual(sorted(condition.split(' && ')), sorted(
+            ['!cancelled()', "github.event_name == 'release'"]
+            + [f"needs.{name}.result == 'success'" for name in BUILD_JOBS + RELEASE_JOBS]))
 
     def test_should_sign_the_macos_installer_as_soon_as_its_own_build_ends(self):
         # A job that needs a matrix job waits for all of its legs. With macOS as one more leg of
@@ -689,9 +695,9 @@ class ReleaseChecksumsTests(unittest.TestCase):
         # only after the slowest Linux build.
         self.assertEqual(legs('build-dashmate-macos'), [('macos', OS['macos'])])
         self.assertEqual(legs('release-dashmate-macos'), [('macos', OS['macos'])])
-        linux = [(package_type, os) for package_type, os in OS.items() if package_type != 'macos']
-        self.assertEqual(legs('build-dashmate-packages'), linux)
-        self.assertEqual(legs('release-dashmate-packages'), linux)
+        linux = sorted((package_type, os) for package_type, os in OS.items() if package_type != 'macos')
+        self.assertEqual(sorted(legs('build-dashmate-packages')), linux)
+        self.assertEqual(sorted(legs('release-dashmate-packages')), linux)
         self.assertEqual(needs('release-dashmate-macos'), ['build-dashmate-macos'])
         self.assertEqual(needs('release-dashmate-packages'), ['build-dashmate-packages'])
         for name in RELEASE_JOBS:

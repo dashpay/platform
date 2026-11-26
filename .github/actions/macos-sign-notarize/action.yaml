@@ -129,6 +129,7 @@ runs:
           pkg="${packages[$i]}"
           log="$RUNNER_TEMP/notarytool_wait_$i.log"
           if ! xcrun notarytool wait "${ids[$i]}" "${notary_auth[@]}" --timeout 1h 2>&1 | tee "$log"; then
+            xcrun notarytool log "${ids[$i]}" "${notary_auth[@]}" || true
             echo "::error::notarytool failed for $pkg."
             failed=true
             continue

@@ -60,8 +60,15 @@ STUBS = {
             # Apple is still polled with the key while any submission is pending.
             [ -f "${key:-}" ] || { echo 'Error: the API key file is gone.' >&2; exit 1; }
             [ "${WAIT_EXIT:-0}" = 0 ] || { echo 'Error: timed out waiting for the submission.' >&2; exit "$WAIT_EXIT"; }
+            # An earlier status line; only the report's last one is the verdict.
+            printf '  status: %s\\n' "${NOTARY_EARLIER_STATUS:-In Progress}"
+            if [ -n "${NOTARY_TIMEOUT:-}" ]; then
+              echo 'Timeout of 3600.0 second(s) was reached before processing completed.'
+              exit 0
+            fi
             printf 'Current status: %s....Processing complete\\n  id: %s\\n  status: %s\\n' "$(verdict "$id")" "$id" "$(verdict "$id")"
             ;;
+          'notarytool log') exit "${LOG_EXIT:-0}" ;;
           'stapler staple') exit "${STAPLE_EXIT:-0}" ;;
           'stapler validate') exit "${VALIDATE_EXIT:-0}" ;;
         esac
@@ -266,10 +273,34 @@ class SignNotarizeActionTests(StepTestCase):
                 self.assertEqual(self.log('xcrun.log').count('notarytool log'), len(rejected))
                 self.assertNotIn('stapler staple', self.log('xcrun.log'))
 
+    def test_should_take_the_verdict_from_the_last_status_line_of_the_report(self):
+        result = self.notarize(NOTARY_EARLIER_STATUS='Accepted', NOTARY_STATUS='Invalid')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.count('::error::Apple did not report'), 2)
+        self.assertNotIn('::notice::Apple accepted', result.stdout)
+        self.assertNotIn('stapler staple', self.log('xcrun.log'))
+
+    def test_should_fail_when_apple_has_not_finished_before_the_timeout(self):
+        # notarytool exits 0 when its wait times out, with no verdict in the report.
+        result = self.notarize(NOTARY_TIMEOUT='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.count('::error::Apple did not report'), 2)
+        self.assertNotIn('stapler staple', self.log('xcrun.log'))
+
+    def test_should_report_every_verdict_when_a_rejection_log_cannot_be_fetched(self):
+        result = self.notarize(NOTARY_REJECT='dashmate-arm64', LOG_EXIT='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertRegex(result.stdout, r'::error::Apple did not report \S*dashmate-arm64\.pkg')
+        self.assertRegex(result.stdout, r'::notice::Apple accepted \S*dashmate-x64\.pkg')
+        self.assertNotIn('stapler staple', self.log('xcrun.log'))
+
     def test_should_fail_when_waiting_for_a_submission_fails(self):
+        # The rejection reason is fetched here too: notarytool may also exit non-zero for a
+        # package Apple rejected.
         result = self.notarize(WAIT_EXIT='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout.count('::error::notarytool failed'), 2)
+        self.assertEqual(self.log('xcrun.log').count('notarytool log'), 2)
         self.assertNotIn('stapler staple', self.log('xcrun.log'))
 
     def test_should_fail_without_a_package(self):
