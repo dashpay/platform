@@ -3012,18 +3012,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // Rust again. The same rule as the reference store's upsert valve,
         // which holds only never-materialised placeholders; here those are
         // the tombstones the drain below resolves. The one exception is a
-        // linked spender with context at or above InstantSend-locked:
-        // confirmed evidence on record is never displaced by a re-delivery
-        // (the pending-input resolve and the spend emit own that link).
+        // settled spender: confirmed evidence on record is never displaced
+        // by a re-delivery (the pending-input resolve and the spend emit
+        // own that link). A spender is settled when its context is at or
+        // above InstantSend-locked, or when it funds an asset lock that is
+        // InstantSend-locked or later. The second case is needed because
+        // SPV often never sees an asset-lock transaction (it usually has no
+        // output of ours), so its row can stay at mempool context while
+        // the lock's own status says the inputs are gone. This is the same
+        // signal the restore guard uses (#4336) and mirrors the Kotlin
+        // handler's `hasSettledSpender`. With no linked spender there is
+        // no txid to check, so the row clears.
         // The engine's verdict on this very output, if it did NOT credit
         // it (see `roundUtxoCreditVerdicts`). Any verdict vetoes the
         // recovery clear below: the wallet is not handing this coin back
         // as unspent — its record merely still names the output as ours.
         let creditVerdict = roundUtxoCreditVerdicts[outpoint]
         if creditVerdict == nil, redelivered, record.isSpent {
-            let settledSpender = record.spendingTransaction.map {
-                $0.context >= TransactionContextType.instantSend.rawValue
-            } ?? false
+            let settledSpender: Bool
+            if let spender = record.spendingTransaction {
+                if spender.context >= TransactionContextType.instantSend.rawValue {
+                    settledSpender = true
+                } else {
+                    do {
+                        settledSpender = try fundsFinalizedAssetLock(txid: spender.txid)
+                    } catch {
+                        // Fail closed: an unreadable lock table must not
+                        // resurrect a coin a finalized lock may have spent.
+                        // This round writer has no error channel, so the
+                        // row stays spent and a later re-delivery retries.
+                        NSLog(
+                            "[persistor-upsert:swift] PersistentAssetLock lookup failed; keeping re-delivered TXO spent: %@",
+                            String(describing: error)
+                        )
+                        settledSpender = true
+                    }
+                }
+            } else {
+                settledSpender = false
+            }
             if !settledSpender {
                 record.isSpent = false
                 record.supersededByTxid = nil
@@ -7537,6 +7564,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             txids.insert(txid)
         }
         return txids
+    }
+
+    /// Whether the wire-order `txid` funds a persisted asset lock whose
+    /// status is `InstantSendLocked` or beyond. The single-txid form of
+    /// `finalizedAssetLockFundingTxids()`: same status threshold, same
+    /// wallet-agnostic scope, and the match is confirmed through the same
+    /// `assetLockFundingTxid` decoder. The prefix only narrows the fetch;
+    /// it relies on `PersistentAssetLock.encodeOutPoint`, the sole writer
+    /// of `outPointHex`, emitting lowercase display-order hex.
+    ///
+    /// Throws on a fetch failure; the caller decides how to fail closed.
+    private func fundsFinalizedAssetLock(txid: Data) throws -> Bool {
+        let finalized = Self.assetLockStatusInstantSendLocked
+        let prefix = txid.reversed().map { String(format: "%02x", $0) }.joined() + ":"
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate {
+                $0.statusRaw >= finalized && $0.outPointHex.starts(with: prefix)
+            }
+        )
+        return try modelFetcher.fetch(descriptor, in: backgroundContext).contains {
+            Self.assetLockFundingTxid(outPointHex: $0.outPointHex) == txid
+        }
     }
 
     /// Returns `(nil, 0)` if nothing is restorable.
