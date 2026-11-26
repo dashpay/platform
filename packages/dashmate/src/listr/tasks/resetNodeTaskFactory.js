@@ -368,9 +368,9 @@ export default function resetNodeTaskFactory(
 
     recovery.push('Do not start the node before the reset has completed.');
 
-    // Node's own recursive removal, as the reset always used: its native
-    // implementation can remove entries relative to the directories it holds
-    // open, which a walk by path name cannot.
+    // Node's own recursive removal: its native implementation can remove
+    // entries relative to the directories it holds open, which a walk by path
+    // name cannot.
     let removalError;
     try {
       fs.rmSync(targetPath, { recursive: true, force: true });
