@@ -76,7 +76,8 @@ describe('resetNodeTaskFactory', () => {
       isNodeRunning: this.sinon.stub().resolves(false),
       down: this.sinon.stub().resolves(),
       rm: this.sinon.stub().resolves(),
-      getVolumeNames: this.sinon.stub().resolves([]),
+      getVolumeCandidates: this.sinon.stub().resolves([]),
+      isVolumeOwned: this.sinon.stub().resolves(true),
     };
 
     // A testnet Evo fullnode: it runs platform, but no identity is registered
@@ -221,7 +222,7 @@ describe('resetNodeTaskFactory', () => {
       expect(dockerCompose.isNodeRunning).to.not.have.been.called();
       expect(dockerCompose.rm).to.not.have.been.called();
       expect(dockerCompose.down).to.not.have.been.called();
-      expect(dockerCompose.getVolumeNames).to.not.have.been.called();
+      expect(dockerCompose.getVolumeCandidates).to.not.have.been.called();
       expect(configFile.isConfigExists('devnet-ops')).to.be.true();
       expect(fs.existsSync(corePath)).to.be.true();
       expect(fs.existsSync(platformPath)).to.be.true();
@@ -814,7 +815,7 @@ describe('resetNodeTaskFactory', () => {
       await reset({ isPlatformOnlyReset: true, keepData: false });
 
       expect(dockerCompose.rm).to.have.been.calledOnce();
-      expect(dockerCompose.getVolumeNames).to.have.been.calledOnce();
+      expect(dockerCompose.getVolumeCandidates).to.have.been.calledOnce();
       expect(config.get('platform')).to.deep.equal(platformOptions);
       expect(fs.existsSync(homeDir.joinPath('mainnet', 'platform', 'gateway', 'ssl', 'private.key'))).to.be.true();
     });
@@ -857,6 +858,8 @@ describe('resetNodeTaskFactory', () => {
     let runningContainers;
     let configFailure;
     let configFailureConfigName;
+    let volumeDefinitionsByConfig;
+    let onRemoveServices;
     let platformConfig;
     let projectName;
     let diContainer;
@@ -918,6 +921,8 @@ describe('resetNodeTaskFactory', () => {
       runningContainers = [];
       configFailure = null;
       configFailureConfigName = null;
+      volumeDefinitionsByConfig = {};
+      onRemoveServices = () => {};
       diContainer.register({
         docker: asValue({
           getVolume: (name) => dockerVolume(name, async () => {
@@ -980,11 +985,17 @@ describe('resetNodeTaskFactory', () => {
             serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
           );
 
+          const volumes = volumeDefinitionsByConfig[options.env?.CONFIG_NAME] ?? volumeDefinitions;
+
           return {
             exitCode: 0,
             err: '',
-            out: JSON.stringify({ name: projectName, services, volumes: volumeDefinitions }),
+            out: JSON.stringify({ name: projectName, services, volumes }),
           };
+        }
+
+        if (command === 'rm') {
+          onRemoveServices(options.env?.CONFIG_NAME);
         }
 
         return { exitCode: 0, err: '', out: '' };
@@ -1224,6 +1235,61 @@ describe('resetNodeTaskFactory', () => {
       expect(callsFor('rm')).to.deep.equal(['node_1', 'node_2']);
       expect(composeCalls.findIndex(({ command }) => command === 'rm'))
         .to.be.above(composeCalls.map(({ command }) => command).lastIndexOf('config'));
+    });
+
+    // A group reset plans every member before it resets any, and while the
+    // members before it are reset a later member's volume can be replaced by
+    // one Platform does not own, or created by a start. Whose a volume is
+    // counts when it is removed, not when the reset was planned.
+    it('should decide whose a member\'s volume is when it removes it', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      volumeDefinitionsByConfig.node_2 = Object.fromEntries(Object.keys(volumeDefinitions)
+        .map((key) => [key, { name: `node_2_${key}` }]));
+      Object.keys(volumeDefinitions).forEach((key) => {
+        dockerVolumeLabels[`node_2_${key}`] = {
+          'com.docker.compose.project': projectName,
+          'com.docker.compose.volume': key,
+        };
+      });
+      delete dockerVolumeLabels.node_2_drive_tenderdash;
+
+      onRemoveServices = (configName) => {
+        if (configName !== 'node_1') {
+          return;
+        }
+
+        dockerVolumeLabels.node_2_drive_abci_data = {
+          'com.docker.compose.project': 'other_project',
+          'com.docker.compose.volume': 'drive_abci_data',
+        };
+        dockerVolumeLabels.node_2_drive_tenderdash = {
+          'com.docker.compose.project': projectName,
+          'com.docker.compose.volume': 'drive_tenderdash',
+        };
+      };
+
+      await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      );
+
+      expect(removedVolumes.filter((name) => name.startsWith('node_2_'))).to.have.members([
+        'node_2_drive_tenderdash',
+        'node_2_rs-dapi-access-logs',
+      ]);
     });
 
     it('should remove the Platform services again the same way while a volume is in use', async () => {

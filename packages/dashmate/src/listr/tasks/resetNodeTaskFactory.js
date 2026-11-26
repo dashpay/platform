@@ -489,7 +489,8 @@ export default function resetNodeTaskFactory(
    * @property {string[]} [serviceNames] - the Platform services a Platform-only
    *  reset checks and removes
    * @property {string[]} [profiles] - the profiles to enable next to them
-   * @property {string[]} [volumeNames] - the volumes it removes after them
+   * @property {VolumeCandidate[]} [volumes] - the volumes it removes after
+   *  them, if Docker still labels them as Platform's by then
    */
 
   /**
@@ -511,11 +512,11 @@ export default function resetNodeTaskFactory(
 
     // Compose fails to describe the project when service files are missing.
     // Looked up now, that failure comes while nothing has been removed.
-    const volumeNames = ctx.keepData
+    const volumes = ctx.keepData
       ? []
-      : await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
+      : await dockerCompose.getVolumeCandidates(config, { serviceNames, profiles });
 
-    return { serviceNames, profiles, volumeNames };
+    return { serviceNames, profiles, volumes };
   }
 
   /**
@@ -607,7 +608,7 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const { serviceNames, profiles, volumeNames } = plan;
+          const { serviceNames, profiles, volumes } = plan;
 
           const removeOptions = {
             serviceNames: [...serviceNames, HELPER_SERVICE_NAME],
@@ -626,8 +627,17 @@ export default function resetNodeTaskFactory(
           // Remove volumes
           if (!ctx.keepData) {
             await Promise.all(
-              volumeNames
-                .map(async (volumeName) => {
+              volumes
+                .map(async (candidate) => {
+                  // Asked now rather than when the reset was planned: a group
+                  // reset plans every member before it resets any, and
+                  // meanwhile a volume can be created, or replaced by one
+                  // that is not Platform's.
+                  if (!await dockerCompose.isVolumeOwned(candidate)) {
+                    return;
+                  }
+
+                  const volumeName = candidate.name;
                   const volume = await docker.getVolume(volumeName);
 
                   let attempts = 0;

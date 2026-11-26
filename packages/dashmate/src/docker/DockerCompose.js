@@ -475,8 +475,17 @@ export default class DockerCompose {
   }
 
   /**
-   * Get the Docker names of the volumes Compose created for the given services
-   * and that only they use
+   * A named volume of the given services, and the labels Docker gives such a
+   * volume when Compose creates it
+   *
+   * @typedef {Object} VolumeCandidate
+   * @property {string} name - the volume's Docker name
+   * @property {string} project - the Compose project that creates it
+   * @property {string[]} keys - the Compose keys that name it
+   */
+
+  /**
+   * Get the named volumes that only the given services use
    *
    * Docker knows a volume by its name, and several keys of the Compose files
    * can give the same one, so each check is on that name. The project's whole
@@ -489,19 +498,17 @@ export default class DockerCompose {
    * it under any key, Core included, since removing it would take that
    * service's data.
    *
-   * A mounted volume is not necessarily the project's own: an override can
-   * mount one that another project created under the same explicit name. Only
-   * a volume Docker labels as created by this project for one of its keys is
-   * returned.
+   * Whether Docker has a candidate and whose it is are left to
+   * isVolumeOwned, asked just before the volume is removed.
    *
    * @param {Config} config
    * @param {Object} options
    * @param {string[]} options.serviceNames
    * @param {string[]} [options.profiles] - Profiles to enable, so that every
    *  service of the Compose files is part of the model
-   * @return {Promise<string[]>}
+   * @return {Promise<VolumeCandidate[]>}
    */
-  async getVolumeNames(config, { serviceNames, profiles = [] }) {
+  async getVolumeCandidates(config, { serviceNames, profiles = [] }) {
     if (serviceNames.length === 0) {
       return [];
     }
@@ -551,36 +558,41 @@ export default class DockerCompose {
       .flatMap(([, service]) => getMountedKeys(service))
       .map(getDockerName));
 
-    const candidates = new Set(serviceNames
+    const names = new Set(serviceNames
       .flatMap((serviceName) => getMountedKeys(services[serviceName]))
       .map(getDockerName));
 
-    const ownedNames = await Promise.all(
-      Array.from(candidates)
-        .filter((name) => !namesMountedElsewhere.has(name))
-        .filter((name) => !Array.from(keysByName.get(name))
-          .some((key) => volumes[key]?.external))
-        .map(async (name) => {
-          let labels;
-          try {
-            ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
-          } catch (e) {
-            // Never created, so nothing to remove
-            if (e.statusCode === 404) {
-              return null;
-            }
+    return Array.from(names)
+      .filter((name) => !namesMountedElsewhere.has(name))
+      .filter((name) => !Array.from(keysByName.get(name)).some((key) => volumes[key]?.external))
+      .map((name) => ({ name, project: projectName, keys: Array.from(keysByName.get(name)) }));
+  }
 
-            throw e;
-          }
+  /**
+   * Whether Docker has the volume and labels it as created by its project for
+   * one of its keys
+   *
+   * A mounted volume is not necessarily the project's own: an override can
+   * mount one that another project created under the same explicit name.
+   *
+   * @param {VolumeCandidate} candidate
+   * @return {Promise<boolean>}
+   */
+  async isVolumeOwned({ name, project, keys }) {
+    let labels;
+    try {
+      ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
+    } catch (e) {
+      // Never created, so nothing to remove
+      if (e.statusCode === 404) {
+        return false;
+      }
 
-          const isOwned = labels?.['com.docker.compose.project'] === projectName
-            && keysByName.get(name).has(labels?.['com.docker.compose.volume']);
+      throw e;
+    }
 
-          return isOwned ? name : null;
-        }),
-    );
-
-    return ownedNames.filter((name) => name !== null);
+    return labels?.['com.docker.compose.project'] === project
+      && keys.includes(labels?.['com.docker.compose.volume']);
   }
 
   /**

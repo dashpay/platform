@@ -134,7 +134,23 @@ describe('DockerCompose service selection', () => {
 
   afterEach(() => sandbox.restore());
 
-  describe('getVolumeNames', () => {
+  describe('volume lookup', () => {
+    /**
+     * The volumes a reset of the given services removes: the candidates that
+     * Docker, asked just before, labels as the project's
+     *
+     * @param {Object} options
+     * @return {Promise<string[]>}
+     */
+    async function getOwnedVolumeNames(options) {
+      const candidates = await dockerCompose.getVolumeCandidates({}, options);
+      const isOwned = await Promise.all(
+        candidates.map((candidate) => dockerCompose.isVolumeOwned(candidate)),
+      );
+
+      return candidates.filter((_, index) => isOwned[index]).map(({ name }) => name);
+    }
+
     /**
      * Docker's labels on a volume Compose created for a project
      *
@@ -177,7 +193,7 @@ describe('DockerCompose service selection', () => {
         }),
       });
 
-      const volumeNames = await dockerCompose.getVolumeNames({}, {
+      const volumeNames = await getOwnedVolumeNames({
         serviceNames: ['drive_tenderdash', 'quorum_list'],
         profiles: ['core', 'platform'],
       });
@@ -218,7 +234,7 @@ describe('DockerCompose service selection', () => {
         { operator_logs: { name: 'operator_logs', external: true } },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal([]);
     });
 
@@ -245,7 +261,7 @@ describe('DockerCompose service selection', () => {
       );
       dockerVolumeLabels.unlabeled = {};
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
     });
 
@@ -258,7 +274,7 @@ describe('DockerCompose service selection', () => {
         { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal([]);
     });
 
@@ -278,7 +294,7 @@ describe('DockerCompose service selection', () => {
         },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
     });
 
@@ -318,7 +334,7 @@ describe('DockerCompose service selection', () => {
         },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal([]);
     });
 
@@ -351,7 +367,7 @@ describe('DockerCompose service selection', () => {
         },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal(['dashmate_project_node_drive_abci_data']);
     });
 
@@ -366,19 +382,31 @@ describe('DockerCompose service selection', () => {
         { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
       );
 
-      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.be.rejectedWith('Docker unavailable');
     });
 
-    // Nothing to remove for a volume that was never created.
-    it('should leave out a volume Docker does not have', async () => {
+    // Nothing to remove for a volume that was never created, unless it is
+    // created by the time it would be removed: whether Docker has it is
+    // asked then, not when the candidates are listed.
+    it('should leave out a volume Docker does not have when asked', async () => {
       describeDriveAbci(
         [{ type: 'volume', source: 'drive_abci_data', target: '/data' }],
         { drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' } },
       );
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
-        .to.deep.equal([]);
+      const candidates = await dockerCompose.getVolumeCandidates({}, { serviceNames: ['drive_abci'] });
+
+      expect(candidates).to.deep.equal([{
+        name: 'dashmate_project_node_drive_abci_data',
+        project: 'dashmate_project_node',
+        keys: ['drive_abci_data'],
+      }]);
+      expect(await dockerCompose.isVolumeOwned(candidates[0])).to.be.false();
+
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+
+      expect(await dockerCompose.isVolumeOwned(candidates[0])).to.be.true();
     });
 
     // A service missing from the description has volumes nobody would remove.
@@ -389,7 +417,7 @@ describe('DockerCompose service selection', () => {
         out: JSON.stringify({ name: 'dashmate_project_node', services: { core: {} } }),
       });
 
-      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.be.rejectedWith("did not describe service 'drive_abci'");
     });
 
@@ -401,7 +429,7 @@ describe('DockerCompose service selection', () => {
       dockerCompose.throwErrorIfNotInstalled.rejects(new Error("Can't connect to Docker Engine: permission denied"));
       sandbox.stub(compose, 'execCompose').rejects(new Error('unexpected call'));
 
-      await expect(dockerCompose.getVolumeNames({}, { serviceNames: ['drive_abci'] }))
+      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.be.rejectedWith("Can't connect to Docker Engine");
 
       expect(compose.execCompose).to.not.have.been.called();
@@ -410,7 +438,7 @@ describe('DockerCompose service selection', () => {
     it('should not ask Compose about an empty selection', async () => {
       sandbox.stub(compose, 'execCompose').rejects(new Error('unexpected call'));
 
-      expect(await dockerCompose.getVolumeNames({}, { serviceNames: [] })).to.deep.equal([]);
+      expect(await dockerCompose.getVolumeCandidates({}, { serviceNames: [] })).to.deep.equal([]);
     });
   });
 
