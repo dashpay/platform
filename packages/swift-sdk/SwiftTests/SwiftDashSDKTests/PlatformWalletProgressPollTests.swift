@@ -88,6 +88,111 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         var mainThreadFlags: [Bool] { lock.withLock { invocations.map(\.ranOnMainThread) } }
     }
 
+    private final class PollClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: TimeInterval = 100
+
+        func now() -> TimeInterval { lock.withLock { value } }
+        func set(_ value: TimeInterval) { lock.withLock { self.value = value } }
+    }
+
+    private func progressCalls(clock: PollClock) -> PlatformWalletNativePollCalls {
+        PlatformWalletNativePollCalls(
+            syncProgress: { _ in
+                clock.set(clock.now() + 100)
+                return PlatformSpvSyncProgress(
+                    overallState: .waitForEvents, overallPercentage: 100,
+                    headers: nil, filterHeaders: nil, filters: nil, masternodes: nil)
+            },
+            isSpvRunning: { _ in false },
+            connectedSpvPeers: { _ in [] },
+            spvTipBlockTime: { _ in nil },
+            isPlatformAddressSyncing: { _ in false },
+            isShieldedSyncing: { _ in false },
+            isDashPaySyncing: { _ in false },
+            pendingAccountBuildCount: { _ in 0 },
+            txoReconcileDueWallets: { _ in [] }
+        )
+    }
+
+    private func progressBaseline(_ progress: PlatformSpvSyncProgress = .empty) -> PlatformWalletPollBaseline {
+        PlatformWalletPollBaseline(
+            spvProgress: progress, spvIsRunning: false, spvPeers: [],
+            platformAddressSyncIsSyncing: false, shieldedSyncIsSyncing: false,
+            dashPaySyncIsSyncing: false, spvTipBlockTime: nil, pendingAccountBuilds: [:])
+    }
+
+    func testProgressReadStartIsCapturedBeforeTheNativeRead() {
+        let clock = PollClock()
+        let snapshot = PlatformWalletManager.performManagerPoll(
+            81, calls: progressCalls(clock: clock), uptime: { clock.now() })
+        XCTAssertEqual(snapshot.spvProgressReadStartedAt, 100)
+        XCTAssertEqual(clock.now(), 200)
+        XCTAssertNotNil(snapshot.spvProgress)
+    }
+
+    func testDelayedApplyAcrossForegroundCutoffPreservesReadStartAndUnchangedProgress() async {
+        let clock = PollClock()
+        let manager = PlatformWalletManager.makeForTesting(handle: 82, calls: Self.makeTeardownCalls())
+        var observations: [PlatformSpvProgressObservation] = []
+        var progressChanges = 0
+        var objectChanges = 0
+        let observationSubscription = manager.spvProgressObservations.sink { observations.append($0) }
+        let progressSubscription = manager.$spvProgress.dropFirst().sink { _ in progressChanges += 1 }
+        let objectSubscription = manager.objectWillChange.sink { objectChanges += 1 }
+        let calls = progressCalls(clock: clock)
+        let oldRead = PlatformWalletManager.performManagerPoll(82, calls: calls, uptime: { clock.now() })
+        let foregroundCutoff: TimeInterval = 150
+        clock.set(300)
+        manager.applyManagerSnapshot(oldRead, baseline: progressBaseline())
+
+        XCTAssertEqual(observations.map(\.readStartedAtSystemUptime), [100])
+        XCTAssertFalse(observations.contains { $0.readStartedAtSystemUptime > foregroundCutoff })
+        XCTAssertEqual(observations.first?.progress, manager.spvProgress)
+        XCTAssertEqual(progressChanges, 1)
+        XCTAssertEqual(objectChanges, 1)
+
+        var replayed = false
+        let lateSubscription = manager.spvProgressObservations.sink { _ in replayed = true }
+        XCTAssertFalse(replayed)
+        clock.set(310)
+        let freshRead = PlatformWalletManager.performManagerPoll(82, calls: calls, uptime: { clock.now() })
+        manager.applyManagerSnapshot(freshRead, baseline: progressBaseline(manager.spvProgress))
+
+        XCTAssertEqual(observations.map(\.readStartedAtSystemUptime), [100, 310])
+        XCTAssertEqual(observations.filter { $0.readStartedAtSystemUptime > foregroundCutoff }.count, 1)
+        XCTAssertEqual(observations.last?.progress, manager.spvProgress)
+        XCTAssertEqual(progressChanges, 1)
+        XCTAssertEqual(objectChanges, 1)
+        observationSubscription.cancel()
+        progressSubscription.cancel()
+        objectSubscription.cancel()
+        lateSubscription.cancel()
+        await manager.shutdown()
+    }
+
+    func testProgressObservationsRejectFailedStaleAndShutdownSnapshots() async {
+        let clock = PollClock()
+        let manager = PlatformWalletManager.makeForTesting(handle: 83, calls: Self.makeTeardownCalls())
+        var observations: [PlatformSpvProgressObservation] = []
+        let subscription = manager.spvProgressObservations.sink { observations.append($0) }
+        let first = PlatformWalletManager.performManagerPoll(
+            83, calls: progressCalls(clock: clock), uptime: { clock.now() })
+        manager.applyManagerSnapshot(first, baseline: progressBaseline())
+        XCTAssertEqual(observations.count, 1)
+        let matching = progressBaseline(manager.spvProgress)
+
+        manager.applyManagerSnapshot(first, baseline: progressBaseline())
+        let failed = PlatformWalletManager.performManagerPoll(83, calls: PollRecorder().makeCalls())
+        manager.applyManagerSnapshot(failed, baseline: matching)
+        XCTAssertEqual(observations.count, 1)
+
+        await manager.shutdown()
+        manager.applyManagerSnapshot(first, baseline: matching)
+        XCTAssertEqual(observations.count, 1)
+        subscription.cancel()
+    }
+
     private nonisolated static func makeTeardownCalls() -> PlatformWalletNativeTeardownCalls {
         let ok: PlatformWalletNativeTeardownCalls.Call = { _ in
             PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
@@ -251,6 +356,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         )
 
         XCTAssertNil(snapshot.spvProgress)
+        XCTAssertNil(snapshot.spvProgressReadStartedAt)
         XCTAssertNil(snapshot.dashPaySyncIsSyncing)
         XCTAssertEqual(snapshot.spvIsRunning, true)
         XCTAssertEqual(snapshot.shieldedSyncIsSyncing, true)

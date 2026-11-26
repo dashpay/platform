@@ -9,7 +9,8 @@ import SwiftData
 /// `(walletId, accountIndex, position)` and re-saves with the same
 /// nullifier overwrite the existing row in place — Orchard
 /// nullifiers are globally unique, so repeated discovery of the
-/// same note (e.g. after a re-sync) shouldn't double-count.
+/// same note (e.g. after a re-sync) shouldn't double-count. A
+/// re-save never clears `isSpent` (see `persistShieldedNotes`).
 ///
 /// On cold start the matching `loadShieldedNotes` callback streams
 /// every row back to Rust so `ShieldedWallet::restore_from_snapshot`

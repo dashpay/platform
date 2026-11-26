@@ -16,7 +16,7 @@ use futures::{Stream, StreamExt};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use super::{sync_notes_from_stream, MultiSyncNotesResult};
+use super::{sync_notes_from_stream, MultiSyncNotesResult, NoteSyncOutcome, StoreEpoch};
 use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -90,15 +90,36 @@ async fn run(
     subwallets: &[(SubwalletId, AccountViewingKeys)],
     cancel: &CancellationToken,
     stream: impl Stream<Item = BatchItem>,
-) -> MultiSyncNotesResult {
+) -> NoteSyncOutcome {
+    let epoch = StoreEpoch::default();
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        sync_notes_from_stream(store, subwallets, None, cancel, move |_, _| stream),
+        sync_notes_from_stream(
+            store,
+            &epoch.watch(),
+            subwallets,
+            None,
+            cancel,
+            move |_, _| stream,
+        ),
     )
     .await
     .expect("a cancelled pass must return promptly")
     .expect("pass must succeed")
-    .finished()
+}
+
+fn assert_cancelled(outcome: NoteSyncOutcome) {
+    assert!(
+        matches!(outcome, NoteSyncOutcome::Cancelled),
+        "a cut-short pass publishes nothing, got {outcome:?}"
+    );
+}
+
+fn expect_completed(outcome: NoteSyncOutcome) -> MultiSyncNotesResult {
+    match outcome {
+        NoteSyncOutcome::Completed(result) => result,
+        other => panic!("pass should have completed, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -111,7 +132,7 @@ async fn should_keep_tree_progress_and_publish_nothing_when_cancelled_mid_stream
     let sub = subwallets[0].0;
     let cancel = CancellationToken::new();
 
-    let result = run(
+    let outcome = run(
         &store,
         &subwallets,
         &cancel,
@@ -120,8 +141,7 @@ async fn should_keep_tree_progress_and_publish_nothing_when_cancelled_mid_stream
     .await;
 
     // The appended leaves stay, checkpointed; nothing else is published.
-    assert_eq!(result.total_scanned, 0, "a cut-short pass reports no scan");
-    assert!(crate::changeset::merge::Merge::is_empty(&result.changeset));
+    assert_cancelled(outcome);
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 8, "both batches appended");
     assert!(
@@ -151,8 +171,9 @@ async fn should_return_empty_without_touching_store_when_cancelled_before_scan()
     let cancel = CancellationToken::new();
     cancel.cancel();
 
-    let result = sync_notes_from_stream(
+    let outcome = sync_notes_from_stream(
         &store,
+        &StoreEpoch::default().watch(),
         &subwallets,
         None,
         &cancel,
@@ -161,11 +182,9 @@ async fn should_return_empty_without_touching_store_when_cancelled_before_scan()
         },
     )
     .await
-    .expect("pass must succeed")
-    .finished();
+    .expect("pass must succeed");
 
-    assert_eq!(result.total_scanned, 0);
-    assert!(result.per_subwallet_new_notes.is_empty());
+    assert_cancelled(outcome);
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 0);
     assert_eq!(store.last_synced_note_index(sub).unwrap(), 0);
@@ -184,13 +203,15 @@ async fn should_rewalk_the_appended_prefix_without_reappending_on_next_pass() {
 
     // Pass 1: cancelled after two batches.
     let cancel = CancellationToken::new();
-    run(
-        &store,
-        &subwallets,
-        &cancel,
-        batches_then_cancel(vec![batch(0, 4, 12), batch(4, 4, 12)], cancel.clone()),
-    )
-    .await;
+    assert_cancelled(
+        run(
+            &store,
+            &subwallets,
+            &cancel,
+            batches_then_cancel(vec![batch(0, 4, 12), batch(4, 4, 12)], cancel.clone()),
+        )
+        .await,
+    );
     assert_eq!(store.read().await.last_synced_note_index(sub).unwrap(), 0);
     assert_eq!(store.read().await.tree_size().unwrap(), 8);
 
@@ -198,17 +219,19 @@ async fn should_rewalk_the_appended_prefix_without_reappending_on_next_pass() {
     // re-delivers the first two batches — gate-skipped by the tree-size
     // snapshot — and then the new one. Runs to completion.
     let cancel = CancellationToken::new();
-    let result = run(
-        &store,
-        &subwallets,
-        &cancel,
-        futures::stream::iter(
-            vec![batch(0, 4, 12), batch(4, 4, 12), batch(8, 4, 12)]
-                .into_iter()
-                .map(Ok),
-        ),
-    )
-    .await;
+    let result = expect_completed(
+        run(
+            &store,
+            &subwallets,
+            &cancel,
+            futures::stream::iter(
+                vec![batch(0, 4, 12), batch(4, 4, 12), batch(8, 4, 12)]
+                    .into_iter()
+                    .map(Ok),
+            ),
+        )
+        .await,
+    );
 
     assert_eq!(
         result.total_scanned, 12,
@@ -256,7 +279,7 @@ async fn should_leave_every_watermark_alone_when_cancelled() {
         .expect("seed the advanced watermark");
     let cancel = CancellationToken::new();
 
-    let result = run(
+    let outcome = run(
         &store,
         &subwallets,
         &cancel,
@@ -264,6 +287,7 @@ async fn should_leave_every_watermark_alone_when_cancelled() {
     )
     .await;
 
+    assert_cancelled(outcome);
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 8);
     assert_eq!(store.last_synced_note_index(lagging).unwrap(), 0);
@@ -271,10 +295,6 @@ async fn should_leave_every_watermark_alone_when_cancelled() {
         store.last_synced_note_index(advanced).unwrap(),
         12,
         "a partial prefix below a subwallet's watermark must not rewind it"
-    );
-    assert!(
-        crate::changeset::merge::Merge::is_empty(&result.changeset),
-        "a cancelled pass sends nothing to the host"
     );
 
     let _ = std::fs::remove_file(&path);
@@ -297,7 +317,7 @@ async fn should_leave_store_and_changeset_empty_when_cancelled_before_first_batc
         .expect("seed the watermark");
     let cancel = CancellationToken::new();
 
-    let result = run(
+    let outcome = run(
         &store,
         &subwallets,
         &cancel,
@@ -305,11 +325,7 @@ async fn should_leave_store_and_changeset_empty_when_cancelled_before_first_batc
     )
     .await;
 
-    assert_eq!(result.total_scanned, 0);
-    assert!(
-        crate::changeset::merge::Merge::is_empty(&result.changeset),
-        "a pass that consumed nothing records nothing"
-    );
+    assert_cancelled(outcome);
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 0);
     assert_eq!(store.last_synced_note_index(sub).unwrap(), 4);
@@ -330,7 +346,9 @@ async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
     let cancel = CancellationToken::new();
 
     let held = store.write().await;
-    let pass = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+    let epoch = StoreEpoch::default();
+    let watch = epoch.watch();
+    let pass = sync_notes_from_stream(&store, &watch, &subwallets, None, &cancel, |_, _| {
         futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
     });
     futures::pin_mut!(pass);
@@ -340,13 +358,11 @@ async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
     );
 
     cancel.cancel();
-    let result = tokio::time::timeout(std::time::Duration::from_secs(2), pass.as_mut())
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(2), pass.as_mut())
         .await
         .expect("a cancelled pass returns without the guard")
-        .expect("pass must succeed")
-        .finished();
-    assert_eq!(result.total_scanned, 0);
-    assert!(crate::changeset::merge::Merge::is_empty(&result.changeset));
+        .expect("pass must succeed");
+    assert_cancelled(outcome);
 
     drop(held);
     let store = store.read().await;
@@ -402,13 +418,15 @@ async fn should_report_the_height_a_completed_scan_covers() {
         let store = Arc::new(RwLock::new(
             FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
         ));
-        let result = run(
-            &store,
-            &one_subwallet(),
-            &CancellationToken::new(),
-            futures::stream::iter(batches.into_iter().map(Ok)),
-        )
-        .await;
+        let result = expect_completed(
+            run(
+                &store,
+                &one_subwallet(),
+                &CancellationToken::new(),
+                futures::stream::iter(batches.into_iter().map(Ok)),
+            )
+            .await,
+        );
         assert_eq!(result.covered_height, covered, "{case}");
         let _ = std::fs::remove_file(&path);
     }
@@ -558,9 +576,15 @@ async fn should_mark_nothing_spent_when_the_spend_scan_height_is_not_kept() {
             .unwrap();
     }
     let cancel = CancellationToken::new();
-    let pass = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
-        futures::stream::iter(vec![Ok(batch(0, 4, 4))])
-    })
+    let epoch = StoreEpoch::default();
+    let pass = sync_notes_from_stream(
+        &store,
+        &epoch.watch(),
+        &subwallets,
+        None,
+        &cancel,
+        |_, _| futures::stream::iter(vec![Ok(batch(0, 4, 4))]),
+    )
     .await;
     assert!(pass.is_err(), "the pass fails when the height is not kept");
 
@@ -611,14 +635,22 @@ async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
         &cancel,
         futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
     )
-    .await;
-    let failed = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
-        futures::stream::iter(vec![
-            Ok(batch(0, 4, 12)),
-            Ok(batch(4, 4, 12)),
-            Err(dash_sdk::Error::Generic("transport failed".to_string())),
-        ])
-    })
+    .await
+    .finished();
+    let failed = sync_notes_from_stream(
+        &store,
+        &StoreEpoch::default().watch(),
+        &subwallets,
+        None,
+        &cancel,
+        |_, _| {
+            futures::stream::iter(vec![
+                Ok(batch(0, 4, 12)),
+                Ok(batch(4, 4, 12)),
+                Err(dash_sdk::Error::Generic("transport failed".to_string())),
+            ])
+        },
+    )
     .await;
     assert!(failed.is_err(), "the batch error fails the pass");
     {
@@ -642,7 +674,8 @@ async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
         &cancel,
         futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
     )
-    .await;
+    .await
+    .finished();
 
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 8, "nothing is re-appended");
@@ -672,7 +705,8 @@ async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
             &cancel,
             futures::stream::iter(stream.into_iter().map(Ok)),
         )
-        .await;
+        .await
+        .finished();
     }
     let before = {
         let store = store.read().await;
@@ -694,7 +728,8 @@ async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
         &cancel,
         futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
     )
-    .await;
+    .await
+    .finished();
 
     let store = store.read().await;
     let after = (
@@ -724,9 +759,14 @@ async fn should_add_no_checkpoint_on_an_idle_pass_over_the_in_memory_store() {
     for _ in 0..2 {
         tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
-                futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
-            }),
+            sync_notes_from_stream(
+                &store,
+                &StoreEpoch::default().watch(),
+                &subwallets,
+                None,
+                &cancel,
+                |_, _| futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
+            ),
         )
         .await
         .expect("the pass returns")

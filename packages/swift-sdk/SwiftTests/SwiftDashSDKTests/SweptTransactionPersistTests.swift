@@ -492,6 +492,75 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(kept.spendingTransaction?.txid, winnerTxid)
     }
 
+    /// An asset-lock spender is settled by the lock's own status even when
+    /// its transaction row never left mempool context: SPV usually cannot
+    /// see an asset-lock transaction, which has no output of ours. Once the
+    /// lock is InstantSend-locked the coin it consumed is gone, so a
+    /// re-delivery keeps it spent — the same signal the restore guard uses.
+    func testWalletReDeliveringACoinAFinalizedAssetLockSpentKeepsItSpent() throws {
+        let (handler, container) = try makeHandler()
+        try seedCoinBSpentByAssetLock(in: container, lockStatusRaw: 2)
+
+        redeliverCoinB(handler)
+
+        let kept = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(kept.isSpent, "a coin an InstantSend-locked asset lock consumed stays spent")
+        XCTAssertEqual(kept.spendingTransaction?.txid, assetLockTxid)
+    }
+
+    /// Below InstantSend-locked the lock proves nothing yet, so a mempool
+    /// asset-lock spender is unsettled and the re-delivery clears the coin
+    /// as before.
+    func testWalletReDeliveringACoinAnUnlockedAssetLockSpentFreesIt() throws {
+        let (handler, container) = try makeHandler()
+        try seedCoinBSpentByAssetLock(in: container, lockStatusRaw: 1)
+
+        redeliverCoinB(handler)
+
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertFalse(freed.isSpent, "a broadcast-only asset lock does not hold the coin")
+    }
+
+    /// Asymmetric so a byte-order slip between the wire-order row txid and
+    /// the display-order lock outpoint cannot match by accident.
+    private let assetLockTxid = Data((0..<32).map { UInt8($0) })
+
+    /// Coin B spent and linked to a mempool-context asset-lock transaction,
+    /// with that lock persisted at `lockStatusRaw`. The outpoint string is
+    /// written through `encodeOutPoint`, the production encoder.
+    private func seedCoinBSpentByAssetLock(in container: ModelContainer, lockStatusRaw: Int) throws {
+        try seedSpend(in: container, winnerTakesA: true)
+        let context = ModelContext(container)
+        let lockTx = PersistentTransaction(
+            txid: assetLockTxid,
+            transactionData: serializedTransaction(inputs: [(txid: fundingTxid, vout: 1)]),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -40_000
+        )
+        context.insert(lockTx)
+        let coinB = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 1)
+        let row = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.outpoint == coinB }
+            )).first
+        )
+        row.isSpent = true
+        row.spendingTransaction = lockTx
+        context.insert(PersistentAssetLock(
+            outPointHex: PersistentAssetLock.encodeOutPoint(
+                rawBytes: assetLockTxid + Data([0, 0, 0, 0])
+            ),
+            walletId: walletId,
+            transactionBytes: Data(),
+            fundingTypeRaw: 0,
+            identityIndexRaw: 0,
+            amountDuffs: 40_000,
+            statusRaw: lockStatusRaw
+        ))
+        try context.save()
+    }
+
     /// The winner's own record can reach this store only after the sweep
     /// and the funding TXO already did — IS-locked, not yet in a block.
     /// Both writers it flows through resolved the in-block gate to false
