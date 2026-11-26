@@ -870,6 +870,43 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should keep a Core image pinned by digest and warn even when its tag names Core 24', function it() {
+    // Docker runs the image the digest names, whatever the tag says. A tag changed
+    // to 24 next to a Core 23 digest still runs Core 23, so the tag cannot vouch
+    // for the version.
+    const warn = this.sinon.stub(console, 'warn');
+    const fromVersion = '5.1.0-rc.1';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    const pinnedByDigest = {
+      mainnet: `myorg/dashd:24.0.3@sha256:${'ab'.repeat(32)}`,
+      testnet: `dashpay/dashd:24.0.1@sha256:${'cd'.repeat(32)}`,
+    };
+    for (const [name, image] of Object.entries(pinnedByDigest)) {
+      configFileData.configs[name].core.docker.image = image;
+    }
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    const warnings = warn.getCalls().map(({ args: [message] }) => message);
+
+    expect(warnings).to.have.lengthOf(Object.keys(pinnedByDigest).length);
+    for (const [name, image] of Object.entries(pinnedByDigest)) {
+      expect(migrated.configs[name].core.docker.image, name).to.equal(image);
+
+      const warning = warnings.find((message) => message.includes(`'${name}'`));
+
+      expect(warning, `no warning for ${name}`).to.be.a('string');
+      expect(warning).to.include(image);
+      expect(warning).to.include('pinned by a digest');
+      expect(warning).to.include(`dashmate config set core.docker.image dashpay/dashd:24 --config=${name}`);
+    }
+  });
+
   it('should keep a local network or devnet on a pinned Core 23 image', function it() {
     // The same reason as for the `23` tag: Core 24 discards the sporks Core 23
     // stored, and dashmate signs a local network's sporks only while setting it up.

@@ -21,26 +21,28 @@ import generateRandomString from '../src/util/generateRandomString.js';
 const DOCKER_HUB_HOST = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\//;
 
 /**
- * Split a Core image reference into its repository and the Core major version
- * its tag names.
+ * Split a Core image reference into its repository, the Core major version its
+ * tag names, and whether a digest pins it.
  *
- * `dashpay/dashd:23.1.8-nightly.2026.09.22@sha256:…` gives `dashpay/dashd` and 23.
- * A Docker Hub hostname is dropped, so `docker.io/dashpay/dashd` is
- * `dashpay/dashd` too. The major is null when the tag names no version (`latest`,
- * `patched`) or the image is pinned by digest alone. A registry port is not read
- * as a tag: a tag holds no `/`, so `registry.example.org:5000/dashd` has none.
+ * `dashpay/dashd:23.1.8-nightly.2026.09.22@sha256:…` gives `dashpay/dashd`, 23
+ * and a digest pin. A Docker Hub hostname is dropped, so `docker.io/dashpay/dashd`
+ * is `dashpay/dashd` too. The major is null when the tag names no version
+ * (`latest`, `patched`) or the image is pinned by digest alone. A registry port
+ * is not read as a tag: a tag holds no `/`, so `registry.example.org:5000/dashd`
+ * has none.
  *
  * @param {string} image
- * @return {{repository: string, coreMajor: number|null}}
+ * @return {{repository: string, coreMajor: number|null, pinnedByDigest: boolean}}
  */
 function parseCoreImage(image) {
-  const { repository, tag } = image
-    .match(/^(?<repository>[^@]+?)(?::(?<tag>[\w][\w.-]*))?(?:@.*)?$/)?.groups ?? {};
+  const { repository, tag, digest } = image
+    .match(/^(?<repository>[^@]+?)(?::(?<tag>[\w][\w.-]*))?(?<digest>@.*)?$/)?.groups ?? {};
   const major = tag?.match(/^(\d+)(?:\.\d+){0,2}(?:-[\w.-]+)?$/)?.[1];
 
   return {
     repository: (repository ?? image).replace(DOCKER_HUB_HOST, ''),
     coreMajor: major === undefined ? null : Number(major),
+    pinnedByDigest: digest !== undefined,
   };
 }
 
@@ -1963,8 +1965,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // network or devnet whose nodes all move at once no peer has them
         // anymore; dashmate signs local sporks only while setting the network up.
         //
-        // An image from another repository is the operator's own build, so it is
-        // kept, with a warning when its tag names a Core before 24 or no version.
+        // Any other image is kept: one from another repository is the operator's
+        // own build, and a Core 24 or later tag is the operator's choice. It is
+        // warned about when its tag names a Core before 24 or no version, and
+        // when a digest pins it, because Docker runs the image the digest names
+        // whatever the tag says.
         const core24Image = base.getStored('core.docker.image');
 
         Object.entries(configFile.configs)
@@ -1975,7 +1980,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               return;
             }
 
-            const { repository, coreMajor } = parseCoreImage(coreDocker.image);
+            const { repository, coreMajor, pinnedByDigest } = parseCoreImage(coreDocker.image);
 
             if (repository === 'dashpay/dashd' && coreMajor === 23) {
               coreDocker.image = core24Image;
@@ -1983,13 +1988,18 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               return;
             }
 
-            if (coreMajor !== null && coreMajor >= 24) {
+            const tagNamesCore24 = coreMajor !== null && coreMajor >= 24;
+            if (tagNamesCore24 && !pinnedByDigest) {
               return;
             }
 
-            const looksLike = coreMajor === null
-              ? 'whose tag names no Core version'
-              : `which looks like Core ${coreMajor}`;
+            let looksLike = `which looks like Core ${coreMajor}`;
+            if (coreMajor === null) {
+              looksLike = 'whose tag names no Core version';
+            } else if (tagNamesCore24) {
+              looksLike = 'which is pinned by a digest: Docker runs the image the digest '
+                + 'names, whatever its tag says';
+            }
 
             // eslint-disable-next-line no-console
             console.warn(
