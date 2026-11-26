@@ -46,7 +46,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError};
 use jni::objects::{JByteArray, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jstring, JNI_TRUE};
 use jni::JNIEnv;
@@ -139,18 +139,15 @@ fn read_cstring_opt(env: &mut JNIEnv, s: &JString, field: &str) -> Result<Option
     if s.is_null() {
         return Ok(None);
     }
-    let owned: String = match read_jstring(env, s) {
-        Ok(v) => v,
+    match read_jcstring(env, s) {
+        Ok(c) => Ok(Some(c)),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return Err(());
-        }
-    };
-    match CString::new(owned) {
-        Ok(c) => Ok(Some(c)),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             Err(())
         }
     }

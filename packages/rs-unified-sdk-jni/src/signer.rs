@@ -18,7 +18,7 @@
 //! `can_sign_with` stays synchronous: a fast Kotlin lookup.
 
 use crate::results::{unwrap_handle, unwrap_signature};
-use crate::support::{guard, read_jstring, throw_sdk_exception, JVM};
+use crate::support::{guard, read_jcstring, read_jstring, throw_sdk_exception, JCStringError, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jbyteArray, jint, jlong};
 use jni::JNIEnv;
@@ -369,20 +369,23 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         // plaintext copy of the phrase.
         // Each read short-circuits: after a failed read an exception may be
         // pending, and CheckJNI aborts on any further JNI call.
-        let Ok(path_str) = read_jstring(env, &derivation_path) else {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
-            return ptr::null_mut();
+        let path_c = match read_jcstring(env, &derivation_path) {
+            Ok(path_c) => path_c,
+            Err(JCStringError::InteriorNul) => {
+                // Interior NULs would truncate the C string mid-derivation-path;
+                // reject rather than silently sign under a wrong path.
+                throw_sdk_exception(env, 1, "derivation path contained an interior NUL");
+                return ptr::null_mut();
+            }
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
+                return ptr::null_mut();
+            }
         };
         let Ok(payload) = env.convert_byte_array(&data) else {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
-            return ptr::null_mut();
-        };
-        let Ok(path_c) = CString::new(path_str) else {
-            // Interior NULs would truncate the C string mid-derivation-path;
-            // reject rather than silently sign under a wrong path.
-            throw_sdk_exception(env, 1, "derivation path contained an interior NUL");
             return ptr::null_mut();
         };
 

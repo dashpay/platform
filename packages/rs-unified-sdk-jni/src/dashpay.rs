@@ -21,7 +21,7 @@
 
 use crate::identity::ManagedIdentityHandleGuard;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError};
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{
     jboolean, jbooleanArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE, JNI_TRUE,
@@ -291,17 +291,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_searchD
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let prefix_str: String = match read_jstring(env, &prefix) {
-            Ok(s) => s,
+        let prefix_c = match read_jcstring(env, &prefix) {
+            Ok(c) => c,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "prefix contained an interior NUL");
+                return ptr::null_mut();
+            }
             Err(e) => {
                 let _ = env.exception_clear();
                 throw_sdk_exception(env, 1, &format!("prefix {e}"));
                 return ptr::null_mut();
             }
-        };
-        let Ok(prefix_c) = std::ffi::CString::new(prefix_str) else {
-            throw_sdk_exception(env, 1, "prefix contained an interior NUL");
-            return ptr::null_mut();
         };
         let mut results: *mut platform_wallet_ffi::DpnsSearchResultFFI = ptr::null_mut();
         let mut count: usize = 0;
@@ -839,17 +839,18 @@ fn opt_jstring_to_cstring(
     if s.is_null() {
         return Ok(None);
     }
-    let value: String = match read_jstring(env, s) {
-        Ok(v) => v,
+    match read_jcstring(env, s) {
+        Ok(value) => Ok(Some(value)),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} must not contain a NUL character"));
+            Err(())
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return Err(());
+            Err(())
         }
-    };
-    std::ffi::CString::new(value).map(Some).map_err(|_| {
-        throw_sdk_exception(env, 1, &format!("{field} must not contain a NUL character"));
-    })
+    }
 }
 
 // ── DIP-15 auto-accept QR ─────────────────────────────────────────────

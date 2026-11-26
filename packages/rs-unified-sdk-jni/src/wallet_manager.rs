@@ -52,7 +52,8 @@ use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, slice_or_empty, KotlinPersistenceCtx,
 };
 use crate::support::{
-    guard, read_jstring, take_pwffi_error, throw_pwffi_result, throw_sdk_exception, JVM,
+    guard, read_jcstring, read_jcstring_zeroizing, read_jstring, take_pwffi_error,
+    throw_pwffi_result, throw_sdk_exception, JCStringError, JVM,
 };
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
@@ -453,18 +454,17 @@ fn create_wallet_from_mnemonic_impl(
         throw_sdk_exception(env, 1, "outWalletId must be a non-null byte[32]");
         return;
     }
-    let phrase: String = match read_jstring(env, mnemonic) {
-        Ok(s) => s,
+    // The phrase stays in this one zeroizing, NUL-terminated buffer until
+    // the create call returns: no `String` or `CString` copy is left behind.
+    let c_phrase = match read_jcstring_zeroizing(env, mnemonic) {
+        Ok(c) => c,
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
+            return;
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("mnemonic {e}"));
-            return;
-        }
-    };
-    let c_phrase = match std::ffi::CString::new(phrase) {
-        Ok(c) => c,
-        Err(_) => {
-            throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
             return;
         }
     };
@@ -478,7 +478,7 @@ fn create_wallet_from_mnemonic_impl(
     let result = unsafe {
         platform_wallet_ffi::platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
             manager_handle as Handle,
-            c_phrase.as_ptr(),
+            c_phrase.as_ptr().cast::<c_char>(),
             ffi_network(network),
             account_options,
             has_birth_height_override,
@@ -4762,8 +4762,12 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let owned: String = match read_jstring(env, s) {
-        Ok(v) => v,
+    let owned = match read_jcstring(env, s) {
+        Ok(c) => c,
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            return None;
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
@@ -4774,13 +4778,7 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
         throw_sdk_exception(env, 1, &format!("{field} was empty"));
         return None;
     }
-    match std::ffi::CString::new(owned) {
-        Ok(c) => Some(c),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
-            None
-        }
-    }
+    Some(owned)
 }
 
 /// Read an optional Java `String` into `Option<CString>`; JVM null →
@@ -4794,18 +4792,15 @@ fn read_cstring_opt(
     if s.is_null() {
         return Ok(None);
     }
-    let owned: String = match read_jstring(env, s) {
-        Ok(v) => v,
+    match read_jcstring(env, s) {
+        Ok(c) => Ok(Some(c)),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return Err(());
-        }
-    };
-    match std::ffi::CString::new(owned) {
-        Ok(c) => Ok(Some(c)),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             Err(())
         }
     }
@@ -4839,8 +4834,11 @@ fn read_cstring_array(
             // well-formed UTF-16 fails the whole call: the caller must not
             // start with part of the list or with a rewritten entry.
             let jstr = JString::from(element);
-            let s: String = read_jstring(env, &jstr)?;
-            Ok(std::ffi::CString::new(s).unwrap_or_default())
+            match read_jcstring(env, &jstr) {
+                Ok(c) => Ok(c),
+                Err(JCStringError::InteriorNul) => Ok(std::ffi::CString::default()),
+                Err(e) => Err(e.into()),
+            }
         })?;
         owned.push(entry);
     }

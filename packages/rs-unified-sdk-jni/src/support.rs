@@ -9,11 +9,11 @@ use platform_wallet_ffi::error::{
     PlatformWalletFFIResultCode,
 };
 use rs_sdk_ffi::{DashSDKConsensusErrorKind, FFINetwork};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The platform-wallet kind that shares each rs-sdk-ffi consensus kind's
 /// meaning. The match is exhaustive, so a family added to one FFI alone
@@ -243,6 +243,44 @@ impl From<JStringError> for JniError {
     }
 }
 
+/// Why a Java `String` argument could not be read as a C string by
+/// [`read_jcstring`] or [`read_jcstring_zeroizing`].
+#[derive(Debug)]
+pub(crate) enum JCStringError {
+    /// The string could not be read or is not well-formed UTF-16; see
+    /// [`JStringError`].
+    Read(JStringError),
+    /// The string holds U+0000, which a C string cannot carry. Nothing is
+    /// pending.
+    InteriorNul,
+}
+
+impl From<JStringError> for JCStringError {
+    fn from(e: JStringError) -> Self {
+        JCStringError::Read(e)
+    }
+}
+
+impl fmt::Display for JCStringError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JCStringError::Read(e) => e.fmt(f),
+            JCStringError::InteriorNul => f.write_str("contains a NUL character"),
+        }
+    }
+}
+
+impl From<JCStringError> for JniError {
+    fn from(e: JCStringError) -> Self {
+        match e {
+            JCStringError::Read(e) => e.into(),
+            JCStringError::InteriorNul => {
+                JniError::WrongJValueType("String without interior NUL", "String with NUL")
+            }
+        }
+    }
+}
+
 /// Read a Java `String` as UTF-8, rejecting an unpaired surrogate.
 ///
 /// `JNIEnv::get_string(..).into()` decodes Java's modified UTF-8 and, when
@@ -298,27 +336,97 @@ fn read_utf16_units(env: &mut JNIEnv, s: &JString) -> Result<Vec<u16>, JStringEr
     Ok(units)
 }
 
-/// Strict UTF-16 to UTF-8: an unpaired surrogate is an error, never U+FFFD.
-///
-/// The whole input is validated before any character is written, so a
-/// rejected string leaves no decoded prefix behind, and the output is
-/// reserved once at its exact length, so it is never reallocated (which
-/// would leave an unwiped copy).
-fn decode_utf16_strict(units: &[u16]) -> Result<String, JStringError> {
+/// The UTF-8 length of `units` and whether they hold U+0000, or
+/// [`JStringError::MalformedUtf16`] for an unpaired surrogate. Decodes
+/// nothing, so it runs before any output is allocated.
+fn utf8_len_strict(units: &[u16]) -> Result<(usize, bool), JStringError> {
     let mut utf8_len = 0usize;
+    let mut has_nul = false;
     for c in char::decode_utf16(units.iter().copied()) {
         match c {
-            Ok(c) => utf8_len += c.len_utf8(),
+            Ok(c) => {
+                utf8_len += c.len_utf8();
+                has_nul |= c == '\0';
+            }
             Err(_) => return Err(JStringError::MalformedUtf16),
         }
     }
+    Ok((utf8_len, has_nul))
+}
+
+/// Strict UTF-16 to UTF-8: an unpaired surrogate is an error, never U+FFFD.
+///
+/// Validates every code unit before allocating, then reserves the output
+/// once at its exact size, so a rejected string leaves no decoded prefix
+/// behind and an accepted one never reallocates.
+fn decode_utf16_strict(units: &[u16]) -> Result<String, JStringError> {
+    let (utf8_len, _) = utf8_len_strict(units)?;
     let mut out = String::new();
     if out.try_reserve_exact(utf8_len).is_err() {
         return Err(JStringError::Jni(JniError::JniCall(JniCallError::NoMemory)));
     }
-    // Every item is `Ok`: the loop above returned on the first error.
+    // Every item is `Ok`: `utf8_len_strict` returned on the first error.
     out.extend(char::decode_utf16(units.iter().copied()).filter_map(Result::ok));
     Ok(out)
+}
+
+/// Strict UTF-16 to a NUL-terminated UTF-8 buffer: an unpaired surrogate or
+/// an interior NUL is an error. The buffer is reserved once, fallibly, at its
+/// exact size including the terminator, so it never reallocates and a
+/// `CString` built from it adopts it as is.
+fn encode_c_string_strict(units: &[u16]) -> Result<Vec<u8>, JCStringError> {
+    let (utf8_len, has_nul) = utf8_len_strict(units)?;
+    if has_nul {
+        return Err(JCStringError::InteriorNul);
+    }
+    let mut out: Vec<u8> = Vec::new();
+    if out.try_reserve_exact(utf8_len + 1).is_err() {
+        return Err(JStringError::Jni(JniError::JniCall(JniCallError::NoMemory)).into());
+    }
+    let mut buf = [0u8; 4];
+    // Every item is `Ok`: `utf8_len_strict` returned on the first error.
+    for c in char::decode_utf16(units.iter().copied()).filter_map(Result::ok) {
+        out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+    }
+    buf.zeroize();
+    out.push(0);
+    Ok(out)
+}
+
+/// The non-null Java string `s` as a NUL-terminated UTF-8 buffer
+/// ([`encode_c_string_strict`]), with the UTF-16 copy zeroed.
+fn read_jcstring_bytes(env: &mut JNIEnv, s: &JString) -> Result<Vec<u8>, JCStringError> {
+    if s.is_null() {
+        return Err(JStringError::Jni(JniError::NullPtr("read_jcstring string")).into());
+    }
+    let mut units = read_utf16_units(env, s)?;
+    let encoded = encode_c_string_strict(&units);
+    units.zeroize();
+    encoded
+}
+
+/// Read a Java `String` argument as a `CString` for a C call: as
+/// [`read_jstring`], and a string holding U+0000 is
+/// [`JCStringError::InteriorNul`] rather than truncated.
+///
+/// The terminator is part of the one fallible allocation, so no step after
+/// the read can abort on allocation failure or leave an earlier copy behind.
+pub(crate) fn read_jcstring(env: &mut JNIEnv, s: &JString) -> Result<CString, JCStringError> {
+    let bytes = read_jcstring_bytes(env, s)?;
+    // The bytes end in their only NUL, so this adopts the buffer without
+    // copying it; the error arm cannot be reached.
+    CString::from_vec_with_nul(bytes).map_err(|_| JCStringError::InteriorNul)
+}
+
+/// [`read_jcstring`] for a secret (a mnemonic): the NUL-terminated bytes in a
+/// buffer that is zeroed when dropped. Pass `as_ptr()` to the C call and keep
+/// the buffer alive until it returns; no other copy of the text is left in
+/// Rust memory.
+pub(crate) fn read_jcstring_zeroizing(
+    env: &mut JNIEnv,
+    s: &JString,
+) -> Result<Zeroizing<Vec<u8>>, JCStringError> {
+    read_jcstring_bytes(env, s).map(Zeroizing::new)
 }
 
 /// Run an export body under `catch_unwind` so a Rust panic surfaces as a
@@ -343,7 +451,9 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_utf16_strict, net_from_ord, JStringError};
+    use super::{
+        decode_utf16_strict, encode_c_string_strict, net_from_ord, JCStringError, JStringError,
+    };
     use rs_sdk_ffi::FFINetwork;
 
     #[test]
@@ -382,5 +492,34 @@ mod tests {
                 Err(JStringError::MalformedUtf16)
             ));
         }
+    }
+
+    #[test]
+    fn should_encode_a_c_string_with_its_terminator_in_one_exact_buffer() {
+        for text in ["", "memo", "caf\u{e9}", "\u{1F600} pay"] {
+            let bytes = encode_c_string_strict(&utf16(text)).unwrap();
+            assert_eq!(&bytes[..text.len()], text.as_bytes());
+            assert_eq!(bytes[text.len()..], [0]);
+            // Reserved once with room for the terminator: `CString` adopts
+            // the buffer without reallocating.
+            assert_eq!(bytes.capacity(), text.len() + 1);
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_c_string_with_an_interior_nul_or_an_unpaired_surrogate() {
+        assert!(matches!(
+            encode_c_string_strict(&utf16("a\u{0}b")),
+            Err(JCStringError::InteriorNul)
+        ));
+        assert!(matches!(
+            encode_c_string_strict(&utf16("\u{1F600}\u{0}")),
+            Err(JCStringError::InteriorNul)
+        ));
+        // A malformed string is reported as malformed even beside a NUL.
+        assert!(matches!(
+            encode_c_string_strict(&[0, 0xD800]),
+            Err(JCStringError::Read(JStringError::MalformedUtf16))
+        ));
     }
 }

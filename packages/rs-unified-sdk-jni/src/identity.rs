@@ -33,7 +33,9 @@
 
 use crate::decision_proposals::to_unsigned;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{guard, net_from_ord, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{
+    guard, net_from_ord, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError,
+};
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
@@ -1023,18 +1025,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
-        let label_str: String = match read_jstring(env, &label) {
-            Ok(s) => s,
+        let c_label = match read_jcstring(env, &label) {
+            Ok(c) => c,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "label contained an interior NUL");
+                return ptr::null_mut();
+            }
             Err(e) => {
                 let _ = env.exception_clear();
                 throw_sdk_exception(env, 1, &format!("label {e}"));
-                return ptr::null_mut();
-            }
-        };
-        let c_label = match CString::new(label_str) {
-            Ok(c) => c,
-            Err(_) => {
-                throw_sdk_exception(env, 1, "label contained an interior NUL");
                 return ptr::null_mut();
             }
         };
@@ -1084,24 +1083,19 @@ fn read_optional_cstring(
     if s.is_null() {
         return Ok(None);
     }
-    let raw: String = match read_jstring(env, s) {
-        Ok(js) => js,
+    let raw = match read_jcstring(env, s) {
+        Ok(c) => c,
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            return Err(());
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return Err(());
         }
     };
-    if raw.is_empty() {
-        return Ok(None);
-    }
-    match CString::new(raw) {
-        Ok(c) => Ok(Some(c)),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
-            Err(())
-        }
-    }
+    Ok((!raw.is_empty()).then_some(raw))
 }
 
 /// Create + broadcast a new data contract owned by `ownerIdentityId`,
@@ -1137,17 +1131,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
             throw_sdk_exception(env, 1, "documentsSchemaJson is required");
             return ptr::null_mut();
         }
-        let documents: String = match read_jstring(env, &documents_schema_json) {
-            Ok(s) => s,
+        let documents_c = match read_jcstring(env, &documents_schema_json) {
+            Ok(c) => c,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "documentsSchemaJson contained an interior NUL");
+                return ptr::null_mut();
+            }
             Err(e) => {
                 let _ = env.exception_clear();
                 throw_sdk_exception(env, 1, &format!("documentsSchemaJson {e}"));
                 return ptr::null_mut();
             }
-        };
-        let Ok(documents_c) = CString::new(documents) else {
-            throw_sdk_exception(env, 1, "documentsSchemaJson contained an interior NUL");
-            return ptr::null_mut();
         };
 
         let (tokens, groups, keywords, desc, config) = {
@@ -1250,17 +1244,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
             throw_sdk_exception(env, 1, "documentsSchemaJson is required");
             return ptr::null_mut();
         }
-        let documents: String = match read_jstring(env, &documents_schema_json) {
-            Ok(s) => s,
+        let documents_c = match read_jcstring(env, &documents_schema_json) {
+            Ok(c) => c,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "documentsSchemaJson contained an interior NUL");
+                return ptr::null_mut();
+            }
             Err(e) => {
                 let _ = env.exception_clear();
                 throw_sdk_exception(env, 1, &format!("documentsSchemaJson {e}"));
                 return ptr::null_mut();
             }
-        };
-        let Ok(documents_c) = CString::new(documents) else {
-            throw_sdk_exception(env, 1, "documentsSchemaJson contained an interior NUL");
-            return ptr::null_mut();
         };
 
         let (tokens, groups, keywords, desc, config) = {

@@ -5,7 +5,7 @@
 
 use crate::decision_proposals::{read_cstring, string_or_null};
 use crate::results::{unwrap_handle, unwrap_void};
-use crate::support::{guard, net_from_ord, read_jstring, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, read_jcstring, throw_sdk_exception, JCStringError};
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -284,18 +284,15 @@ fn to_c_string(env: &mut JNIEnv, value: &JString, field: &str) -> Result<Option<
     if value.is_null() {
         return Ok(None);
     }
-    let rust_string = match read_jstring(env, value) {
-        Ok(s) => s,
+    match read_jcstring(env, value) {
+        Ok(c) => Ok(Some(c)),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return Err(());
-        }
-    };
-    match CString::new(rust_string) {
-        Ok(c) => Ok(Some(c)),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             Err(())
         }
     }

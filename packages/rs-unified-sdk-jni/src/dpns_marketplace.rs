@@ -6,7 +6,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jlongArray, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -51,18 +51,15 @@ pub(crate) fn read_cstring(env: &mut JNIEnv, value: &JString, field: &str) -> Op
         throw_sdk_exception(env, 1, &format!("{field} must not be null"));
         return None;
     }
-    let value: String = match read_jstring(env, value) {
-        Ok(value) => value,
+    match read_jcstring(env, value) {
+        Ok(value) => Some(value),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} must not contain NUL"));
+            None
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return None;
-        }
-    };
-    match CString::new(value) {
-        Ok(value) => Some(value),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} must not contain NUL"));
             None
         }
     }

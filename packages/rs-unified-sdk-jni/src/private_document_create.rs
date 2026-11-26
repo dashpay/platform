@@ -12,7 +12,7 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PrivateDocumentCreateNative`.
 
 use crate::private_documents::read_32;
-use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jbyteArray, jint, jlong, jlongArray};
 use jni::JNIEnv;
@@ -40,7 +40,7 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 const CREATED_LEN: usize = 36;
 
 /// A required Java string as a C string; throws `InvalidParameter` and returns `None` for
-/// null, an unreadable string, an unpaired surrogate ([`read_jstring`] refuses it rather than
+/// null, an unreadable string, an unpaired surrogate ([`read_jcstring`] refuses it rather than
 /// replacing it) or a NUL, which is checked on the decoded text so a NUL beside a valid
 /// surrogate pair is named as a NUL.
 fn read_c_string(env: &mut JNIEnv, string: &JString, field: &str) -> Option<CString> {
@@ -48,18 +48,15 @@ fn read_c_string(env: &mut JNIEnv, string: &JString, field: &str) -> Option<CStr
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let text = match read_jstring(env, string) {
-        Ok(text) => text,
+    match read_jcstring(env, string) {
+        Ok(value) => Some(value),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} holds a NUL character"));
+            None
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return None;
-        }
-    };
-    match CString::new(text) {
-        Ok(value) => Some(value),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} holds a NUL character"));
             None
         }
     }

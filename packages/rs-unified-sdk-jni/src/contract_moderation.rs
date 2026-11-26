@@ -17,7 +17,7 @@
 use crate::decision_proposals::{
     c_ptr, read_cstring, read_optional_cstring, string_or_null, to_unsigned,
 };
-use crate::support::{guard, read_jstring, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObjectArray, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_TRUE};
 use jni::JNIEnv;
@@ -81,9 +81,7 @@ fn read_cstring_array(env: &mut JNIEnv, arr: &JObjectArray, field: &str) -> Opti
         let value = if element.is_null() {
             None
         } else {
-            read_jstring(env, &element)
-                .ok()
-                .and_then(|value| CString::new(value).ok())
+            read_jcstring(env, &element).ok()
         };
         let Some(value) = value else {
             let _ = env.exception_clear();

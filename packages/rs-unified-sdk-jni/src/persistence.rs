@@ -47,7 +47,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, net_from_ord, read_jstring, JVM};
+use crate::support::{guard, net_from_ord, read_jcstring, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::jstring;
 use jni::JNIEnv;
@@ -4492,10 +4492,12 @@ fn build_identity_key_restore(
     })
 }
 
-/// Read an optional Java `String?` field into an owned `CString` (null /
-/// interior-NUL → `None`). Used for the identity-key contract-bounds
-/// doc-type; the `CString` is later handed to the FFI struct via
-/// `into_raw` and reclaimed with `CString::from_raw` in the free path.
+/// Read an optional Java `String?` field into an owned `CString` (null →
+/// `None`; a malformed string or an interior NUL fails the load, as it does
+/// in [`read_req_cstring_field`], rather than dropping the value). Used for
+/// the identity-key contract-bounds doc-type; the `CString` is later handed
+/// to the FFI struct via `into_raw` and reclaimed with `CString::from_raw` in
+/// the free path.
 fn read_opt_cstring_field(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -4505,8 +4507,12 @@ fn read_opt_cstring_field(
     if obj.is_null() {
         return Ok(None);
     }
-    let s: String = read_jstring(env, &JString::from(obj))?;
-    Ok(CString::new(s).ok())
+    read_jcstring(env, &JString::from(obj))
+        .map(Some)
+        .map_err(|e| {
+            log::error!("load: optional string field `{field}` {e}");
+            e.into()
+        })
 }
 
 /// Read a REQUIRED Java `String` field into an owned `CString`. Unlike
@@ -4530,10 +4536,9 @@ fn read_req_cstring_field(
             "null",
         ));
     }
-    let s: String = read_jstring(env, &JString::from(obj))?;
-    CString::new(s).map_err(|_| {
-        log::error!("load: required string field `{field}` contains an interior NUL");
-        jni::errors::Error::WrongJValueType("String without interior NUL", "String with NUL")
+    read_jcstring(env, &JString::from(obj)).map_err(|e| {
+        log::error!("load: required string field `{field}` {e}");
+        e.into()
     })
 }
 

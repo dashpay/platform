@@ -29,7 +29,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
@@ -39,7 +39,6 @@ use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_transfer::PlatformAddressCreditOutputFFI;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
-use std::ffi::CString;
 
 /// Read a required 32-byte id from a Java `byte[]`; throws + returns None
 /// on the wrong length or a JNI error.
@@ -140,18 +139,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_withdra
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
-        let addr_str: String = match read_jstring(env, &to_address) {
-            Ok(s) => s,
+        let c_addr = match read_jcstring(env, &to_address) {
+            Ok(c) => c,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "toAddress contained an interior NUL");
+                return;
+            }
             Err(e) => {
                 let _ = env.exception_clear();
                 throw_sdk_exception(env, 1, &format!("toAddress {e}"));
-                return;
-            }
-        };
-        let c_addr = match CString::new(addr_str) {
-            Ok(c) => c,
-            Err(_) => {
-                throw_sdk_exception(env, 1, "toAddress contained an interior NUL");
                 return;
             }
         };

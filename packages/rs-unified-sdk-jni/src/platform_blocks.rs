@@ -11,7 +11,7 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PlatformBlocksNative`.
 
 use crate::results::unwrap_string;
-use crate::support::{guard, read_jstring, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, throw_sdk_exception, JCStringError};
 use jni::objects::{JClass, JString};
 use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
@@ -46,18 +46,15 @@ fn required_c_string(env: &mut JNIEnv, value: &JString, field: &str) -> Option<C
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let text: String = match read_jstring(env, value) {
-        Ok(text) => text,
+    match read_jcstring(env, value) {
+        Ok(value) => Some(value),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} holds a NUL character"));
+            None
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return None;
-        }
-    };
-    match CString::new(text) {
-        Ok(text) => Some(text),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} holds a NUL character"));
             None
         }
     }

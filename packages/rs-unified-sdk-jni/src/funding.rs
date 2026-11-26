@@ -45,7 +45,7 @@
 use crate::decision_proposals::read_fixed_bytes;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{
-    guard, read_jstring, take_pwffi_error, throw_sdk_exception, JStringError, JVM,
+    guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError, JStringError, JVM,
 };
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
@@ -224,8 +224,12 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let owned: String = match read_jstring(env, s) {
-        Ok(v) => v,
+    let owned = match read_jcstring(env, s) {
+        Ok(c) => c,
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            return None;
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
@@ -236,13 +240,7 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
         throw_sdk_exception(env, 1, &format!("{field} was empty"));
         return None;
     }
-    match std::ffi::CString::new(owned) {
-        Ok(c) => Some(c),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
-            None
-        }
-    }
+    Some(owned)
 }
 
 /// Read an OPTIONAL Java `String` into `Option<CString>`. JVM null (or an
@@ -259,24 +257,19 @@ fn read_cstring_opt(
     if s.is_null() {
         return Ok(None);
     }
-    let owned: String = match read_jstring(env, s) {
-        Ok(v) => v,
+    let owned = match read_jcstring(env, s) {
+        Ok(c) => c,
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            return Err(());
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return Err(());
         }
     };
-    if owned.is_empty() {
-        return Ok(None);
-    }
-    match std::ffi::CString::new(owned) {
-        Ok(c) => Ok(Some(c)),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
-            Err(())
-        }
-    }
+    Ok((!owned.is_empty()).then_some(owned))
 }
 
 /// The default Orchard payment address for `account` on the wallet's bound
@@ -1482,7 +1475,7 @@ const IDENTITY_BALANCE_BLOB_LEN: usize = 1 + 4 + 8;
 /// holds an unpaired surrogate, or holds a NUL (a C string ends at its
 /// first). A caller for which null is a value checks for it first.
 ///
-/// The string is read through [`read_jstring`], which decodes the UTF-16
+/// The string is read through [`read_jcstring`], which decodes the UTF-16
 /// code units strictly. Unlike [`read_cstring_required`] an empty string
 /// passes, for Rust to judge.
 fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
@@ -1490,22 +1483,20 @@ fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std:
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let text = match read_jstring(env, s) {
-        Ok(text) => text,
-        Err(JStringError::MalformedUtf16) => {
-            throw_sdk_exception(env, 1, &format!("{field} is not valid UTF-16"));
-            return None;
-        }
-        Err(JStringError::Jni(_)) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
-            return None;
-        }
-    };
-    match std::ffi::CString::new(text) {
+    match read_jcstring(env, s) {
         Ok(c) => Some(c),
-        Err(_) => {
+        Err(JCStringError::InteriorNul) => {
             throw_sdk_exception(env, 1, &format!("{field} contained a NUL"));
+            None
+        }
+        Err(JCStringError::Read(JStringError::MalformedUtf16)) => {
+            throw_sdk_exception(env, 1, &format!("{field} is not valid UTF-16"));
+            None
+        }
+        Err(JCStringError::Read(e)) => {
+            // `e` names the JNI failure (never the text)
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} string {e}"));
             None
         }
     }

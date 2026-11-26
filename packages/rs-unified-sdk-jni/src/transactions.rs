@@ -42,7 +42,9 @@
 
 use crate::decision_proposals::{c_ptr, read_fixed_bytes, read_optional_cstring, to_unsigned};
 use crate::pubkey_rows::decode_update_pubkeys_blob;
-use crate::support::{guard, net_from_ord, read_jstring, take_pwffi_error, throw_sdk_exception};
+use crate::support::{
+    guard, net_from_ord, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError,
+};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
 use jni::objects::{JByteArray, JClass, JString};
@@ -122,18 +124,15 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let raw: String = match read_jstring(env, s) {
-        Ok(js) => js,
+    match read_jcstring(env, s) {
+        Ok(c) => Some(c),
+        Err(JCStringError::InteriorNul) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            None
+        }
         Err(e) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} {e}"));
-            return None;
-        }
-    };
-    match CString::new(raw) {
-        Ok(c) => Some(c),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             None
         }
     }
@@ -980,23 +979,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         let contender: Option<CString> = if contender_identity_id.is_null() {
             None
         } else {
-            match read_jstring(env, &contender_identity_id) {
-                Ok(raw) => {
-                    if raw.is_empty() {
-                        None
-                    } else {
-                        match CString::new(raw) {
-                            Ok(c) => Some(c),
-                            Err(_) => {
-                                throw_sdk_exception(
-                                    env,
-                                    1,
-                                    "contenderIdentityId contained an interior NUL",
-                                );
-                                return;
-                            }
-                        }
-                    }
+            match read_jcstring(env, &contender_identity_id) {
+                Ok(c) => (!c.is_empty()).then_some(c),
+                Err(JCStringError::InteriorNul) => {
+                    throw_sdk_exception(env, 1, "contenderIdentityId contained an interior NUL");
+                    return;
                 }
                 Err(e) => {
                     let _ = env.exception_clear();
