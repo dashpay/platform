@@ -123,6 +123,48 @@ describe('installCertificateFilesTask', () => {
     expect(installed()).to.deep.equal({ bundle: validated.pem, key: validated.keyPem });
   });
 
+  // The bundle is written at the umask, readable by other users, while the
+  // key is kept 0600. A combined PEM given as the chain would put a second
+  // copy of the key in the bundle.
+  it('should refuse a chain file that holds a private key, installing nothing', async () => {
+    fs.writeFileSync(form.chainFilePath, `${validated.pem}${validated.keyPem}`);
+
+    await expect(installCertificateFilesTask(config).run({ fileCertificateProviderForm: form }))
+      .to.be.rejectedWith('holds a private key');
+
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+    expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+    expect(fs.existsSync(path.join(sslDir, 'private.key'))).to.be.false();
+  });
+
+  it('should keep the form open on a chain file that holds a private key', async () => {
+    fs.writeFileSync(form.chainFilePath, `${validated.pem}${validated.keyPem}`);
+    let message;
+
+    const enquirer = {
+      on: () => {},
+      prompt: async (options) => {
+        const [prompt] = [].concat(options);
+
+        message = prompt.validate(form);
+
+        throw new Error('closed');
+      },
+    };
+
+    const tasks = new Listr([{
+      task: () => installCertificateFilesTask(config, { interactive: true }),
+    }], { renderer: 'silent' });
+    tasks.options.injectWrapper = { enquirer };
+
+    await expect(tasks.run({})).to.be.rejectedWith('closed');
+
+    expect(message).to.include('holds a private key');
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+    expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+    expect(fs.existsSync(path.join(sslDir, 'private.key'))).to.be.false();
+  });
+
   it('should refuse a pair given by path that does not match, installing nothing', async () => {
     fs.writeFileSync(form.privateFilePath, other.keyPem);
 
@@ -175,6 +217,24 @@ describe('readCertificateFilePair', () => {
     fs.writeFileSync(form.chainFilePath, `${pair.pem}-----BEGIN CERTIFICATE-----\nAAAA\n`);
 
     expect(() => readCertificateFilePair(form)).to.throw('cannot be used');
+  });
+
+  // Any private key block counts, whatever its type or form: the chain is
+  // installed readable by other users.
+  [
+    ['the key it pairs with', (key) => key],
+    ['a PKCS #8 key', () => '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n'],
+    ['an EC key', () => '-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n'],
+    ['an encrypted key', () => '-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n'],
+    ['an indented key', () => '  -----BEGIN PRIVATE KEY-----\nAAAA\n'],
+  ].forEach(([description, keyBlock]) => {
+    it(`should refuse a chain file that holds ${description}`, () => {
+      fs.writeFileSync(form.chainFilePath, `${pair.pem}${keyBlock(pair.keyPem)}`);
+
+      expect(() => readCertificateFilePair(form)).to.throw(
+        'the certificate chain file holds a private key',
+      );
+    });
   });
 
   // Reading a FIFO or a device would wait or never end.

@@ -340,6 +340,24 @@ describe('Setup command', () => {
       expect(error.message).to.include('certificate chain file path is not valid');
     });
 
+    it('should refuse a chain file that holds a private key before anything runs', async function it() {
+      this.timeout(30000);
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      useConfigs([fullnode]);
+      const { pem, keyPem } = issueCertificate({ ip: '1.2.3.4' });
+
+      const error = await setupPlatform({
+        'ssl-provider': 'file',
+        'ssl-chain-file': writeSecret('combined.pem', `${pem}${keyPem}`),
+        'ssl-private-key-file': writeSecret('key.pem', keyPem),
+      });
+
+      expect(error.message).to.include('--ssl-chain-file')
+        .and.include('the certificate chain file holds a private key');
+      expect(error.message).to.not.include(keyPem.split('\n')[1]);
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
     // The certificate is installed after Core has synced, hours later: what
     // is installed then is what was checked now.
     it('should hand the file certificate it checked to the task, not its paths alone', async function it() {

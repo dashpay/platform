@@ -3,6 +3,12 @@ import validateFileExists from './validateFileExists.js';
 import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../ssl/selectLeafCertificate.js';
 
 /**
+ * Any private key block, whatever its type or form. Unanchored, so a marker
+ * on a mangled line counts too.
+ */
+const BEGIN_PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+
+/**
  * Read a file once, through a descriptor checked to be a regular file's
  *
  * Opening without blocking keeps a FIFO from waiting for a writer, and the
@@ -36,7 +42,8 @@ function readRegularFile(filePath) {
  * later installs exactly what passed, byte for byte, even if a file was
  * replaced meanwhile. The key file's stats are the ones of the file read.
  * The check is the one the install applies to what it wrote, so a pair that
- * would fail there, a damaged block after the leaf included, fails here.
+ * would fail there, a damaged block after the leaf included, fails here. A
+ * chain that holds a private key is refused too.
  *
  * Shared by the prompt and by the flags that answer it, so an answer given on
  * the command line is held to what the prompt would accept.
@@ -62,6 +69,15 @@ export function readCertificateFilePair({ chainFilePath, privateFilePath }) {
 
   const { content: certificateFile } = readRegularFile(chainFilePath);
   const { content: privateKeyFile, stats: privateKeyStats } = readRegularFile(privateFilePath);
+
+  // The chain is installed as given and readable by other users, while the
+  // key file is kept to its owner, so a key in the chain would be a second,
+  // exposed copy. The bytes are installed as checked, so the chain is
+  // refused rather than stripped of it.
+  if (BEGIN_PRIVATE_KEY.test(certificateFile.toString('latin1'))) {
+    throw new Error('the certificate chain file holds a private key: give only the certificates'
+      + ' in it, and the key in its own file');
+  }
 
   // Decoded as the install decodes what it wrote when it checks it again.
   const { error, detail } = selectLeafCertificate(

@@ -67,7 +67,7 @@ Setup refuses, changing nothing, when:
 | `--external-ip=<ipv4>` | External IP of a fullnode that has none; required then when not interactive. Setup does not change an existing one |
 | `--ssl-provider=<zerossl\|letsencrypt\|file\|self-signed>` | How the gateway gets its certificate. Required when not interactive; `self-signed` only for fullnodes |
 | `--zerossl-api-key-file=<path\|->` | File holding the ZeroSSL API key; required for ZeroSSL when not interactive |
-| `--ssl-chain-file=<path>`, `--ssl-private-key-file=<path>` | Certificate chain and private key, for `--ssl-provider file`; both required then when not interactive |
+| `--ssl-chain-file=<path>`, `--ssl-private-key-file=<path>` | Certificate chain and private key, for `--ssl-provider file`, in separate files (a chain file that holds a private key is refused); both required then when not interactive |
 | `--accept-unmet-requirements` | Proceed although the system does not meet the requirements |
 
 Only one flag can read stdin, and reading stdin makes the run non-interactive. Setup warns when a key file can be read by other users.
