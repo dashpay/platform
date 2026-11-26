@@ -4,6 +4,7 @@ import path from 'path';
 import { Listr } from 'listr2';
 import SetupCommand from '../../../src/commands/setup.js';
 import HomeDir from '../../../src/config/HomeDir.js';
+import Config from '../../../src/config/Config.js';
 import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
@@ -177,6 +178,23 @@ describe('Setup command', () => {
       const error = await setupPlatform({}, { preset: 'local' });
 
       expect(error.message).to.include('dashmate group reset --group local --hard');
+      expect(getPlatformArtefacts).to.not.have.been.called();
+    });
+
+    // The group's reset selects every config whose group is local, and one
+    // created from local_seed inherits it. `setup local` would not build it
+    // again.
+    it('should not advise the local group rebuild while it holds a config setup local does not build', async () => {
+      const seed = new Config('local_seed', defaultConfigs.get('local').getStoredOptions());
+      seed.set('group', 'local');
+      const observer = new Config('observer', seed.getStoredOptions());
+      useConfigs([defaultConfigs.get('base'), seed, observer]);
+
+      const error = await setupPlatform({}, { preset: 'local' });
+
+      expect(error.message).to.include('Platform-only setup does not support the local group')
+        .and.include('observer');
+      expect(error.message).to.not.include('group reset');
       expect(getPlatformArtefacts).to.not.have.been.called();
     });
 

@@ -7,19 +7,18 @@ import getPlatformSetupState, {
 } from './getPlatformSetupState.js';
 import { findCertificateFiles } from './getPlatformArtefactsFactory.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
+import findLocalGroupConfigsNotRebuilt, { LOCAL_GROUP_MEMBER_NAME } from './findLocalGroupConfigsNotRebuilt.js';
 import { PRESET_LOCAL, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
 
 const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 
-// The configs `setup local` builds
-const LOCAL_GROUP_MEMBER_NAME = /^local_(seed|[1-9][0-9]*)$/;
-
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
+ * @param {ConfigFile} configFile
  * @return {assertPlatformCanStart}
  */
-export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
+export default function assertPlatformCanStartFactory(homeDir, defaultConfigs, configFile) {
   /**
    * The node ID Tenderdash will start with: the one its rendered key derives
    * to, whatever the file's id field says
@@ -148,9 +147,11 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
 
       // The local group's identities, ports and peers belong to the whole
       // group, which `setup local` builds again: local_1 to local_N and
-      // local_seed. A config of another name in that group would be removed
-      // by the group's reset and not built again.
-      if (groupName === PRESET_LOCAL && LOCAL_GROUP_MEMBER_NAME.test(name)) {
+      // local_seed. A config of another name in that group, the refused one
+      // or any other, would be removed by the group's reset and not built
+      // again.
+      if (groupName === PRESET_LOCAL && LOCAL_GROUP_MEMBER_NAME.test(name)
+        && findLocalGroupConfigsNotRebuilt(configFile).length === 0) {
         refuse(name, problem, [
           `Set the ${groupName} group up again with:`,
           `  dashmate group reset --group ${groupName} --hard`,
@@ -159,8 +160,9 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
       }
 
       // Setup builds only the presets. A hard reset would remove a member of
-      // any other group, or a config with any other name, entirely, and
-      // nothing could create it again, so the remedy is the setting itself.
+      // any other group, a config with any other name, or one in the local
+      // group with the refused member, entirely, and nothing could create it
+      // again, so the remedy is the setting itself.
       // `config set` would take the key on its command line.
       if (groupName || !PLATFORM_PRESETS.includes(name)) {
         refuse(name, problem, [
