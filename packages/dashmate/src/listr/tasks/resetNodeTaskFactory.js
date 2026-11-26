@@ -323,7 +323,16 @@ export default function resetNodeTaskFactory(
       return;
     }
 
-    const deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
+    let deniedPaths;
+    try {
+      deniedPaths = removePathAsFarAsPermitted(targetPath, { dryRun: true });
+    } catch (e) {
+      throw new Error([
+        `Cannot reset config '${config.getName()}': could not inspect ${formatPath(targetPath)}:`
+          + ` ${escapeForDisplay(e.message)}`,
+        'Nothing has been changed. Fix the cause and run the reset again.',
+      ].join('\n'));
+    }
 
     if (deniedPaths.length === 0) {
       return;
