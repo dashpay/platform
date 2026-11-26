@@ -491,21 +491,28 @@ export default class DockerCompose {
    * the same volume would go unseen.
    *
    * A volume is left out when any key that names it is external, since the
-   * operator manages it, and when a service other than the given ones mounts
-   * it under any key, Core included, since removing it would take that
-   * service's data.
+   * operator manages it, and when a service that is not removed with the
+   * given ones mounts it under any key, Core included, since removing it
+   * would take that service's data.
    *
    * Whether Docker has a candidate and whose it is are left to
    * isVolumeOwned, asked just before the volume is removed.
    *
    * @param {Config} config
    * @param {Object} options
-   * @param {string[]} options.serviceNames
+   * @param {string[]} options.serviceNames - the services whose volumes are
+   *  looked up
+   * @param {string[]} [options.removedServiceNames] - every service removed
+   *  with them, the given ones included
    * @param {string[]} [options.profiles] - Profiles to enable, so that every
    *  service of the Compose files is part of the model
    * @return {Promise<VolumeCandidate[]>}
    */
-  async getVolumeCandidates(config, { serviceNames, profiles = [] }) {
+  async getVolumeCandidates(config, {
+    serviceNames,
+    removedServiceNames = serviceNames,
+    profiles = [],
+  }) {
     if (serviceNames.length === 0) {
       return [];
     }
@@ -551,7 +558,7 @@ export default class DockerCompose {
       });
 
     const namesMountedElsewhere = new Set(Object.entries(services)
-      .filter(([serviceName]) => !serviceNames.includes(serviceName))
+      .filter(([serviceName]) => !removedServiceNames.includes(serviceName))
       .flatMap(([, service]) => getMountedKeys(service))
       .map(getDockerName));
 

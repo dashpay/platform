@@ -1223,6 +1223,18 @@ describe('resetNodeTaskFactory', () => {
       ]);
     });
 
+    // The helper is removed with the Platform services, so a volume it shares
+    // with them has no service left to use it.
+    it('should remove a Platform volume the helper mounts too', async () => {
+      serviceVolumes.dashmate_helper = [
+        { type: 'volume', source: 'drive_abci_data', target: '/drive' },
+      ];
+
+      await platformReset();
+
+      expect(removedVolumes).to.include('docker_drive_abci_data');
+    });
+
     // Compose cannot describe the project while service files it needs are
     // missing. Finding that out after the removal would leave the containers
     // gone and the volumes in place.

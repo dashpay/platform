@@ -500,7 +500,11 @@ export default function resetNodeTaskFactory(
     // Looked up now, that failure comes while nothing has been removed.
     const volumes = ctx.keepData
       ? []
-      : await dockerCompose.getVolumeCandidates(config, { serviceNames, profiles });
+      : await dockerCompose.getVolumeCandidates(config, {
+        serviceNames,
+        removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
+        profiles,
+      });
 
     return { serviceNames, profiles, volumes };
   }
