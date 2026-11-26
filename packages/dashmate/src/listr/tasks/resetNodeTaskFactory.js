@@ -383,6 +383,11 @@ export default function resetNodeTaskFactory(
 
       return;
     } catch (e) {
+      // Removed meanwhile by something else, as `force` takes it
+      if (e.code === 'ENOENT') {
+        return;
+      }
+
       removalError = e;
     }
 

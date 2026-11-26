@@ -795,6 +795,27 @@ describe('resetNodeTaskFactory', () => {
       expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
     });
 
+    // Something else can remove the link between the look at it and the
+    // unlink. Gone is what the removal is for.
+    it('should take a link removed meanwhile for removed', async function test() {
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      fs.rmSync(platformPath, { recursive: true });
+      fs.symlinkSync(homeDir.joinPath('retired'), platformPath);
+
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((unlinkedPath) => {
+        unlinkSync.call(fs, unlinkedPath);
+
+        if (unlinkedPath === platformPath) {
+          throw fsError('ENOENT', `ENOENT: no such file or directory, unlink '${unlinkedPath}'`);
+        }
+      });
+
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
+    });
+
     // A directory that becomes read-only between the check and the removal
     // makes Node's recursive removal fail, naming the target at most. The
     // reset does not go on past the failure: it names each path left that this
