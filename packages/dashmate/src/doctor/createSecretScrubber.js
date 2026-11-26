@@ -13,6 +13,8 @@ import maskOperatorIdentity, { getOperatorIdentity } from '../util/maskOperatorI
  */
 const MIN_SCRUBBED_SECRET_LENGTH = 8;
 
+const PERCENT_ESCAPE = /%[0-9A-Fa-f]{2}/g;
+
 /**
  * @param {string} text
  * @param {string[]} needles
@@ -103,7 +105,14 @@ export default function createSecretScrubber(config, extraValues = []) {
       // with a quote or a backslash in it escaped
       .flatMap((value) => [value, JSON.stringify(value).slice(1, -1)])
       // Masking the name can leave too little of a secret to search for
-      .filter((value) => value.length >= MIN_SCRUBBED_SECRET_LENGTH),
+      .filter((value) => value.length >= MIN_SCRUBBED_SECRET_LENGTH)
+      // A percent-escape stands for the same character whatever the case of
+      // its hex digits, and text can quote a value escaped either way
+      .flatMap((value) => [
+        value,
+        value.replace(PERCENT_ESCAPE, (escape) => escape.toUpperCase()),
+        value.replace(PERCENT_ESCAPE, (escape) => escape.toLowerCase()),
+      ]),
   )];
 
   return (text) => maskRanges(text, findRanges(text, needles));

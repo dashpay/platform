@@ -166,6 +166,29 @@ describe('archiveSamples', () => {
         .to.equal('https://********:***************@acme.example.com/directory');
     });
 
+    // A percent-escape means the same character whichever case its hex digits
+    // are written in, and a service quoting a credential can write them in
+    // either
+    [
+      ['lower', 'pass%2fWord%7e7Qx', 'pass%2FWord%7E7Qx'],
+      ['upper', 'pass%2FWord%7E7Qx', 'pass%2fWord%7e7Qx'],
+    ].forEach(([written, inConfig, inLog]) => {
+      it(`should scrub a credential written with ${written} case escapes whatever case a log uses`, async () => {
+        config.set(
+          'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+          `https://acmeUser:${inConfig}@acme.example.com/directory`,
+        );
+        samples.setDashmateConfig(obfuscateConfig(config));
+
+        samples.setServiceInfo('gateway', 'stdOut', `lego: auth ${inLog} rejected, 100%2F of 5\n`);
+
+        const archived = await archiveAndRead();
+
+        expect(archived).to.not.contain(inLog);
+        expect(archived).to.contain(`lego: auth ${'*'.repeat(inLog.length)} rejected, 100%2F of 5`);
+      });
+    });
+
     // Masking one secret must not hide part of another from the search: each
     // is looked for in the text as it was, and every match is masked
     it('should mask the whole of two secrets that overlap in the text', async () => {
