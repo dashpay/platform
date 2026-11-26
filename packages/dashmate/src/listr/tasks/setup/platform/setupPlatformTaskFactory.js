@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import { publicIpv4 } from 'public-ip';
 
+import Config from '../../../../config/Config.js';
 import { PRESET_MAINNET } from '../../../../constants.js';
 import { REGISTRATION_STATUS } from '../../../../core/readPlatformRegistration.js';
 import parseTenderdashNodeKey from '../../../../tenderdash/parseTenderdashNodeKey.js';
@@ -351,7 +352,16 @@ export default function setupPlatformTaskFactory(
             }
           }
 
-          ctx.coreService = await startCore(config);
+          // Compose creates the volumes of every service its profiles enable,
+          // `run core` included (2.24 does), and labels them as this project's.
+          // A Platform volume left by a run that then fails would refuse the
+          // next run, as if a reset had kept Platform data, so Core runs with
+          // every Platform profile off.
+          const coreOnlyConfig = new Config(config.getName(), config.getStoredOptions());
+          coreOnlyConfig.set('platform.enable', false);
+          coreOnlyConfig.set('platform.quorumList.enabled', false);
+
+          ctx.coreService = await startCore(coreOnlyConfig);
           ctx.isCoreRunning = false;
 
           // eslint-disable-next-line no-param-reassign

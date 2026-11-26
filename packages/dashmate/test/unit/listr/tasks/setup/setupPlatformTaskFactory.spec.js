@@ -10,6 +10,8 @@ import deriveTenderdashNodeId from '../../../../../src/tenderdash/deriveTenderda
 import getEnquirerMock from '../../../../../src/test/mock/getEnquirerMock.js';
 import { NODE_TYPE_FULLNODE, NODE_TYPE_MASTERNODE } from '../../../../../src/constants.js';
 import createPlatformSetupConfigs from '../../../../fixtures/platformSetupConfigs.js';
+import getConfigProfilesFactory from '../../../../../src/config/getConfigProfilesFactory.js';
+import getPlatformSetupState, { PLATFORM_SETUP_STATE } from '../../../../../src/config/getPlatformSetupState.js';
 
 // The options Platform-only setup may write (spec: only these, plus externalIp
 // from null on a fullnode).
@@ -228,6 +230,42 @@ describe('setupPlatformTask', () => {
       expect(waitForCoreSync).to.have.been.calledOnce();
       expect(readPlatformRegistration.firstCall.args[0]).to.deep.equal({ name: 'started Core' });
       expect(ctx.isCoreRunning).to.be.false();
+    });
+
+    // Compose 2.24 creates the volumes of every service its profiles enable,
+    // `run core` included, and labels them as the project's. A Platform volume
+    // left by a run that then failed would refuse the next run, as if a reset
+    // had kept Platform data.
+    it('should start Core alone, so a run that fails can simply run again', async () => {
+      dockerCompose.isServiceRunning.resolves(false);
+      config.set('platform.quorumList.enabled', true);
+      useConfig(config);
+
+      const createdVolumes = [];
+      startCore.callsFake(async (coreConfig) => {
+        if (getConfigProfilesFactory()(coreConfig).some((profile) => profile.startsWith('platform'))) {
+          createdVolumes.push('dashmate_testnet_drive_abci_data');
+        }
+
+        return { getRpcClient: () => ({ name: 'started Core' }) };
+      });
+
+      const other = generateTenderdashNodeKey();
+      const { error } = await run({
+        platformNodeKey: { key: other, id: deriveTenderdashNodeId(other) },
+        isCoreRunning: false,
+      });
+
+      expect(error.message).to.include(registration.platformNodeId);
+      expect(startCore).to.have.been.calledOnce();
+      expect(createdVolumes).to.be.empty();
+
+      // What the retry's precondition check finds
+      const retryState = getPlatformSetupState(config, {
+        defaultConfig: defaultConfigs.get('testnet'),
+        dataVolumes: createdVolumes,
+      });
+      expect(retryState.state).to.equal(PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED);
     });
 
     it('should not start Core when the operator declines', async () => {
