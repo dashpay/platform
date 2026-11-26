@@ -48,8 +48,9 @@ The command collects diagnostic information and creates an obfuscated archive fo
   - The node configuration
   - Service logs, metrics and status
 
-  Collected data will not contain any information which is not already publicly known.
-  All sensitive data like private keys or passwords is obfuscated.
+  Secrets such as private keys, passwords and API keys are masked.
+  Everything else is diagnostic data about your node, including its addresses,
+  host details, certificate settings and logs, and is shared with whoever you send the archive to.
 
   The archive will be compressed with TAR/GZIP and placed in {bold.cyanBright ${process.cwd()}}
   You can use it to analyze the node's condition yourself or send it to the Dash Core Group support team ({underline.cyanBright support@dash.org}) for help.\n`,
