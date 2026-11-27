@@ -643,4 +643,81 @@ mod tests {
         );
         assert_eq!(committed_root_hash(&outcome), root_hash_before);
     }
+
+    /// The same on a node in shadow mode that goes on at a divergence. The shadow is asked
+    /// to commit the block before the primary is, and refuses it; the primary refuses it
+    /// too. The request was no block for either: no divergence is counted, nothing is
+    /// kept, and the shadow is not stopped.
+    #[tokio::test]
+    async fn should_count_no_divergence_for_a_block_that_both_databases_refuse() {
+        use drive_abci::abci::app::shadow::testing::{
+            report_directory, shadow_for_the_chains_of_this_thread, ForATest,
+        };
+        use drive_abci::abci::app::shadow::ShadowEngine;
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config())
+            .build_with_mock_rpc();
+        let report = report_directory(&platform.config.db_path);
+        shadow_for_the_chains_of_this_thread(Some(ForATest::on(ShadowEngine::Other)));
+        let outcome = run_chain(&mut platform).await;
+        shadow_for_the_chains_of_this_thread(None);
+        let shadow = outcome.abci_app.shadow.as_ref().expect("a shadow");
+        let before = shadow.report().counts();
+        assert!(before.blocks_compared > 0);
+        assert_eq!(before.blocks_compared, before.blocks_in_all());
+        let root_hash_before = committed_root_hash(&outcome);
+
+        let (round_0, round_0_app_hash) =
+            accept_round_0_and_refuse_round_1(&outcome, Refusal::AfterExecution);
+        let wrong_app_hash = vec![0xFF; 32];
+        assert_ne!(round_0_app_hash, wrong_app_hash);
+        let result = outcome
+            .abci_app
+            .finalize_block(finalize_request(&round_0, wrong_app_hash));
+        assert!(
+            result.is_err(),
+            "a block whose execution gives another app hash must not be finalized"
+        );
+        assert_eq!(committed_root_hash(&outcome), root_hash_before);
+
+        let after = shadow.report().counts();
+        assert!(after.divergences.is_empty(), "{:?}", after.divergences);
+        assert!(after.divergence_heights.is_empty());
+        assert_eq!(after.shadow_stopped, None);
+        assert_eq!(after.blocks_in_all(), before.blocks_in_all());
+        assert_eq!(after.height, before.height);
+        // What was kept when the shadow refused the block is removed.
+        let kept: Vec<_> = std::fs::read_dir(report.join("divergences"))
+            .map(|kept| kept.flatten().collect())
+            .unwrap_or_default();
+        assert!(kept.is_empty(), "{kept:?}");
+        // Both databases are where they were: the shadow did not commit the block.
+        let shadow_platform = shadow.platform().expect("an open shadow");
+        let heights = || {
+            (
+                outcome
+                    .abci_app
+                    .platform
+                    .state
+                    .load()
+                    .last_committed_block_height(),
+                shadow_platform.state.load().last_committed_block_height(),
+            )
+        };
+        assert_eq!(heights(), (before.height, before.height));
+
+        // The block with the app hash its execution gives is finalized by both after
+        // that, and compared as every block is.
+        outcome
+            .abci_app
+            .finalize_block(finalize_request(&round_0, round_0_app_hash))
+            .expect("the block is finalized");
+        assert_eq!(heights(), (before.height + 1, before.height + 1));
+        let after = shadow.report().counts();
+        assert!(after.divergences.is_empty(), "{:?}", after.divergences);
+        assert_eq!(after.shadow_stopped, None);
+        assert_eq!(after.blocks_compared, before.blocks_compared + 1);
+        assert_eq!(after.blocks_in_all(), before.blocks_in_all() + 1);
+    }
 }

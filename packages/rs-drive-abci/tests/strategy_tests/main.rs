@@ -41,6 +41,7 @@ mod failures;
 mod masternode_list_item_helpers;
 mod masternodes;
 mod query;
+mod shadow;
 mod strategy;
 mod test_cases;
 mod verify_state_transitions;

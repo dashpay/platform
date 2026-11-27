@@ -123,7 +123,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
 grovedb-commitment-tree = { workspace = true, features = ["client"] }
 assert_matches = "1.5.0"
-drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
+drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data", "shadow-store-compare"] }
 mockall = { version = "0.15" }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
 libc = "0.2"
@@ -146,6 +146,11 @@ testing-config = []
 # it for `cargo test`.
 shielded_test_data = ["drive/shielded_test_data"]
 grovedbg = ["drive/grovedbg"]
+# Shadow mode's comparison of the stored records of its two databases, which reads them
+# through GroveDB's subtree dump. That is behind `drive/shielded_test_data`, the
+# pass-through to grovedb's `unsafe-dump-load`. Without this feature shadow mode compares
+# everything else and refuses a `SHADOW_STORE_COMPARE_INTERVAL_S` other than 0.
+shadow-store-compare = ["drive/shielded_test_data"]
 # `abci-server replay` command
 replay = ["dep:time", "tenderdash-abci/serde"]
 # Long-running shielded strategy tests (ZK proof generation)

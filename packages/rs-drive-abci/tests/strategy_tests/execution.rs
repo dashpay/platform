@@ -846,6 +846,13 @@ pub(crate) async fn create_chain_for_strategy<'a>(
     rng: StdRng,
 ) -> ChainExecutionOutcome<'a> {
     let abci_application = FullAbciApplication::new(platform);
+    // With `DRIVE_TEST_SHADOW` set, every block of the chain is applied to a second
+    // database as well and compared, and a divergence ends the test.
+    let abci_application =
+        match drive_abci::abci::app::shadow::testing::shadow_for_a_chain(platform) {
+            Some(shadow) => abci_application.with_shadow(shadow),
+            None => abci_application,
+        };
 
     let seed = strategy
         .failure_testing

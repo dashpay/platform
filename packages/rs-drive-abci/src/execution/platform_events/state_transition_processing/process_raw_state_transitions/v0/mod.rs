@@ -155,7 +155,11 @@ where
         // daily withdrawal limit adds to its daily maximum.
         let mut block_credit_mints: Credits = 0;
 
-        for decoded_state_transition in state_transition_container.into_iter() {
+        for (place, decoded_state_transition) in state_transition_container.into_iter().enumerate()
+        {
+            // For a thread that records its fee calculations: the ones from here on are
+            // of this state transition.
+            drive::fees::record::transaction(Some(place));
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
             let execution_result = if proposing_state_transitions
@@ -377,6 +381,7 @@ where
 
             processing_result.add(execution_result)?;
         }
+        drive::fees::record::transaction(None);
 
         processing_result.set_credit_mints(block_credit_mints);
 

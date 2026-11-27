@@ -1,6 +1,7 @@
 //! This module implements Drive ABCI server.
 //!
 
+use crate::abci::app::shadow::{open_shadow_platform, Shadow};
 use crate::abci::app::CheckTxAbciApplication;
 use crate::abci::app::ConsensusAbciApplication;
 use crate::config::PlatformConfig;
@@ -20,6 +21,13 @@ pub fn start(
     config: PlatformConfig,
     cancel: CancellationToken,
 ) {
+    // In shadow mode every block the node commits is applied to a second database on the
+    // other storage engine and compared. The shadow answers no request. Its Platform is
+    // opened here, before anything is served: opening one sets the protocol version of
+    // the process, which is set back to the node's own before a query can read it.
+    let shadow_platform =
+        open_shadow_platform(platform.as_ref()).expect("failed to open the database of the shadow");
+
     let query_service = Arc::new(QueryService::new(Arc::clone(&platform)));
 
     let drive_internal = Arc::clone(&query_service);
@@ -71,6 +79,17 @@ pub fn start(
     // Start blocking ABCI socket-server that process consensus requests sequentially
 
     let app = ConsensusAbciApplication::new(platform.as_ref());
+    let ends = cancel.clone();
+    let shadow = Shadow::for_application(
+        platform.as_ref(),
+        shadow_platform.as_ref(),
+        Arc::new(move || ends.cancel()),
+    )
+    .expect("failed to start shadow mode");
+    let app = match shadow {
+        Some(shadow) => app.with_shadow(shadow),
+        None => app,
+    };
 
     let server = tenderdash_abci::ServerBuilder::new(app, &config.abci.consensus_bind_address)
         .with_cancel_token(cancel.clone())
