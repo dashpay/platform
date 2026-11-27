@@ -162,7 +162,7 @@ A testnet or devnet may restart Platform from a new genesis, which starts its Pl
 Only then is the node's old Platform data useless, and it has to be removed with `dashmate reset --platform`.
 The reset asks for confirmation, then removes the Platform containers and the Drive and Tenderdash data, and keeps the configuration and the Core data.
 Each testnet restart so far has shipped its new genesis in a dashmate release, as a configuration migration that applies when the new version first runs, so install that release before the reset.
-A node that does not run Platform (`platform.enable` is `false`) can skip the reset, and dashmate refuses a Platform-only reset there anyway. If it ran Platform before, it still has that old Platform data, and it would use it if Platform were enabled again. To clear the data, enable Platform for the reset only: `dashmate config set platform.enable true`, then `dashmate reset --platform`, then `dashmate config set platform.enable false`.
+A node that does not run Platform (`platform.enable` is `false`) can skip the reset. If it ran Platform before, it still has that old Platform data, and it would use it if Platform were enabled again. `dashmate reset --platform` clears that data on such a node too, and leaves its configuration as it is.
 
 As with any update, run the steps one at a time in the same shell, and stop at the first one that fails:
 
@@ -181,14 +181,6 @@ $ dashmate update
 $ dashmate start
 ```
 
-If the quorum list service is enabled (`platform.quorumList.enabled` is `true`), the Platform-only reset fails with `service "quorum_list" depends on undefined service "core"`, because that service depends on Core, which the reset leaves out. Turn the service off for the reset and back on before you start the node:
-
-```bash
-$ dashmate config set platform.quorumList.enabled false
-$ dashmate reset --platform
-$ dashmate config set platform.quorumList.enabled true
-```
-
 On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet's operators publish with `dashmate config set platform.drive.tenderdash.genesis '<genesis JSON>'` before `dashmate start`.
 
 ### Do not add `--hard`
@@ -197,11 +189,12 @@ On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet
 
 * It sets the whole Platform part of the configuration back to the defaults. On an evonode this clears the Tenderdash node key, whose node ID is registered on the network for this evonode, and dashmate does not create a new one for a masternode: the key stays empty until you set it again.
 * It also resets the gateway and SSL settings, and deletes the configuration's `platform` directory in the dashmate home directory (`~/.dashmate/<config name>/platform` by default), which holds the SSL certificate and its private key.
-* A configuration with no defaults of its own (any name other than `mainnet` or `testnet`, outside the `local` group) has nothing to reset to, so the hard reset removes the whole configuration.
 
 Plain `dashmate setup` does not repair any of this: it refuses to run for a preset that is already configured, so it cannot be re-run on a configured node.
 The reset it suggests instead, `dashmate reset --config <preset> --hard`, also removes the Core data and sets the preset's whole configuration, Core and Platform settings alike, back to the defaults, so it is not a way back for an evonode either.
 The way back is `dashmate setup --platform`, which sets up only the Platform part again. An evonode needs the node key it had, so back it up before the hard reset: see [Starting Platform Over](#starting-platform-over).
+
+A configuration with no defaults of its own (any name other than `mainnet` or `testnet`, outside the `local` group) has nothing to reset its Platform options to, so dashmate refuses the hard Platform reset there and changes nothing.
 
 ## Starting Platform Over
 
