@@ -139,7 +139,12 @@ import verifySystemRequirementsTaskFactory
 import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
 import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
 import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCertificateFactory.js';
+import findReusableZeroSslCertificateFactory from './ssl/zerossl/findReusableZeroSslCertificateFactory.js';
 import validateLetsEncryptCertificateFactory from './ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
+import setupPlatformTaskFactory from './listr/tasks/setup/platform/setupPlatformTaskFactory.js';
+import getPlatformArtefactsFactory from './config/getPlatformArtefactsFactory.js';
+import assertPlatformCanStartFactory from './config/assertPlatformCanStartFactory.js';
+import readPlatformRegistration from './core/readPlatformRegistration.js';
 
 /**
  * @param {Object} [options]
@@ -273,6 +278,7 @@ export default async function createDIContainer(options = {}) {
     waitForCoreSync: asValue(waitForCoreSync),
     waitForMasternodesSync: asValue(waitForMasternodesSync),
     startCore: asFunction(startCoreFactory).singleton(),
+    readPlatformRegistration: asValue(readPlatformRegistration),
     waitForBlocks: asValue(waitForBlocks),
     waitForConfirmations: asValue(waitForConfirmations),
     generateBlsKeys: asValue(generateBlsKeys),
@@ -323,6 +329,9 @@ export default async function createDIContainer(options = {}) {
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
     setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
+    setupPlatformTask: asFunction(setupPlatformTaskFactory).singleton(),
+    getPlatformArtefacts: asFunction(getPlatformArtefactsFactory).singleton(),
+    assertPlatformCanStart: asFunction(assertPlatformCanStartFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
@@ -360,6 +369,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
+    findReusableZeroSslCertificate: asFunction(findReusableZeroSslCertificateFactory).singleton(),
     validateLetsEncryptCertificate: asFunction(validateLetsEncryptCertificateFactory).singleton(),
     checkGatewayCertificate: asFunction(checkGatewayCertificateFactory).singleton(),
     getCertificate: asValue(getCertificate),

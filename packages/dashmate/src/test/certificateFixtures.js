@@ -198,3 +198,93 @@ export function issueEd25519Certificate(issuer, { ip = '1.2.3.4', days = 6 } = {
 export function encryptPrivateKey(keys, passphrase) {
   return forge.pki.encryptRsaPrivateKey(keys.privateKey, passphrase);
 }
+
+/**
+ * @param {number} tag
+ * @param {...Buffer} contents
+ * @return {Buffer} the DER element
+ */
+function encodeElement(tag, ...contents) {
+  const content = Buffer.concat(contents);
+  const lengthBytes = [];
+
+  for (let rest = content.length; rest > 0; rest = Math.floor(rest / 256)) {
+    lengthBytes.unshift(rest % 256);
+  }
+
+  const length = content.length < 0x80
+    ? Buffer.from([content.length])
+    : Buffer.from([0x80 + lengthBytes.length, ...lengthBytes]);
+
+  return Buffer.concat([Buffer.from([tag]), length, content]);
+}
+
+/**
+ * @param {string} oid
+ * @return {Buffer} the DER OBJECT IDENTIFIER
+ */
+function encodeOid(oid) {
+  return encodeElement(0x06, Buffer.from(forge.asn1.oidToDer(oid).getBytes(), 'binary'));
+}
+
+/**
+ * Make a certificate request for a key of any type, the way OpenSSL makes one
+ *
+ * node-forge makes requests for RSA keys only, and re-encodes what it
+ * parses, so the request is written out byte by byte here and Node signs it.
+ *
+ * @param {string} privateKeyPem - the key the request carries
+ * @param {Object} [options]
+ * @param {string} [options.commonName]
+ * @param {string} [options.signingKeyPem] - signs the request, the key it
+ *  carries when absent
+ * @param {Buffer} [options.version] - the version element, INTEGER 0 when
+ *  absent
+ * @param {Buffer} [options.attributes] - the content of the attributes
+ * @param {Object} [options.algorithm] - sha256 with RSA or ECDSA when absent
+ * @param {string} options.algorithm.oid
+ * @param {string} options.algorithm.hash - as Node names it
+ * @param {Buffer} [options.algorithm.parameters] - NULL for RSA, none for EC
+ *  when absent
+ * @return {string} PEM
+ */
+export function createCertificateRequest(privateKeyPem, {
+  commonName = '1.2.3.4',
+  signingKeyPem = privateKeyPem,
+  version = Buffer.from([0x02, 0x01, 0x00]),
+  attributes = Buffer.alloc(0),
+  algorithm,
+} = {}) {
+  const spki = crypto.createPublicKey(crypto.createPrivateKey(privateKeyPem))
+    .export({ type: 'spki', format: 'der' });
+  const signingKey = crypto.createPrivateKey(signingKeyPem);
+  const isRsa = signingKey.asymmetricKeyType === 'rsa';
+
+  const {
+    oid = isRsa ? '1.2.840.113549.1.1.11' : '1.2.840.10045.4.3.2',
+    hash = 'sha256',
+    parameters = isRsa ? Buffer.from([0x05, 0x00]) : Buffer.alloc(0),
+  } = algorithm ?? {};
+
+  // Name ::= SEQUENCE OF SET OF { type, value }, the value a UTF8String
+  const subject = encodeElement(0x30, encodeElement(0x31, encodeElement(
+    0x30,
+    encodeOid('2.5.4.3'),
+    encodeElement(0x0c, Buffer.from(commonName, 'utf8')),
+  )));
+
+  // CertificationRequestInfo ::= SEQUENCE { version, subject,
+  // subjectPKInfo, attributes [0] }
+  const info = encodeElement(0x30, version, subject, spki, encodeElement(0xa0, attributes));
+
+  const signature = crypto.sign(hash, info, signingKey);
+
+  const request = encodeElement(
+    0x30,
+    info,
+    encodeElement(0x30, encodeOid(oid), parameters),
+    encodeElement(0x03, Buffer.from([0]), signature),
+  );
+
+  return forge.pem.encode({ type: 'CERTIFICATE REQUEST', body: request.toString('binary') });
+}

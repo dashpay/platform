@@ -3,7 +3,11 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
-import { PLATFORM_ONLY_RENDER_SCOPE } from '../constants.js';
+import renderNodeKeyBackup from '../config/renderNodeKeyBackup.js';
+import renderConfigFlag from '../util/renderConfigFlag.js';
+import { PLATFORM_ONLY_RENDER_SCOPE, PRESET_MAINNET, PRESET_TESTNET } from '../constants.js';
+
+const PLATFORM_PRESETS = [PRESET_MAINNET, PRESET_TESTNET];
 
 export default class ResetCommand extends ConfigBaseCommand {
   // Reconfigures the node: changes configuration repeatedly while doing long,
@@ -45,6 +49,7 @@ export default class ResetCommand extends ConfigBaseCommand {
    * @param {Object} flags
    * @param {Config} config
    * @param {resetNodeTask} resetNodeTask
+   * @param {HomeDir} homeDir
    *
    * @return {Promise<void>}
    */
@@ -59,7 +64,57 @@ export default class ResetCommand extends ConfigBaseCommand {
     },
     config,
     resetNodeTask,
+    homeDir,
   ) {
+    // A masternode's node key is bound to its registration, and the reset
+    // keeps no copy, so setting Platform up again needs the operator's backup.
+    // Printed under --force too: a scripted reset never sees the confirmation.
+    if (isPlatformOnlyReset && isHardReset && config.get('core.masternode.enable')
+      && config.get('platform.drive.tenderdash.node.key') !== null) {
+      const nodeId = config.get('platform.drive.tenderdash.node.id');
+      const { backupCommand, setupCommand } = renderNodeKeyBackup(config.getName());
+      const backup = `  ${backupCommand}`;
+
+      const lines = isForce
+        ? [
+          `Deleting the Platform node key of ${config.getName()}, node ID ${nodeId}. The masternode's`
+            + ' registration names that node ID, so setting Platform up again needs this key, and'
+            + ' dashmate keeps no copy. A script that resets should back it up before, with:',
+          backup,
+        ]
+        : [
+          `This deletes the Platform node key of ${config.getName()}, node ID ${nodeId}. The`
+            + ' masternode\'s registration names that node ID, so setting Platform up again needs'
+            + ' this key, and dashmate keeps no copy. Unless you have a backup, answer No and back'
+            + ' it up first, into a new directory only you can open:',
+          backup,
+        ];
+
+      // Platform-only setup serves the mainnet and testnet presets outside a
+      // group and refuses every other config, so for those the key goes back
+      // where it was. `config set` would take the key on its command line.
+      const restore = !config.get('group') && PLATFORM_PRESETS.includes(config.getName())
+        ? [
+          'After the reset, set Platform up again with:',
+          `  ${setupCommand}`,
+        ]
+        : [
+          'After the reset, put the backed-up key into platform.drive.tenderdash.node.key and its'
+            + ` node ID into platform.drive.tenderdash.node.id, by editing ${homeDir.joinPath('config.json')}`
+            + ' while no dashmate command runs. Then render the service files with:',
+          `  dashmate config render ${renderConfigFlag(config.getName())}`,
+        ];
+
+      process.stderr.write([
+        ...lines,
+        'It refuses a directory or file of that name that exists. Check that the backup is not'
+          + ' empty before you reset, and keep it in that directory or another one only you can open.',
+        ...restore,
+        '',
+        '',
+      ].join('\n'));
+    }
+
     const tasks = new Listr(
       [
         {

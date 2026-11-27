@@ -1,9 +1,8 @@
-import fs from 'fs';
 import { Listr } from 'listr2';
 
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import validateFileExists from '../../prompts/validators/validateFileExists.js';
-import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
+import { readCertificateFilePair } from '../../prompts/validators/validateCertificateFilePaths.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask
@@ -18,6 +17,10 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
    * certificate check, which offers an operator with their own certificate the
    * chance to replace it before it suggests changing authority.
    *
+   * What is installed is what was checked: the pair a caller read and checked
+   * in advance (ctx.validatedCertificatePair), or else the files read once
+   * each here and checked before anything is written.
+   *
    * @typedef {installCertificateFilesTask}
    * @param {Config} config
    * @param {Object} [options]
@@ -29,10 +32,18 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
       {
         title: 'Set SSL certificate file',
         task: async (ctx, task) => {
-          let form = ctx.fileCertificateProviderForm;
+          let pair = ctx.validatedCertificatePair;
 
-          if (!ctx.fileCertificateProviderForm) {
-            form = await promptOrThrow(task, {
+          if (!pair && ctx.fileCertificateProviderForm) {
+            pair = readCertificateFilePair(ctx.fileCertificateProviderForm);
+          }
+
+          if (!pair) {
+            // The pair the form's check accepted is the one installed, not
+            // the files as they are once the form returns.
+            let acceptedPair;
+
+            await promptOrThrow(task, {
               type: 'form',
               header: `  To configure SSL certificates, you need to provide a certificate chain file
   and a private key file.
@@ -51,32 +62,22 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
                   validate: validateFileExists,
                 },
               ],
-              validate: ({ chainFilePath, privateFilePath }) => {
-                if (!validateFileExists(chainFilePath)) {
-                  return 'certificate chain file path is not valid';
-                }
-
-                if (!validateFileExists(privateFilePath)) {
-                  return 'certificate key file path is not valid';
-                }
-
-                if (chainFilePath === privateFilePath) {
-                  return 'the same path for both files';
-                }
-
-                const isValid = validateSslCertificateFiles(chainFilePath, privateFilePath);
-
-                if (!isValid) {
-                  return 'The certificate and private key do not match';
+              validate: (paths) => {
+                try {
+                  acceptedPair = readCertificateFilePair(paths);
+                } catch (e) {
+                  return e.message;
                 }
 
                 return true;
               },
             }, { interactive });
+
+            pair = acceptedPair;
           }
 
-          ctx.certificateFile = fs.readFileSync(form.chainFilePath, 'utf8');
-          ctx.privateKeyFile = fs.readFileSync(form.privateFilePath, 'utf8');
+          ctx.certificateFile = pair.certificateFile;
+          ctx.privateKeyFile = pair.privateKeyFile;
 
           return saveCertificateTask(config);
         },

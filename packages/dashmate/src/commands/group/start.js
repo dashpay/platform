@@ -3,6 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
+import printUnwrapped from '../../oclif/errors/printUnwrapped.js';
 
 export default class GroupStartCommand extends GroupBaseCommand {
   static flags = {
@@ -19,6 +20,7 @@ export default class GroupStartCommand extends GroupBaseCommand {
    * @param {startNodeTask} startNodeTask
    * @param {Config[]} configGroup
    * @param {startGroupNodesTask} startGroupNodesTask
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -31,7 +33,18 @@ export default class GroupStartCommand extends GroupBaseCommand {
     startNodeTask,
     configGroup,
     startGroupNodesTask,
+    assertPlatformCanStart,
   ) {
+    // Every member before any starts.
+    try {
+      await configGroup.reduce(
+        (checked, config) => checked.then(() => assertPlatformCanStart(config)),
+        Promise.resolve(),
+      );
+    } catch (e) {
+      throw printUnwrapped(e);
+    }
+
     const groupName = configGroup[0].get('group');
 
     const tasks = new Listr(

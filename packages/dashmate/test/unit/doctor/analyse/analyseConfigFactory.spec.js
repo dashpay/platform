@@ -345,11 +345,29 @@ describe('analyseConfigFactory', () => {
       expect(descriptions).to.include(NODE_ID_PROBLEM);
     });
 
-    it('should report nothing when the node key gives the registered ID, whatever ID is saved', () => {
+    it('should report nothing when the node key gives the registered ID and it is saved', () => {
       samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', masternodeStatus.dmnState.platformNodeID);
-      config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+      config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
 
       expect(analyseConfig(samples)).to.be.empty();
+    });
+
+    // dashmate starts Platform of a masternode only while the saved node ID is
+    // the one its key gives, and `config set` of the key alone keeps the old
+    // ID. The running node is fine; its next start or restart is refused.
+    it('should name the node ID to save when only the node key gives the registered one', () => {
+      const registeredId = masternodeStatus.dmnState.platformNodeID;
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', registeredId);
+      config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+
+      const problems = analyseConfig(samples);
+
+      expect(problems).to.have.lengthOf(1);
+      expect(problems[0].getDescription()).to.not.equal(NODE_ID_PROBLEM);
+      expect(problems[0].getSolution())
+        .to.include(`dashmate config set platform.drive.tenderdash.node.id ${registeredId}`)
+        .and.not.match(/dashmate\s+restart/);
+      expect(problems[0].getSeverity()).to.equal(SEVERITY.MEDIUM);
     });
 
     it('should analyse a config with neither a node key nor a saved node ID', () => {
@@ -373,6 +391,7 @@ describe('analyseConfigFactory', () => {
 
         samples.setServiceInfo('drive_tenderdash', 'status', { status: 'fulfilled', value: tenderdashStatus });
         samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', masternodeStatus.dmnState.platformNodeID);
+        config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
       });
 
       // Tenderdash loads its key at startup, so a key corrected in the config
@@ -385,6 +404,24 @@ describe('analyseConfigFactory', () => {
         expect(problems[0].getDescription()).to.include('Tenderdash is running with a node ID');
         expect(problems[0].getSolution()).to.include('dashmate restart --platform');
         expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+      });
+
+      // The restart is refused while the saved ID is not the one the key
+      // gives, so the ID is saved first.
+      it('should name the node ID to save before the restart when the saved one is stale', () => {
+        const registeredId = masternodeStatus.dmnState.platformNodeID;
+        config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+
+        const problems = analyseConfig(samples);
+
+        expect(problems).to.have.lengthOf(1);
+        expect(problems[0].getDescription()).to.include('Tenderdash is running with a node ID');
+
+        const solution = problems[0].getSolution();
+        const saveAt = solution.indexOf(`dashmate config set platform.drive.tenderdash.node.id ${registeredId}`);
+
+        expect(saveAt).to.be.at.least(0);
+        expect(solution.indexOf('dashmate restart --platform')).to.be.above(saveAt);
       });
 
       // Without a key there is nothing for a restarted Tenderdash to load, so

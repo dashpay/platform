@@ -20,6 +20,7 @@ import unarchiveSamplesFactory from '../../../../../src/doctor/unarchiveSamplesF
 import { getOperatorIdentity } from '../../../../../src/util/maskOperatorIdentity.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
+import generateCsr from '../../../../../src/ssl/zerossl/generateCsr.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import validateLetsEncryptCertificateFactory from '../../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
@@ -96,7 +97,7 @@ describe('collectSamplesTaskFactory', () => {
     await tasks.run({ samples });
   }
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     originalUser = process.env.USER;
     homeDir = HomeDir.createTemp();
 
@@ -113,10 +114,16 @@ describe('collectSamplesTaskFactory', () => {
     const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
 
     fs.mkdirSync(sslDir, { recursive: true });
-    fs.writeFileSync(path.join(sslDir, 'csr.pem'), 'csr', 'utf8');
     // Dashmate writes the key accessible to its owner only, and doctor reports
-    // one that is not - so the fixture has to be what a healthy node has
-    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', {
+    // one that is not - so the fixture has to be what a healthy node has: an
+    // RSA key and the certificate request renewal sends for it
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    fs.writeFileSync(path.join(sslDir, 'csr.pem'), await generateCsr({ publicKey, privateKey }, EXTERNAL_IP), 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'private.key'), privateKey, {
       encoding: 'utf8',
       mode: 0o600,
     });
@@ -200,6 +207,31 @@ describe('collectSamplesTaskFactory', () => {
 
     expect(sslProblem).to.exist();
     expect(sslProblem.getSeverity()).to.equal(SEVERITY.HIGH);
+  });
+
+  // Renewal is due, so the sample carries the request renewal would send.
+  it('should not put a private key held in the certificate request in the archive', async () => {
+    const csrFilePath = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'csr.pem');
+    const privateKey = fs.readFileSync(
+      homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'private.key'),
+      'utf8',
+    );
+    fs.appendFileSync(csrFilePath, privateKey);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-270)),
+      expires: toZeroSslDate(daysFromNow(-180)),
+    }));
+
+    await collectSamples();
+
+    const sample = samples.getServiceInfo('gateway', 'ssl');
+
+    expect(sample.error).to.equal(ZEROSSL_ERRORS.CSR_FILE_IS_NOT_PRESENT);
+    expect(JSON.stringify(sample)).to.not.include('PRIVATE KEY');
   });
 
   it('should not report a problem for a valid ZeroSSL certificate', async () => {
