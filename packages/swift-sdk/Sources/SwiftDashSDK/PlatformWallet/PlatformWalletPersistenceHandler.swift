@@ -327,11 +327,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `PersistentIdentity.deleteChildrenWithRequiredInverse(in:)`. A round
     /// has one save, so it cannot delete the children first, and staging only
     /// the children's deletes in it is not safe either: SwiftData fatals when
-    /// a failed round rolls them back. So the round stages nothing for a
-    /// removed identity and `endChangeset` deletes it, children first
+    /// a failed round rolls them back. So the round stages no delete for a
+    /// removed identity: it only unlinks the row from its wallet, and
+    /// `endChangeset` deletes the identity, children first
     /// (`PersistentIdentity.deleteChildrenFirst`), right after a successful
-    /// commit. A failed round drops the list. Never survives a round.
-    /// Confined to `serialQueue` like all other mutable handler state.
+    /// commit.
+    ///
+    /// The unlink is what makes the removal durable with the round. A wallet
+    /// restores the identities linked to it, so if the delete after the
+    /// commit fails, or the process exits before it, the leftover row is not
+    /// loaded back into the wallet that removed it. A failed round rolls the
+    /// unlink back and drops the list. Never survives a round. Confined to
+    /// `serialQueue` like all other mutable handler state.
     private var deferredIdentityRowDeletes: [Data] = []
 
     public convenience init(modelContainer: ModelContainer, network: Network? = nil) {
@@ -3770,9 +3777,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// when the round committed; drop the list when it did not. Must be
     /// called on `serialQueue` with `inChangeset` already cleared.
     ///
-    /// A failure here leaves the identity's row. The round stays committed:
-    /// Rust has removed the identity already, and the host's own row delete
-    /// after the removal call takes the leftover row.
+    /// A failure here leaves the identity's row, which the round already
+    /// unlinked from its wallet, so no wallet restores it. The round stays
+    /// committed: Rust has removed the identity already, and the host's own
+    /// row delete after the removal call takes the leftover row.
     private func drainDeferredIdentityRowDeletes(walletId: Data, committed: Bool) {
         guard !deferredIdentityRowDeletes.isEmpty else { return }
         let pending = deferredIdentityRowDeletes
@@ -3780,12 +3788,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         guard committed else { return }
         for identityId in pending {
             do {
-                let descriptor = FetchDescriptor<PersistentIdentity>(
-                    predicate: #Predicate { $0.identityId == identityId }
-                )
-                if let row = try backgroundContext.fetch(descriptor).first {
-                    try PersistentIdentity.deleteChildrenFirst(row, in: backgroundContext)
-                }
+                try PersistentIdentity.deleteChildrenFirst(
+                    identityId: identityId, in: backgroundContext)
             } catch {
                 SDKLogger.event(
                     "persistence_identity_row_delete_failed",
@@ -3994,8 +3998,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // A failed fetch fails the changeset rather than reading as an
             // absent row, which would strand the identity and its sidecar.
             if inChangeset {
-                // Deleted after the round's save; see
+                // Unlinked in the round, deleted after its save; see
                 // `deferredIdentityRowDeletes`.
+                if let existing = try backgroundContext.fetch(descriptor).first {
+                    existing.wallet = nil
+                }
                 deferredIdentityRowDeletes.append(identityId)
             } else if let existing = try backgroundContext.fetch(descriptor).first {
                 try PersistentDashpayPaymentAddresses.removeOwned(in: backgroundContext,

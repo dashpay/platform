@@ -602,9 +602,9 @@ struct IdentitiesContentView: View {
         } catch {
             throw IdentityLiveWalletRemovalRefused(reason: error)
         }
-        if let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId) {
-            try PersistentIdentity.deleteChildrenFirst(row, in: modelContext)
-        }
+        // A failed lookup throws: the Keychain is only touched once the row
+        // is known to be gone.
+        try PersistentIdentity.deleteChildrenFirst(identityId: identityId, in: modelContext)
 
         // `deleteSpecialKey` and `deleteKeyData` treat an absent item as
         // success, so `false` means the Keychain refused.

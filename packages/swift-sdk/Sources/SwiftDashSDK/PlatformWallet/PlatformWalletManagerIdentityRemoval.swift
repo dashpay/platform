@@ -12,7 +12,10 @@ extension PlatformWalletManager {
     /// throws `PlatformWalletError.privateContactRequestPending`,
     /// `.publicContactRequestUnconfirmed` or
     /// `.privateContactPaymentsNotRestored`, nothing was removed, and the
-    /// host should delete nothing.
+    /// host should delete nothing. It also throws, removing nothing, while
+    /// an asynchronous native operation of this manager (a wallet restore,
+    /// for one) is in flight or the manager is shutting down; call it again
+    /// once that has finished.
     ///
     /// Accepted, each wallet that held the identity emits the removal through
     /// the persistence handler, which deletes the identity's rows. The
@@ -24,9 +27,11 @@ extension PlatformWalletManager {
     ///   its own), in which case its rows are still there.
     @discardableResult
     public func removeIdentityFromLiveWallets(identityId: Identifier) throws -> Bool {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
-        }
+        // Same admission gate as `deleteWallet`: while an async restore is
+        // in flight Rust may not hold the identity yet and would answer "not
+        // managed", the host would delete its rows and keys, and the restore
+        // would then publish the identity from its older snapshot.
+        try ensureSyncNativeOpAllowed("removeIdentityFromLiveWallets")
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidIdentifier(
                 "identityId must be 32 bytes, got \(identityId.count)"

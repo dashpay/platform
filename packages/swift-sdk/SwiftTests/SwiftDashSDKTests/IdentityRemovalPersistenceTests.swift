@@ -61,7 +61,9 @@ final class IdentityRemovalPersistenceTests: XCTestCase {
 
     func testRemovedIdentityIsKeptWholeByAFailedRound() throws {
         let context = ModelContext(container)
-        makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context).wallet = wallet
         try context.save()
 
         handler.beginChangeset(walletId: walletId)
@@ -76,6 +78,10 @@ final class IdentityRemovalPersistenceTests: XCTestCase {
         let fresh = ModelContext(container)
         let identities = try fresh.fetch(FetchDescriptor<PersistentIdentity>())
         XCTAssertEqual(identities.map(\.identityId), [doomedId])
+        // The round unlinks a removed identity from its wallet, which is what
+        // keeps a leftover row from being restored; a failed round must put
+        // the link back.
+        XCTAssertEqual(identities.first?.wallet?.walletId, walletId)
         try assertChildRowCounts(1, publicKeys: 2, in: fresh)
         XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 1)
     }
@@ -98,17 +104,52 @@ final class IdentityRemovalPersistenceTests: XCTestCase {
         }
     }
 
+    /// While an async native operation is admitted (a wallet restore, for
+    /// one) Rust may not hold the identity yet and would answer "not
+    /// managed"; the host would then delete rows and keys the restore brings
+    /// back. The wrapper refuses before it asks.
+    @MainActor
+    func testRemoveIdentityFromLiveWalletsRefusesWhileAnAsyncNativeOpIsAdmitted() throws {
+        let ok: PlatformWalletNativeTeardownCalls.Call = { _ in
+            PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 97,
+            calls: PlatformWalletNativeTeardownCalls(
+                spvStop: ok, platformAddressSyncStop: ok, shieldedSyncStop: ok,
+                dashPaySyncStop: ok, dpnsSyncStop: ok, destroy: ok))
+        try manager.admitNativeOp("loadFromPersistor")
+        defer { manager.finishNativeOp() }
+
+        XCTAssertThrowsError(try manager.removeIdentityFromLiveWallets(identityId: doomedId)) { error in
+            guard case PlatformWalletError.invalidHandle = error else {
+                return XCTFail("expected invalidHandle, got \(error)")
+            }
+        }
+    }
+
+    func testDeleteChildrenFirstByIdReportsWhetherThereWasARow() throws {
+        let context = ModelContext(container)
+        makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context)
+        try context.save()
+
+        XCTAssertTrue(try PersistentIdentity.deleteChildrenFirst(identityId: doomedId, in: context))
+        XCTAssertFalse(try PersistentIdentity.deleteChildrenFirst(identityId: doomedId, in: context))
+        try assertChildRowCounts(0, publicKeys: 0, in: ModelContext(container))
+    }
+
     // MARK: - Helpers
 
     /// Inserts an identity with a DPNS name, a DashPay profile, a contact
     /// request, a contact profile, a payment, an ignored sender, a
     /// payment-address row and two public keys.
+    @discardableResult
     private func makeIdentity(
         _ identityId: Data,
         label: String,
         keySeed: UInt8,
         in context: ModelContext
-    ) {
+    ) -> PersistentIdentity {
         let identity = PersistentIdentity(identityId: identityId, network: .testnet)
         context.insert(identity)
 
@@ -160,6 +201,7 @@ final class IdentityRemovalPersistenceTests: XCTestCase {
             context.insert(key)
             identity.publicKeys.append(key)
         }
+        return identity
     }
 
     /// Every child table with a non-optional inverse holds `count` rows.
