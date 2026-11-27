@@ -2,26 +2,27 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Form for changing a token's marketplace trade mode: whether holders may
-/// list the token for sale and make offers for it.
+/// Form for changing a token's marketplace trade mode, the configuration
+/// that says whether the token may be traded through Platform. It changes the
+/// configuration only: placing and filling orders are separate transitions.
 ///
 /// The submission is one `TokenConfigChange.marketplaceTradeMode`, which Rust
 /// turns into `TokenConfigurationChangeItem::MarketplaceTradeMode`. Platform
-/// decides whether the token may take the mode (a tradeable token must be
-/// transferable, and the network at protocol version 16 or later); this form
-/// does not check either and shows Platform's refusal as it arrives.
+/// decides whether the token may become tradeable (it must be transferable,
+/// and the network at protocol version 16 or later; setting `NotTradeable`
+/// has neither condition); this form does not check either and shows
+/// Platform's refusal as it arrives.
 ///
-/// Single-signer only: the update is sent without group information. Whether
-/// the signing identity alone may make the change is Platform's decision too,
-/// so on a token whose trade mode rule is held by a group the update is
-/// refused. Proposing and co-signing a configuration update as a group is not
-/// wired in this app yet.
+/// Single-signer only: the update is sent without group information, and
+/// Platform decides whether the signing identity alone may make the change.
+/// When the rule needs more signatures than this one, the update is refused:
+/// proposing and co-signing a configuration update as a group is not wired
+/// in this app yet.
 struct TokenUpdateTradeModeActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
 
     @EnvironmentObject var walletManager: PlatformWalletManager
-    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -31,6 +32,10 @@ struct TokenUpdateTradeModeActionView: View {
     @State private var submitError: AlertMessage?
     /// Shown after a confirmed update whose contract could not be stored.
     @State private var refreshNotice: AlertMessage?
+    /// Set when an update was broadcast and its outcome is unknown: it may
+    /// have taken effect, so the form does not offer to send another one.
+    @State private var outcomeUnknown: AlertMessage?
+    @State private var submissionMayHaveLanded: Bool = false
     /// Generation counter so a late `MainActor.run` from a previous
     /// `submit()` Task can't write back to a re-entered view instance.
     @State private var submitGeneration: Int = 0
@@ -58,12 +63,12 @@ struct TokenUpdateTradeModeActionView: View {
             }
 
             Section {
-                Text("A tradeable token can be listed for sale and offered for through Platform. Platform refuses the change if the token is not transferable or the network does not support token trading yet.")
+                Text("The trade mode is the token's configuration for trading through Platform; changing it places no order. Platform refuses making a token tradeable if the token is not transferable or the network does not support token trading yet.")
                     .font(.subheadline)
             }
 
             Section {
-                Text("This form sends a single-signer update. If a group controls this token's trade mode, Platform refuses it: group proposals for configuration changes are not supported in this app yet.")
+                Text("This form sends a single-signer update, and Platform decides whether this identity alone may make the change. If the change needs more signatures, Platform refuses it: group proposals for configuration changes are not supported in this app yet.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .accessibilityIdentifier("tokenTradeMode.singleSignerNote")
@@ -99,7 +104,7 @@ struct TokenUpdateTradeModeActionView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(managedWallet == nil || isSubmitting)
+                .disabled(managedWallet == nil || isSubmitting || submissionMayHaveLanded)
                 .accessibilityIdentifier("tokenTradeMode.submitButton")
             }
         }
@@ -108,6 +113,13 @@ struct TokenUpdateTradeModeActionView: View {
         .alert(item: $submitError) { msg in
             Alert(
                 title: Text("Update failed"),
+                message: Text(msg.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+        .alert(item: $outcomeUnknown) { msg in
+            Alert(
+                title: Text("Update not confirmed"),
                 message: Text(msg.message),
                 dismissButton: .default(Text("OK"))
             )
@@ -149,7 +161,6 @@ struct TokenUpdateTradeModeActionView: View {
         let change = TokenConfigChange.marketplaceTradeMode(newTradeMode)
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
-        let sdk = appState.sdk
 
         Task {
             do {
@@ -170,7 +181,6 @@ struct TokenUpdateTradeModeActionView: View {
                     if let reason = ContractDownloader.storeConfigUpdateOutcome(
                         outcome,
                         contractId: contractId,
-                        sdk: sdk,
                         modelContext: modelContext
                     ) {
                         self.refreshNotice = .init(
@@ -181,6 +191,19 @@ struct TokenUpdateTradeModeActionView: View {
                     } else {
                         self.dismiss()
                     }
+                }
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail) {
+                await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
+                    self.isSubmitting = false
+                    // The update was broadcast and may have taken effect, so
+                    // sending another one could pay for it twice.
+                    self.submissionMayHaveLanded = true
+                    self.outcomeUnknown = .init(
+                        message: "The update was sent, but its confirmation did not arrive (\(detail)). "
+                            + "It may have taken effect. Refresh the contract and check the token's "
+                            + "trade mode before sending another update."
+                    )
                 }
             } catch {
                 await MainActor.run {

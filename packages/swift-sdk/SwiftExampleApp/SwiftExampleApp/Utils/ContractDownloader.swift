@@ -462,13 +462,16 @@ public enum ContractDownloader {
     /// through `apply`, so the stored version, tokens and groups advance
     /// together. A pending group action changes nothing.
     ///
+    /// The contract is not registered with the SDK here: the wallet runs on
+    /// the app's SDK and registered the contract with its context provider
+    /// before returning it.
+    ///
     /// - Returns: nil when the stored contract is current, otherwise why it
     ///   still has the old configuration (the update itself is confirmed
     ///   either way).
     static func storeConfigUpdateOutcome(
         _ outcome: TokenConfigUpdateOutcome,
         contractId: Data,
-        sdk: SDK?,
         modelContext: ModelContext
     ) -> String? {
         switch outcome {
@@ -490,15 +493,7 @@ public enum ContractDownloader {
                     toContractWithId: contractId,
                     minimumVersion: nil,
                     modelContext: modelContext
-                ) { binaryData in
-                    guard let sdk else {
-                        throw ContractDownloadError.fetchFailed("The SDK is not initialized")
-                    }
-                    try sdk.addContractToContext(
-                        contractId: contractId.toBase58String(),
-                        binaryData: binaryData
-                    )
-                }
+                ) { _ in }
                 return nil
             } catch {
                 return error.localizedDescription

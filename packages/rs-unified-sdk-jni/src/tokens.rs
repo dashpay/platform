@@ -212,6 +212,20 @@ fn checked_group_info_kind(env: &mut JNIEnv, value: jint) -> Option<u8> {
     Some(value as u8)
 }
 
+/// Range-check a `jint` change-item tag into the `u8` the FFI takes; throws +
+/// returns `None` outside `0..=255`. A raw `as u8` would wrap 257 to 1 and
+/// send a different change than the caller named. Which in-range tags are
+/// supported is the FFI decoder's decision.
+fn checked_change_item_tag(env: &mut JNIEnv, value: jint) -> Option<u8> {
+    match u8::try_from(value) {
+        Ok(tag) => Some(tag),
+        Err(_) => {
+            throw_sdk_exception(env, 1, "changeItemTag must be in 0..=255");
+            None
+        }
+    }
+}
+
 /// Consume a Rust-owned C string out-param produced by a platform-wallet
 /// entry point (freed with `platform_wallet_string_free`), copy it into a
 /// Java `String`, and free the Rust buffer. Null → null jstring.
@@ -1053,6 +1067,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
         let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
             return ptr::null_mut();
         };
+        let Some(change_item_tag) = checked_change_item_tag(env, change_item_tag) else {
+            return ptr::null_mut();
+        };
         let mut out_json: *mut c_char = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_update_config_and_refresh(
@@ -1060,7 +1077,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
                 id.as_ptr(),
                 contract.as_ptr(),
                 token_position,
-                change_item_tag as u8,
+                change_item_tag,
                 opt_c_ptr(&payload),
                 opt_c_ptr(&note),
                 group_info_kind,

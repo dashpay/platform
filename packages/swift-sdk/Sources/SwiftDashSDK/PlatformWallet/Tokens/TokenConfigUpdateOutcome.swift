@@ -17,10 +17,11 @@ public enum TokenConfigUpdateOutcome: Sendable, Equatable {
     /// `serialization` its platform serialization.
     case applied(contractJSON: Data, serialization: Data?)
 
-    /// Applied, but no fetch returned the contract from the update's block or
-    /// later (`reason` says why): a stored copy still has the old
-    /// configuration. `minimumVersion` is the lowest contract version that
-    /// contains the update.
+    /// Applied, but no fetch satisfied the confirmation-height and version
+    /// checks (`reason` says why): a stored copy still has the old
+    /// configuration. `minimumVersion` is a lower bound based on the version
+    /// read before submission, not proof that a contract at that version
+    /// includes this update: another edit may have landed first.
     case appliedNotRefreshed(minimumVersion: UInt32, reason: String)
 
     /// Decode the JSON `platform_wallet_token_update_config_and_refresh`

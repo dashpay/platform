@@ -525,16 +525,13 @@ enum TokenActionResolver {
             )
         ))
 
-        // Marketplace trade mode
+        // Marketplace trade mode. Not gated on the cached rule: the wallet
+        // builds the update from the live contract and Platform decides
+        // whether this identity may make the change, so a rule that changed
+        // since the contract was stored cannot lock the form.
         rows.append(ResolvedTokenAction(
             kind: .updateTradeMode,
-            permission: TokenActionEvaluator.evaluate(
-                rule: token.tradeModeChangeRules,
-                feature: "Trade mode change",
-                identity: identity,
-                contract: contract,
-                token: token
-            )
+            permission: .allowed
         ))
 
         // Change distribution rules — `TokenDistributionChangeRules`

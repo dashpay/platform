@@ -25,7 +25,6 @@ struct TokenUpdateMaxSupplyActionView: View {
     let identity: PersistentIdentity
 
     @EnvironmentObject var walletManager: PlatformWalletManager
-    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -225,7 +224,6 @@ struct TokenUpdateMaxSupplyActionView: View {
         let contractId = token.contractId
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
-        let sdk = appState.sdk
 
         Task {
             do {
@@ -248,7 +246,6 @@ struct TokenUpdateMaxSupplyActionView: View {
                     if let reason = ContractDownloader.storeConfigUpdateOutcome(
                         outcome,
                         contractId: contractId,
-                        sdk: sdk,
                         modelContext: modelContext
                     ) {
                         self.refreshNotice = .init(

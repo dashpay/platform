@@ -46,11 +46,12 @@ public enum TokenConfigChange: Sendable, Equatable {
     /// MaxSupply(Option<TokenAmount>). `nil` removes the cap entirely.
     case maxSupply(newValue: UInt64?)
 
-    /// MarketplaceTradeMode(TokenTradeMode): whether holders may list the
-    /// token for sale and make offers for it. Platform decides whether the
-    /// token may take the mode (a tradeable token must be transferable, and
-    /// the network at protocol version 16 or later) and refuses the update
-    /// otherwise.
+    /// MarketplaceTradeMode(TokenTradeMode): the token's configuration for
+    /// trading through Platform. Changing it places no order. Platform
+    /// decides whether the token may become tradeable (it must be
+    /// transferable, and the network at protocol version 16 or later) and
+    /// refuses the update otherwise; setting `notTradeable` has neither
+    /// condition.
     case marketplaceTradeMode(TokenTradeMode)
 
     /// FFI tag for `change_item_tag`. Must agree with the constants in
@@ -676,8 +677,10 @@ extension ManagedPlatformWallet {
     ///
     /// - Throws: a refusal by Platform as
     ///   `PlatformWalletError.consensusRejection`, with its consensus code
-    ///   (for a trade mode: 10603 on a network below protocol version 16,
-    ///   10281 for a token that is not transferable).
+    ///   (for making a token tradeable: 10603 on a network below protocol
+    ///   version 16, 10281 for a token that is not transferable); an update
+    ///   that was broadcast and whose outcome is unknown as
+    ///   `PlatformWalletError.transactionBroadcastUnconfirmed`.
     public func tokenUpdateConfig(
         identityId: Identifier,
         contractId: Identifier,
