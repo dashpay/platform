@@ -174,6 +174,23 @@ describe('installCertificateFilesTask', () => {
     const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
     expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
   });
+
+  // Platform setup checks the pair before it starts Core and installs it
+  // after Core has synced, which can outlast what was left of its validity.
+  it('should refuse a pair checked in advance that expired before it is installed', async function it() {
+    const pair = readCertificateFilePair(form);
+
+    this.sinon.useFakeTimers({ now: Date.now() + 31 * 24 * 60 * 60 * 1000, toFake: ['Date'] });
+
+    await expect(installCertificateFilesTask(config).run({
+      fileCertificateProviderForm: form,
+      validatedCertificatePair: pair,
+    })).to.be.rejectedWith('expired on');
+
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+    expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+    expect(fs.existsSync(path.join(sslDir, 'private.key'))).to.be.false();
+  });
 });
 
 describe('readCertificateFilePair', () => {
@@ -217,6 +234,23 @@ describe('readCertificateFilePair', () => {
     fs.writeFileSync(form.chainFilePath, `${pair.pem}-----BEGIN CERTIFICATE-----\nAAAA\n`);
 
     expect(() => readCertificateFilePair(form)).to.throw('cannot be used');
+  });
+
+  // Clients refuse a certificate outside its validity window on either side,
+  // and `update` refuses to go on with one.
+  it('should refuse an expired certificate', () => {
+    fs.writeFileSync(form.chainFilePath, issueCertificate({ ip: '1.2.3.4', keys: pair.keys, days: -1 }).pem);
+
+    expect(() => readCertificateFilePair(form)).to.throw('The certificate expired on');
+  });
+
+  it('should refuse a certificate that is not valid yet', () => {
+    fs.writeFileSync(
+      form.chainFilePath,
+      issueCertificate({ ip: '1.2.3.4', keys: pair.keys, startsInDays: 2 }).pem,
+    );
+
+    expect(() => readCertificateFilePair(form)).to.throw('The certificate is not valid until');
   });
 
   // Any private key block counts, whatever its type or form: the chain is
