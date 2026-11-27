@@ -1,4 +1,5 @@
 import { Listr } from 'listr2';
+import Config from '../../../src/config/Config.js';
 import ResetCommand from '../../../src/commands/reset.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
@@ -27,6 +28,7 @@ describe('Reset command', () => {
       },
       config,
       resetNodeTask,
+      homeDir,
     );
   }
 
@@ -64,6 +66,31 @@ describe('Reset command', () => {
         .and.include(`  ${setupCommand}\n`);
       expect(stderr).to.not.include(config.get('platform.drive.tenderdash.node.key'));
       expect(resetNodeTask).to.have.been.calledOnceWith(config);
+    });
+
+    // Platform-only setup serves the mainnet and testnet presets outside a
+    // group, and refuses every other config: the key goes back where it was.
+    [
+      ['a member of the local group', 'local_1', 'local'],
+      ['a config that is not a preset', 'evo-1', null],
+    ].forEach(([description, name, group]) => {
+      it(`should name the settings to restore for ${description}, not setup`, async () => {
+        const config = new Config(name, setUp('testnet', { masternode: true }).getStoredOptions());
+        config.set('group', group);
+
+        await reset(config, { platform: true, hard: true, force: true });
+
+        const { backupCommand } = renderNodeKeyBackup(name);
+
+        expect(stderr).to.include(config.get('platform.drive.tenderdash.node.id'))
+          .and.include(`  ${backupCommand}\n`)
+          .and.include('platform.drive.tenderdash.node.key')
+          .and.include('platform.drive.tenderdash.node.id')
+          .and.include(homeDir.joinPath('config.json'))
+          .and.include(`dashmate config render --config ${name}`);
+        expect(stderr).to.not.include('dashmate setup');
+        expect(stderr).to.not.include(config.get('platform.drive.tenderdash.node.key'));
+      });
     });
   });
 
