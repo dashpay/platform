@@ -195,6 +195,47 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         return ManagedAssetLockManager(handle: assetLockHandle)
     }
 
+    /// The Platform addresses a tracked asset lock of this wallet recorded
+    /// when it was built by an external Platform-address funding
+    /// (`fundFromAssetLockExternal`), in the order the wallet stores them
+    /// (the single `credits == nil` entry is this wallet's remainder), or
+    /// `nil` for an owned funding, a lock tracked before recipients were
+    /// recorded, or an outpoint that is not tracked. A lock that records
+    /// them resumes only to exactly these, through
+    /// `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`.
+    public func assetLockPlatformAddressRecipients(
+        txid: Data,
+        vout: UInt32
+    ) throws -> [ManagedPlatformAddressWallet.FundFromAssetLockRecipient]? {
+        guard txid.count == 32 else {
+            throw PlatformWalletError.invalidParameter("txid must be 32 bytes, got \(txid.count)")
+        }
+        var txidTuple: FFIByteTuple32 =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        txid.withUnsafeBytes { buf in
+            withUnsafeMutableBytes(of: &txidTuple) { dst in
+                dst.copyBytes(from: buf.prefix(32))
+            }
+        }
+        var found = false
+        var recipientsPtr: UnsafeMutablePointer<AssetLockPlatformAddressRecipientFFI>? = nil
+        var count: UInt = 0
+        try platform_wallet_get_asset_lock_platform_address_recipients(
+            handle, &txidTuple, vout, &found, &recipientsPtr, &count
+        ).check()
+        defer { platform_wallet_free_asset_lock_platform_address_recipients(recipientsPtr, count) }
+        guard found else { return nil }
+        return (0..<Int(count)).map { i -> ManagedPlatformAddressWallet.FundFromAssetLockRecipient in
+            let row = recipientsPtr![i]
+            let address = withUnsafeBytes(of: row.address) { Data($0) }
+            return ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
+                addressType: address[0],
+                hash: address.subdata(in: 1..<21),
+                credits: row.has_amount ? row.amount_credits : nil
+            )
+        }
+    }
+
     // MARK: - Persistence
 
     /// Flush all queued changesets to the storage backend.

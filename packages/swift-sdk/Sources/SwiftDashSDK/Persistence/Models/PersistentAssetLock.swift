@@ -238,6 +238,25 @@ public final class PersistentAssetLock {
     /// published, V5 schema.
     public internal(set) var identityRecipient: Data?
 
+    /// The Platform addresses an external Platform-address funding
+    /// (`fundingTypeRaw == 4`, built by `fundFromAssetLockExternal`) was
+    /// built to pay, in the opaque form Rust hands over
+    /// (`PlatformAddressRecipients::to_bytes`, at most
+    /// `PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`
+    /// bytes). Written by Rust in the same atomic round as the row, before
+    /// the lock is dispatched, and immutable afterwards: a resume pays
+    /// exactly these recipients or is refused (`assetLockRecipientMismatch`),
+    /// so recovery never consumes the payment into the wallet. Read them
+    /// through `ManagedPlatformWallet.assetLockPlatformAddressRecipients(txid:vout:)`,
+    /// never by parsing these bytes. `nil` for owned fundings, other funding
+    /// types, and locks tracked before recipients were recorded.
+    ///
+    /// Default `nil` keeps SwiftData's lightweight migration safe. Lands in
+    /// the live, not yet published, V5 schema. Read-only outside the SDK,
+    /// like `identityRecipient`: only the checked recipient callback writes
+    /// it, so client code cannot clear a pending payment's recipients.
+    public internal(set) var platformAddressRecipients: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -253,7 +272,9 @@ public final class PersistentAssetLock {
         statusRaw: Int,
         proofBytes: Data? = nil,
         operationId: Data? = nil,
-        shieldedRecipientRaw43: Data? = nil
+        shieldedRecipientRaw43: Data? = nil,
+        identityRecipient: Data? = nil,
+        platformAddressRecipients: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -266,6 +287,8 @@ public final class PersistentAssetLock {
         self.proofBytes = proofBytes
         self.operationId = operationId
         self.shieldedRecipientRaw43 = shieldedRecipientRaw43
+        self.identityRecipient = identityRecipient
+        self.platformAddressRecipients = platformAddressRecipients
         self.createdAt = Date()
         self.updatedAt = Date()
     }

@@ -168,6 +168,13 @@ extension PlatformWalletManager {
         /// Platform may have used long ago; assigning one is refused with
         /// `assetLockAlreadyConsumed`. Rust decides it; this only carries it.
         public let identityRecipientUnassigned: Bool
+        /// Whether the lock is an external Platform-address funding that
+        /// recorded the addresses it pays, as on
+        /// `ManagedAssetLockManager.TrackedAssetLock`: it resumes only to
+        /// those, through
+        /// `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`,
+        /// never as an owned top-up.
+        public let hasPlatformAddressRecipients: Bool
     }
 
     public func trackedAssetLocks(for walletId: Data) -> [TrackedAssetLockSnapshot] {
@@ -198,7 +205,8 @@ extension PlatformWalletManager {
                 identityRecipient: entry.has_identity_recipient
                     ? withUnsafeBytes(of: &entry.identity_recipient) { Data($0) }
                     : nil,
-                identityRecipientUnassigned: entry.identity_recipient_unassigned
+                identityRecipientUnassigned: entry.identity_recipient_unassigned,
+                hasPlatformAddressRecipients: entry.has_platform_address_recipients
             )
         }
     }

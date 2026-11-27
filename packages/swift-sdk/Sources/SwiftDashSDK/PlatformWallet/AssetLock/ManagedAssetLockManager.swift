@@ -97,6 +97,15 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         /// Platform may have used long ago; assigning one is refused with
         /// `assetLockAlreadyConsumed`. Rust decides it; this only carries it.
         public let identityRecipientUnassigned: Bool
+        /// Whether the lock is an external Platform-address funding that
+        /// recorded the addresses it pays (read them with
+        /// `ManagedPlatformWallet.assetLockPlatformAddressRecipients(txid:vout:)`).
+        /// Such a lock resumes only to exactly those recipients, through
+        /// `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`;
+        /// every other resume, an owned one included, is refused with
+        /// `assetLockRecipientMismatch`. Route recovery by it: never offer
+        /// these locks to an owned top-up resume.
+        public let hasPlatformAddressRecipients: Bool
     }
 
     /// Result of building an asset lock transaction.
@@ -155,7 +164,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
                 identityRecipient: lock.has_identity_recipient
                     ? withUnsafeBytes(of: lock.identity_recipient_32) { Data($0) }
                     : nil,
-                identityRecipientUnassigned: lock.identity_recipient_unassigned
+                identityRecipientUnassigned: lock.identity_recipient_unassigned,
+                hasPlatformAddressRecipients: lock.has_platform_address_recipients
             )
         }
     }

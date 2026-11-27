@@ -141,6 +141,17 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// `PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`; Rust only
     /// honours the declaration when both recipient slots are wired.
     public static let assetLockIdentityRecipients: UInt64 = 1 << 17
+    /// The Platform addresses an external Platform-address funding (the
+    /// recipients of `fundFromAssetLockExternal`) was built to pay survive
+    /// store and load with its row, so a resume after restart pays exactly
+    /// those recipients or is refused, and never consumes the lock into the
+    /// wallet. Mirrors
+    /// `PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`.
+    /// Rust only honours the declaration when both recipient slots, the
+    /// begin/end pair and `atomicChangesets` are present: the row and its
+    /// recipients arrive in separate callbacks and must commit as one unit.
+    /// The wallet builds no external Platform-address funding without it.
+    public static let assetLockPlatformAddressRecipients: UInt64 = 1 << 18
 
     public let version: UInt32
     public let bits: UInt64

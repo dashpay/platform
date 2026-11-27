@@ -81,6 +81,11 @@ final class InvitationPersistenceTests: XCTestCase {
             // Identity recipients: the handler wires both recipient slots and
             // lands the bytes on `PersistentAssetLock.identityRecipient`.
             | PlatformWalletPersistenceCapabilities.assetLockIdentityRecipients
+            // External Platform-address funding recipients: the handler wires
+            // the persist/load pair onto
+            // `PersistentAssetLock.platformAddressRecipients`, inside its
+            // atomic changeset.
+            | PlatformWalletPersistenceCapabilities.assetLockPlatformAddressRecipients
 
         XCTAssertEqual(
             capabilities.version,
