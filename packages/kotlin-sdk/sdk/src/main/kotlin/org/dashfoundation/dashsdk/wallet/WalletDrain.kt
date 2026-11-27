@@ -138,8 +138,8 @@ class WalletDrainOutcome(
             WalletDrainOutcome(State.Pending, outpoint = null, error = error)
 
         /**
-         * Decode [WalletDrainNative.fundFromWalletDrain]'s (or
-         * [WalletDrainNative.status]'s) result. Never throws: whatever
+         * Decode [WalletDrainNative.fundFromWalletDrainV2]'s (or
+         * [WalletDrainNative.statusV2]'s) result. Never throws: whatever
          * cannot be decoded becomes a pending outcome with the reason as
          * its error, keeping any outpoint that was readable.
          */

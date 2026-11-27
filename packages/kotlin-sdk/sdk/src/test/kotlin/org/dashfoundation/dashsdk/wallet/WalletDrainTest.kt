@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.wallet
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.PaymentDelivery
+import org.dashfoundation.dashsdk.ffi.WalletDrainNative
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -116,6 +117,25 @@ class WalletDrainTest {
         assertEquals(PaymentDelivery.MAYBE_SENT, maybeSent.delivery)
         assertFalse(maybeSent.isRetryable)
         assertNull(maybeSent.heldAssetLock)
+    }
+
+    /**
+     * The packed-outcome layout is named by its JNI entry points: a native
+     * library that still packs the 50-byte header exports no `...V2`, so this
+     * SDK fails to link it before a drain runs instead of decoding the old
+     * bytes after funds moved. Renaming back to the unversioned names would
+     * reopen that gap; change the suffix with the layout.
+     */
+    @Test
+    fun shouldReachTheDrainThroughTheEntryPointsThatNameItsLayout() {
+        val natives = WalletDrainNative::class.java.declaredMethods
+            .filter { java.lang.reflect.Modifier.isNative(it.modifiers) }
+            .map { it.name }
+            .toSet()
+        assertTrue(natives.containsAll(setOf("fundFromWalletDrainV2", "statusV2")))
+        assertFalse("fundFromWalletDrain" in natives)
+        assertFalse("status" in natives)
+        assertEquals(92, WalletDrainOutcome.HEADER_SIZE)
     }
 
     @Test

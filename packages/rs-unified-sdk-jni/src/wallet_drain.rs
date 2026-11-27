@@ -247,8 +247,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_pre
 /// thrown. Throws only for an argument that could not be read, before any
 /// Rust wallet code runs. Blocks for the asset-lock proof wait and the
 /// Halo 2 proof.
+///
+/// `V2` (with [`Java_..._statusV2`]) names the 92-byte outcome header: a
+/// Kotlin SDK finds no entry point in a library that still packs the 50-byte
+/// one, so the mismatch fails at link time, before any funds move.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_fundFromWalletDrain(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_fundFromWalletDrainV2(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
@@ -295,9 +299,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_fun
 /// `platform_wallet_manager_shielded_wallet_drain_status`. Never touches the
 /// network. Throws when the read fails, which is never evidence that nothing
 /// was sent; otherwise returns the outcome packed as
-/// [`Java_..._fundFromWalletDrain`] does, with no error.
+/// [`Java_..._fundFromWalletDrainV2`] does, with no error.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_status(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_statusV2(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,

@@ -103,7 +103,7 @@ suspend fun PlatformWalletManager.shieldedFundFromWalletDrain(
             }
             WalletDrainOutcome.decode(
                 mapNativeErrors {
-                    WalletDrainNative.fundFromWalletDrain(
+                    WalletDrainNative.fundFromWalletDrainV2(
                         managerHandle,
                         walletId,
                         operationId.toWalletDrainOperationIdBytes(),
@@ -147,7 +147,7 @@ suspend fun PlatformWalletManager.shieldedWalletDrainStatus(
         require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
         val outcome = WalletDrainOutcome.decode(
             mapNativeErrors {
-                WalletDrainNative.status(
+                WalletDrainNative.statusV2(
                     managerHandle,
                     walletId,
                     operationId.toWalletDrainOperationIdBytes(),
