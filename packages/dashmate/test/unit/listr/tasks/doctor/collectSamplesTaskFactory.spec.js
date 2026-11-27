@@ -17,6 +17,7 @@ import archiveSamples from '../../../../../src/doctor/archiveSamples.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import unarchiveSamplesFactory from '../../../../../src/doctor/unarchiveSamplesFactory.js';
+import generateRandomString from '../../../../../src/util/generateRandomString.js';
 import { getOperatorIdentity } from '../../../../../src/util/maskOperatorIdentity.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
@@ -805,24 +806,21 @@ describe('collectSamplesTaskFactory', () => {
     // know, and a command line has too many ways of carrying one to mask it
     // argument by argument. No analyser reads it, so it is left out; only the
     // executable stays.
-    const shellFixture = 'shellFixtureSecret7Qx';
-    const hyphenFixture = 'hyphenFixtureSecret7Qx';
-    const healthFixture = 'healthFixtureSecret7Qx';
-
     [
-      ['a shell command line', { Cmd: ['sh', '-c', `exec app --password ${shellFixture}`] }],
-      ['a value after its option', { Cmd: ['app', '--token', 'separateSecret7Qx'] }],
-      ['a value that starts with a hyphen', { Cmd: ['app', '--token', `-${hyphenFixture}`] }],
-      ['a positional value after the script name', {
-        Cmd: ['sh', '-c', 'exec app --password "$1"', 'sh', 'positionalSecret7Qx'],
-      }],
-      ['an entrypoint argument', { Entrypoint: ['/entry.sh', 'entrypointSecret7Qx'] }],
-      ['a health check', {
-        Healthcheck: { Test: ['CMD-SHELL', `curl -u probe:${healthFixture} http://localhost/`], Interval: 1e9 },
-      }],
-    ].forEach(([description, commandConfig]) => {
+      ['a shell command line', (secret) => ({ Cmd: ['sh', '-c', `exec app --password ${secret}`] })],
+      ['a value after its option', (secret) => ({ Cmd: ['app', '--token', secret] })],
+      ['a value that starts with a hyphen', (secret) => ({ Cmd: ['app', '--token', `-${secret}`] })],
+      ['a positional value after the script name', (secret) => ({
+        Cmd: ['sh', '-c', 'exec app --password "$1"', 'sh', secret],
+      })],
+      ['an entrypoint argument', (secret) => ({ Entrypoint: ['/entry.sh', secret] })],
+      ['a health check', (secret) => ({
+        Healthcheck: { Test: ['CMD-SHELL', `curl -u probe:${secret} http://localhost/`], Interval: 1e9 },
+      })],
+    ].forEach(([description, buildCommandConfig]) => {
       it(`should leave the container command out of the archive, with ${description}`, async () => {
-        const [secret] = JSON.stringify(commandConfig).match(/[A-Za-z]+Secret7Qx/);
+        const secret = generateRandomString(24);
+        const commandConfig = buildCommandConfig(secret);
 
         dockerCompose.inspectService.resolves({
           Id: 'container-id',

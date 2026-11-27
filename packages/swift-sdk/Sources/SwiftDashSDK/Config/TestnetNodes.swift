@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 // MARK: - Testnet Node Models
 
@@ -86,25 +87,50 @@ public class TestnetNodesLoader {
         return createSampleTestnetNodes()
     }
 
-    /// Create sample testnet nodes for testing
-    /// - Returns: TestnetNodes with sample data
+    /// Create fresh sample testnet nodes for testing.
+    /// - Returns: Random sample data, or empty node lists if generation fails.
     public static func createSampleTestnetNodes() -> TestnetNodes {
+        guard let masternodeHash = randomBytes(),
+              let hpmnHash = randomBytes(),
+              let masternodeOwner = randomKey(),
+              let masternodeVoter = randomKey(),
+              let hpmnOwner = randomKey(),
+              let hpmnVoter = randomKey(),
+              let hpmnPayout = randomKey() else {
+            return TestnetNodes(masternodes: [:], hpMasternodes: [:])
+        }
+
         let sampleMasternode = MasternodeInfo(
-            proTxHash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            owner: KeyInfo(privateKey: "<masternode-owner-key>"),
-            voter: KeyInfo(privateKey: "<masternode-voting-key>")
+            proTxHash: masternodeHash.toHexString(),
+            owner: masternodeOwner,
+            voter: masternodeVoter
         )
 
         let sampleHPMasternode = HPMasternodeInfo(
-            protxTxHash: "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-            owner: KeyInfo(privateKey: "<evonode-owner-key>"),
-            voter: KeyInfo(privateKey: "<evonode-voting-key>"),
-            payout: KeyInfo(privateKey: "<evonode-payout-key>")
+            protxTxHash: hpmnHash.toHexString(),
+            owner: hpmnOwner,
+            voter: hpmnVoter,
+            payout: hpmnPayout
         )
 
         return TestnetNodes(
             masternodes: ["test-masternode-1": sampleMasternode],
             hpMasternodes: ["test-hpmn-1": sampleHPMasternode]
         )
+    }
+
+    private static func randomBytes() -> Data? {
+        var bytes = Data(count: 32)
+        let status = bytes.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
+            guard let base = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, base)
+        }
+        return status == errSecSuccess ? bytes : nil
+    }
+
+    private static func randomKey() -> KeyInfo? {
+        guard let bytes = randomBytes(),
+              let wif = WIFParser.encodeToWIF(bytes, network: .testnet) else { return nil }
+        return KeyInfo(privateKey: wif)
     }
 }

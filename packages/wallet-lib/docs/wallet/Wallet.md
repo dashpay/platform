@@ -63,7 +63,12 @@ const wallet = new Wallet({
 
 ### Creation from HDPrivateKey 
 
+Use your own extended private key when opening an existing wallet.
+
 ```js
+const { HDPrivateKey } = require('@dashevo/dashcore-lib');
+const extendedPrivateKey = new HDPrivateKey('testnet').toString();
+
 const wallet = new Wallet({
   HDPrivateKey: extendedPrivateKey
 })
@@ -87,7 +92,12 @@ const wallet = new Wallet({
 
 ### Creation from privateKey
 
+Use your own private key in WIF when opening an existing wallet.
+
 ```js
+const { PrivateKey } = require('@dashevo/dashcore-lib');
+const privateKeyWif = new PrivateKey(null, 'testnet').toWIF();
+
 const wallet = new Wallet({
   privateKey: privateKeyWif
 })

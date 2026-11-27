@@ -3,6 +3,10 @@ title = "Dash Platform Gitleaks configuration"
 [extend]
 useDefault = true
 
+# This file contains exact fixture matches for rule-specific allowlists.
+[[allowlists]]
+paths = ['''^\.gitleaks\.toml$''']
+
 # Match known fields and formats in specific files so other credentials in
 # those files still reach the default rules, including generic-api-key.
 [[rules]]
@@ -132,55 +136,267 @@ regexTarget = "match"
 paths = ['''^\.yarn/releases/yarn-4\.12\.0\.cjs$''']
 regexes = ['''^apiKey:"[a-f0-9]{32}"$''']
 
+# Exact matches for deterministic signing vectors and wallet fixtures.
 [[rules.allowlists]]
-description = "Deterministic BLS and hex signing vectors in dedicated test files"
 condition = "AND"
 regexTarget = "match"
-paths = [
-  '''^packages/js-dash-sdk/src/SDK/Client/Client\.spec\.ts$''',
-  '''^packages/rs-dpp/tests/fixtures/bls_compatibility/vectors\.json$''',
-  '''^packages/rs-drive-abci/src/mimic/fixtures/core_quorums\.json$''',
-  '''^packages/swift-sdk/SwiftTests/SwiftDashSDKTests/(?:DataTransformersTests|ValidationTests)\.swift$''',
-  '''^packages/wasm-dpp2/tests/unit/(?:IdentitySigner|PlatformAddressSigner)\.spec\.ts$''',
-  '''^packages/wasm-sdk/tests/unit/conversion-derivation\.spec\.ts$''',
-]
-regexes = [
-  '''^(?:secret_key|privateKeyFixture|(?:input|assetLock|identity|test)?[Pp]rivateKeyHex|validKey)["']?[ \t]*[:=][ \t]*["'](?:[a-f0-9]{64}|[a-f0-9]{16})["']$''',
-]
+paths = ['''^packages/js-dash-sdk/src/SDK/Client/Client\.spec\.ts$''']
+regexes = ['''^privateKeyFixture = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2'$''']
 
 [[rules.allowlists]]
-description = "WIF and hex keys in signing test vectors"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/MasternodeVotingKeyFfiTest\.kt$''']
+regexes = ['''^keyOneTestnetWif = "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA"$''']
+
+[[rules.allowlists]]
 condition = "AND"
 regexTarget = "match"
 paths = [
-  '''^packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/MasternodeVotingKeyFfiTest\.kt$''',
   '''^packages/rs-dpp/src/tests/fixtures/instant_asset_lock_proof_fixture\.rs$''',
   '''^packages/strategy-tests/src/transitions\.rs$''',
-  '''^packages/wasm-dpp/(?:lib/test/fixtures/get(?:InstantAssetLockProof|InstantLock|PrivateAndPublicKeyForSigning)Fixture\.js|test/integration/identity/stateTransition/IdentityTopUpTransition/validation/basic/validateIdentityTopUpTransitionBasicFactory\.spec\.js)$''',
-  '''^packages/wasm-dpp2/tests/unit/(?:IdentitySigner|PlatformAddressSigner)\.spec\.ts$''',
-  '''^packages/wasm-sdk/tests/unit/conversion-derivation\.spec\.ts$''',
 ]
+regexes = ['''^private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY"$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/rs-dpp/tests/fixtures/bls_compatibility/vectors\.json$''']
 regexes = [
-  '''^(?:keyOneTestnetWif|private_key_hex|privateKey(?:Hex|Wif)?|testPrivateKeyWif)["']?[ \t]*[:=][ \t]*["'](?:[1-9A-HJ-NP-Za-km-z]{52}|[a-f0-9]{64})["']$''',
+  '''^secret_key": "4a353be3dac091a0a7e640620372f5e1e2e4401717c1e79cac6ffba8f6905604"$''',
+  '''^secret_key": "4ecb8197b8a2af28bfadf88f8084662c078bed1fa6970fd89b95ed541e35b3be"$''',
+  '''^secret_key": "6fc9d9a2b05fd1f0e51bc91041a03be8657081f272ec281aff731624f0d1c220"$''',
 ]
 
 [[rules.allowlists]]
-description = "Deterministic wallet fixture keys and derivation vectors"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/rs-drive-abci/src/mimic/fixtures/core_quorums\.json$''']
+regexes = [
+  '''^secret_key": "0625b848ac8adcf9a492c608b6f3c68de3a695ee52684282a359dd1485982094"$''',
+  '''^secret_key": "1875901a20c05263718b60b6c7d076d17f198be2c1c74076a987a8247b831374"$''',
+  '''^secret_key": "1e998cb2d5e16542273243f3a39146714b1f52e51d882051654fd01d2ffbccf0"$''',
+  '''^secret_key": "1fcedaede8dcf78f22a37886ba8c5a6819b54f0df353226fde8254ded687f4be"$''',
+  '''^secret_key": "36e6194880c3797f0ee82a463b5bf94d69462756b62a0fbe88fe3f706b1540aa"$''',
+  '''^secret_key": "60cc232b5d9fd6f6a17b9f807e17d269463b8be9d79d8c8d8e7b7325467ef724"$''',
+  '''^secret_key": "60d4cd010b78057205135c1024f2e62847e5f2a94cb429011bb28680a3e27ba4"$''',
+  '''^secret_key": "6a7016bc45678d62d7f42c98c20b70d183579cd811b13e1bb832b8f15b317366"$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DataTransformersTests\.swift$''']
+regexes = [
+  '''^privateKeyHex = "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+  '''^privateKeyHex: "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ValidationTests\.swift$''']
+regexes = [
+  '''^assetLockPrivateKeyHex: "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+  '''^identityPrivateKeyHex: "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+  '''^identityPrivateKeyHex: "bbff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+  '''^inputPrivateKeyHex: "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+  '''^validKey = "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/fixtures/cR4t6e_pk\.json$''']
+regexes = ['''^privateKey": "cR4t6evwVZoCp1JsLk4wURK4UmBCZzZotNzn9T1mhBT19SH9JtNt"$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/fixtures/fixtures\.json$''']
+regexes = [
+  '''^HDPrivateKey1Mainnet":"xprv9s21ZrQH143K3oPRkzFha3zbXZYAhd3gLaGi93wCpnqBSv9JMDPFpZapDJHq2bN6EAd5Pqms4JfGQ1MYvT6ZsoeDaa8gQBKvzqrwYUFTUJT"$''',
+  '''^HDPrivateKey1Testnet":"tprv8ZgxMBicQKsPdvrZPiQ1HXQXaiaWY3BwKnUYotXriaZTAdtxzuwsPmYP2KjqBmtyhpNZptmMQnNKG5Ts5QjuzsbqpD9EXFDbaXfTRxbTNsr"$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/fixtures/gathersail\.json$''']
+regexes = [
+  '''^hdprivkey": "tprv8dofJF3bpqxuajWyTwnM7PyxCP28ubYAcZ9FmAUsK8mGWGtDsnVGqotKPoPYnqCrqHd5B5PkE6sX2ZX7HXrQLpKGw9EKsfN97LKQ1LMHXK2"$''',
+  '''^hdprivkey": "tprv8fPaucpz8koz1x6d1EjuBXaDJqyUknWb2PwPFWXzoL3LUCDbWtw451fCxMBvpYcawck4ER6GJPRyhMapoYD3p5p6gY71uLsYiTJ4Lq7NBSf"$''',
+  '''^hdprivkey": "tprv8fPaucq8URLxAntBgc3dJQ7A9gSZmGCEkfDjiUKqrfxb5hvLhMH2xE9FPxhBmpEdSYbZ7WgV1mVP6Q6CzFbiz3qfRs7pR3QT2ALCWGeVoWn"$''',
+  '''^hdprivkey": "tprv8hV43GTuAYskd2ZTtJGgVtNp9e4ozrj3qD2ksTVHpvETmZjp4KpRFG65J7wK6WhB3z8ixcGgFowtdrXtAorza6LT4aRMUK3NdPHW5bqFUVt"$''',
+  '''^hdprivkey": "tprv8hV43GTuAYskeXZaJuuZw5kJS8whKashCoDAyr7wNJfC5LM73mfgUsJno7Uy7Db148R9bCgKGPPqWMyU8HhzVi73uwR1RsYF4ietJXpVAvW"$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/fixtures/knifeeasily\.json$''']
+regexes = [
+  '''^HDRootEncryptedPrivateKeyMainnet":"xprv9s21ZrQH143K2Gcg8Ey7FA7xrA2x8B8cnod787pVLgQjaNH2t4cM2TjB8dU5LSp5YbhckFRSYTdaKwzBdUavjFsnrKauwW23ytHYesCoCmG"$''',
+  '''^HDRootEncryptedPrivateKeyTestnet":"tprv8ZgxMBicQKsPd5rCnopcQojxAHTAMhAd8MYDzYEwpeuDMy27sRx6YD6d3odjLpCPv3EPkM3ChpDNnoXvkgvsYK9PNxoDbrk6tz2y6WGXK5R"$''',
+  '''^HDRootPrivateKeyMainnet":"xprv9s21ZrQH143K37d2j9YW7snYGbAJJX9vzEZRwU7QEc4yP39t1Yc7t2Aw79aBBQWfLNqnpo9bFRnWoDv7xCPyBpLFHZvvrtVYfRv2zEBtnT5"$''',
+  '''^HDRootPrivateKeyTestnet":"tprv8ZgxMBicQKsPdvrZPiQ1HXQXaiaWY3BwKnUYotXriaZTAdtxzuwsPmYP2KjqBmtyhpNZptmMQnNKG5Ts5QjuzsbqpD9EXFDbaXfTRxbTNsr"$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/fixtures/wallets/2a331817b9d6bf85100ef0/wallet\.json$''']
+regexes = ['''^privateKey": "2a331817b9d6bf85100ef05503d16f9f57c8855dbf13766b2f26c382b716d396"$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/src/types/DerivableKeyChain/DerivableKeyChain\.spec\.js$''']
+regexes = [
+  '''^expectedKeyForChild_0 = 'tprv8d4podc2Tg459CH2bwLHXj3vdJFBT2rdsk5Nr1djH7hzHdt5LRdvN6QyFwMiDy7ffRdik7fEVRKKgsHB4F18sh8xF6jFXpKq4sUgGBoSbKw'$''',
+  '''^expectedRootDIP15AccountKey_0 = 'tprv8hRzmheQujhJN5XP2dj955nAFCKeEoSifJRWuutdbwWRtusdDQ426jbp75EqErUSuTxmPyxYmP1TpcF5qdxGhXLNXRLMGsRLG6NFCv1WnaQ'$''',
+  '''^expectedRootDIP15AccountKey_1 = 'tprv8hRzmheQujhJQyCtFTuUFHxB3Ag5VLB994zhH4CfxbA41cq73HT2mpYq5M33V54oJyn6g514saxxVJB886G55eYX56J6D6x87UNNT6iQHkR'$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/src/types/Identities/methods/getIdentityHDKeyByIndex\.spec\.js$''']
+regexes = [
+  '''^expectedIdentityHDKey0_0 = 'tprv8nwXBDgtqkF6xZjxESRmMcmyo8LeJ7YnhEZNYrGBUVDtDbxdtjiQQ5pyVigvrep81EJWenD3BEdCV5Yrhah2tbnzjM5Dq9bnmDvX7yyRHRr'$''',
+  '''^expectedIdentityHDKey0_1 = 'tprv8nwXBDgtqkF6z6Da9eSrw29t3qVcHqWTLzw5oFVzXnuxwhRF5RtMmc3LqGMD6NmShVUd4dkbs86PB4pZVQ7xWgg2BLK4Kqm7TDTct4YDifH'$''',
+  '''^expectedIdentityHDKey1_0 = 'tprv8oNTEowGNFSSD6Ne3aR9hQXFT2hmvf4F9kgjbbrKmCyeBWbuH9an16tPtKrHtkbAyHofhfGa1Go6a4bZQukJ8qS657PJQEMg3Sq3Z22UnH6'$''',
+  '''^expectedIdentityPrivateKey0_0 = '6fcf62a14d7c452a77dee426a534b7c92cbb13a41c3b7f75700519e339ef09dc'$''',
+  '''^expectedIdentityPrivateKey0_1 = '5e07be03de51b0c5f7af8d60074819e2cf4bdce8eb47e59c18295e151528390f'$''',
+  '''^expectedIdentityPrivateKey1_0 = '276d1d2aa6df3c3b7d9da967641769eddd7e81055833b90a79cdb1b433dd18e5'$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/src/utils/mnemonic\.spec\.js$''']
+regexes = [
+  '''^expected24frRootKeyMain = 'xprv9s21ZrQH143K26ssNac4eHjBoeKdcZ1jZC8q1eBfrDcumyQwmnELDVFrb6Xd2E5GNtHYU1ayKv4EjfJoq5httWyaW1Fq6Zt5zvJ658m85FC'$''',
+  '''^expectedCnRootKey = 'xprv9s21ZrQH143K2CtwuutnGUo2SXtcTCZYcZ8Tg4KFm6C6WTMKGaEm3ga63dMsNarig7hfX8XzNfXdtBjBrs2Uaans5MmwdFKr5uDPqjcsTKb'$''',
+  '''^expectedCnTradRootKey = 'xprv9s21ZrQH143K2P4mYzdrX9ZCgM3xks4vTu2eGMrsd92CbTphBmDhwd4xPUneLq4WF66ETDiwHVzMS7T9BecoYCEw79JmxfGc3DfUrQLmpkL'$''',
+  '''^expectedCzRootKey = 'xprv9s21ZrQH143K4WmszXEM3kb6vPtvL67zWyzcZZiaqtijPhW5r1zmjvN4V66HKJYUEfoEDq199gHCE5AUUo4kMo3nReUT4EVofnakjaFLRQy'$''',
+  '''^expectedEnRootKey = 'xprv9s21ZrQH143K2EfPZFVjrocWU5451xCPASWvczv9bs7TFdxVKSgb6d4yb6rQWB8Qey321JQN3hDsfUScfiwzpzZALKXcwNnTzf5opbsuqbT'$''',
+  '''^expectedEsRootKey = 'xprv9s21ZrQH143K3xmLC7RGEgYJAmPwZ699jsPVYkswkgKBztxvUusGGM45vDyS6z8runs8s31fqygFmcQ6wTbp7jybyWQNF7xwvr9NseKqiyx'$''',
+  '''^expectedItRootKey = 'xprv9s21ZrQH143K4btNDndrRbCDjxvmUBd17kwaapRTrivby5UkpzKapYq9v4oVMRhy7jq32gYCAKmNcviLgfZbNuC95zSKTB2UStYBNYRXTT7'$''',
+  '''^expectedJpRootKey = 'xprv9s21ZrQH143K3WoLUCke5VK7Kkrjvp3K8vfFvbuKBXQMvBZRrPGJY3kCFAcXzw4DU8vxLe9kt2ShQjNB1pbes7oMzdafrrmppBtNuFYhRAc'$''',
+  '''^expectedKoRootKey = 'xprv9s21ZrQH143K2KzJuwYrhiBVik3Zi1Q1BjMJVvaCh3v7AVYpCDwpcUvhMEdeducZgGYoVT6vMfwNU63UMTiLAoxHk4KEAH8XbMrzAUnu8aP'$''',
+]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/tests/functional/sweepWallet\.spec\.js$''']
+regexes = ['''^privateKey: '53d0f7df9103127f159f939438254011f6fa11df18a843d3962313e38938f020'$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wallet-lib/tests/integration/plugins/Workers/TransactionsSyncWorker\.spec\.js$''']
+regexes = ['''^WALLET_HD_KEY = 'xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ'$''']
+
+[[rules.allowlists]]
 condition = "AND"
 regexTarget = "match"
 paths = [
-  '''^packages/wallet-lib/fixtures/(?:cR4t6e_pk|fixtures|gathersail|knifeeasily|wallets/[a-f0-9]+/wallet)\.json$''',
-  '''^packages/wallet-lib/src/(?:types/DerivableKeyChain/DerivableKeyChain|types/Identities/methods/getIdentityHDKeyByIndex|utils/mnemonic)\.spec\.js$''',
-  '''^packages/wallet-lib/tests/(?:functional/sweepWallet|integration/(?:plugins/Workers/TransactionsSyncWorker|types/(?:Account|Wallet)))\.spec\.js$''',
+  '''^packages/wallet-lib/tests/integration/types/Account\.spec\.js$''',
+  '''^packages/wallet-lib/tests/integration/types/Wallet\.spec\.js$''',
+]
+regexes = ['''^testHDKey = "xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ"$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/wasm-dpp/lib/test/fixtures/getInstantAssetLockProofFixture\.js$''',
+  '''^packages/wasm-dpp/lib/test/fixtures/getInstantLockFixture\.js$''',
+]
+regexes = ['''^privateKeyHex = 'cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY'$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wasm-dpp/lib/test/fixtures/getPrivateAndPublicKeyForSigningFixture\.js$''']
+regexes = ['''^privateKeyHex = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2'$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wasm-dpp/test/integration/identity/stateTransition/IdentityTopUpTransition/validation/basic/validateIdentityTopUpTransitionBasicFactory\.spec\.js$''']
+regexes = ['''^privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2'$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^packages/wasm-dpp2/tests/unit/IdentitySigner\.spec\.ts$''',
+  '''^packages/wasm-dpp2/tests/unit/PlatformAddressSigner\.spec\.ts$''',
 ]
 regexes = [
-  '''^(?:privateKey|expectedIdentityPrivateKey[01]_[01])["']?[ \t]*[:=][ \t]*["'](?:[1-9A-HJ-NP-Za-km-z]{52}|[a-f0-9]{64})["']$''',
-  '''^(?:HDPrivateKey1(?:Mainnet|Testnet)|hdprivkey|HDRoot(?:Encrypted)?PrivateKey(?:Mainnet|Testnet)|expectedRootDIP15AccountKey_[01]|expectedKeyForChild_0|expectedIdentityHDKey[01]_[01]|expected(?:En|Jp|Es|Cn|CnTrad|It|Ko|Cz)RootKey|expected24frRootKeyMain|WALLET_HD_KEY|testHDKey)["']?[ \t]*[:=][ \t]*["'](?:[tx]prv)[1-9A-HJ-NP-Za-km-z]{107}["']$''',
+  '''^testPrivateKeyHex = '67ad1669d882da256b6fa05e1b0ae384a6ac8aed146ea53602b8ff0e1e9c18e9'$''',
+  '''^testPrivateKeyWif = 'cR4EZ2nAvCmn2cFepKn7UgSSQFgFTjkySAchvcoiEVdm48eWjQGn'$''',
 ]
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/wasm-sdk/tests/unit/conversion-derivation\.spec\.ts$''']
+regexes = [
+  '''^privateKeyHex: '1234abcd5678ef90'$''',
+  '''^privateKeyWif: 'cNYPkC4hGoE11bMkiCbfvb55ygXdBhazLkEhcEndxM8bufmXQ5ZZ'$''',
+]
+
+# Regtest operator keys paired with the recorded RPC fixtures and public keys.
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/dashmate/test/fixtures/platformSetupConfigs\.js$''']
+regexes = ['''^OPERATOR_PRIVATE_KEY = '1bbac8e471b80050ea44afb514c87cb1ef03db5c66e643c7d6e0f09b29bedbc0'$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/dashmate/test/unit/config/assertPlatformCanStartFactory\.spec\.js$''']
+regexes = ['''^core\.masternode\.operator\.privateKey', '1bbac8e471b80050ea44afb514c87cb1ef03db5c66e643c7d6e0f09b29bedbc0'$''']
+
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/dashmate/test/unit/core/readPlatformRegistration\.spec\.js$''']
+regexes = [
+  '''^UNREGISTERED_OPERATOR_PRIVATE_KEY = '66e40ce736c2c0689e0372647d41a8c4cd14e6edf44cccff48068fee1cffe669'$''',
+  '''^operatorPrivateKey: '0c9f8076444cabb3f319d3a349603cf5fdbb37ad02afa539083a2e45864a0a6c'$''',
+  '''^operatorPrivateKey: '1bbac8e471b80050ea44afb514c87cb1ef03db5c66e643c7d6e0f09b29bedbc0'$''',
+  '''^operatorPrivateKey: '72c8650e9a0d6c06b7792dd372f59f8746d88b155f84b16d795f50696c3bbf03'$''',
+]
+
+# Tenderdash Ed25519 key-type discriminator.
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/dashmate/src/tenderdash/parseTenderdashNodeKey\.js$''']
+regexes = ['''^ED25519_KEY_TYPE = 'tendermint/PrivKeyEd25519'$''']
 
 [[rules]]
 id = "private-key"
 
+# Localhost TLS proxy key fixture.
 [[rules.allowlists]]
-description = "Dedicated localhost TLS key fixture for the Rust DAPI proxy tests"
+condition = "AND"
+regexTarget = "match"
 paths = ['''^packages/rs-dapi-client/tests/data/proxy/server\.key$''']
+regexes = ['''^-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg47vbuAz42f51KN10\nn9lL4jfsfXJGvQSEKR6x6dYiVwWhRANCAATntdIOlHW3ssiM34HJHOZIE50vG9RX\nBxXPaC34aWiMErifSc700BbDSEUVOPU/FKFLQo/roiVuTFOsMBE6YTBU\n-----END PRIVATE KEY-----$''']
+
+# Dummy PEM blocks used to exercise certificate-chain rejection.
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/dashmate/test/unit/ssl/installCertificateFilesTask\.spec\.js$''']
+regexes = [
+  '''^-----BEGIN ENCRYPTED PRIVATE KEY-----\\nAAAA\\n-----END ENCRYPTED PRIVATE KEY-----\\n'\],\n    \['an indented key', \(\) => '  -----BEGIN PRIVATE KEY-----$''',
+  '''^-----BEGIN PRIVATE KEY-----\\nAAAA\\n-----END PRIVATE KEY-----\\n'\],\n    \['an EC key', \(\) => '-----BEGIN EC PRIVATE KEY-----$''',
+]
