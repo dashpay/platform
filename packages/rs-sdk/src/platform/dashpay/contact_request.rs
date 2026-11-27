@@ -51,6 +51,24 @@ pub struct PreparedContactRequest {
 }
 
 impl PreparedContactRequest {
+    /// Refuse a request whose address presence differs from the preparation: the contract
+    /// was resolved for a request with or without an address, and one sent the other way
+    /// could be judged against a contract lacking the property.
+    fn check_address_mode(&self, with_shielded_address: bool) -> Result<(), Error> {
+        if with_shielded_address == self.with_shielded_address {
+            return Ok(());
+        }
+        let (sent, prepared_for) = if self.with_shielded_address {
+            ("without", "with")
+        } else {
+            ("with", "without")
+        };
+        Err(Error::InvalidRequest(format!(
+            "a contact request {sent} a shielded address was prepared for one {prepared_for} \
+             an address; prepare it again with the request's address"
+        )))
+    }
+
     /// The security level the key signing the `contactRequest` document must meet.
     pub fn signing_security_level_requirement(&self) -> SecurityLevel {
         self.contact_request_document_type
@@ -446,19 +464,7 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
-        // The contract was resolved for a request with or without an address; one sent the
-        // other way could be judged against a contract lacking the property.
-        if input.shielded_address.is_some() != prepared.with_shielded_address {
-            let (sent, prepared_for) = if prepared.with_shielded_address {
-                ("without", "with")
-            } else {
-                ("with", "without")
-            };
-            return Err(Error::InvalidRequest(format!(
-                "a contact request {sent} a shielded address was prepared for one {prepared_for} \
-                 an address; prepare it again with the request's address"
-            )));
-        }
+        prepared.check_address_mode(input.shielded_address.is_some())?;
 
         // Validate auto accept proof size if provided
         if let Some(ref proof) = input.auto_accept_proof {
@@ -756,6 +762,7 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        prepared.check_address_mode(input.contact_request.shielded_address.is_some())?;
         let contract_id = prepared.dashpay_contract_id();
         self.context_provider_arc()
             .get_data_contract(&contract_id, self.version())?
@@ -1412,6 +1419,57 @@ mod tests {
             "{refusal}"
         );
         assert!(refusal.to_string().contains(&format!("{contract_id}")));
+        assert_eq!(signer.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    /// An address that does not match the preparation is refused as an invalid request even
+    /// when the submitting SDK's provider also lacks the contract: the request is wrong
+    /// whatever the provider holds.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_mismatched_address_before_checking_the_submitting_provider() {
+        let version = PlatformVersion::latest();
+        let preparing_sdk = crate::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DashPayProvider {
+                contract: Some(Arc::new(dashpay(version))),
+                ..Default::default()
+            })
+            .build()
+            .expect("the preparing SDK builds");
+        let prepared = preparing_sdk.prepare_contact_request(false).await.unwrap();
+        let submitting_sdk = crate::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DashPayProvider::default())
+            .build()
+            .expect("the submitting SDK builds");
+        let signer = Arc::new(CountingSigner::default());
+        let refusal = submitting_sdk
+            .submit_contact_request(
+                prepared,
+                SendContactRequestInput {
+                    contact_request: contact_request_input(Some([3u8; SHIELDED_ADDRESS_LEN])),
+                    identity_public_key:
+                        IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                            3,
+                            Some(1),
+                            version,
+                        )
+                        .unwrap()
+                        .0,
+                    signer: Arc::clone(&signer),
+                },
+                EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
+                    get_shared_secret:
+                        |_: &PublicKey| -> std::future::Ready<Result<[u8; 32], Error>> {
+                            panic!("a mismatched address must be refused before ECDH");
+                        },
+                },
+                |_| std::future::ready(Ok(vec![4u8; COMPACT_XPUB_LEN])),
+            )
+            .await
+            .expect_err("the request is refused before broadcast");
+        assert!(matches!(&refusal, Error::InvalidRequest(_)), "{refusal}");
         assert_eq!(signer.0.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
