@@ -14,6 +14,18 @@ const options = {
   preset: 'dash',
 };
 
+// conventional-changelog finds the repository by reading `.git/config` when
+// package.json names none. In a git worktree `.git` is a file, so the links
+// come out as `///compare/...` and `undefined/undefined/undefined/issues/...`.
+// Naming the repository here makes the links the same wherever the release
+// is cut from.
+const context = {
+  host: 'https://github.com',
+  owner: 'dashpay',
+  repository: 'platform',
+  repoUrl: 'https://github.com/dashpay/platform',
+};
+
 const gitRawCommitsOpts = {
   from,
 };
@@ -26,7 +38,7 @@ const readStream = fs.createReadStream(outfile)
     console.warn('infile does not exist.')
   });
 
-conventionalChangelog(options, undefined, gitRawCommitsOpts)
+conventionalChangelog(options, context, gitRawCommitsOpts)
 .pipe(addStream(readStream))
   .pipe(fs.createWriteStream(tmp))
   .on('finish', function () {
