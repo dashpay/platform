@@ -1358,9 +1358,9 @@
       "hosts": {
         "swift": {
           "sdk": "supported",
-          "example_app": "partial",
+          "example_app": "supported",
           "restart": "not_applicable",
-          "reason": "SDK.dpnsContestFundToJoin returns what Rust reads (the fund in credits, or nil for a name that joins no contest) and RegisterNameView shows it for a contested name. The TEST_PLAN gate DPNS-14 is written but not yet run on a simulator or device."
+          "reason": null
         },
         "kotlin": {
           "sdk": "unsupported",

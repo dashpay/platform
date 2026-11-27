@@ -9,7 +9,7 @@ Capabilities tracked: **59**
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 38 | 18 | 2 | 1 |
-| Swift | Example app | 6 | 38 | 5 | 10 |
+| Swift | Example app | 7 | 37 | 5 | 10 |
 | Kotlin | SDK | 31 | 22 | 5 | 1 |
 | Kotlin | Example app | 7 | 35 | 6 | 11 |
 
@@ -38,7 +38,7 @@ Capabilities tracked: **59**
 | `dashpay.private_contact_request_scan_state` | partial / partial / required | partial / not-applicable / required |
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
-| `dpns.contest_fund_to_join` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `dpns.contest_fund_to_join` | supported / supported / not_applicable | unsupported / unsupported / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
 | `dpns.give_up_name` | supported / partial / required | supported / partial / required |
 | `persistence.sync_fault_latch` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
