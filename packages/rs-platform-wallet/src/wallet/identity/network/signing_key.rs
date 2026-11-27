@@ -757,7 +757,7 @@ pub(super) mod tests {
                 Some(to_address),
                 1,
                 Some(owner_key),
-                available(&[]),
+                KeyFilter(|_: &IdentityPublicKey| panic!("must not query the signer")),
                 None,
             )
             .await
