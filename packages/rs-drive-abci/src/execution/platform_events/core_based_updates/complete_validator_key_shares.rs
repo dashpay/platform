@@ -8,6 +8,7 @@ use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::dashcore_rpc::json::QuorumInfoResult;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::crypto::PublicKey;
@@ -29,8 +30,9 @@ where
     C: CoreRPCLike,
 {
     /// Gives every validator in `update` that has no public key share the one Core has now, when
-    /// `update` moves Tenderdash to a quorum other than `current_quorum_hash` and the shares cover
-    /// every member of the validator set being sent; otherwise leaves `update` and
+    /// `update` moves Tenderdash to a quorum other than `current_quorum_hash`, the shares cover
+    /// every member of the validator set being sent, and the update's keys then recover the
+    /// quorum's public key, as Tenderdash checks a fully keyed set; otherwise leaves `update` and
     /// `block_platform_state` as they are.
     ///
     /// Drive asks Core for a quorum's members once, in the first block that sees the quorum. A
@@ -45,8 +47,8 @@ where
     /// it has, keeping that set's keys for validators the update leaves out (banned members), so
     /// filling it would mix validators with and without keys.
     ///
-    /// Asks Core only when such an update lacks a key and no shares are kept for the quorum, once
-    /// and with a short timeout. Never fails: an answer that cannot fill every key is logged and
+    /// Asks Core only when such an update lacks a key and no verified shares are kept for the
+    /// quorum, once and within a deadline for the whole request. Never fails: an answer that cannot fill every key is logged and
     /// changes nothing.
     pub(in crate::execution::platform_events) fn complete_validator_key_shares(
         &self,
@@ -77,37 +79,71 @@ where
             return;
         };
 
-        let key_shares = match self.quorum_key_shares.get(&quorum_hash) {
-            Some(kept) if covers_members(&kept, validator_set) => kept,
-            _ => {
-                let Some(key_shares) = self.fetch_key_shares(validator_set) else {
-                    return;
-                };
-                self.quorum_key_shares.keep(quorum_hash, key_shares)
-            }
+        let (key_shares, fetched) = match self.quorum_key_shares.get(&quorum_hash) {
+            Some(kept) if covers_members(&kept, validator_set) => (kept, false),
+            _ => match self.fetch_key_shares(validator_set) {
+                Some(fetched) => (Arc::new(fetched), true),
+                None => return,
+            },
         };
 
-        // Decided in full before anything changes, so the update is either complete or
-        // untouched: a set with some keys and not others is no better for Tenderdash than one
-        // without any, and is refused where Tenderdash checks light blocks.
+        // Every key the update would carry, decided before anything changes, so the update is
+        // either complete or untouched: a set with some keys and not others is no better for
+        // Tenderdash than one without any, and is refused where Tenderdash checks light blocks.
+        let mut sent_keys = Vec::with_capacity(update.validator_updates.len());
         let mut update_keys = Vec::new();
         for (index, validator) in update.validator_updates.iter().enumerate() {
-            if validator.pub_key.is_some() {
-                continue;
-            }
-            let Some(key) = ProTxHash::from_slice(&validator.pro_tx_hash)
-                .ok()
-                .and_then(|pro_tx_hash| key_shares.get(&pro_tx_hash))
-            else {
+            let pro_tx_hash = ProTxHash::from_slice(&validator.pro_tx_hash).ok();
+            let key = match &validator.pub_key {
+                Some(sent) => key_of(sent),
+                None => {
+                    let share = pro_tx_hash.and_then(|pro_tx_hash| key_shares.get(&pro_tx_hash));
+                    if let Some(share) = share {
+                        update_keys.push((index, *share));
+                    }
+                    share.copied()
+                }
+            };
+            let (Some(pro_tx_hash), Some(key)) = (pro_tx_hash, key) else {
                 tracing::warn!(
                     quorum_hash = hex::encode(quorum_hash.as_byte_array()),
                     pro_tx_hash = hex::encode(&validator.pro_tx_hash),
-                    "validator set update has a validator the set does not hold; sending it without the missing key shares"
+                    "validator set update has a validator whose key share cannot be filled in; sending it without the missing key shares"
                 );
                 return;
             };
-            update_keys.push((index, *key));
+            sent_keys.push((pro_tx_hash, key));
         }
+        // Every key the stored set would hold, banned members' too, which a later update for the
+        // quorum Tenderdash holds may carry.
+        let stored_keys: Vec<(ProTxHash, BlsPublicKey)> = validator_set
+            .members()
+            .iter()
+            .filter_map(|(pro_tx_hash, validator)| {
+                validator
+                    .public_key
+                    .or_else(|| key_shares.get(pro_tx_hash).copied())
+                    .map(|key| (*pro_tx_hash, key))
+            })
+            .collect();
+        // Tenderdash refuses a fully keyed set whose keys do not recover the quorum's public key,
+        // so shares that do not, in the update or in the stored set, are neither sent, stored nor
+        // kept.
+        let quorum_public_key = validator_set.threshold_public_key();
+        if !recovers_quorum_public_key(&sent_keys, quorum_public_key)
+            || !recovers_quorum_public_key(&stored_keys, quorum_public_key)
+        {
+            tracing::warn!(
+                quorum_hash = hex::encode(quorum_hash.as_byte_array()),
+                "Core's key shares do not recover the validator quorum's public key; sending its validator set without them"
+            );
+            return;
+        }
+        if fetched {
+            self.quorum_key_shares
+                .keep(quorum_hash, QuorumKeyShares::clone(&key_shares));
+        }
+
         let state_keys: Vec<(ProTxHash, BlsPublicKey)> = validator_set
             .members()
             .iter()
@@ -145,7 +181,7 @@ where
         let quorum_hash = *validator_set.quorum_hash();
         let info = match self
             .core_rpc
-            .get_quorum_info_with_short_timeout(self.config.validator_set.quorum_type, &quorum_hash)
+            .get_quorum_info_within_deadline(self.config.validator_set.quorum_type, &quorum_hash)
         {
             Ok(info) => info,
             Err(error) => {
@@ -184,6 +220,28 @@ where
                 None
             }
         }
+    }
+}
+
+/// The BLS key a validator update carries, if it is one.
+fn key_of(sent: &PublicKey) -> Option<BlsPublicKey> {
+    match &sent.sum {
+        Some(Bls12381(bytes)) => BlsPublicKey::try_from(bytes.as_slice()).ok(),
+        _ => None,
+    }
+}
+
+/// Whether the members' key shares `keys` give the quorum's public key as Tenderdash checks a
+/// fully keyed set: a single member's key must be the quorum's key, more members' keys must
+/// recover it.
+fn recovers_quorum_public_key(
+    keys: &[(ProTxHash, BlsPublicKey)],
+    quorum_public_key: &BlsPublicKey,
+) -> bool {
+    match keys {
+        [(_, key)] => key == quorum_public_key,
+        _ => BlsPublicKey::recover_threshold(keys)
+            .is_ok_and(|recovered| &recovered == quorum_public_key),
     }
 }
 

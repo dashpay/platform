@@ -1,7 +1,7 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dashcore_crypto::dash_pkc::__deps::ff::{Field, PrimeField};
-use dashcore_crypto::dash_pkc::bls::Fr;
+use dashcore_crypto::dash_pkc::bls::{BlsShareId, Fr};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsPrivateKey};
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dpp::dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
@@ -128,11 +128,14 @@ fn random_socket_addr(rng: &mut StdRng) -> SocketAddr {
 // https://github.com/dashpay/base-sdk/issues/113
 fn recover_quorum_private_key(members: &[(ProTxHash, BlsPrivateKey)]) -> BlsPrivateKey {
     assert!(members.len() >= 2, "expected at least two quorum members");
-    // Core reads the stored proTxHash bytes as a big-endian scalar, reduced modulo r.
+    // A member's BLS id is its proTxHash as Core prints it, which the curve reads as Core and
+    // Tenderdash do.
     let ids: Vec<_> = members
         .iter()
-        .map(|(id, _)| {
-            Fr::from_bendian_reduce(&id.to_byte_array()).expect("nonzero quorum member id")
+        .map(|(pro_tx_hash, _)| {
+            let id = BlsShareId::from_hex(&hex::encode(pro_tx_hash.to_byte_array()))
+                .expect("a proTxHash in hex");
+            Fr::from_bendian_reduce(id.as_bytes()).expect("nonzero quorum member id")
         })
         .collect();
     let mut recovered = Fr::ZERO;
@@ -315,11 +318,41 @@ mod tests {
         signature: String,
     }
 
+    /// The proTxHash whose BLS id is the vectors' id for member `index`: the curve reads a
+    /// proTxHash's id in the reverse of Platform's byte order, so these are the ids reversed.
     fn member_hash(index: u8) -> ProTxHash {
         let mut id = [0; 32];
         id[0] = index + 1;
         id[31] = index + 11;
+        id.reverse();
         ProTxHash::from_byte_array(id)
+    }
+
+    /// Drive checks the key shares Core gives by recovering the quorum's public key from them,
+    /// as Tenderdash checks a fully keyed validator set. The frozen vectors pin that recovery to
+    /// the one Core's BLS library made from the same keys and ids.
+    #[test]
+    fn should_recover_frozen_core_quorum_public_keys_from_member_key_shares() {
+        let vectors: Vec<QuorumVector> =
+            serde_json::from_str(include_str!("fixtures/core_quorums.json")).unwrap();
+        for vector in vectors {
+            let shares: Vec<(ProTxHash, BlsPublicKey)> = vector
+                .members
+                .iter()
+                .enumerate()
+                .map(|(index, member)| {
+                    let key = hex::decode(&member.public_key).unwrap();
+                    (
+                        member_hash(index as u8),
+                        BlsPublicKey::try_from(key.as_slice()).unwrap(),
+                    )
+                })
+                .collect();
+
+            let recovered = BlsPublicKey::recover_threshold(&shares).unwrap();
+
+            assert_eq!(hex::encode(recovered.to_bytes()), vector.public_key);
+        }
     }
 
     #[test]
@@ -416,18 +449,23 @@ mod tests {
     #[test]
     #[should_panic(expected = "distinct quorum member identifiers")]
     fn should_reject_member_identifiers_equal_modulo_the_scalar_order() {
+        // ProTxHashes whose BLS ids, their bytes reversed, are one and the scalar order plus one.
         let mut one = [0; 32];
         one[31] = 1;
-        let order_plus_one =
+        one.reverse();
+        let mut order_plus_one: [u8; 32] =
             hex::decode("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000002")
+                .unwrap()
+                .try_into()
                 .unwrap();
+        order_plus_one.reverse();
         TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
             100,
             QuorumHash::from_byte_array([42; 32]),
             None,
             vec![
                 ProTxHash::from_byte_array(one),
-                ProTxHash::from_slice(&order_plus_one).unwrap(),
+                ProTxHash::from_byte_array(order_plus_one),
             ],
             &mut StdRng::seed_from_u64(42),
         );

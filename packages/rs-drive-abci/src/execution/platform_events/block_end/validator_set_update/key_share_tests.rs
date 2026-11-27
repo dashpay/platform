@@ -141,7 +141,7 @@ fn expect_quorum_info(platform: &mut TempPlatform<MockCoreRPCLike>, answer: Core
         .returning(move |_, quorum_hash, _| first_sight(quorum_hash));
     platform
         .core_rpc
-        .expect_get_quorum_info_with_short_timeout()
+        .expect_get_quorum_info_within_deadline()
         .returning(move |_, quorum_hash| answer(quorum_hash));
 }
 
@@ -753,6 +753,12 @@ fn should_leave_everything_unchanged_when_core_cannot_give_every_key_share() {
     invalid_share.members[0].pub_key_share = Some(vec![1; 10]);
     let mut other_height = info_with_key_shares(&next);
     other_height.height += 1;
+    // Well-formed shares and the right quorum key, but one share is another quorum's, so the
+    // shares do not recover the quorum key and Tenderdash would refuse them.
+    let mut inconsistent = info_with_key_shares(&next);
+    inconsistent.members[2].pub_key_share = info_with_key_shares(&other_quorum).members[2]
+        .pub_key_share
+        .clone();
     let cases: Vec<(&str, Option<QuorumInfoResult>)> = vec![
         ("Core unreachable or timed out", None),
         (
@@ -766,6 +772,10 @@ fn should_leave_everything_unchanged_when_core_cannot_give_every_key_share() {
             Some(info_with_key_shares(&other_quorum)),
         ),
         ("another quorum height", Some(other_height)),
+        (
+            "shares that do not recover the quorum key",
+            Some(inconsistent),
+        ),
     ];
 
     for (case, answer) in cases {
@@ -874,7 +884,7 @@ fn should_not_ask_core_when_the_update_has_every_key_share() {
     platform.core_rpc.expect_get_quorum_info().never();
     platform
         .core_rpc
-        .expect_get_quorum_info_with_short_timeout()
+        .expect_get_quorum_info_within_deadline()
         .never();
     let committed = committed_state(&platform, &current, &next, true);
 
