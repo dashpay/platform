@@ -11,7 +11,8 @@ pub(crate) type QuorumKeyShares = BTreeMap<ProTxHash, BlsPublicKey>;
 /// at a time; twice that keeps the shares of every quorum a block executed again can still send.
 const MAX_KEPT_QUORUMS: usize = 48;
 
-/// Member key shares Core has given for validator quorums, kept for the life of the process.
+/// Validator quorum members' key shares that recovered their quorum's public key, kept for the
+/// life of the process.
 ///
 /// A quorum's key shares are fixed by its mined commitment, so a share once kept is the answer
 /// for good: a quorum's entry only grows. A block executed again (FinalizeBlock executes the

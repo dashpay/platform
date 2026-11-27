@@ -19,6 +19,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::bls::PublicKey as BlsPublicKey;
+use dpp::bls::SecretKey;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{BlockHash, ProTxHash, QuorumHash, Txid};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
@@ -901,4 +902,82 @@ fn should_not_ask_core_when_the_update_has_every_key_share() {
         .block_platform_state()
         .validator_set_changes
         .is_empty());
+}
+
+/// Shares Core gave for members a candidate block's set no longer holds were never checked, so
+/// they are not kept: another execution of the rotation whose set still holds such a member asks
+/// Core again rather than trusting them.
+#[test]
+fn should_keep_only_the_key_shares_that_recovered_the_quorum_key() {
+    let platform_version = PlatformVersion::latest();
+    let mut rng = StdRng::seed_from_u64(3);
+    let current = quorum(CURRENT_QUORUM_HEIGHT, 0xa0, 1, &mut rng);
+    // Any three of the four members' shares recover the quorum key.
+    let next = TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes_with_threshold(
+        NEXT_QUORUM_HEIGHT,
+        QuorumHash::from_byte_array([0xb0; 32]),
+        None,
+        (4..8u8)
+            .map(|index| ProTxHash::from_byte_array([index; 32]))
+            .collect(),
+        3,
+        &mut rng,
+    );
+    let removed = next.validator_set[3].pro_tx_hash;
+
+    // Core first answers with a well-formed share for `removed` that is not the quorum's, then
+    // correctly.
+    let mut first_answer = info_with_key_shares(&next);
+    first_answer.members[3].pub_key_share =
+        Some(SecretKey::random(&mut rng).public_key().to_bytes().to_vec());
+    let later_answer = info_with_key_shares(&next);
+    let asked = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&asked);
+    let platform = platform_answering(
+        platform_version,
+        Arc::new(move |_| {
+            if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(first_answer.clone())
+            } else {
+                Ok(later_answer.clone())
+            }
+        }),
+    );
+    let committed = committed_state(&platform, &current, &next, false);
+    let proposer = current.validator_set[2].pro_tx_hash;
+
+    // One candidate block's masternode list update removes `removed` from the set.
+    let mut without_removed = committed.clone();
+    without_removed
+        .validator_set_mut(&next.quorum_hash)
+        .expect("expected the next quorum")
+        .members_mut()
+        .remove(&removed);
+    let (first, _) = run_block_end(
+        &platform,
+        &committed,
+        without_removed,
+        proposer,
+        platform_version,
+    );
+    let first = first.expect("expected a rotation");
+    assert!(
+        sent_keys(&first).values().all(Option::is_some),
+        "the three remaining members' shares recover the quorum key"
+    );
+
+    // Another candidate block at the same height keeps it.
+    let (update, _) = run_block_end(
+        &platform,
+        &committed,
+        committed.clone(),
+        proposer,
+        platform_version,
+    );
+
+    assert_eq!(
+        sent_keys(&update.expect("expected a rotation")),
+        quorum_keys(&next, true)
+    );
+    assert_eq!(asked.load(Ordering::SeqCst), 2, "Core is asked again");
 }

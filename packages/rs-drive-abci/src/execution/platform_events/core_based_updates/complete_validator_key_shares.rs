@@ -40,16 +40,17 @@ where
     /// key shares, and usually gets the vector soon after. Tenderdash takes a quorum's keys when
     /// it is sent a set for a quorum it does not hold, so the keys are filled in then. They are
     /// also set on the validator set in `block_platform_state`, so later blocks and restarts keep
-    /// them, and kept in memory, so that executing the block again gives the same keys without
-    /// Core and later rotations into the quorum need not ask Core again.
+    /// them, and the keys the check covered are kept in memory, so that executing the block again
+    /// gives the same keys without Core and later rotations into the quorum need not ask Core
+    /// again.
     ///
     /// An update for the quorum Tenderdash holds is left alone: Tenderdash merges it into the set
     /// it has, keeping that set's keys for validators the update leaves out (banned members), so
     /// filling it would mix validators with and without keys.
     ///
-    /// Asks Core only when such an update lacks a key and no verified shares are kept for the
-    /// quorum, once and within a deadline for the whole request. Never fails: an answer that cannot fill every key is logged and
-    /// changes nothing.
+    /// Asks Core only when such an update lacks a key and the kept keys do not cover every member
+    /// of the set being sent, once and within a deadline for the whole request. Never fails: an
+    /// answer that cannot fill every key is logged and changes nothing.
     pub(in crate::execution::platform_events) fn complete_validator_key_shares(
         &self,
         update: &mut ValidatorSetUpdate,
@@ -128,10 +129,11 @@ where
             .collect();
         // Tenderdash refuses a fully keyed set whose keys do not recover the quorum's public key,
         // so shares that do not, in the update or in the stored set, are neither sent, stored nor
-        // kept.
+        // kept. Without banned members both lists are the same and one recovery checks both.
         let quorum_public_key = validator_set.threshold_public_key();
         if !recovers_quorum_public_key(&sent_keys, quorum_public_key)
-            || !recovers_quorum_public_key(&stored_keys, quorum_public_key)
+            || (stored_keys != sent_keys
+                && !recovers_quorum_public_key(&stored_keys, quorum_public_key))
         {
             tracing::warn!(
                 quorum_hash = hex::encode(quorum_hash.as_byte_array()),
@@ -139,9 +141,11 @@ where
             );
             return;
         }
+        // Only the keys the checks covered: Core's answer may hold shares for members this
+        // block's set no longer holds, which another execution of the rotation may still hold.
         if fetched {
             self.quorum_key_shares
-                .keep(quorum_hash, QuorumKeyShares::clone(&key_shares));
+                .keep(quorum_hash, stored_keys.iter().copied().collect());
         }
 
         let state_keys: Vec<(ProTxHash, BlsPublicKey)> = validator_set

@@ -8,6 +8,11 @@ use std::time::{Duration, Instant};
 /// The largest answer read. `quorum info` for a 100-member quorum is tens of kilobytes.
 const MAX_ANSWER_BYTES: usize = 4 * 1024 * 1024;
 
+/// The most written in one call. Some systems bound only each wait for buffer space by the
+/// socket's write timeout, not a whole call, so a large write to a peer that keeps taking a little
+/// could outlast the deadline; a write this small cannot by much.
+const WRITE_CHUNK: usize = 16 * 1024;
+
 /// The port a URL without a scheme or port is assumed to use, as the other Core RPC clients
 /// assume; with `http://` it is 80.
 const FALLBACK_PORT: u16 = 8332;
@@ -76,42 +81,30 @@ impl DeadlineHttpTransport {
 
     /// Sends `request` and reads Core's answer, all by the deadline.
     fn exchange(&self, request: &Request) -> io::Result<Response> {
-        let started = Instant::now();
-        let remaining = || {
-            self.deadline
-                .checked_sub(started.elapsed())
-                .filter(|remaining| !remaining.is_zero())
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        format!("Core did not answer within {:?}", self.deadline),
-                    )
-                })
-        };
+        let deadline = Deadline::after(self.deadline);
 
         let body = serde_json::to_vec(request)?;
-        let head = format!(
+        let mut message = format!(
             "POST {} HTTP/1.1\r\nHost: {}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             self.path,
             self.host,
             self.authorization,
             body.len()
-        );
-        let mut stream = TcpStream::connect_timeout(&self.address, remaining()?)?;
-        stream.set_write_timeout(Some(remaining()?))?;
-        stream.write_all(head.as_bytes())?;
-        stream.write_all(&body)?;
-        stream.flush()?;
+        )
+        .into_bytes();
+        message.extend_from_slice(&body);
+        let mut stream = TcpStream::connect_timeout(&self.address, deadline.remaining()?)?;
+        write_by(&mut stream, &message, &deadline)?;
 
         let mut answer = Vec::new();
         let mut buffer = [0u8; 8192];
         loop {
-            stream.set_read_timeout(Some(remaining()?))?;
+            stream.set_read_timeout(Some(deadline.remaining()?))?;
             let read = match stream.read(&mut buffer) {
                 Ok(read) => read,
                 // A signal cut the wait short; the deadline still decides how long is left.
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error),
+                Err(error) => return Err(deadline.explain(error)),
             };
             if read == 0 {
                 break;
@@ -129,6 +122,72 @@ impl DeadlineHttpTransport {
         }
         read_answer(&answer)
     }
+}
+
+/// The time an exchange with Core must have finished by.
+struct Deadline {
+    started: Instant,
+    budget: Duration,
+}
+
+impl Deadline {
+    fn after(budget: Duration) -> Self {
+        Self {
+            started: Instant::now(),
+            budget,
+        }
+    }
+
+    /// What is left of the deadline, or a timeout error once it has passed.
+    fn remaining(&self) -> io::Result<Duration> {
+        self.budget
+            .checked_sub(self.started.elapsed())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or_else(|| self.passed())
+    }
+
+    /// The error for an exchange the deadline cut off.
+    fn passed(&self) -> io::Error {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "the exchange with Core did not finish within {:?}",
+                self.budget
+            ),
+        )
+    }
+
+    /// `error`, or the deadline's own error when it is a socket timeout, which the deadline set.
+    fn explain(&self, error: io::Error) -> io::Error {
+        match error.kind() {
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => self.passed(),
+            _ => error,
+        }
+    }
+}
+
+/// Writes all of `bytes` by `deadline`, at most [`WRITE_CHUNK`] at a time. The socket's write
+/// timeout is set to what is left of the deadline before every write, so a peer that takes the
+/// bytes a little at a time cannot stretch the request past it.
+fn write_by(stream: &mut TcpStream, bytes: &[u8], deadline: &Deadline) -> io::Result<()> {
+    let mut written = 0;
+    while written < bytes.len() {
+        stream.set_write_timeout(Some(deadline.remaining()?))?;
+        let end = bytes.len().min(written + WRITE_CHUNK);
+        match stream.write(&bytes[written..end]) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "Core stopped taking the request",
+                ))
+            }
+            Ok(count) => written += count,
+            // A signal cut the wait short; the deadline still decides how long is left.
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(deadline.explain(error)),
+        }
+    }
+    Ok(())
 }
 
 impl Transport for DeadlineHttpTransport {
@@ -398,6 +457,10 @@ mod tests {
     use super::fake_core::{FakeCore, Reply};
     use super::*;
     use serde_json::json;
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
 
     /// Short, so a test that waits it out stays quick.
     const TEST_DEADLINE: Duration = Duration::from_secs(1);
@@ -531,6 +594,45 @@ mod tests {
         assert!(answer.is_err());
         assert!(waited < TEST_DEADLINE + MARGIN, "waited {waited:?}");
         assert_eq!(core.stop().len(), 1);
+    }
+
+    /// The deadline bounds the whole request, not each write: a Core that takes the request a
+    /// little at a time cannot stretch it past the deadline.
+    #[test]
+    fn should_give_up_writing_to_a_core_that_takes_the_request_too_slowly() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("expected a local port");
+        let address = listener.local_addr().expect("expected the local address");
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = Arc::clone(&stop);
+        // Takes about 5 KB a second.
+        let server = thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(10)));
+            let mut buffer = [0u8; 256];
+            while !stopped.load(Ordering::SeqCst) {
+                let _ = stream.read(&mut buffer);
+                thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let mut stream = TcpStream::connect(address).expect("expected to connect");
+        let request = vec![1u8; 64 * 1024 * 1024];
+
+        let started = Instant::now();
+        let written = write_by(&mut stream, &request, &Deadline::after(TEST_DEADLINE));
+        let waited = started.elapsed();
+        stop.store(true, Ordering::SeqCst);
+        drop(stream);
+        server.join().expect("expected the slow reader to stop");
+
+        let error = written.expect_err("expected the deadline to stop the request");
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+        assert!(
+            waited + Duration::from_millis(50) >= TEST_DEADLINE,
+            "gave up after {waited:?}"
+        );
+        assert!(waited < TEST_DEADLINE + MARGIN, "waited {waited:?}");
     }
 
     /// Drive's config gives Core's address as `host:port`; a scheme and a path are accepted too.
