@@ -6,7 +6,10 @@ use crate::handle::*;
 use crate::platform_address_types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use dash_sdk::dapi_client::CanRetry;
+use dashcore::address::NetworkUnchecked;
+use dpp::address_funds::AddressFundsFeeStrategy;
 use dpp::identity::core_script::CoreScript;
+use platform_wallet::wallet::platform_addresses::{InputSelection, WithdrawalPlan};
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use std::os::raw::c_char;
@@ -155,6 +158,88 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
+    withdraw_to_checked_address(
+        handle,
+        account_index,
+        input_selection,
+        unchecked_address,
+        core_fee_per_byte,
+        fee,
+        signer_address_handle,
+        out_changeset,
+    )
+}
+
+/// Withdraw exactly `amount` credits from a platform-payment account to a
+/// Core L1 address, with the wallet choosing the input addresses.
+///
+/// `amount` is what leaves Platform. The wallet takes the account's addresses
+/// largest first until they cover the amount and the transition fee, and pays
+/// the fee from what stays on the largest one
+/// (`InputSelection::AutoForAmount`). An amount the account cannot meet is
+/// refused with `ErrorWithdrawalAmountOutOfRange` before anything is signed;
+/// [`platform_address_wallet_preflight_withdrawal_amount`] reports the range
+/// that would work.
+///
+/// The address is parsed and network-checked as in
+/// [`platform_address_wallet_withdraw_to_address`], and the result is freed
+/// the same way, with `platform_address_wallet_free_changeset`.
+///
+/// # Safety
+/// - `core_address` must be a valid, non-null, NUL-terminated C string.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*mut SignerHandle` that outlives this call.
+/// - `out_changeset` must be a valid, non-null, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_withdraw_amount_to_address(
+    handle: Handle,
+    account_index: u32,
+    amount: u64,
+    core_address: *const c_char,
+    core_fee_per_byte: u32,
+    signer_address_handle: *mut SignerHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_changeset);
+    // Sentinel first, as in `platform_address_wallet_withdraw_to_address`.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
+    check_ptr!(core_address);
+    check_ptr!(signer_address_handle);
+
+    let address_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(core_address).to_str());
+    let unchecked_address = unwrap_result_or_return!(dashcore::Address::from_str(address_str));
+
+    withdraw_to_checked_address(
+        handle,
+        account_index,
+        InputSelection::AutoForAmount(amount),
+        unchecked_address,
+        core_fee_per_byte,
+        // The planner owns the fee strategy for a wallet-chosen input set.
+        parse_fee_strategy(std::ptr::null(), 0),
+        signer_address_handle,
+        out_changeset,
+    )
+}
+
+/// The part every withdrawal to a Core address shares: check the address
+/// against the wallet's network, run the withdrawal, write the changeset.
+///
+/// # Safety
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*mut SignerHandle` that outlives this call.
+/// - `out_changeset` must be a valid, writable pointer.
+#[allow(clippy::too_many_arguments)]
+unsafe fn withdraw_to_checked_address(
+    handle: Handle,
+    account_index: u32,
+    input_selection: InputSelection,
+    unchecked_address: dashcore::Address<NetworkUnchecked>,
+    core_fee_per_byte: u32,
+    fee: AddressFundsFeeStrategy,
+    signer_address_handle: *mut SignerHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
     // Clone the wallet out of handle storage so the read lock is released
     // before the network check + long-running withdraw.
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
@@ -247,7 +332,9 @@ enum PreflightOutcome {
 ///   it is a real error a caller should see.
 fn classify_preflight_error(err: &PlatformWalletError) -> PreflightOutcome {
     match err {
-        PlatformWalletError::OnlyDustInputs { .. } | PlatformWalletError::AddressOperation(_) => {
+        PlatformWalletError::OnlyDustInputs { .. }
+        | PlatformWalletError::AddressOperation(_)
+        | PlatformWalletError::WithdrawalAmountOutOfRange { .. } => {
             PreflightOutcome::DisabledWithReason
         }
         PlatformWalletError::Sdk(e) if e.can_retry() => PreflightOutcome::DisabledWithReason,
@@ -331,7 +418,7 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
     let wallet = unwrap_option_or_return!(option);
     let result = block_on_worker(async move {
         wallet
-            .preflight_withdrawal(account_index, core_fee_per_byte)
+            .preflight_withdrawal(account_index, None, core_fee_per_byte)
             .await
     });
 
@@ -367,6 +454,103 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
             // and NON-retryable SDK errors) stay FFI errors with `out` untouched,
             // mapped via the blanket `From<PlatformWalletError>`.
             PreflightOutcome::Structural => err.into(),
+        },
+    }
+}
+
+/// Preflight a withdrawal of exactly `amount` credits from a platform-payment
+/// account, without signing, broadcasting or consuming a Core receive address.
+///
+/// Runs the planner the withdrawal itself runs
+/// (`PlatformAddressWallet::preflight_withdrawal` with the amount), on the
+/// account's on-chain balances, so what this reports is what
+/// [`platform_address_wallet_withdraw_amount_to_address`] will do.
+///
+/// Outcomes follow [`platform_address_wallet_preflight_withdrawal`]:
+/// - The amount can be withdrawn: `out` has `can_withdraw = true`, the fee,
+///   the number of addresses drawn from and the range, and the call returns
+///   [`PlatformWalletFFIResult::ok`].
+/// - The amount is outside the range, the account cannot fund any withdrawal,
+///   or a retryable network failure kept the balances from being read: `out`
+///   has `can_withdraw = false` and the call returns a **Success-coded**
+///   result whose `message` is the reason. For an amount outside the range,
+///   `min_withdrawable` and `max_withdrawable` are filled in.
+/// - A structural failure (bad handle, missing account, non-retryable SDK
+///   error) is an FFI error and leaves `out` untouched.
+///
+/// # Safety
+/// - `out` must be a valid, non-null, writable
+///   `*mut WithdrawalAmountPreflightFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal_amount(
+    handle: Handle,
+    account_index: u32,
+    amount: u64,
+    core_fee_per_byte: u32,
+    out: *mut WithdrawalAmountPreflightFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out);
+
+    // Worker thread for the same reason as the preflight above: the balance
+    // read verifies a GroveDB proof.
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
+    let wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        wallet
+            .preflight_withdrawal(account_index, Some(amount), core_fee_per_byte)
+            .await
+    });
+
+    match withdrawal_amount_preflight(result) {
+        Ok((preflight, reason)) => {
+            *out = preflight;
+            match reason {
+                None => PlatformWalletFFIResult::ok(),
+                Some(reason) => PlatformWalletFFIResult::success_with_message(reason),
+            }
+        }
+        Err(err) => err.into(),
+    }
+}
+
+/// Turn the planner's answer for a requested amount into what the preflight
+/// writes: the figures and, when the amount cannot be withdrawn, the reason.
+/// `Err` is a structural failure the entry point returns as an FFI error.
+fn withdrawal_amount_preflight(
+    result: Result<WithdrawalPlan, PlatformWalletError>,
+) -> Result<(WithdrawalAmountPreflightFFI, Option<String>), PlatformWalletError> {
+    let cannot_withdraw = |min_withdrawable, max_withdrawable| WithdrawalAmountPreflightFFI {
+        can_withdraw: false,
+        amount: 0,
+        estimated_fee: 0,
+        input_count: 0,
+        min_withdrawable,
+        max_withdrawable,
+    };
+    match result {
+        Ok(plan) => Ok((
+            WithdrawalAmountPreflightFFI {
+                can_withdraw: true,
+                amount: plan.net_withdrawable,
+                estimated_fee: plan.estimated_fee,
+                input_count: u32::try_from(plan.inputs.len()).unwrap_or(u32::MAX),
+                min_withdrawable: plan.min_withdrawable,
+                max_withdrawable: plan.max_withdrawable,
+            },
+            None,
+        )),
+        Err(err) => match classify_preflight_error(&err) {
+            PreflightOutcome::DisabledWithReason => {
+                let reason = err.to_string();
+                let preflight = match err {
+                    PlatformWalletError::WithdrawalAmountOutOfRange { min, max, .. } => {
+                        cannot_withdraw(min, max)
+                    }
+                    _ => cannot_withdraw(0, 0),
+                };
+                Ok((preflight, Some(reason)))
+            }
+            PreflightOutcome::Structural => Err(err),
         },
     }
 }
@@ -481,5 +665,74 @@ mod tests {
             classify_preflight_error(&op),
             PreflightOutcome::DisabledWithReason
         );
+    }
+
+    // ---- Preflight of a requested amount ------------------------------------
+
+    #[test]
+    fn should_report_the_plan_of_a_requested_amount() {
+        let first = dpp::address_funds::PlatformAddress::P2pkh([1; 20]);
+        let second = dpp::address_funds::PlatformAddress::P2pkh([2; 20]);
+        let plan = WithdrawalPlan {
+            inputs: [(first, 300), (second, 200)].into_iter().collect(),
+            fee_strategy: vec![],
+            net_withdrawable: 500,
+            estimated_fee: 7,
+            min_withdrawable: 100,
+            max_withdrawable: 900,
+        };
+
+        let (preflight, reason) =
+            withdrawal_amount_preflight(Ok(plan)).expect("a plan is not a structural failure");
+
+        assert!(preflight.can_withdraw);
+        assert_eq!(preflight.amount, 500);
+        assert_eq!(preflight.estimated_fee, 7);
+        assert_eq!(preflight.input_count, 2);
+        assert_eq!(preflight.min_withdrawable, 100);
+        assert_eq!(preflight.max_withdrawable, 900);
+        assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn should_report_the_range_when_the_amount_is_outside_it() {
+        let err = PlatformWalletError::WithdrawalAmountOutOfRange {
+            requested: 1_000,
+            min: 100,
+            max: 900,
+        };
+        let expected_reason = err.to_string();
+
+        let (preflight, reason) = withdrawal_amount_preflight(Err(err))
+            .expect("an amount out of range is a normal preflight answer");
+
+        assert!(!preflight.can_withdraw);
+        assert_eq!(preflight.amount, 0);
+        assert_eq!(preflight.min_withdrawable, 100);
+        assert_eq!(preflight.max_withdrawable, 900);
+        assert_eq!(reason, Some(expected_reason));
+    }
+
+    #[test]
+    fn should_report_no_range_when_the_account_cannot_fund_any_withdrawal() {
+        let err = PlatformWalletError::AddressOperation("no funded addresses".to_string());
+
+        let (preflight, reason) = withdrawal_amount_preflight(Err(err))
+            .expect("a can't-fund state is a normal preflight answer");
+
+        assert!(!preflight.can_withdraw);
+        assert_eq!(preflight.min_withdrawable, 0);
+        assert_eq!(preflight.max_withdrawable, 0);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn should_keep_a_missing_wallet_a_structural_failure_for_a_requested_amount() {
+        let err = PlatformWalletError::WalletNotFound("gone".to_string());
+
+        assert!(matches!(
+            withdrawal_amount_preflight(Err(err)),
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
     }
 }

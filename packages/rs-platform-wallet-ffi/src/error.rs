@@ -925,6 +925,15 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
     ErrorShieldedMerkleWitnessUnavailable = 88,
 
+    /// Maps `PlatformWalletError::WithdrawalAmountOutOfRange`: a withdrawal of
+    /// a requested amount from Platform addresses asks for less than the
+    /// protocol minimum at its Core fee rate, or for more than the account's
+    /// addresses can withdraw in one transition. Raised while the withdrawal
+    /// is planned, before anything is signed or broadcast. Another amount
+    /// fits: `platform_address_wallet_preflight_withdrawal_amount` reports
+    /// the bounds.
+    ErrorWithdrawalAmountOutOfRange = 89,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1249,6 +1258,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::InputSumOverflow => {
                 PlatformWalletFFIResultCode::ErrorArithmeticOverflow
+            }
+            PlatformWalletError::WithdrawalAmountOutOfRange { .. } => {
+                PlatformWalletFFIResultCode::ErrorWithdrawalAmountOutOfRange
             }
             PlatformWalletError::WalletAlreadyExists(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
@@ -2493,6 +2505,21 @@ mod tests {
     /// fall through to `ErrorUnknown` while carrying the typed
     /// Display rendering as the message. Pin this so the catch-all
     /// stays the only `ErrorUnknown` source.
+    #[test]
+    fn should_report_a_withdrawal_amount_out_of_range_by_its_own_code() {
+        let err = PlatformWalletError::WithdrawalAmountOutOfRange {
+            requested: 5,
+            min: 10,
+            max: 20,
+        };
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWithdrawalAmountOutOfRange
+        );
+        assert_eq!(result.code as i32, 89);
+    }
+
     #[test]
     fn unmapped_variants_fall_through_to_unknown() {
         let err = PlatformWalletError::AddressOperation("explicit fallthrough".to_string());

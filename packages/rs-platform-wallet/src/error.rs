@@ -1045,6 +1045,23 @@ pub enum PlatformWalletError {
     #[error("input sum overflow: caller-supplied input balances exceed u64::MAX")]
     InputSumOverflow,
 
+    // The `Display` text reaches the user through the withdrawal preflight,
+    // like `OnlyDustInputs` above, so it says what to do and names no API.
+    #[error(
+        "Cannot withdraw {requested} credits: the amount must be between {min} \
+         and {max} credits for this account at the chosen Core fee rate."
+    )]
+    WithdrawalAmountOutOfRange {
+        /// The amount the caller asked to withdraw.
+        requested: Credits,
+        /// The smallest withdrawal the protocol version accepts at the
+        /// chosen Core fee rate.
+        min: Credits,
+        /// The largest amount the account's addresses can withdraw in one
+        /// transition, after the transition fee.
+        max: Credits,
+    },
+
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
 

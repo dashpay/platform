@@ -315,6 +315,36 @@ pub struct WithdrawalPreflightFFI {
     pub estimated_fee: u64,
 }
 
+/// Result of a preflight for withdrawing a requested amount
+/// (`platform_address_wallet_preflight_withdrawal_amount`).
+///
+/// Every figure is computed by the wallet's planner, the one the withdrawal
+/// itself runs. When the amount is outside what the account can withdraw,
+/// `can_withdraw` is `false` and `min_withdrawable` / `max_withdrawable` carry
+/// the range that would work; for any other "can't fund" outcome all figures
+/// are `0` and the result message carries the reason.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WithdrawalAmountPreflightFFI {
+    /// `true` when the account can withdraw exactly the requested amount.
+    pub can_withdraw: bool,
+    /// The credits that leave Platform: the requested amount. `0` unless
+    /// `can_withdraw`.
+    pub amount: u64,
+    /// The transition fee, paid on top of `amount` from what stays on the
+    /// largest chosen address. `0` unless `can_withdraw`.
+    pub estimated_fee: u64,
+    /// How many addresses the withdrawal draws from. `0` unless
+    /// `can_withdraw`.
+    pub input_count: u32,
+    /// The smallest amount a withdrawal may carry at the chosen Core fee
+    /// rate. `0` when unknown.
+    pub min_withdrawable: u64,
+    /// The largest amount the account can withdraw in one transition. `0`
+    /// when unknown.
+    pub max_withdrawable: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Funding address entry (for top_up)
 // ---------------------------------------------------------------------------

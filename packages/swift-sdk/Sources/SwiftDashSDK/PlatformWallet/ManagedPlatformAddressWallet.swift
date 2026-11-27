@@ -521,6 +521,18 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         /// re-deriving a classification in Swift (which would mean mirroring
         /// protocol decisions on the wrong side of the FFI boundary).
         public let reason: String?
+        /// How many addresses the withdrawal draws from. Reported only by
+        /// `preflightWithdrawal(accountIndex:amountCredits:coreFeePerByte:)`,
+        /// `nil` otherwise; `0` when `canWithdraw == false`.
+        public let inputCount: UInt32?
+        /// The smallest amount a withdrawal may carry at the chosen Core fee
+        /// rate, as Rust computed it. Reported only by the amount preflight,
+        /// `nil` otherwise; `0` when Rust could not determine it.
+        public let minWithdrawable: UInt64?
+        /// The largest amount the account can withdraw in one transition, as
+        /// Rust computed it. Reported only by the amount preflight, `nil`
+        /// otherwise; `0` when Rust could not determine it.
+        public let maxWithdrawable: UInt64?
     }
 
     /// Preflight an AUTO withdrawal of a platform-payment account WITHOUT
@@ -600,7 +612,70 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 canWithdraw: out.can_withdraw,
                 netWithdrawable: out.net_withdrawable,
                 estimatedFee: out.estimated_fee,
-                reason: reason
+                reason: reason,
+                inputCount: nil,
+                minWithdrawable: nil,
+                maxWithdrawable: nil
+            )
+        }.value
+    }
+
+    /// Preflight a withdrawal of exactly `amountCredits` from a
+    /// platform-payment account, without signing, broadcasting or consuming
+    /// a Core receive address.
+    ///
+    /// Rust plans it with the planner `withdraw(accountIndex:coreAddress:
+    /// amountCredits:coreFeePerByte:signer:)` runs: it reads the account's
+    /// on-chain balances, takes addresses largest first until they cover the
+    /// amount and the transition fee, and pays the fee from what stays on the
+    /// largest one. `amountCredits` is what leaves Platform; from protocol
+    /// version 14 the Core fee at `coreFeePerByte` comes out of it.
+    ///
+    /// The result's `netWithdrawable` is the amount, `estimatedFee` the
+    /// transition fee paid on top of it, and `inputCount` the number of
+    /// addresses drawn from. When the amount is outside what the account can
+    /// withdraw, `canWithdraw` is `false`, `reason` says so, and
+    /// `minWithdrawable` / `maxWithdrawable` carry the range Rust computed;
+    /// show those rather than deriving a limit in Swift.
+    ///
+    /// Like the full-balance preflight, this makes one DAPI proof query, must
+    /// not run on the main actor, and throws only for a structural failure.
+    public func preflightWithdrawal(
+        accountIndex: UInt32,
+        amountCredits: UInt64,
+        coreFeePerByte: UInt32 = 1
+    ) async throws -> WithdrawalPreflight {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            () -> WithdrawalPreflight in
+            var out = WithdrawalAmountPreflightFFI(
+                can_withdraw: false,
+                amount: 0,
+                estimated_fee: 0,
+                input_count: 0,
+                min_withdrawable: 0,
+                max_withdrawable: 0
+            )
+            // Built explicitly, not with `.check()`, so `message` can be read
+            // before the wrapper frees it (see the preflight above).
+            let result = PlatformWalletResult(
+                platform_address_wallet_preflight_withdrawal_amount(
+                    handle,
+                    accountIndex,
+                    amountCredits,
+                    coreFeePerByte,
+                    &out
+                )
+            )
+            try result.throwIfError()
+            return WithdrawalPreflight(
+                canWithdraw: out.can_withdraw,
+                netWithdrawable: out.amount,
+                estimatedFee: out.estimated_fee,
+                reason: out.can_withdraw ? nil : result.message,
+                inputCount: out.input_count,
+                minWithdrawable: out.min_withdrawable,
+                maxWithdrawable: out.max_withdrawable
             )
         }.value
     }
@@ -694,6 +769,68 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                         feePerByte,
                         nil,
                         0,
+                        signerHandle,
+                        &changeset
+                    )
+                }
+            }
+            try result.check()
+
+            defer { platform_address_wallet_free_changeset(&changeset) }
+            return Self.decodeChangeset(&changeset)
+        }.value
+    }
+
+    /// Withdraw exactly `amountCredits` from this platform-payment account
+    /// to a Core L1 address, with Rust choosing the input addresses.
+    ///
+    /// `amountCredits` is what leaves Platform. Rust takes the account's
+    /// addresses largest first until they cover the amount and the
+    /// transition fee, and pays the fee from what stays on the largest one;
+    /// nothing about the selection is decided here. An amount the account
+    /// cannot meet throws `PlatformWalletError.withdrawalAmountOutOfRange`
+    /// before anything is signed. Preflight with
+    /// `preflightWithdrawal(accountIndex:amountCredits:coreFeePerByte:)`,
+    /// using the same `coreFeePerByte`, to show the fee and the range first.
+    ///
+    /// `coreAddress`, `coreFeePerByte`, `signer` and the returned balances
+    /// are as in `withdraw(accountIndex:coreAddress:coreFeePerByte:signer:)`.
+    @discardableResult
+    public func withdraw(
+        accountIndex: UInt32,
+        coreAddress: String,
+        amountCredits: UInt64,
+        coreFeePerByte: UInt32 = 1,
+        signer: KeychainSigner
+    ) async throws -> [UpdatedBalance] {
+        let trimmed = coreAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw PlatformWalletError.invalidParameter("coreAddress is empty")
+        }
+        // An embedded NUL would cut the address short on the Rust side; see
+        // the full-balance overload.
+        guard !trimmed.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter(
+                "coreAddress contains an embedded NUL byte"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = signer.handle
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [UpdatedBalance] in
+            var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
+            // `withExtendedLifetime` keeps the signer alive across the FFI
+            // call; see the full-balance overload.
+            let result = withExtendedLifetime(signer) {
+                trimmed.withCString { addrCStr in
+                    platform_address_wallet_withdraw_amount_to_address(
+                        handle,
+                        accountIndex,
+                        amountCredits,
+                        addrCStr,
+                        coreFeePerByte,
                         signerHandle,
                         &changeset
                     )
