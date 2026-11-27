@@ -100,17 +100,6 @@ fn rehydration_derivation_display_states_the_consequence() {
     assert!(targeted.contains("index 45"), "{targeted}");
     assert!(targeted.contains("fresh receive address"), "{targeted}");
 
-    let over_cap = WalletStorageError::RehydrationGapLimitRefillTooLarge {
-        refill_target: 300_000,
-        already_generated: 21,
-        implied: 299_980,
-        cap: 250_000,
-    }
-    .to_string();
-    assert!(over_cap.contains("299980"), "{over_cap}");
-    assert!(over_cap.contains("250000"), "{over_cap}");
-    assert!(over_cap.contains("handed out again as fresh"), "{over_cap}");
-
     let refused = WalletStorageError::RehydrationGapLimitFailed {
         source: key_wallet::error::Error::WatchOnly,
     }
@@ -326,12 +315,6 @@ fn samples() -> Vec<WalletStorageError> {
         },
         WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
         WalletStorageError::RehydrationEnsureDerivedFailed { index: 45 },
-        WalletStorageError::RehydrationGapLimitRefillTooLarge {
-            refill_target: 300_000,
-            already_generated: 20,
-            implied: 299_980,
-            cap: 250_000,
-        },
         WalletStorageError::RehydrationGapLimitFailed {
             source: key_wallet::error::Error::WatchOnly,
         },
@@ -357,10 +340,6 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::EmptyPoolAddressScript {
             account_type: "standard_bip44",
             address_index: 7,
-        },
-        WalletStorageError::RehydrationGapLimitTargetOutOfRange {
-            highest_used: Some(u32::MAX - 5),
-            gap_limit: 20,
         },
         WalletStorageError::DatabasePathIsSymlink {
             path: PathBuf::from("/tmp/wallet.db"),
@@ -489,12 +468,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::ReadOnlyRecoveryMode { .. } => (false, "read_only_recovery_mode"),
             WalletStorageError::RehydrationEnsureDerivedFailed { .. } => {
                 (false, "rehydration_ensure_derived_failed")
-            }
-            WalletStorageError::RehydrationGapLimitRefillTooLarge { .. } => {
-                (false, "rehydration_gap_limit_refill_too_large")
-            }
-            WalletStorageError::RehydrationGapLimitTargetOutOfRange { .. } => {
-                (false, "rehydration_gap_limit_target_out_of_range")
             }
             WalletStorageError::RehydrationGapLimitFailed { .. } => {
                 (false, "rehydration_gap_limit_failed")
