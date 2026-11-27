@@ -1,0 +1,187 @@
+import DashSDKFFI
+import Foundation
+import XCTest
+@testable import SwiftDashSDK
+
+/// The Swift side of topping up an identity this wallet does not manage:
+/// code 89, the built-outpoint report of the external top-up, and the
+/// argument checks of the three wrappers. The wrappers run against an
+/// unknown wallet handle, so the native side answers before building
+/// anything.
+final class IdentityTopUpRecipientTests: XCTestCase {
+    private let identityId = Data(repeating: 7, count: 32)
+    private let txid = Data((0..<32).map(UInt8.init))
+    private let wallet = ManagedPlatformWallet(handle: NULL_HANDLE, walletId: Data(repeating: 1, count: 32))
+
+    /// Thread-safe sink for the outpoints a top-up reports.
+    private final class Reported: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [AssetLockBuiltOutPoint] = []
+        func append(_ value: AssetLockBuiltOutPoint) { lock.withLock { values.append(value) } }
+        var all: [AssetLockBuiltOutPoint] { lock.withLock { values } }
+    }
+
+    // MARK: - Code 89
+
+    func testShouldMapCode89ToAssetLockRecipientUnknown() {
+        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockRecipientUnknown.rawValue, 89)
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN),
+            .errorAssetLockRecipientUnknown)
+        // Through the Swift seam: a `strdup` message would hand a libc
+        // allocation to Rust's `CString` deallocator.
+        let error = PlatformWalletError(code: .errorAssetLockRecipientUnknown, message: "no recorded recipient")
+        guard case .assetLockRecipientUnknown(let detail) = error else {
+            return XCTFail("expected assetLockRecipientUnknown, got \(error)")
+        }
+        XCTAssertEqual(detail, "no recorded recipient")
+        XCTAssertEqual(error.localizedDescription, "no recorded recipient")
+    }
+
+    // MARK: - Code 90
+
+    func testShouldMapCode90ToAssetLockConsumptionUnknown() {
+        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockConsumptionUnknown.rawValue, 90)
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN),
+            .errorAssetLockConsumptionUnknown)
+        // Through the Swift seam: a `strdup` message would hand a libc
+        // allocation to Rust's `CString` deallocator.
+        let error = PlatformWalletError(code: .errorAssetLockConsumptionUnknown, message: "may already be used")
+        guard case .assetLockConsumptionUnknown(let detail) = error else {
+            return XCTFail("expected assetLockConsumptionUnknown, got \(error)")
+        }
+        XCTAssertEqual(detail, "may already be used")
+        XCTAssertEqual(error.localizedDescription, "may already be used")
+    }
+
+    // MARK: - Built outpoint
+
+    func testShouldReportNoOutPointWhenTheFFILeftItZero() {
+        let zero = OutPointFFI(txid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), vout: 0)
+        XCTAssertNil(AssetLockBuiltOutPoint(reported: zero))
+    }
+
+    func testShouldDecodeTheBuiltOutPointInWireOrder() throws {
+        var out = OutPointFFI(txid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), vout: 3)
+        // A zero txid with a non-zero vout is still a built lock.
+        XCTAssertEqual(AssetLockBuiltOutPoint(reported: out)?.vout, 3)
+        txid.withUnsafeBytes { src in
+            Swift.withUnsafeMutableBytes(of: &out.txid) { $0.copyMemory(from: src) }
+        }
+        let built = try XCTUnwrap(AssetLockBuiltOutPoint(reported: out))
+        XCTAssertEqual(built.txid, txid)
+        XCTAssertEqual(built.vout, 3)
+        XCTAssertEqual(built, AssetLockBuiltOutPoint(rawBytes: txid + Data([3, 0, 0, 0])))
+    }
+
+    /// A failed top-up that built a lock reports its outpoint exactly once,
+    /// before the error reaches the caller: the outpoint is what the caller
+    /// resumes.
+    func testShouldDeliverTheBuiltOutPointOnceBeforeTheError() throws {
+        let built = try XCTUnwrap(AssetLockBuiltOutPoint(rawBytes: txid + Data([2, 0, 0, 0])))
+        let reported = Reported()
+        XCTAssertThrowsError(
+            try ManagedPlatformWallet.deliverTopUpOutcome(
+                Result<UInt64, Error>.failure(PlatformWalletError.walletOperation("submit failed")),
+                built: built,
+                to: { value in
+                    XCTAssertTrue(reported.all.isEmpty, "reported once")
+                    reported.append(value)
+                })
+        ) { error in
+            XCTAssertEqual(reported.all, [built], "reported before the error is thrown")
+            guard case PlatformWalletError.walletOperation = error else {
+                return XCTFail("expected walletOperation, got \(error)")
+            }
+        }
+        XCTAssertEqual(
+            try ManagedPlatformWallet.deliverTopUpOutcome(
+                Result<UInt64, Error>.success(7), built: nil, to: { reported.append($0) }),
+            7)
+        XCTAssertEqual(reported.all, [built], "nothing reported when nothing was built")
+    }
+
+    // MARK: - Wrappers
+
+    func testShouldRefuseAMalformedIdentityBeforeTheNativeCall() async {
+        let reported = Reported()
+        do {
+            _ = try await wallet.topUpExternalIdentityWithFunding(
+                identityId: Data(repeating: 7, count: 31), amountDuffs: 50_500, accountIndex: 0,
+                onAssetLockBuilt: { reported.append($0) })
+            XCTFail("expected invalidParameter")
+        } catch PlatformWalletError.invalidParameter {
+        } catch {
+            XCTFail("expected invalidParameter, got \(error)")
+        }
+        XCTAssertTrue(reported.all.isEmpty)
+
+        do {
+            try await wallet.assignTopUpRecipient(
+                outPointTxid: txid, outPointVout: 0, identityId: Data(repeating: 7, count: 33))
+            XCTFail("expected invalidParameter")
+        } catch PlatformWalletError.invalidParameter {
+        } catch {
+            XCTFail("expected invalidParameter, got \(error)")
+        }
+    }
+
+    func testShouldRefuseAMalformedTxidBeforeTheNativeCall() async {
+        for call in [
+            { [wallet, identityId] in
+                try await wallet.assignTopUpRecipient(
+                    outPointTxid: Data(repeating: 1, count: 31), outPointVout: 0, identityId: identityId)
+            },
+            { [wallet] in
+                _ = try await wallet.resumeTopUpToRecordedRecipient(
+                    outPointTxid: Data(repeating: 1, count: 33), outPointVout: 0)
+            },
+        ] as [@Sendable () async throws -> Void] {
+            do {
+                try await call()
+                XCTFail("expected invalidParameter")
+            } catch PlatformWalletError.invalidParameter {
+            } catch {
+                XCTFail("expected invalidParameter, got \(error)")
+            }
+        }
+    }
+
+    /// An unknown wallet handle fails before any lock is built: the error
+    /// reaches the caller and no outpoint is reported, so a new call is safe.
+    func testShouldReportNoOutPointWhenNothingWasBuilt() async {
+        let reported = Reported()
+        do {
+            _ = try await wallet.topUpExternalIdentityWithFunding(
+                identityId: identityId, amountDuffs: 50_500, accountIndex: 0,
+                onAssetLockBuilt: { reported.append($0) })
+            XCTFail("expected notFound")
+        } catch PlatformWalletError.notFound {
+        } catch {
+            XCTFail("expected notFound, got \(error)")
+        }
+        XCTAssertTrue(reported.all.isEmpty)
+    }
+
+    func testShouldPassTheResumeAndTheAssignmentToTheNativeWallet() async {
+        do {
+            _ = try await wallet.resumeTopUpToRecordedRecipient(outPointTxid: txid, outPointVout: 1)
+            XCTFail("expected notFound")
+        } catch PlatformWalletError.notFound {
+        } catch {
+            XCTFail("expected notFound, got \(error)")
+        }
+        do {
+            try await wallet.assignTopUpRecipient(outPointTxid: txid, outPointVout: 1, identityId: identityId)
+            XCTFail("expected notFound")
+        } catch PlatformWalletError.notFound {
+        } catch {
+            XCTFail("expected notFound, got \(error)")
+        }
+    }
+}

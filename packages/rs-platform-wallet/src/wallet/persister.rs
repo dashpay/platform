@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use dashcore::Txid;
+use dashcore::{Address, OutPoint, Txid};
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::flush_ledger::{keeps_a_buffer, FlushLedgers};
@@ -807,6 +809,46 @@ impl WalletPersister {
         self.flush_ledger.flush(self.inner.as_ref(), self.wallet_id)
     }
 
+    /// Record `identity` as the recipient of this wallet's asset lock at
+    /// `out_point`, the recipient alone and at once
+    /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`]):
+    /// `Ok` once committed, and any `Err` leaves nothing to commit later.
+    /// Counted in the flush ledger like a flush: the backend writes what was
+    /// buffered first, so a failure for good there is a loss the others must
+    /// see.
+    pub(crate) fn assign_asset_lock_identity_recipient(
+        &self,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        self.flush_ledger.assign_identity_recipient(
+            self.inner.as_ref(),
+            self.wallet_id,
+            out_point,
+            identity,
+        )
+    }
+
+    /// Clear the stored used mark of this wallet's unsent address
+    /// ([`PlatformWalletPersistence::release_unsent_pool_address`]), at once,
+    /// counted in the flush ledger as a recipient assignment is.
+    pub(crate) fn release_unsent_pool_address(
+        &self,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        self.flush_ledger.release_unsent_pool_address(
+            self.inner.as_ref(),
+            self.wallet_id,
+            account_type,
+            pool_type,
+            index,
+            address,
+        )
+    }
+
     /// Store `changeset` and answer `Ok` only once it is durable.
     ///
     /// A backend that stages a changeset and commits the wallet's buffer in
@@ -1336,6 +1378,103 @@ mod tests {
         }
         assert!(!BareMinimum.persists_durably());
         assert!(!NoPlatformPersistence.persists_durably());
+    }
+
+    /// A recipient assignment writes what the backend buffered before it, so
+    /// one that fails for good is counted as a lost flush: a caller waiting on
+    /// the ledger for records it buffered earlier learns they went with it,
+    /// instead of trusting a later flush over an emptied buffer.
+    #[test]
+    fn should_count_an_assignment_that_failed_for_good_as_a_lost_flush() {
+        struct DropsOnAssign;
+        impl PlatformWalletPersistence for DropsOnAssign {
+            fn assign_asset_lock_identity_recipient(
+                &self,
+                _wallet_id: WalletId,
+                _out_point: OutPoint,
+                _identity: Identifier,
+            ) -> Result<(), PersistenceError> {
+                Err(PersistenceError::backend("the database is corrupt"))
+            }
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let persister = WalletPersister::new([0; 32], Arc::new(DropsOnAssign) as _);
+        let lost_before = persister.flush_ledger.lost();
+
+        assert!(persister
+            .assign_asset_lock_identity_recipient(OutPoint::null(), Identifier::from([1; 32]))
+            .is_err());
+
+        assert_eq!(persister.flush_ledger.lost(), lost_before + 1);
+        assert_eq!(persister.flush_ledger.in_flight(), 0);
+    }
+
+    /// An assignment the backend refused after committing what it had
+    /// buffered (the lock was swept first, say) dropped nothing: it is not
+    /// counted as a failed or lost flush, so the handle's later durable
+    /// flushes are not refused as having lost writes. The caller gets the
+    /// refusal as the backend gave it.
+    #[test]
+    fn should_not_count_an_assignment_refused_after_the_buffer_committed_as_lost() {
+        struct RefusesAfterCommit;
+        impl PlatformWalletPersistence for RefusesAfterCommit {
+            fn assign_asset_lock_identity_recipient(
+                &self,
+                _wallet_id: WalletId,
+                _out_point: OutPoint,
+                _identity: Identifier,
+            ) -> Result<(), PersistenceError> {
+                Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Constraint,
+                    "the wallet stores no asset lock at it",
+                )
+                .after_buffer_committed())
+            }
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let persister = WalletPersister::new([0; 32], Arc::new(RefusesAfterCommit) as _);
+        let (lost_before, failed_before) = (
+            persister.flush_ledger.lost(),
+            persister.flush_ledger.failed(),
+        );
+
+        let refused = persister
+            .assign_asset_lock_identity_recipient(OutPoint::null(), Identifier::from([1; 32]))
+            .expect_err("refused");
+
+        assert_eq!(refused.kind(), Some(PersistenceErrorKind::Constraint));
+        assert!(refused
+            .to_string()
+            .contains("the wallet stores no asset lock at it"));
+        assert_eq!(persister.flush_ledger.lost(), lost_before);
+        assert_eq!(persister.flush_ledger.failed(), failed_before);
+        assert_eq!(persister.flush_ledger.in_flight(), 0);
     }
 
     /// A store is not answered for on the strength of a flush that succeeded

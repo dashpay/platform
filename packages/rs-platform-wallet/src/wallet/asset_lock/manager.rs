@@ -12,6 +12,7 @@ use tokio::sync::{Notify, RwLock};
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -36,6 +37,13 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     pub(super) wallet_id: WalletId,
+    /// The wallet generation this manager was created for. A wallet removed
+    /// and re-created under `wallet_id` gets a new generation and a new
+    /// manager, so a handle that outlived its registration would otherwise
+    /// build from the replacement's wallet info and spend its funds: a build
+    /// on any other generation is refused before anything is reserved (see
+    /// `build_asset_lock_transaction_fenced`).
+    pub(super) generation: Arc<WalletGeneration>,
     /// Notified on InstantLock / ChainLock events by `LockNotifyHandler`.
     /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
     pub(super) lock_notify: Arc<Notify>,
@@ -77,6 +85,13 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// Shared (`Arc`) so a [`shared_handle`](Self::shared_handle) sees the
     /// same gate.
     pub(super) build_persist_serial: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes recipient assignments
+    /// ([`assign_identity_top_up_recipient`](Self::assign_identity_top_up_recipient))
+    /// from the check through the backend's assignment and the in-memory
+    /// publication, so two assignments of one lock cannot interleave their
+    /// publications. Taken after the generation's lifecycle gate and never
+    /// while holding the wallet manager's lock.
+    pub(super) recipient_assignment_serial: Arc<tokio::sync::Mutex<()>>,
     /// Outpoints whose `Built` row is excluded from rejected-build cleanup,
     /// counted so concurrent resumes of the same lock each hold their own
     /// claim. A live resume releases its claim on pre-dispatch exit. Once a
@@ -158,15 +173,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         lock_notify: Arc<Notify>,
         broadcaster: Arc<B>,
         persister: WalletPersister,
+        generation: Arc<WalletGeneration>,
     ) -> Self {
         Self {
             sdk,
             wallet_manager,
             wallet_id,
+            generation,
             lock_notify,
             broadcaster,
             persister,
             build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
+            recipient_assignment_serial: Arc::new(tokio::sync::Mutex::new(())),
             resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             drain_operations: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
@@ -199,10 +217,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             sdk: Arc::clone(&self.sdk),
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
+            generation: Arc::clone(&self.generation),
             lock_notify: Arc::clone(&self.lock_notify),
             broadcaster: Arc::clone(&self.broadcaster),
             persister: self.persister.clone(),
             build_persist_serial: Arc::clone(&self.build_persist_serial),
+            recipient_assignment_serial: Arc::clone(&self.recipient_assignment_serial),
             resume_dispatch_claims: Arc::clone(&self.resume_dispatch_claims),
             drain_operations: Arc::clone(&self.drain_operations),
             deferred_resumes: Arc::clone(&self.deferred_resumes),

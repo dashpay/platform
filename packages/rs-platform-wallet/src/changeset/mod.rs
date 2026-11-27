@@ -36,16 +36,16 @@ mod wallet_accounting;
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
-    AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
-    DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes,
-    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
-    IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
-    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
-    PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
-    PlatformAddressChangeSet, PlatformWalletChangeSet, PrivateContactRequestsPosition,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
-    ReceivedContactRequestKey, SentContactRequestKey, ShieldedRecipientRaw, TokenBalanceChangeSet,
-    WalletMetadataEntry, SHIELDED_RECIPIENT_SIZE,
+    AssetLockChangeSet, AssetLockEntry, AssetLockRecipient, ContactChangeSet, ContactRequestEntry,
+    CoreChangeSet, DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry,
+    HighestUsedIndexes, IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices,
+    IdentityKeyEntry, IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry,
+    InvitationStatus, KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto,
+    PendingContactCryptoKey, PendingContactCryptoKind, PendingContactCryptoOp,
+    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
+    PrivateContactRequestsPosition, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    ProviderPlatformNodePubKey, ReceivedContactRequestKey, SentContactRequestKey,
+    ShieldedRecipientRaw, TokenBalanceChangeSet, WalletMetadataEntry, SHIELDED_RECIPIENT_SIZE,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
@@ -69,7 +69,7 @@ pub use shielded_changeset_disabled::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 pub use traits::{
-    persists_outbound_account_markers, ListedCoreTxid, PersistenceError, PersistenceErrorKind,
-    PlatformWalletPersistence, StoreAndCommitError,
+    persists_outbound_account_markers, FailedAfterBufferCommitted, ListedCoreTxid,
+    PersistenceError, PersistenceErrorKind, PlatformWalletPersistence, StoreAndCommitError,
 };
 pub use wallet_accounting::{is_owned, wallet_accounting, wallet_direction};

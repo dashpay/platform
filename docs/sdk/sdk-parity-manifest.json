@@ -4,6 +4,7 @@
   "description": "Executable current Kotlin/Swift parity truth for the correctness, persistence, recovery, shared-policy, and immediate example-app capabilities audited from the PR #3999 baseline.",
   "declared_persistence_capabilities": [
     "asset_lock_funding_indices",
+    "asset_lock_identity_recipients",
     "asset_lock_operation_ids",
     "atomic_changesets",
     "dpns_name_states",
@@ -69,6 +70,7 @@
     "on_persist_private_contact_scan_state_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
+    "platform_wallet_assign_identity_top_up_recipient": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_address_wallet_balance_history": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_contract_fee_claim": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
@@ -110,6 +112,7 @@
     "platform_wallet_manager_shielded_withdraw_with_plan": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_resume_identity_top_up_to_recorded_recipient_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_preview_data_contract_update": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
     "platform_wallet_private_document_read_free": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
     "platform_wallet_read_private_document_entries": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
@@ -122,6 +125,7 @@
     "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
     "platform_wallet_token_update_config_and_refresh": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
     "platform_wallet_top_up_external_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
+    "platform_wallet_top_up_external_identity_with_funding_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
@@ -1295,6 +1299,87 @@
           "id": "generic_resume_refuses_invitation_voucher_locks",
           "command": "cargo test -p platform-wallet generic_resume_refuses_invitation_voucher_locks",
           "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.top_up_any_identity_from_core",
+      "title": "Top up any identity from the Core balance, its recorded recipient kept across restart, assign and resume",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_top_up_external_identity_with_funding_signer",
+        "platform_wallet_resume_identity_top_up_to_recorded_recipient_signer",
+        "platform_wallet_assign_identity_top_up_recipient",
+        "platform_wallet_tracked_asset_locks_list"
+      ],
+      "required_persistence_capabilities": [
+        "asset_lock_identity_recipients",
+        "atomic_changesets",
+        "tracked_asset_locks",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "unsupported",
+          "restart": "required",
+          "reason": "SwiftData keeps the identity-recipient sidecar on PersistentAssetLock (immutable, carried through upserts, a conflicting value on a consumed row dropped, fail-closed loads) and the handler attests bit 17; ManagedPlatformWallet binds the external top-up (built outpoint reported to the caller), the recorded-recipient resume and the assignment, and both tracked-lock lists carry the recipient and the unassigned flag. No example-app screen yet. Remaining gates: a funded testnet run of external top-up, interrupted resume across process death, and assignment."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "required",
+          "reason": "The Kotlin bindings, the Room identity-recipient sidecar and the recovery UI are a separate change landing in parallel (dashpay/platform#5933)."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/AssetLockIdentityRecipientPersistenceTests.swift",
+          "id": "testShouldKeepTheRecipientThroughLaterSnapshotsAndAStoreReopen",
+          "command": "swift test --package-path packages/swift-sdk --filter AssetLockIdentityRecipientPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/AssetLockIdentityRecipientPersistenceTests.swift",
+          "id": "testShouldAcceptTheSameRecipientAgainAndRefuseADifferentOne",
+          "command": "swift test --package-path packages/swift-sdk --filter AssetLockIdentityRecipientPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/AssetLockIdentityRecipientPersistenceTests.swift",
+          "id": "testShouldRoundTripTheRecipientThroughTheExtensionCallbacks",
+          "command": "swift test --package-path packages/swift-sdk --filter AssetLockIdentityRecipientPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/IdentityTopUpRecipientTests.swift",
+          "id": "testShouldReportNoOutPointWhenNothingWasBuilt",
+          "command": "swift test --package-path packages/swift-sdk --filter IdentityTopUpRecipientTests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/asset_lock/build.rs",
+          "id": "should_assign_an_unassigned_unbound_top_up_lock_once",
+          "command": "cargo test -p platform-wallet should_assign_an_unassigned_unbound_top_up_lock_once",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "integration",
+          "file": "packages/rs-platform-wallet-storage/tests/integration/sqlite_asset_locks_filter.rs",
+          "id": "should_preserve_identity_recipient_when_later_snapshot_lacks_it_and_reject_a_change",
+          "command": "cargo test -p platform-wallet-storage --test integration should_preserve_identity_recipient_when_later_snapshot_lacks_it_and_reject_a_change",
+          "covers_restart": true
         }
       ]
     },

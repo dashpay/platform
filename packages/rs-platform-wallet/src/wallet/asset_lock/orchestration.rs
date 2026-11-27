@@ -35,9 +35,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::changeset::ShieldedRecipientRaw;
+use crate::changeset::AssetLockRecipient;
 use dashcore::OutPoint;
-use dpp::prelude::AssetLockProof;
+use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -49,6 +49,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, sdk_payment_delivery, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::sync::tracking::TrackedResumeMetadata;
 use crate::wallet::asset_lock::AssetLockOperationContext;
 use crate::PaymentDelivery;
 
@@ -438,7 +439,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// [`AssetLockStatus::is_resumable`](crate::wallet::asset_lock::tracked::AssetLockStatus::is_resumable).
     async fn resumable_lock(&self, out_point: &OutPoint) -> Option<OutPoint> {
         match self.tracked_resume_metadata(out_point).await {
-            Some((_, _, status, _)) if status.is_resumable() => Some(*out_point),
+            Some(lock) if lock.status.is_resumable() => Some(*out_point),
             _ => None,
         }
     }
@@ -695,6 +696,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `find_tracked_unproven_lock` BTreeMap walk needed), so the
     /// `IsTimeout` outcome is built directly from the error payload.
     ///
+    /// `recipient` is who the operation pays. A newly built lock records it
+    /// when its funding type does (a shielded funding, an unbound identity
+    /// top-up). For an existing unbound top-up lock it must be the identity
+    /// the lock recorded: a different one is refused with
+    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`], and a lock
+    /// that records none with [`PlatformWalletError::AssetLockRecipientUnknown`].
+    ///
     /// `on_built` receives the outpoint of a newly built lock; see
     /// [`AssetLockBuiltObserver`].
     pub(crate) async fn resolve_funding_with_is_timeout_fallback<AS>(
@@ -702,7 +710,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
-        shielded_recipient: Option<ShieldedRecipientRaw>,
+        recipient: Option<AssetLockRecipient>,
         asset_lock_signer: &AS,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<FundingResolution, PlatformWalletError>
@@ -713,7 +721,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding,
             funding_type,
             destination_index,
-            shielded_recipient,
+            recipient,
             asset_lock_signer,
             on_built,
             |_| {},
@@ -730,7 +738,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
-        shielded_recipient: Option<ShieldedRecipientRaw>,
+        recipient: Option<AssetLockRecipient>,
         asset_lock_signer: &AS,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
         on_out_point: impl FnOnce(OutPoint) + Send,
@@ -749,7 +757,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         account_index,
                         funding_type,
                         destination_index,
-                        shielded_recipient,
+                        recipient,
                         asset_lock_signer,
                         on_built,
                         on_out_point,
@@ -790,7 +798,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         minimum_lock_duffs,
                         funding_type,
                         destination_index,
-                        shielded_recipient,
+                        recipient,
                         asset_lock_signer,
                         &operation,
                         on_built,
@@ -823,7 +831,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         account,
                         funding_type,
                         destination_index,
-                        shielded_recipient,
+                        recipient,
                         asset_lock_signer,
                         on_built,
                         on_out_point,
@@ -847,7 +855,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point,
                 consume_invitation_voucher,
             } => {
-                let (actual_funding_type, actual_identity_index, status, _) = self
+                let TrackedResumeMetadata {
+                    funding_type: actual_funding_type,
+                    identity_index: actual_identity_index,
+                    status,
+                    identity_recipient: recorded_identity,
+                    ..
+                } = self
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
@@ -865,22 +879,66 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     funding_type,
                     consume_invitation_voucher,
                 );
+                let requested_identity = match recipient {
+                    Some(AssetLockRecipient::Identity(identity)) => Some(identity),
+                    _ => None,
+                };
                 if !invitation_reclaim {
                     validate_existing_asset_lock_role(
                         out_point,
                         funding_type,
                         destination_index,
+                        requested_identity,
                         actual_funding_type,
                         actual_identity_index,
-                    )?;
+                        recorded_identity,
+                    )
+                    // A refused identity recipient names the lock as held only
+                    // while a resume can take it on.
+                    .map_err(|error| {
+                        if status.is_resumable() {
+                            error
+                        } else {
+                            error.without_held_lock()
+                        }
+                    })?;
                 }
+                // Checked again on the row the resume claims, under the same
+                // guard: the row read above may since have been removed by
+                // rejection cleanup and recreated at this outpoint by a build
+                // for another recipient.
+                let authorize = |current: &TrackedResumeMetadata| {
+                    if current.status.is_consumed() {
+                        return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+                    }
+                    if authorized_invitation_reclaim(
+                        current.funding_type,
+                        funding_type,
+                        consume_invitation_voucher,
+                    ) {
+                        return Ok(());
+                    }
+                    validate_existing_asset_lock_role(
+                        out_point,
+                        funding_type,
+                        destination_index,
+                        requested_identity,
+                        current.funding_type,
+                        current.identity_index,
+                        current.identity_recipient,
+                    )
+                };
                 on_out_point(out_point);
                 // 300s is a window for the record or a mined-height lookup to
                 // prove the lock, not a finality timeout: on expiry the caller
                 // falls back to an unbounded ChainLock wait, so a resumed
                 // broadcast lock never fails just because IS was slow.
                 match self
-                    .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
+                    .resume_authorized_asset_lock(
+                        &out_point,
+                        Some(Duration::from_secs(300)),
+                        &authorize,
+                    )
                     .await
                 {
                     Ok((proof, path)) => Ok(FundingResolution::Resolved(ResolvedFunding {
@@ -924,15 +982,22 @@ fn authorized_invitation_reclaim(
 
 /// Authorize a tracked one-shot output for the operation that is about to
 /// consume it. Identity registration and bound top-up paths must match their
-/// identity index; an unbound top-up is deliberately eligible for any target.
-/// Invitation vouchers never pass this generic validator—the explicit reclaim
-/// authorization above is the only bypass.
+/// identity index. An unbound top-up may serve a top-up, but only of the
+/// identity its row recorded (`recorded_identity`): another identity is
+/// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`], and a lock that
+/// records none (rebuilt from the chain, its credit output naming no identity)
+/// is [`PlatformWalletError::AssetLockRecipientUnknown`] until a recipient is
+/// assigned. Invitation vouchers never pass this generic validator—the
+/// explicit reclaim authorization above is the only bypass.
+#[allow(clippy::too_many_arguments)]
 fn validate_existing_asset_lock_role(
     out_point: OutPoint,
     expected_funding_type: AssetLockFundingType,
     expected_identity_index: u32,
+    requested_identity: Option<Identifier>,
     actual_funding_type: AssetLockFundingType,
     actual_identity_index: u32,
+    recorded_identity: Option<Identifier>,
 ) -> Result<(), PlatformWalletError> {
     let eligible = match expected_funding_type {
         AssetLockFundingType::IdentityRegistration => {
@@ -946,16 +1011,31 @@ fn validate_existing_asset_lock_role(
         }
         _ => actual_funding_type == expected_funding_type,
     };
-    if eligible {
-        Ok(())
-    } else {
-        Err(PlatformWalletError::AssetLockFundingMismatch {
-            out_point,
-            expected_funding_type,
-            expected_identity_index,
-            actual_funding_type,
-            actual_identity_index,
-        })
+    let mismatch = PlatformWalletError::AssetLockFundingMismatch {
+        out_point,
+        expected_funding_type,
+        expected_identity_index,
+        actual_funding_type,
+        actual_identity_index,
+    };
+    if !eligible {
+        return Err(mismatch);
+    }
+    if actual_funding_type != AssetLockFundingType::IdentityTopUpNotBound {
+        return Ok(());
+    }
+    match (recorded_identity, requested_identity) {
+        (None, _) => Err(PlatformWalletError::AssetLockRecipientUnknown(out_point)),
+        (Some(recorded), Some(requested)) if recorded == requested => Ok(()),
+        (Some(recorded), Some(requested)) => {
+            Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                out_point,
+                recorded,
+                requested,
+            })
+        }
+        // An operation that names no identity cannot pay the one recorded.
+        (Some(_), None) => Err(mismatch),
     }
 }
 
@@ -970,9 +1050,19 @@ mod tests {
     #[test]
     fn existing_lock_role_validation_binds_identity_funding() {
         let out_point = OutPoint::null();
+        let validate = |expected, expected_index, actual, actual_index| {
+            validate_existing_asset_lock_role(
+                out_point,
+                expected,
+                expected_index,
+                None,
+                actual,
+                actual_index,
+                None,
+            )
+        };
 
-        assert!(validate_existing_asset_lock_role(
-            out_point,
+        assert!(validate(
             AssetLockFundingType::IdentityRegistration,
             7,
             AssetLockFundingType::IdentityRegistration,
@@ -980,22 +1070,19 @@ mod tests {
         )
         .is_ok());
         for error in [
-            validate_existing_asset_lock_role(
-                out_point,
+            validate(
                 AssetLockFundingType::IdentityRegistration,
                 7,
                 AssetLockFundingType::IdentityRegistration,
                 8,
             ),
-            validate_existing_asset_lock_role(
-                out_point,
+            validate(
                 AssetLockFundingType::IdentityRegistration,
                 7,
                 AssetLockFundingType::IdentityTopUp,
                 7,
             ),
-            validate_existing_asset_lock_role(
-                out_point,
+            validate(
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 AssetLockFundingType::IdentityInvitation,
@@ -1008,29 +1095,79 @@ mod tests {
             ));
         }
 
-        assert!(validate_existing_asset_lock_role(
-            out_point,
+        assert!(validate(
             AssetLockFundingType::IdentityTopUp,
             11,
             AssetLockFundingType::IdentityTopUp,
             11,
-        )
-        .is_ok());
-        assert!(validate_existing_asset_lock_role(
-            out_point,
-            AssetLockFundingType::IdentityTopUp,
-            11,
-            AssetLockFundingType::IdentityTopUpNotBound,
-            999,
         )
         .is_ok());
         assert!(matches!(
-            validate_existing_asset_lock_role(
-                out_point,
+            validate(
                 AssetLockFundingType::IdentityTopUp,
                 11,
                 AssetLockFundingType::IdentityTopUp,
                 12,
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn should_resume_an_unbound_top_up_lock_only_to_the_identity_it_recorded() {
+        let out_point = OutPoint::null();
+        let recorded = Identifier::from([0x21; 32]);
+        let other = Identifier::from([0x22; 32]);
+        let validate = |expected, requested, recorded| {
+            validate_existing_asset_lock_role(
+                out_point,
+                expected,
+                11,
+                requested,
+                AssetLockFundingType::IdentityTopUpNotBound,
+                999,
+                recorded,
+            )
+        };
+
+        // The recorded identity, through the managed or the unbound route.
+        for expected in [
+            AssetLockFundingType::IdentityTopUp,
+            AssetLockFundingType::IdentityTopUpNotBound,
+        ] {
+            assert!(validate(expected, Some(recorded), Some(recorded)).is_ok());
+        }
+        // Any other identity, the holder's own included, is refused.
+        assert!(matches!(
+            validate(AssetLockFundingType::IdentityTopUp, Some(other), Some(recorded)),
+            Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                out_point: o,
+                recorded: r,
+                requested: q,
+            }) if o == out_point && r == recorded && q == other
+        ));
+        // A lock that records no identity pays nobody until one is assigned.
+        for requested in [Some(other), None] {
+            assert!(matches!(
+                validate(AssetLockFundingType::IdentityTopUp, requested, None),
+                Err(PlatformWalletError::AssetLockRecipientUnknown(o)) if o == out_point
+            ));
+        }
+        // An operation that names no identity cannot pay the recorded one.
+        assert!(matches!(
+            validate(
+                AssetLockFundingType::IdentityTopUpNotBound,
+                None,
+                Some(recorded)
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+        // Not a top-up operation at all.
+        assert!(matches!(
+            validate(
+                AssetLockFundingType::IdentityRegistration,
+                Some(recorded),
+                Some(recorded)
             ),
             Err(PlatformWalletError::AssetLockFundingMismatch { .. })
         ));
@@ -1118,6 +1255,7 @@ mod tests {
         transaction: dashcore::Transaction,
         out_point: OutPoint,
         instant_proof: AssetLockProof,
+        signer: crate::test_support::WalletSigner,
     }
 
     async fn instant_reconciliation_context() -> InstantReconciliationContext {
@@ -1161,7 +1299,7 @@ mod tests {
         use key_wallet::account::account_type::StandardAccountType;
         use tokio::sync::Notify;
 
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -1176,6 +1314,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -1206,6 +1345,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,
@@ -1225,7 +1365,72 @@ mod tests {
             transaction,
             out_point,
             instant_proof,
+            signer,
         }
+    }
+
+    /// Re-track the fixture's lock as an unbound top-up recording
+    /// `recorded` (or nothing).
+    async fn track_as_unbound_top_up(
+        ctx: &InstantReconciliationContext,
+        recorded: Option<Identifier>,
+    ) {
+        let mut wm = ctx.wallet_manager.write().await;
+        let lock = wm
+            .get_wallet_info_mut(&ctx.wallet_id)
+            .expect("wallet must remain registered")
+            .tracked_asset_locks
+            .get_mut(&ctx.out_point)
+            .expect("fixture lock is tracked");
+        lock.funding_type = AssetLockFundingType::IdentityTopUpNotBound;
+        lock.identity_recipient = recorded;
+    }
+
+    /// The managed top-up's resume of an existing unbound lock goes through
+    /// the recorded recipient: another identity and a lock that records none
+    /// are refused before any proof is awaited, and the lock stays tracked
+    /// and unconsumed for the right resume.
+    #[tokio::test]
+    async fn should_refuse_to_resume_an_unbound_top_up_lock_to_another_identity() {
+        let ctx = instant_reconciliation_context().await;
+        let recorded = Identifier::from([0x31; 32]);
+        let holder = Identifier::from([0x32; 32]);
+        let resolve = |identity| {
+            ctx.manager.resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point: ctx.out_point,
+                    consume_invitation_voucher: false,
+                },
+                AssetLockFundingType::IdentityTopUp,
+                0,
+                Some(AssetLockRecipient::Identity(identity)),
+                &ctx.signer,
+                None,
+            )
+        };
+
+        track_as_unbound_top_up(&ctx, Some(recorded)).await;
+        assert!(matches!(
+            resolve(holder).await,
+            Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                recorded: r,
+                requested: q,
+                ..
+            }) if r == recorded && q == holder
+        ));
+
+        track_as_unbound_top_up(&ctx, None).await;
+        assert!(matches!(
+            resolve(holder).await,
+            Err(PlatformWalletError::AssetLockRecipientUnknown(o)) if o == ctx.out_point
+        ));
+
+        let wm = ctx.wallet_manager.read().await;
+        let lock = &wm
+            .get_wallet_info(&ctx.wallet_id)
+            .unwrap()
+            .tracked_asset_locks[&ctx.out_point];
+        assert_eq!(lock.status, AssetLockStatus::InstantSendLocked);
     }
 
     /// The unauthenticated code-24 consensus response that puts

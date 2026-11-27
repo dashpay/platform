@@ -5,18 +5,31 @@
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
 use key_wallet::account::account_collection::AccountCollection;
+use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{Account, AccountType};
-use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::bip32::ChildNumber;
+use key_wallet::bip32::DerivationPath;
+use key_wallet::managed_account::address_pool::{
+    AddressInfo, AddressPool, AddressPoolType, AddressState, KeySource, PublicKeyType,
+};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
+
+use dashcore::transaction::special_transaction::TransactionPayload;
 
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
-use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{
+    AccountAddressPoolEntry, AccountRegistrationEntry, CoreChangeSet,
+};
+use platform_wallet::manager::restore_account_address_pools;
 use platform_wallet::registered_collaterals;
 use platform_wallet::wallet::address_pool_restore::derive_through;
 
@@ -172,6 +185,273 @@ pub(crate) fn restore_provider_platform_node_pool(
             })?;
     }
     Ok(())
+}
+
+/// Restore the address pools of the asset-lock funding key accounts
+/// (identity registration, bound and unbound identity top-up, invitation,
+/// address and shielded-address top-up) from their stored rows, and return
+/// the issuance floor of each pool that could not reach its rows.
+///
+/// These accounts fund OP_RETURN-payload credit outputs that never appear as
+/// on-chain UTXOs, so no scan rediscovers their used indices: the stored pool
+/// is the only record of which keys were handed out and how far the pool was
+/// generated. Without it a restart rebuilds each account with its initial
+/// window only, all unused: a lock built on a later index could not be signed
+/// on resume (its key is not in the pool), and an index already handed out
+/// could be handed out again.
+///
+/// The rows go through the wallet's shared restore
+/// ([`restore_account_address_pools`]), the one the FFI loader uses: rows
+/// stored without a public key (older writers stored the addresses sync
+/// derived that way) take it from the pool, an index missing below a stored
+/// one is derived from the account xpub and marked used, since its key may
+/// have been handed out, and a pool that cannot reach its highest row gets an
+/// issuance floor instead of failing the wallet's load.
+///
+/// A pool's window then moves past each address a lock stored on chain pays,
+/// as sync moved it on seeing the lock (`extend_past_funding_locks_on_chain`):
+/// older writers dropped the addresses sync derived, so a pool stored before
+/// [`core_pool::insert_derived_funding_address`] existed may hold only used
+/// addresses. Used marks alone do not move it. An index marked used by a lock
+/// that never reached the chain is cleared when the wallet hands it back
+/// ([`core_pool::release_unsent_address`]); one that stays marked is left so,
+/// and a pool used up that way refuses the next lock rather than build it past
+/// the addresses a recovery from scratch scans, where it could not be found
+/// again.
+pub(crate) fn restore_asset_lock_funding_pools(
+    wallet: &Wallet,
+    wallet_info: &mut ManagedWalletInfo,
+    records: &[TransactionRecord],
+    conn: &rusqlite::Connection,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    network: Network,
+    ctx: &LoadCtx,
+) -> Result<BTreeMap<AccountType, u32>, WalletStorageError> {
+    let mut entries = Vec::new();
+    for (account_type, pool_type, base_path) in funding_pools(wallet_info) {
+        let rows = core_pool::load_funding_pool_rows(conn, wallet_id, &account_type, pool_type)?;
+        let account = wallet.accounts.account_of_type(account_type);
+        let mut addresses = Vec::with_capacity(rows.len());
+        for (index, script, public_key, mut used) in rows {
+            let script_pubkey = dashcore::ScriptBuf::from_bytes(script);
+            let address = match dashcore::Address::from_script(&script_pubkey, network) {
+                Ok(address) => address,
+                Err(e) => {
+                    // Skipped, the restore derives the index in its place.
+                    ctx.tolerate_at(
+                        LoadSite::UndecodableAddressScript,
+                        SiteCoords {
+                            wallet_id: Some(*wallet_id),
+                            account_type: &account_type,
+                            affected: 1,
+                            detail: Some(&pool_type),
+                        },
+                        WalletStorageError::from(e),
+                    )?;
+                    continue;
+                }
+            };
+            let child = ChildNumber::from_normal_idx(index).map_err(|_| {
+                WalletStorageError::blob_decode(
+                    "core_address_pool.address_index is not a normal child index",
+                )
+            })?;
+            // A lock is paid to the stored address and signed with the key at
+            // the index's path: a row whose address that key does not derive
+            // would fund a lock the wallet cannot spend on Platform. The
+            // account's own derivation is kept instead, used, since the key
+            // the damaged row stood for may have been handed out.
+            let (address, public_key) = match account
+                .and_then(|account| account.derive_address_at(pool_type, index, None).ok())
+            {
+                Some(derived) if derived.script_pubkey() != address.script_pubkey() => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        ?account_type,
+                        ?pool_type,
+                        index,
+                        "load: stored funding address does not match its derivation; \
+                         restoring the derived address as used"
+                    );
+                    used = true;
+                    (derived, None)
+                }
+                _ => (address, public_key),
+            };
+            let mut path = base_path.clone();
+            path.push(child);
+            addresses.push(AddressInfo {
+                address,
+                public_key: public_key.map(PublicKeyType::ECDSA),
+                index,
+                path,
+                state: if used {
+                    AddressState::Used
+                } else {
+                    AddressState::Available
+                },
+            });
+        }
+        if !addresses.is_empty() {
+            entries.push(AccountAddressPoolEntry {
+                account_type,
+                pool_type,
+                addresses,
+            });
+        }
+    }
+    let floors =
+        restore_account_address_pools(wallet, wallet_info, entries).funding_issuance_floors;
+    let paid_on_chain = funding_scripts_on_chain(records);
+    if !paid_on_chain.is_empty() {
+        let pools: Vec<_> = funding_pools(wallet_info)
+            .into_iter()
+            .map(|(account_type, ..)| account_type)
+            .collect();
+        for account_type in pools {
+            let key_source = wallet.key_source_for_account(account_type);
+            let Some(managed) = funding_account_mut(wallet_info, &account_type) else {
+                continue;
+            };
+            for pool in managed.address_pools_mut() {
+                extend_past_funding_locks_on_chain(
+                    pool,
+                    &key_source,
+                    &paid_on_chain,
+                    &account_type,
+                    wallet_id,
+                    ctx,
+                )?;
+            }
+        }
+    }
+    Ok(floors)
+}
+
+/// Every pool of the asset-lock funding accounts `wallet_info` holds, as
+/// `(account, pool type, base path)`.
+fn funding_pools(
+    wallet_info: &mut ManagedWalletInfo,
+) -> Vec<(AccountType, AddressPoolType, DerivationPath)> {
+    let accounts = &wallet_info.accounts;
+    let mut account_types = Vec::new();
+    if accounts.identity_registration.is_some() {
+        account_types.push(AccountType::IdentityRegistration);
+    }
+    account_types.extend(accounts.identity_topup.keys().map(|registration_index| {
+        AccountType::IdentityTopUp {
+            registration_index: *registration_index,
+        }
+    }));
+    if accounts.identity_topup_not_bound.is_some() {
+        account_types.push(AccountType::IdentityTopUpNotBoundToIdentity);
+    }
+    if accounts.identity_invitation.is_some() {
+        account_types.push(AccountType::IdentityInvitation);
+    }
+    if accounts.asset_lock_address_topup.is_some() {
+        account_types.push(AccountType::AssetLockAddressTopUp);
+    }
+    if accounts.asset_lock_shielded_address_topup.is_some() {
+        account_types.push(AccountType::AssetLockShieldedAddressTopUp);
+    }
+    let mut pools = Vec::new();
+    for account_type in account_types {
+        if let Some(managed) = funding_account_mut(wallet_info, &account_type) {
+            for pool in managed.address_pools_mut() {
+                pools.push((account_type, pool.pool_type(), pool.base_path().clone()));
+            }
+        }
+    }
+    pools
+}
+
+/// The managed account of one asset-lock funding account type.
+fn funding_account_mut<'a>(
+    wallet_info: &'a mut ManagedWalletInfo,
+    account_type: &AccountType,
+) -> Option<&'a mut ManagedAccountType> {
+    let accounts = &mut wallet_info.accounts;
+    match account_type {
+        AccountType::IdentityRegistration => accounts.identity_registration.as_mut(),
+        AccountType::IdentityTopUp { registration_index } => {
+            accounts.identity_topup.get_mut(registration_index)
+        }
+        AccountType::IdentityTopUpNotBoundToIdentity => accounts.identity_topup_not_bound.as_mut(),
+        AccountType::IdentityInvitation => accounts.identity_invitation.as_mut(),
+        AccountType::AssetLockAddressTopUp => accounts.asset_lock_address_topup.as_mut(),
+        AccountType::AssetLockShieldedAddressTopUp => {
+            accounts.asset_lock_shielded_address_topup.as_mut()
+        }
+        _ => None,
+    }
+    .map(|account| account.managed_account_type_mut())
+}
+
+/// The credit-output scripts of the asset locks among `records` that reached
+/// the network: in a block or InstantSend-locked. A mempool-only record may be
+/// a lock that was never accepted.
+fn funding_scripts_on_chain(records: &[TransactionRecord]) -> HashSet<dashcore::ScriptBuf> {
+    records
+        .iter()
+        .filter(|record| !matches!(record.context, TransactionContext::Mempool))
+        .filter_map(
+            |record| match &record.transaction.special_transaction_payload {
+                Some(TransactionPayload::AssetLockPayloadType(payload)) => {
+                    Some(payload.credit_outputs.iter())
+                }
+                _ => None,
+            },
+        )
+        .flatten()
+        .map(|output| output.script_pubkey.clone())
+        .collect()
+}
+
+/// Mark used each address of `pool` that a lock on chain pays, and derive the
+/// pool's gap past the highest of them, as sync did on seeing the lock;
+/// repeated until no newly derived address is paid. The window never moves
+/// past addresses that only a stored used mark says were handed out.
+fn extend_past_funding_locks_on_chain(
+    pool: &mut AddressPool,
+    key_source: &KeySource,
+    paid_on_chain: &HashSet<dashcore::ScriptBuf>,
+    account_type: &AccountType,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    let mut scanned_from = 0;
+    loop {
+        let paid: Vec<(u32, dashcore::Address)> = pool
+            .addresses()
+            .range(scanned_from..)
+            .filter(|(_, info)| paid_on_chain.contains(&info.address.script_pubkey()))
+            .map(|(index, info)| (*index, info.address.clone()))
+            .collect();
+        let Some(highest_paid) = paid.iter().map(|(index, _)| *index).max() else {
+            return Ok(());
+        };
+        for (_, address) in &paid {
+            pool.mark_used(address);
+        }
+        scanned_from = pool.highest_generated().map_or(0, |highest| highest + 1);
+        let target = highest_paid.saturating_add(pool.gap_limit());
+        if let Err(e) = derive_through(pool, key_source, target) {
+            return ctx.tolerate_at(
+                LoadSite::RehydrationMaintainGapLimit,
+                SiteCoords {
+                    wallet_id: Some(*wallet_id),
+                    account_type,
+                    affected: 1,
+                    detail: Some(&pool.pool_type()),
+                },
+                WalletStorageError::RehydrationGapLimitFailed { source: e },
+            );
+        }
+        if pool.highest_generated().map_or(0, |highest| highest + 1) == scanned_from {
+            return Ok(());
+        }
+    }
 }
 
 /// Apply the keyless persisted core-state projection onto a

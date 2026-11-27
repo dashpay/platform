@@ -858,6 +858,13 @@ impl InBroadcastPin {
         Arc::ptr_eq(&self.generation, generation)
     }
 
+    /// The generation this pin was taken on. A dispatch takes its
+    /// [`payment_guard`](WalletGeneration::payment_guard) and checks it is
+    /// still current before sending.
+    pub(crate) fn generation(&self) -> &Arc<WalletGeneration> {
+        &self.generation
+    }
+
     /// End the dispatching phase and open the pending-spend fence, which then
     /// waits for [`WalletGeneration::observe_spent`] and for nothing else — it
     /// carries no deadline.

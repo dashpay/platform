@@ -9,8 +9,10 @@ use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::Txid;
+use dashcore::{Address, OutPoint, Txid};
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
@@ -145,6 +147,32 @@ impl PersistenceError {
         }
     }
 
+    /// The same error, marked as raised after the backend committed what it
+    /// had buffered for the wallet, kind and message unchanged.
+    ///
+    /// For an operation that commits the wallet's buffer before a write of
+    /// its own ([`assign_asset_lock_identity_recipient`](PlatformWalletPersistence::assign_asset_lock_identity_recipient),
+    /// [`release_unsent_pool_address`](PlatformWalletPersistence::release_unsent_pool_address)),
+    /// when that commit succeeded and its own write then failed or was
+    /// refused: nothing buffered was dropped, which
+    /// [`Self::left_buffer_committed`] tells the wallet's flush accounting.
+    /// [`Self::LockPoisoned`] is returned unchanged.
+    pub fn after_buffer_committed(self) -> Self {
+        match self {
+            Self::LockPoisoned => Self::LockPoisoned,
+            Self::Backend { kind, source } => Self::Backend {
+                kind,
+                source: Box::new(FailedAfterBufferCommitted { source }),
+            },
+        }
+    }
+
+    /// Whether the error was marked by [`Self::after_buffer_committed`]: the
+    /// wallet's buffer was committed before it, and none of it was dropped.
+    pub fn left_buffer_committed(&self) -> bool {
+        matches!(self, Self::Backend { source, .. } if source.is::<FailedAfterBufferCommitted>())
+    }
+
     /// `true` if the error is a `Backend` whose kind is
     /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`, and
     /// `Constraint` all read as non-transient.
@@ -170,6 +198,15 @@ impl PersistenceError {
             Self::Backend { kind, .. } => Some(*kind),
         }
     }
+}
+
+/// The source of a [`PersistenceError`] marked by
+/// [`PersistenceError::after_buffer_committed`]: the backend's own failure,
+/// shown as it is.
+#[derive(Debug, thiserror::Error)]
+#[error("{source}")]
+pub struct FailedAfterBufferCommitted {
+    source: Box<dyn StdError + Send + Sync>,
 }
 
 /// Why [`PlatformWalletPersistence::store_and_commit`] did not make its
@@ -299,6 +336,68 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// after a later, post-commit flush-notification failure.
     fn store_commits_inline(&self) -> bool {
         false
+    }
+
+    /// Record `identity` as the recipient of `wallet_id`'s unbound identity
+    /// top-up lock at `out_point`, by itself and at once.
+    ///
+    /// Only the recipient is written, never the row around it: a lock that
+    /// sync advanced (a proof attached, a status moved) or removed (a sweep)
+    /// since the wallet read it keeps what the backend holds. It applies only
+    /// to a stored row that records no recipient, or already records this
+    /// one (`Ok`, nothing changed). A missing row, one recording another
+    /// identity, or a consumed one is refused with
+    /// [`PersistenceErrorKind::Constraint`].
+    ///
+    /// `Ok` means the recipient is committed. Any `Err` means it was not
+    /// applied and nothing of it is kept to be applied later: no buffer holds
+    /// it, so the caller may assign any identity afterwards. Writes buffered
+    /// before it are committed first, so a removal already stored is not
+    /// overtaken by it.
+    ///
+    /// Required of a backend that attests
+    /// [`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]; the default
+    /// refuses.
+    fn assign_asset_lock_identity_recipient(
+        &self,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        let _ = (wallet_id, out_point, identity);
+        Err(PersistenceError::backend(
+            "this backend cannot assign an asset-lock identity recipient",
+        ))
+    }
+
+    /// Clear the used mark of `wallet_id`'s address `address`, at `index` of
+    /// `account_type`'s `pool_type` pool, by itself and at once.
+    ///
+    /// Only for an address that provably never reached the network: the
+    /// funding key of an asset lock that was never sent and whose row is
+    /// durably gone. Kept used, it would push the next lock of that account
+    /// past the addresses a restore from the seed scans, and a lock there
+    /// would not be found again. The wallet hands it back in memory and calls
+    /// this while it still holds the wallet, so nothing marks the address
+    /// used in between.
+    ///
+    /// Writes buffered before it are committed first, so a used mark already
+    /// stored for the address is not written after the release. Nothing of it
+    /// is buffered. No stored row for that address is `Ok`, nothing changed.
+    ///
+    /// The default does nothing, for a backend that keeps no used mark the
+    /// wallet's own state does not overwrite. A backend that only ever raises
+    /// a stored mark implements it.
+    fn release_unsent_pool_address(
+        &self,
+        wallet_id: WalletId,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        let _ = (wallet_id, account_type, pool_type, index, address);
+        Ok(())
     }
 
     /// Feature-specific contracts this backend can persist and, where the
