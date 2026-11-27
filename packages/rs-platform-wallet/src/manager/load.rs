@@ -27,7 +27,6 @@ use dpp::prelude::Identifier;
 use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::bip32::ChildNumber;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
@@ -1691,9 +1690,9 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
 pub struct AddressPoolRestoreStats {
     pub routed: usize,
     pub dropped: usize,
-    /// Per asset-lock funding account, the highest persisted row index its
-    /// pool could not reach: keys at or below it may already be handed out,
-    /// so none of them may fund an asset lock.
+    /// Per asset-lock funding account, the highest valid normal persisted index
+    /// if its pool could not reach it. Keys at or below it may already be handed
+    /// out, so none of them may fund an asset lock.
     pub funding_issuance_floors: BTreeMap<AccountType, u32>,
 }
 
@@ -1704,19 +1703,18 @@ pub struct AddressPoolRestoreStats {
 ///
 /// A DashPay payment pool is restored like an asset-lock funding pool: an
 /// address reserved for a withdrawal is used whether or not the chain shows
-/// it. A funding pool that cannot reach its highest persisted row, because
-/// the gap below it exceeds the derivation budget or the row is refused, gets
-/// an entry in [`AddressPoolRestoreStats::funding_issuance_floors`].
+/// it. The cutoff is the highest valid normal index in the persisted rows.
+/// Any address at or below the cutoff that no row restored is marked used in
+/// these pools, since the chain cannot show whether its key was handed out.
+/// If an asset-lock funding pool cannot reach the cutoff, its cutoff is recorded
+/// in [`AddressPoolRestoreStats::funding_issuance_floors`].
 ///
 /// Covers the funds-bearing accounts, the asset-lock funding accounts and the
 /// four provider key accounts. Each pool's rows go through
 /// the crate's address-row restore with the key source of their account, so rows
 /// missing below a persisted one are derived; entries naming the same pool
-/// are restored together, under one gap-fill budget. In an asset-lock funding
-/// pool every address at or below the highest persisted row that no row
-/// restored is marked used, since the chain cannot show whether its key was
-/// handed out. A pool whose account or pool type the wallet does not hold is
-/// dropped as a whole and counts once.
+/// are restored together, under one gap-fill budget. A pool whose account or
+/// pool type the wallet does not hold is dropped as a whole and counts once.
 pub fn restore_account_address_pools(
     wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
@@ -1880,16 +1878,10 @@ pub fn restore_account_address_pools(
         } else {
             GapRows::Available
         };
-        let highest_row = entry
-            .addresses
-            .iter()
-            .map(|row| row.index)
-            .filter(|index| ChildNumber::from_normal_idx(*index).is_ok())
-            .max();
         let outcome = restore_address_rows(pool, &key_source, entry.addresses, gap_rows);
         stats.routed += outcome.restored;
         stats.dropped += outcome.refused;
-        if let Some(highest_row) = highest_row.filter(|row| {
+        if let Some(highest_row) = outcome.highest_valid_index.filter(|row| {
             funding
                 && pool
                     .highest_generated()
@@ -2665,6 +2657,47 @@ mod address_pool_restore_tests {
                 "lost index {lost}"
             );
         }
+    }
+
+    #[test]
+    fn should_issue_the_next_invitation_key_despite_an_invalid_persisted_index() {
+        let (wallet, mut info) = wallet_and_info();
+        let pool = info
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account")
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .remove(0);
+        let mut used = pool.addresses()[&0].clone();
+        used.state = AddressState::Used;
+        let expected = pool.addresses()[&1].address.clone();
+        let mut corrupt = pool.addresses()[&2].clone();
+        corrupt.index = u32::MAX;
+        let pool_type = pool.pool_type();
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![entry(
+                AccountType::IdentityInvitation,
+                pool_type,
+                vec![used, corrupt],
+            )],
+        );
+
+        assert_eq!(stats.routed, 1);
+        assert_eq!(stats.dropped, 1);
+        assert!(stats.funding_issuance_floors.is_empty());
+        let next = info
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account")
+            .next_address(None)
+            .expect("next funding address");
+        assert_eq!(next, expected);
     }
 
     #[test]

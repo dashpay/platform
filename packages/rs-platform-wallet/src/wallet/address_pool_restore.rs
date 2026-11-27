@@ -33,9 +33,8 @@ enum RowRefusal {
     Refused(#[source] KeyWalletError),
 }
 
-/// How [`restore_address_rows`] leaves the pool's addresses at or below its
-/// highest persisted row that no persisted row restored: pre-derived ones and
-/// those it derives to close a gap.
+/// How [`restore_address_rows`] treats addresses that no persisted row restored.
+/// This applies through the highest valid normal index in the persisted rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GapRows {
     /// Free to hand out, for pools whose usage the chain shows.
@@ -45,12 +44,13 @@ pub(crate) enum GapRows {
     Used,
 }
 
-/// Outcome of [`restore_address_rows`]: how many persisted rows landed in the
-/// pool and how many it refused.
+/// The restored and refused row counts and the cutoff from [`restore_address_rows`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AddressRowsRestore {
     pub(crate) restored: usize,
     pub(crate) refused: usize,
+    /// The highest valid normal index in the persisted rows, even if its row was refused.
+    pub(crate) highest_valid_index: Option<u32>,
 }
 
 /// Derive every address of `pool` up to and including `index` that it has not
@@ -79,10 +79,11 @@ pub fn derive_through(
 ///
 /// Rows missing below a row's index (a lost persistence round) are derived
 /// from `key_source` first, at most [`MAX_RESTORE_GAP_FILL`] per call, so the
-/// row is watched and its index is never handed out again. Every address at
-/// or below the highest row that no row restored, derived here or before, is
-/// left as `gap_rows` says. Hardened pools, which cannot derive, take rows at
-/// any index.
+/// row is watched and its index is never handed out again. The cutoff is the
+/// highest valid normal index in the persisted rows, even if its row is refused.
+/// Any address at or below the cutoff that no row restored is left as `gap_rows`
+/// specifies, including pre-derived addresses and addresses derived to fill gaps.
+/// Hardened pools, which cannot derive, accept sparse rows at valid indices.
 ///
 /// A row is refused, counted and skipped when the gap below it cannot be
 /// derived or exceeds the bound, its address is already stored at another
@@ -94,20 +95,21 @@ pub(crate) fn restore_address_rows(
     gap_rows: GapRows,
 ) -> AddressRowsRestore {
     rows.sort_by_key(|row| row.index);
-    let highest_row = rows.last().map(|row| row.index);
     let mut restored = BTreeSet::new();
     let mut outcome = AddressRowsRestore::default();
     let mut first_refusal: Option<(u32, RowRefusal)> = None;
     let mut budget = MAX_RESTORE_GAP_FILL;
     for mut row in rows {
-        let derived_from = pool.highest_generated().map_or(0, |highest| highest + 1);
         let index = row.index;
-        if let Err(error) = fill_gap_below(pool, key_source, index, &mut budget) {
-            outcome.refused += 1;
-            // A gap fill that failed part way keeps the addresses it derived.
-            if gap_rows == GapRows::Used {
-                mark_used_from(pool, derived_from);
+        let gap_fill = match ChildNumber::from_normal_idx(index) {
+            Ok(_) => {
+                outcome.highest_valid_index = Some(index);
+                fill_gap_below(pool, key_source, index, &mut budget)
             }
+            Err(error) => Err(RowRefusal::Refused(KeyWalletError::Bip32(error))),
+        };
+        if let Err(error) = gap_fill {
+            outcome.refused += 1;
             first_refusal.get_or_insert((index, error));
             continue;
         }
@@ -127,10 +129,10 @@ pub(crate) fn restore_address_rows(
             }
         }
     }
-    if let (GapRows::Used, Some(highest_row)) = (gap_rows, highest_row) {
+    if let (GapRows::Used, Some(cutoff)) = (gap_rows, outcome.highest_valid_index) {
         let missing: Vec<_> = pool
             .addresses()
-            .range(..=highest_row)
+            .range(..=cutoff)
             .filter(|(index, _)| !restored.contains(*index))
             .map(|(_, info)| info.address.clone())
             .collect();
@@ -171,17 +173,6 @@ fn fill_gap_below(
     derive_through(pool, key_source, index - 1).map_err(RowRefusal::GapUnderivable)?;
     *budget -= gap;
     Ok(())
-}
-
-fn mark_used_from(pool: &mut AddressPool, index: u32) {
-    let addresses: Vec<_> = pool
-        .addresses()
-        .range(index..)
-        .map(|(_, info)| info.address.clone())
-        .collect();
-    for address in addresses {
-        pool.mark_used(&address);
-    }
 }
 
 #[cfg(test)]
@@ -272,7 +263,8 @@ mod tests {
             outcome,
             AddressRowsRestore {
                 restored: 1,
-                refused: 0
+                refused: 0,
+                highest_valid_index: Some(index),
             }
         );
         let restored = &pool.addresses()[&index];
@@ -300,7 +292,8 @@ mod tests {
             outcome,
             AddressRowsRestore {
                 restored: 0,
-                refused: 1
+                refused: 1,
+                highest_valid_index: Some(index),
             }
         );
         assert_eq!(pool.highest_generated(), generated);
@@ -312,7 +305,8 @@ mod tests {
         let (mut pool, key_source) = external_pool();
         let generated = pool.highest_generated();
         let mut row = pool.addresses()[&0].clone();
-        row.index = next_index(&pool) + MAX_RESTORE_GAP_FILL + 1;
+        let index = next_index(&pool) + MAX_RESTORE_GAP_FILL + 1;
+        row.index = index;
 
         let outcome = restore_address_rows(&mut pool, &key_source, vec![row], GapRows::Available);
 
@@ -320,7 +314,8 @@ mod tests {
             outcome,
             AddressRowsRestore {
                 restored: 0,
-                refused: 1
+                refused: 1,
+                highest_valid_index: Some(index),
             }
         );
         assert_eq!(pool.highest_generated(), generated);
@@ -341,7 +336,8 @@ mod tests {
             outcome,
             AddressRowsRestore {
                 restored: 1,
-                refused: 1
+                refused: 1,
+                highest_valid_index: Some(first + 2),
             }
         );
         assert_eq!(pool.highest_used(), Some(first));
@@ -363,7 +359,8 @@ mod tests {
             outcome,
             AddressRowsRestore {
                 restored: 2,
-                refused: 0
+                refused: 0,
+                highest_valid_index: Some(first + 1),
             }
         );
         assert_eq!(pool.highest_used(), Some(first + 1));
@@ -425,7 +422,8 @@ mod tests {
             outcome,
             AddressRowsRestore {
                 restored: 1,
-                refused: 1
+                refused: 1,
+                highest_valid_index: Some(next + 5),
             }
         );
         assert_eq!(pool.highest_generated(), Some(next + 2));
