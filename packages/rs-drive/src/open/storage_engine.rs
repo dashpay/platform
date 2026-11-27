@@ -328,7 +328,16 @@ impl Drive {
     /// that is refused so. An engine that is asked and finds a damaged database can have
     /// made its lock file by the time it fails.
     pub fn open_checkpoint<P: AsRef<Path>>(&self, path: P) -> Result<GroveDb, Error> {
-        open_grove(path.as_ref(), &self.config, Role::Checkpoint)
+        Self::open_checkpoint_at(path, &self.config)
+    }
+
+    /// Opens the checkpoint at `path` alone, with none of the rest of a Drive, on the
+    /// storage engine `config` names, as [`Drive::open_checkpoint`] opens one.
+    pub fn open_checkpoint_at<P: AsRef<Path>>(
+        path: P,
+        config: &DriveConfig,
+    ) -> Result<GroveDb, Error> {
+        open_grove(path.as_ref(), config, Role::Checkpoint)
     }
 }
 
