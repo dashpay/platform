@@ -11,7 +11,12 @@ import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/z
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 import generateCertificateRequest from '../../../../src/ssl/zerossl/generateCsr.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
-import { createCertificateRequest, issueCertificate } from '../../../../src/test/certificateFixtures.js';
+import loadCertificateRequest from '../../../../src/ssl/zerossl/loadCertificateRequest.js';
+import {
+  createCertificateRequest,
+  issueCertificate,
+  issueCertificateForKey,
+} from '../../../../src/test/certificateFixtures.js';
 
 describe('obtainZeroSSLCertificateTaskFactory', () => {
   let config;
@@ -675,6 +680,33 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(createCertificate).to.have.been.calledOnceWith(ecRequest);
       expect(generateKeyPair).to.not.have.been.called();
       expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(ecKeyPem);
+    });
+
+    // Installing an issued certificate needs no request, and renewal needs
+    // one for the key on disk, whatever its type.
+    it('should install an issued certificate for an EC key and write its request', async function it() {
+      this.timeout(30000);
+      const ec = issueCertificateForKey(
+        pair,
+        crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey,
+        { ip: '1.2.3.4', days: 60 },
+      );
+      const bundle = `${ec.pem}${pair.pem}`;
+      fs.writeFileSync(privateKeyFilePath, ec.keyPem);
+      fs.rmSync(bundleFilePath);
+      downloadCertificate.resolves(bundle);
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(createCertificate).to.not.have.been.called();
+      expect(generateKeyPair).to.not.have.been.called();
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(bundle);
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(ec.keyPem);
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+
+      const request = loadCertificateRequest(fs.readFileSync(path.join(sslConfigDir, 'csr.pem'), 'utf8'));
+      expect(request.publicKey.export({ type: 'spki', format: 'der' }))
+        .to.deep.equal(crypto.createPublicKey(ec.keyPem).export({ type: 'spki', format: 'der' }));
     });
 
     // Renewal saves the new certificate's ID before it installs the bundle,
