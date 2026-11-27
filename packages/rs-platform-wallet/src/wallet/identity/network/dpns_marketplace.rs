@@ -3962,6 +3962,7 @@ mod tests {
             Arc::new(tokio::sync::Notify::new()),
             Arc::clone(&broadcaster),
             persister.clone(),
+            Arc::clone(&generation),
         ));
         IdentityWallet {
             sdk: Arc::clone(&sdk),

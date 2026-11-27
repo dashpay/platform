@@ -202,6 +202,7 @@ fn reconstruct_candidates(
             Some(TrackedAssetLock {
                 operation_id: None,
                 shielded_recipient: None,
+                identity_recipient: None,
                 out_point,
                 transaction: record.transaction.clone(),
                 account_index,
@@ -544,7 +545,7 @@ mod tests {
         WalletId,
         Transaction,
     ) {
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -562,6 +563,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (tx, _path) = manager
             .build_asset_lock_transaction(1_000_000, 0, funding_type, identity_index, &signer)
@@ -739,6 +741,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction: tx.clone(),
                     account_index: 0,
@@ -976,6 +979,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction: tx.clone(),
                         account_index: 0,
@@ -1122,6 +1126,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
             ),
+            crate::test_support::wallet_generation(&wallet_manager, &wallet_id),
         );
         let out_point = OutPoint::new(tx.txid(), 0);
         let (proof, _path) = manager
@@ -1207,6 +1212,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
             ),
+            crate::test_support::wallet_generation(&wallet_manager, &wallet_id),
         );
         let live_proof = dpp::prelude::AssetLockProof::Chain(chain_proof(78, out_point));
         manager

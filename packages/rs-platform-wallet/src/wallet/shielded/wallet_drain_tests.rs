@@ -78,6 +78,7 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
             status: AssetLockStatus::RecoveredFromChain,
             proof: Some(proof),
             shielded_recipient: None,
+            identity_recipient: None,
         },
         BTreeMap::from([(0, keys)]),
     )
@@ -173,6 +174,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                         status: row.status.clone(),
                         proof: row.proof.clone(),
                         shielded_recipient: row.shielded_recipient,
+                        identity_recipient: row.identity_recipient,
                     },
                 )
             })
@@ -1190,9 +1192,8 @@ async fn fund_typed_amount(
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
 /// both fail the call with a persistence error, leave the lock untracked and
 /// uncommitted, and, once the abandoned row's removal is on disk, hand the
-/// inputs back so the next attempt builds again. The abandoned row of a
-/// failed flush is withdrawn from the buffer, so the flush that writes its
-/// removal does not commit it.
+/// inputs and the funding index back so the next attempt builds the same
+/// lock again.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
@@ -1213,7 +1214,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         switch.store(true, Ordering::SeqCst);
         let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
-            matches!(&error, PlatformWalletError::Persistence(message)
+            matches!(&error, PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. }
                 if message.contains("shielded recipient was not made durable")),
             "fail_flush={fail_flush}: {error}"
         );
@@ -1226,19 +1227,15 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             .any(|tracked| tracked.out_point == seen[0]));
         assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
 
-        // The inputs were handed back: the retry builds a lock again and gets
-        // as far as the broadcaster.
+        // The inputs and the funding index were handed back: the retry builds
+        // the same lock again, from the same inputs to the same key, and gets
+        // as far as the broadcaster with its row stored this time.
         let (error, retried) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
             !matches!(error, PlatformWalletError::Persistence(_)),
             "fail_flush={fail_flush}: {error}"
         );
-        assert_eq!(retried.len(), 1, "fail_flush={fail_flush}");
-        assert_ne!(retried[0], seen[0]);
-        assert!(
-            !persistence.committed.lock().unwrap().contains_key(&seen[0]),
-            "fail_flush={fail_flush}: the abandoned row was committed by a later flush"
-        );
+        assert_eq!(retried, seen, "fail_flush={fail_flush}");
         assert_eq!(
             persistence.committed.lock().unwrap()[&retried[0]].shielded_recipient,
             Some(recipient.to_raw_bytes())

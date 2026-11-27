@@ -6,10 +6,13 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension};
 
+use dashcore::{Address, OutPoint};
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence, StoreAndCommitError,
+    PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence, StoreAndCommitError,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -21,10 +24,12 @@ use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchr
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    apply_persisted_core_state, build_wallet, restore_asset_lock_funding_pools,
+    restore_provider_platform_node_pool,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
+use crate::sqlite::schema::asset_locks::IdentityRecipientAssignment;
 use crate::sqlite::util::permissions::{
     apply_secure_permissions, create_owner_only_dirs, precreate_secure,
 };
@@ -1430,6 +1435,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
+            .union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
@@ -1545,6 +1551,69 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         self.flush_inner(&wallet_id)
+    }
+
+    /// The wallet's buffered writes are committed first, under the same
+    /// connection guard, so a removal stored before the assignment lands
+    /// before it; then the recipient alone is set in a transaction of its
+    /// own ([`schema::asset_locks::assign_identity_recipient`]). Nothing of it
+    /// is buffered, so a failure leaves nothing to commit later.
+    fn assign_asset_lock_identity_recipient(
+        &self,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        self.ensure_writable("assign_asset_lock_identity_recipient")
+            .map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.flush_locked(&mut conn, &wallet_id)?;
+        // Past the commit above, a failure or refusal dropped nothing buffered.
+        let refusal = match schema::asset_locks::assign_identity_recipient(
+            &mut conn, &wallet_id, &out_point, &identity,
+        )
+        .map_err(|e| PersistenceError::from(e).after_buffer_committed())?
+        {
+            IdentityRecipientAssignment::Assigned
+            | IdentityRecipientAssignment::AlreadyRecorded => return Ok(()),
+            IdentityRecipientAssignment::NoRow => "the wallet stores no asset lock at it",
+            IdentityRecipientAssignment::RecordsAnother => {
+                "its asset lock already records another identity recipient"
+            }
+            IdentityRecipientAssignment::Consumed => "its asset lock is consumed",
+        };
+        Err(PersistenceError::backend_with_kind(
+            PersistenceErrorKind::Constraint,
+            format!("identity recipient not assigned at {out_point}: {refusal}"),
+        )
+        .after_buffer_committed())
+    }
+
+    /// The wallet's buffered writes are committed first, under the same
+    /// connection guard, so a used mark buffered for the address lands before
+    /// the release clears it; then the mark alone is cleared in a transaction
+    /// of its own ([`schema::core_pool::release_unsent_address`]).
+    fn release_unsent_pool_address(
+        &self,
+        wallet_id: WalletId,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        self.ensure_writable("release_unsent_pool_address")
+            .map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.flush_locked(&mut conn, &wallet_id)?;
+        schema::core_pool::release_unsent_address(
+            &conn,
+            &wallet_id,
+            account_type,
+            pool_type,
+            index,
+            address.script_pubkey().as_bytes(),
+        )
+        .map_err(|e| PersistenceError::from(e).after_buffer_committed())
     }
 
     /// In both flush modes: the connection every drain takes is held from
@@ -2022,6 +2091,21 @@ fn load_wallet_snapshot(
             hex::encode(wallet_id)
         ))
     })?;
+    let funding_issuance_floors = restore_asset_lock_funding_pools(
+        &wallet,
+        &mut wallet_info,
+        &core_state.records,
+        conn,
+        &wallet_id,
+        network,
+        ctx,
+    )
+    .map_err(|e| {
+        PersistenceError::backend(format!(
+            "asset-lock funding pool rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
     if account_manifest
         .provider
         .iter()
@@ -2049,9 +2133,7 @@ fn load_wallet_snapshot(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
-        // This backend restores pools through `apply_persisted_core_state`,
-        // which reports no unreachable funding rows.
-        funding_issuance_floors: Default::default(),
+        funding_issuance_floors,
     })
 }
 

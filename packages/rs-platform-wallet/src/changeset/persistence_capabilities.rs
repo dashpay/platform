@@ -159,6 +159,17 @@ impl PersistenceCapabilities {
     /// extension's size-negotiated persist slot and come back through its
     /// load and free slots; all three must be wired.
     pub const OUTPOINT_LOCKS: Self = Self(1 << 16);
+    /// The identity an unbound identity top-up (`IdentityTopUpNotBound`) was
+    /// built to pay survives store/load with its row, so a resume after
+    /// restart pays that identity and refuses another. Required, unlike
+    /// [`Self::ASSET_LOCK_SHIELDED_RECIPIENTS`]: the recipient is not on chain
+    /// and an unbound lock without one cannot be resumed until a recipient is
+    /// assigned, so the wallet does not build an unbound top-up lock for a
+    /// backend that would lose it on restart. A backend attesting it also
+    /// implements
+    /// [`assign_asset_lock_identity_recipient`](crate::changeset::PlatformWalletPersistence::assign_asset_lock_identity_recipient),
+    /// which records an assigned recipient alone on the stored row.
+    pub const ASSET_LOCK_IDENTITY_RECIPIENTS: Self = Self(1 << 17);
 
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
@@ -166,7 +177,7 @@ impl PersistenceCapabilities {
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 16;
+    const HIGHEST_DECLARED_BIT: u32 = 17;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -194,6 +205,19 @@ impl PersistenceCapabilities {
     /// already-loaded tracked asset lock.
     pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0);
+
+    /// Capabilities required to build an unbound identity top-up lock, or
+    /// assign one a recipient: the recipient itself, atomic changesets (the
+    /// recipient reaches an FFI host in a callback of its own beside the
+    /// lock's row, and a crash between two committed writes would restore a
+    /// signed lock that records no recipient), and the funding indices (the
+    /// stored address pool is the only record of the credit output's key,
+    /// which a resume after a restart signs the top-up with).
+    pub const IDENTITY_RECIPIENT_TOP_UP: Self = Self(
+        Self::ATOMIC_CHANGESETS.0
+            | Self::ASSET_LOCK_FUNDING_INDICES.0
+            | Self::ASSET_LOCK_IDENTITY_RECIPIENTS.0,
+    );
 
     /// Durable correlation and funding-key indices required for wallet drain.
     pub const WALLET_DRAIN: Self = Self(
@@ -290,6 +314,10 @@ impl PersistenceCapabilities {
                 "private_contact_request_scan_state",
             ),
             (PersistenceCapabilities::OUTPOINT_LOCKS, "outpoint_locks"),
+            (
+                PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
+                "asset_lock_identity_recipients",
+            ),
         ];
 
         KNOWN
@@ -307,7 +335,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::OUTPOINT_LOCKS.bits()
+    PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -348,6 +376,10 @@ mod tests {
             0x8000
         );
         assert_eq!(PersistenceCapabilities::OUTPOINT_LOCKS.bits(), 0x10000);
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits(),
+            0x20000
+        );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),

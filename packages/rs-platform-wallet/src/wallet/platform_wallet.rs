@@ -1087,6 +1087,7 @@ impl PlatformWallet {
                 lock_notify,
                 broadcaster,
                 wallet_persister.clone(),
+                Arc::clone(&generation),
             )
             .with_mined_height_locator(mined_height_locator),
         );

@@ -162,6 +162,15 @@ pub struct TrackedAssetLockSnapshot {
     pub registration_index: u32,
     pub instant_lock_present: bool,
     pub chain_lock_height: u32,
+    /// The identity an unbound identity top-up (lock type 2) pays; a resume
+    /// pays it and refuses any other (`TrackedAssetLock::identity_recipient`).
+    pub identity_recipient: Option<dpp::prelude::Identifier>,
+    /// An unbound top-up that records no identity and has a live status
+    /// (never `RecoveredFromChain`, which Platform has most likely used): no
+    /// resume pays it until the user assigns a recipient, with the
+    /// acknowledgement that Platform may already have used it
+    /// (`TrackedAssetLock::is_unassigned_identity_top_up`).
+    pub identity_recipient_unassigned: bool,
 }
 
 /// Snapshot of the per-account metadata for a single account.
@@ -1071,6 +1080,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     registration_index: lock.identity_index,
                     instant_lock_present,
                     chain_lock_height,
+                    identity_recipient: lock.identity_recipient,
+                    identity_recipient_unassigned: lock.is_unassigned_identity_top_up(),
                 }
             })
             .collect()

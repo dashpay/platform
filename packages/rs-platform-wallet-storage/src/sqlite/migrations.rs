@@ -434,12 +434,15 @@ pub fn embedded_migrations_sql() -> Vec<String> {
         .collect()
 }
 
-/// Undo V022 and the migrations after it, so the next [`run`] replays them
-/// over the current rows.
+/// Undo V022 and every later migration so the next [`run`] replays them over
+/// the current rows. Refinery refuses to apply V022 below a higher applied
+/// version, so each later migration is undone here too.
 #[cfg(test)]
 pub(crate) fn rewind_v022(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+         DROP TRIGGER asset_locks_identity_recipient_immutable; \
+         ALTER TABLE asset_locks DROP COLUMN identity_recipient; \
          DROP TABLE core_locked_outpoints; \
          DELETE FROM refinery_schema_history WHERE version >= 22;",
     )

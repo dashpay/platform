@@ -16,6 +16,7 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
@@ -77,6 +78,22 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
           AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
     )";
 
+/// [`TYPED_POOL_CONFLICT_SQL`] for an asset-lock funding account: only a row
+/// that stores the same address (`?11`) conflicts. A stored address that is
+/// not the incoming one is a damaged row the load replaced by the account's
+/// derivation (`restore_asset_lock_funding_pools`), and the snapshot repairs
+/// it, key and address together. Funding keys derive from the account xpub,
+/// so the snapshot's are the authoritative ones.
+const FUNDING_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
+        SELECT 1 FROM core_address_pool \
+        WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+          AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+          AND pool_type = ?7 AND address_index = ?8 \
+          AND key_type IS NOT NULL AND public_key IS NOT NULL \
+          AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
+          AND script = ?11 \
+    )";
+
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
@@ -108,6 +125,7 @@ pub fn apply_pools(
         return Ok(());
     }
     let mut conflict_stmt = tx.prepare_cached(TYPED_POOL_CONFLICT_SQL)?;
+    let mut funding_conflict_stmt = tx.prepare_cached(FUNDING_POOL_CONFLICT_SQL)?;
     let mut upsert_stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
     for entry in pools {
         // `account_type` discriminates accounts that collapse to the same
@@ -155,21 +173,40 @@ pub fn apply_pools(
                     "core_address_pool.public_key has the wrong length for key_type",
                 )?;
             }
-            let conflicts = conflict_stmt.query_row(
-                params![
-                    wallet_id.as_slice(),
-                    account_type,
-                    account_index,
-                    key_class,
-                    user_identity_id.as_slice(),
-                    friend_identity_id.as_slice(),
-                    pool_type,
-                    i64::from(info.index),
-                    public_key,
-                    key_type,
-                ],
-                |row| row.get::<_, bool>(0),
-            )?;
+            let conflicts = if is_asset_lock_funding_account(&entry.account_type) {
+                funding_conflict_stmt.query_row(
+                    params![
+                        wallet_id.as_slice(),
+                        account_type,
+                        account_index,
+                        key_class,
+                        user_identity_id.as_slice(),
+                        friend_identity_id.as_slice(),
+                        pool_type,
+                        i64::from(info.index),
+                        public_key,
+                        key_type,
+                        script_pubkey.as_bytes(),
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )?
+            } else {
+                conflict_stmt.query_row(
+                    params![
+                        wallet_id.as_slice(),
+                        account_type,
+                        account_index,
+                        key_class,
+                        user_identity_id.as_slice(),
+                        friend_identity_id.as_slice(),
+                        pool_type,
+                        i64::from(info.index),
+                        public_key,
+                        key_type,
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )?
+            };
             if conflicts {
                 return Err(WalletStorageError::TypedPoolKeyConflict {
                     account_type,
@@ -202,6 +239,227 @@ pub fn apply_pools(
     Ok(())
 }
 
+const INSERT_DERIVED_ADDRESS_SQL: &str = "INSERT INTO core_address_pool \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, NULL) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, pool_type, address_index) DO NOTHING";
+
+/// Whether `account_type` funds asset-lock credit outputs: the accounts whose
+/// pools [`restore_asset_lock_funding_pools`](crate::sqlite::rehydrate) brings
+/// back from their stored rows.
+fn is_asset_lock_funding_account(account_type: &AccountType) -> bool {
+    matches!(
+        account_type,
+        AccountType::IdentityRegistration
+            | AccountType::IdentityTopUp { .. }
+            | AccountType::IdentityTopUpNotBoundToIdentity
+            | AccountType::IdentityInvitation
+            | AccountType::AssetLockAddressTopUp
+            | AccountType::AssetLockShieldedAddressTopUp
+    )
+}
+
+/// Store an address a funding account derived on seeing a transaction, as an
+/// unused row; a row already stored at its index is kept as it is.
+///
+/// A funding pool's window moves only when a lock is seen on chain, and its
+/// addresses are restored from these rows alone: no scan finds them again.
+/// Without the derived addresses a restored pool holds only the indices
+/// builds stored, all used once their locks went out, and the next lock has
+/// no address to sign with. Only these accounts' addresses are stored: other
+/// pools are rebuilt otherwise.
+pub fn insert_derived_funding_address(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+    address_index: u32,
+    script: &[u8],
+    public_key: &[u8; ECDSA_PUBLIC_KEY_LEN],
+) -> Result<(), WalletStorageError> {
+    if !is_asset_lock_funding_account(account_type) {
+        return Ok(());
+    }
+    if script.is_empty() {
+        return Err(WalletStorageError::EmptyPoolAddressScript {
+            account_type: accounts::account_type_db_label(account_type),
+            address_index,
+        });
+    }
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    tx.prepare_cached(INSERT_DERIVED_ADDRESS_SQL)?
+        .execute(params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+            pool_type_to_i64(pool_type),
+            i64::from(address_index),
+            script,
+            public_key.as_slice(),
+            KEY_TYPE_ECDSA,
+        ])?;
+    Ok(())
+}
+
+const MARK_FUNDING_ADDRESS_USED_SQL: &str = "INSERT INTO core_address_pool \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11, NULL) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, pool_type, address_index) \
+     DO UPDATE SET used = 1, reserved_at = NULL";
+
+/// Store the used mark of an address a funding account saw used on chain:
+/// a row is added if none is stored at its index, and a stored one is marked
+/// used, nothing else about it changed.
+///
+/// Sync marks a funding address used on finding a lock that pays it, and no
+/// pool snapshot need follow before the wallet closes. Without the mark a
+/// restored pool would hand that key out again for the next lock.
+pub fn mark_funding_address_used(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+    address_index: u32,
+    script: &[u8],
+    public_key: Option<&PublicKeyType>,
+) -> Result<(), WalletStorageError> {
+    if !is_asset_lock_funding_account(account_type) {
+        return Ok(());
+    }
+    if script.is_empty() {
+        return Err(WalletStorageError::EmptyPoolAddressScript {
+            account_type: accounts::account_type_db_label(account_type),
+            address_index,
+        });
+    }
+    let (public_key, key_type) = match public_key {
+        Some(key @ PublicKeyType::ECDSA(bytes)) if bytes.len() == ECDSA_PUBLIC_KEY_LEN => {
+            (Some(bytes.as_slice()), Some(key_type_to_i64(key)))
+        }
+        _ => (None, None),
+    };
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    tx.prepare_cached(MARK_FUNDING_ADDRESS_USED_SQL)?
+        .execute(params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+            pool_type_to_i64(pool_type),
+            i64::from(address_index),
+            script,
+            public_key,
+            key_type,
+        ])?;
+    Ok(())
+}
+
+/// One stored funding-address row: `(address_index, script, public_key, used)`,
+/// the public key only when an ECDSA key of the right width is stored.
+pub type FundingPoolRow = (u32, Vec<u8>, Option<Vec<u8>>, bool);
+
+/// Load every stored row of one funding account's pool, ordered by index,
+/// whether or not it carries key material.
+///
+/// Older writers stored the addresses sync derived without a public key, and
+/// those rows still say how far the pool reached and which indices were
+/// used; the restore takes the key from the account xpub where it can.
+pub fn load_funding_pool_rows(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+) -> Result<Vec<FundingPoolRow>, WalletStorageError> {
+    let account_index = i64::from(accounts::account_index(account_type));
+    let key_class = i64::from(accounts::account_key_class(account_type));
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    let account_type = accounts::account_type_db_label(account_type);
+    let mut stmt = conn.prepare(
+        "SELECT address_index, length(script), script, key_type, length(public_key), \
+                public_key, used FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND account_index = ?4 AND key_class = ?5 \
+           AND user_identity_id = ?6 AND friend_identity_id = ?7 \
+         ORDER BY address_index",
+    )?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        account_type,
+        pool_type_to_i64(pool_type),
+        account_index,
+        key_class,
+        user_identity_id.as_slice(),
+        friend_identity_id.as_slice(),
+    ])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let address_index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get::<_, i64>(0)?,
+        )?;
+        blob::check_size(row.get::<_, i64>(1)?)?;
+        let script = row.get::<_, Vec<u8>>(2)?;
+        let ecdsa_key = row.get::<_, Option<i64>>(3)? == Some(KEY_TYPE_ECDSA)
+            && row.get::<_, Option<i64>>(4)? == Some(ECDSA_PUBLIC_KEY_LEN as i64);
+        let public_key = if ecdsa_key {
+            row.get::<_, Option<Vec<u8>>>(5)?
+        } else {
+            None
+        };
+        out.push((address_index, script, public_key, row.get(6)?));
+    }
+    Ok(out)
+}
+
+const RELEASE_UNSENT_ADDRESS_SQL: &str = "UPDATE core_address_pool \
+        SET used = 0, reserved_at = NULL \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+       AND pool_type = ?7 AND address_index = ?8 AND script = ?9";
+
+/// Clear the used mark of one address row, the only write that lowers it.
+///
+/// For an address that provably never reached the network (an unsent asset
+/// lock's funding key, its row durably removed): kept used, the next lock of
+/// that account would sit past the addresses a recovery from scratch scans.
+/// The row must also hold `script`, so a release for another wallet's address
+/// at the same index changes nothing. No matching row is not an error. One
+/// statement, so it commits by itself.
+pub fn release_unsent_address(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+    address_index: u32,
+    script: &[u8],
+) -> Result<(), WalletStorageError> {
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    conn.execute(
+        RELEASE_UNSENT_ADDRESS_SQL,
+        params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+            pool_type_to_i64(pool_type),
+            i64::from(address_index),
+            script,
+        ],
+    )?;
+    Ok(())
+}
+
 // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
 // restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
@@ -218,13 +476,29 @@ pub fn load_typed_pool_entries(
     account_type: &key_wallet::account::AccountType,
     pool_type: AddressPoolType,
 ) -> Result<Vec<TypedPoolEntry>, WalletStorageError> {
+    // The writer's account discriminators beside the label: accounts of one
+    // type are told apart by them (one bound top-up account per registration
+    // index), so a pool loads only its own account's rows.
+    let account_index = i64::from(accounts::account_index(account_type));
+    let key_class = i64::from(accounts::account_key_class(account_type));
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
     let account_type = accounts::account_type_db_label(account_type);
     let pool_type = pool_type_to_i64(pool_type);
     let (max_script_len, max_public_key_len): (Option<i64>, Option<i64>) = conn.query_row(
         "SELECT MAX(length(script)), MAX(length(public_key)) FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND account_index = ?4 AND key_class = ?5 \
+           AND user_identity_id = ?6 AND friend_identity_id = ?7 \
            AND (public_key IS NOT NULL OR key_type IS NOT NULL)",
-        params![wallet_id.as_slice(), account_type, pool_type],
+        params![
+            wallet_id.as_slice(),
+            account_type,
+            pool_type,
+            account_index,
+            key_class,
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+        ],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     if let Some(len) = max_script_len {
@@ -238,10 +512,20 @@ pub fn load_typed_pool_entries(
         "SELECT address_index, length(script), script, length(public_key), public_key, \
                 key_type, used FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND account_index = ?4 AND key_class = ?5 \
+           AND user_identity_id = ?6 AND friend_identity_id = ?7 \
            AND (public_key IS NOT NULL OR key_type IS NOT NULL) \
          ORDER BY address_index",
     )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice(), account_type, pool_type,])?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        account_type,
+        pool_type,
+        account_index,
+        key_class,
+        user_identity_id.as_slice(),
+        friend_identity_id.as_slice(),
+    ])?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let address_index = crate::sqlite::util::safe_cast::i64_to_u32(

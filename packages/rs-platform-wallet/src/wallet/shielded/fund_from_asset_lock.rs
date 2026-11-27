@@ -41,7 +41,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use dashcore::OutPoint;
 use dpp::address_funds::{OrchardAddress, PlatformAddress, ORCHARD_ADDRESS_SIZE};
 
-use crate::changeset::{ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
+use crate::changeset::{AssetLockRecipient, ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
@@ -500,7 +500,7 @@ impl PlatformWallet {
             funding,
             AssetLockFundingType::AssetLockShieldedAddressTopUp,
             /* destination_index */ 0,
-            Some(recipient.to_raw_bytes()),
+            Some(AssetLockRecipient::Shielded(recipient.to_raw_bytes())),
             asset_lock_signer,
             on_asset_lock_built,
             move |out_point| {
@@ -1654,7 +1654,7 @@ mod tests {
     async fn consumption_report_context_for(
         funding_type: AssetLockFundingType,
     ) -> ConsumptionReportContext {
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         let sdk = Arc::new(
@@ -1670,6 +1670,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, Arc::<RecordingPersistence>::clone(&persistence)),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -1696,6 +1697,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
