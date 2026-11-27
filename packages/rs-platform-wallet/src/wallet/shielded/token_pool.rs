@@ -36,7 +36,7 @@ use dash_sdk::query_types::{
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
 use grovedb_commitment_tree::{
-    Anchor, ClientMemoryCommitmentTree, MerklePath, Position, Retention,
+    Anchor, ClientMemoryCommitmentTree, CommitmentTreeError, MerklePath, Position, Retention,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use tokio::sync::RwLock;
@@ -1216,11 +1216,7 @@ pub(crate) fn spend_paths(
             Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
         })
         .map_err(storage("read leaves"))?;
-    let built = |e: grovedb_commitment_tree::CommitmentTreeError| {
-        PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-            "the tree of the shielded pool of token {token_id} does not build: {e}"
-        ))
-    };
+    let built = |e| tree_build_error(token_id, e);
     let mut tree = ClientMemoryCommitmentTree::new(1);
     let mut next = 0u64;
     for row in rows {
@@ -1249,13 +1245,25 @@ pub(crate) fn spend_paths(
             .ok_or_else(|| {
                 PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
                     "note {} of the shielded pool of token {token_id} is past the leaves kept; \
-                     sync the shielded pools first",
+                     sync the shielded pools first (a gap before the point the token scan \
+                     resumes from needs a scan that starts at or before it; a shielded Clear \
+                     restarts the scan from position 0)",
                     note.position
                 ))
             })?;
         paths.push((note.position, path));
     }
     Ok((paths, anchor))
+}
+
+/// A token pool's tree that does not build from the leaves the scan kept.
+/// No sync repairs it, so it is a store fault, not the retryable witness
+/// refusal [`PlatformWalletError::ShieldedMerkleWitnessUnavailable`] (code 88), which
+/// [`spend_paths`] keeps for a note past the leaves kept.
+fn tree_build_error(token_id: Identifier, error: CommitmentTreeError) -> PlatformWalletError {
+    PlatformWalletError::ShieldedStoreError(format!(
+        "the tree of the shielded pool of token {token_id} does not build: {error}"
+    ))
 }
 
 /// Insert `note` as the scan would have, for tests that start from owned

@@ -393,10 +393,17 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// only code of that read that means retry.
     case errorShieldedBalanceBusy = 87
     /// A shielded spend selected a note no checkpoint of the wallet's local
-    /// commitment tree covers yet. Refused while the spend was assembled,
-    /// before any proof or broadcast, and the notes were released: nothing was
-    /// sent. Retryable after the next shielded sync, which checkpoints the
-    /// tree. A store that cannot produce the path is not this case: it stays
+    /// commitment tree covers yet, or a token pool transfer or unshield
+    /// selected a note past the leaves its pool's scan kept. Refused while the
+    /// spend was assembled, before any proof or broadcast, and the notes were
+    /// released: nothing was sent. Retryable: for a credit pool note, after the
+    /// next shielded sync, which checkpoints the tree. For a token pool note, a
+    /// sync gets past it only when its scan reads the missing positions; a gap
+    /// before the point the scan resumes from returns this after every sync
+    /// until a scan starts at or before it (a shielded Clear restarts the scan
+    /// from position 0). The message is the wallet's diagnostic, which says
+    /// how to get past it, with no "try again shortly" prefix. A store that
+    /// cannot produce the path is not this case: it stays
     /// `errorWalletOperation`. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedMerkleWitnessUnavailable = 88
@@ -965,10 +972,15 @@ public enum PlatformWalletError: LocalizedError {
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
     /// A shielded spend selected a note no checkpoint of the local commitment
-    /// tree covers yet (code 88). Nothing was proved or broadcast and the notes
-    /// were released: retryable once the next shielded sync checkpoints the
-    /// tree. Distinct from `shieldedSpendUnconfirmed`, which must NOT be
-    /// retried.
+    /// tree covers yet, or a token pool transfer or unshield selected a note
+    /// past the leaves its pool's scan kept (code 88). Nothing was proved or
+    /// broadcast and the notes were released: retryable. For a credit pool
+    /// note, the next shielded sync checkpoints the tree. For a token pool
+    /// note, a gap before the point the scan resumes from returns this after
+    /// every sync until a scan starts at or before it (a shielded Clear
+    /// restarts the scan from position 0). The message is the wallet's
+    /// diagnostic, which says how to get past it. Distinct from
+    /// `shieldedSpendUnconfirmed`, which must NOT be retried.
     case shieldedMerkleWitnessUnavailable(String)
     /// The cached Platform Payment-account input set cannot cover a shield's
     /// requested amount plus the fee reserve retained on input 0. Despite the

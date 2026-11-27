@@ -1427,15 +1427,25 @@ pub enum PlatformWalletError {
     /// No checkpoint of the local commitment tree covers a note selected for a
     /// shielded spend yet: the note's position was appended after the latest
     /// checkpoint (a sync pass that appended and stopped before checkpointing).
+    /// A token pool spend (token transfer or unshield) raises it for a note
+    /// past the leaves its pool's scan kept; a token pool tree that does not
+    /// build from those leaves is [`Self::ShieldedStoreError`].
     ///
     /// Raised while the spend is assembled, **before** any proof is built or
     /// anything is broadcast; the caller's generic error path releases the
-    /// note reservations, so nothing left the wallet. **Retryable**: the next
-    /// shielded sync checkpoints the tree at its size. Only this case: a store
+    /// note reservations, so nothing left the wallet. **Retryable**: for a
+    /// credit pool note, the next shielded sync checkpoints the tree at its
+    /// size. For a token pool note, a sync gets past it only when its scan
+    /// reads the missing positions: the scan resumes from the lowest account
+    /// watermark rounded down to a chunk boundary, so a gap in the kept leaves
+    /// before that point stays until a scan starts at or before it (a Clear
+    /// restarts the scan from position 0). Only these cases: a store
     /// that cannot produce the path (unreadable, poisoned, a position the tree
     /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
     /// which no sync repairs. FFI mirror:
-    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
+    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`,
+    /// whose message is this Display alone (no code 19 prefix), so every text
+    /// it carries says how to get past the refusal.
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 
