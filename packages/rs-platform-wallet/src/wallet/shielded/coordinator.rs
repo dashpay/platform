@@ -6294,6 +6294,102 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A wallet purge whose token note delete fails keeps the wallet's
+    /// damaged-row guard, so the sweep keeps the reservation left behind; the
+    /// same reservation is released once nothing guards it.
+    #[tokio::test]
+    async fn should_keep_a_reservation_a_failed_wallet_purge_left_guarded() {
+        use super::super::store::ShieldedStore;
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        let dir = temp_dir("token_sweep_failed_purge");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(|conn| {
+                insert_watch(conn, id.wallet_id, &token)?;
+                conn.execute(
+                    "INSERT INTO shielded_token_pool_scans \
+                     (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                     VALUES (?1, 1, 101, 15)",
+                    rusqlite::params![token.token_id.as_slice()],
+                )
+                .expect("scan row");
+                insert_note_for_test(
+                    conn,
+                    &TokenPoolNote {
+                        id,
+                        token_id: token.token_id,
+                        position: 0,
+                        cmx: [1; 32],
+                        nullifier: [2; 32],
+                        value: 5,
+                        note_data: vec![0; 115],
+                        block_height: 1,
+                        is_spent: false,
+                        reserved_by: Some([0xD5; 32]),
+                    },
+                )?;
+                conn.execute_batch(
+                    "CREATE TRIGGER keep_token_notes BEFORE DELETE ON shielded_token_pool_notes \
+                     BEGIN SELECT RAISE(ABORT, 'token notes kept'); END;",
+                )
+                .expect("trigger");
+                Ok(())
+            })
+            .unwrap();
+        {
+            let mut store = coordinator.store().write().await;
+            store.set_unloaded_note_spends_for_test(id.wallet_id, true);
+            assert!(store.purge_wallet(id.wallet_id).is_err());
+            assert!(store.has_unloaded_note_spends(id.wallet_id));
+            store
+                .with_token_pool_conn(|conn| {
+                    conn.execute_batch("DROP TRIGGER keep_token_notes;")
+                        .expect("drop trigger");
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let reserved = || async {
+            coordinator
+                .token_pool_balances(id.wallet_id)
+                .await
+                .expect("balances")[0]
+                .reserved_balance
+        };
+        let scanned = BTreeSet::from([token.token_id]);
+        let sweep =
+            || coordinator.release_orphaned_token_reservations(&subwallets, &scanned, Some(100));
+
+        sweep().await;
+        assert_eq!(reserved().await, 5, "the guard keeps the reservation");
+
+        coordinator
+            .store()
+            .write()
+            .await
+            .set_unloaded_note_spends_for_test(id.wallet_id, false);
+        sweep().await;
+        assert_eq!(reserved().await, 0, "unguarded, the same reservation goes");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The network-checked watch refuses a token whose verified configuration
     /// has no shielded pool, and one whose contract does not fetch, and
     /// records nothing for either.

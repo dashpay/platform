@@ -427,11 +427,15 @@ extension PlatformWalletManager {
     /// store. Must be non-empty and at most 64 entries.
     ///
     /// The resolver does NOT fire on the common path: when every
-    /// requested account has a persisted viewing key (written by the
-    /// first seed-backed bind into `PersistentShieldedViewingKey`
+    /// account the bind registers has a persisted viewing key (written
+    /// by the first seed-backed bind into `PersistentShieldedViewingKey`
     /// rows), Rust rebinds from those rows and the mnemonic is never
-    /// read. Only when a row is missing (first bind after create /
-    /// import) does the resolver fire — exactly once, with the
+    /// read. Those accounts are the requested ones and the wallet's
+    /// identity accounts: the tip accounts it discovered, those with a
+    /// persisted key, and those a shielded Clear kept. Only when a row is
+    /// missing (first bind after create / import, or an identity account
+    /// whose key is not persisted) does the resolver fire — exactly once,
+    /// with the
     /// mnemonic and derived seed in zeroized Rust-side buffers,
     /// scrubbed before this call returns.
     ///

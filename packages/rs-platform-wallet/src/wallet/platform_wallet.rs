@@ -1325,6 +1325,36 @@ impl PlatformWallet {
         Ok(())
     }
 
+    /// The accounts a bind registers: the requested ones, the tip accounts
+    /// of the identities the wallet discovered, its identity accounts with a
+    /// persisted viewing key (retired tip accounts keep scanning, including
+    /// identities removed from the local manager after their address was
+    /// published), and those a Clear kept. A Clear wipes the persisted rows;
+    /// the coordinator's store keeps their account numbers through it, so the
+    /// bind that follows a Clear, in this process or the next, keeps scanning
+    /// them and writes their rows again.
+    #[cfg(feature = "shielded")]
+    async fn shielded_bind_accounts(
+        &self,
+        accounts: &[u32],
+        persisted: &std::collections::BTreeMap<super::shielded::SubwalletId, Vec<u8>>,
+        coordinator: &NetworkShieldedCoordinator,
+    ) -> Result<std::collections::BTreeSet<u32>, PlatformWalletError> {
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        accounts.extend(self.discovered_tip_accounts().await?);
+        accounts.extend(
+            persisted
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_identity_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
+        accounts.extend(coordinator.kept_identity_accounts(self.wallet_id).await);
+        Ok(accounts)
+    }
+
     /// [`Self::bind_shielded`] for a caller that holds the generation's
     /// lifecycle gate, `shield_guard`, `admission` (from `coordinator`) and
     /// `shielded_config_lock`.
@@ -1345,30 +1375,13 @@ impl PlatformWallet {
         // wallet is derived from, so the seed must be the wallet's own.
         self.ensure_seed_of_this_wallet(seed)?;
         let network = self.sdk.network;
-        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
-        accounts.extend(self.discovered_tip_accounts().await?);
-        // Keep retired tip accounts scanning, including identities removed from
-        // the local manager after their address was published.
         let start = self
             .persister
             .load()
             .map_err(PlatformWalletError::from_load_failure)?;
-        accounts.extend(
-            start
-                .shielded
-                .viewing_keys
-                .keys()
-                .filter(|id| {
-                    id.wallet_id == self.wallet_id
-                        && super::shielded::is_shielded_identity_account(id.account_index)
-                })
-                .map(|id| id.account_index),
-        );
-        // A Clear wipes those rows. The coordinator's store keeps the
-        // account numbers through it, so the bind that follows a Clear, in
-        // this process or the next, keeps scanning them and writes their
-        // rows again.
-        accounts.extend(coordinator.kept_identity_accounts(self.wallet_id).await);
+        let accounts = self
+            .shielded_bind_accounts(accounts, &start.shielded.viewing_keys, coordinator)
+            .await?;
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
         for &account in &accounts {
@@ -1470,23 +1483,12 @@ impl PlatformWallet {
             .persister
             .load()
             .map_err(PlatformWalletError::from_load_failure)?;
-        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
-        // Newly discovered identities require their tip accounts too. Missing
-        // FVKs must trigger seed-backed binding: skipping them would report a
-        // successful restart while silently omitting recoverable tip history.
-        accounts.extend(self.discovered_tip_accounts().await?);
-        accounts.extend(
-            start
-                .shielded
-                .viewing_keys
-                .keys()
-                .filter(|id| {
-                    id.wallet_id == self.wallet_id
-                        && super::shielded::is_shielded_identity_account(id.account_index)
-                })
-                .map(|id| id.account_index),
-        );
-        accounts.extend(coordinator.kept_identity_accounts(self.wallet_id).await);
+        // A registered account with no persisted key sends the bind to the
+        // seed path: skipping it would report a successful restart while
+        // omitting recoverable tip history.
+        let accounts = self
+            .shielded_bind_accounts(accounts, &start.shielded.viewing_keys, coordinator)
+            .await?;
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
         for &account in &accounts {

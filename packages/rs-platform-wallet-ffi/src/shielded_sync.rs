@@ -393,12 +393,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// network.
 ///
 /// **The resolver does NOT fire on the common path.** When every
-/// requested account has a persisted viewing key (written by the
-/// first seed-backed bind via
+/// account the bind registers has a persisted viewing key (written by
+/// the first seed-backed bind via
 /// `on_persist_shielded_viewing_keys_fn`), the bind completes from
-/// those rows and the mnemonic is never touched. The resolver fires
-/// exactly once only on the fallback (first bind after create /
-/// import, or persistence predating viewing-key rows); the mnemonic
+/// those rows and the mnemonic is never touched. Those accounts are the
+/// requested ones and the wallet's identity accounts: the tip accounts it
+/// discovered, those with a persisted key, and those a shielded Clear
+/// kept. The resolver fires exactly once only on the fallback (first bind
+/// after create / import, persistence predating viewing-key rows, or an
+/// identity account whose key is not persisted); the mnemonic
 /// and the derived seed then live in `Zeroizing` buffers and are
 /// scrubbed before this function returns. In every case only the
 /// per-account FVK / IVK / OVK / default payment addresses survive
@@ -463,7 +466,7 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 
     // Seedless path first: rebind from viewing keys persisted by a
     // prior seed-backed bind. `Ok(false)` means at least one
-    // requested account has no persisted row — only then is the
+    // account the bind registers has no persisted row — only then is the
     // mnemonic resolved. Persisted-key load/restore errors propagate without
     // resolving the seed; fallback must not mask a persistence failure.
     //

@@ -521,6 +521,19 @@ impl FileBackedShieldedStore {
             || self.unloaded_note_spends.contains(&None)
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_unloaded_note_spends_for_test(
+        &mut self,
+        wallet_id: WalletId,
+        unloaded: bool,
+    ) {
+        if unloaded {
+            self.unloaded_note_spends.insert(Some(wallet_id));
+        } else {
+            self.unloaded_note_spends.remove(&Some(wallet_id));
+        }
+    }
+
     /// The signal this store raises on every change to what
     /// [`Self::local_account_balance`] returns (see [`SignalledSubwallets`]).
     /// The coordinator takes it before it wraps the store in its lock, so
