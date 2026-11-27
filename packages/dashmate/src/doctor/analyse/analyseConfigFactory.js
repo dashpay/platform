@@ -109,6 +109,23 @@ export default function analyseConfigFactory() {
 
         problems.push(problem);
       } else if (platformNodeId) {
+        const flag = renderConfigFlag(config.getName());
+
+        // A restart only helps when the configured key is known to give the
+        // registered ID. Matching on the saved ID alone says nothing about
+        // the key, and without a usable one a restarted Tenderdash cannot
+        // start again.
+        const isKeyVerified = samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')
+          === platformNodeId;
+
+        // dashmate starts Platform of a masternode only while the saved node
+        // ID is the one its key gives, and `config set` of the key alone keeps
+        // the old ID.
+        const saveNodeId = isKeyVerified
+          && config.get('platform.drive.tenderdash.node').id !== platformNodeId
+          ? chalk`  {bold.cyanBright dashmate config set platform.drive.tenderdash.node.id ${platformNodeId} ${flag}}`
+          : null;
+
         // Tenderdash loads its key at startup, so a key corrected in the
         // config is not in use until it restarts. The running ID is only known
         // when Tenderdash answered.
@@ -116,21 +133,24 @@ export default function analyseConfigFactory() {
           ?.value?.result?.node_info?.id;
 
         if (runningNodeId && runningNodeId !== platformNodeId) {
-          // A restart only helps when the configured key is known to give the
-          // registered ID. Matching on the saved ID alone says nothing about
-          // the key, and without a usable one a restarted Tenderdash cannot
-          // start again.
-          const isKeyVerified = samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')
-            === platformNodeId;
+          const restart = chalk`  {bold.cyanBright dashmate restart --platform ${flag}}`;
 
           const solution = isKeyVerified
-            ? chalk`The configured node key matches the registered node ID, but Tenderdash
-has not loaded it yet. Please restart Platform to apply it:
-  {bold.cyanBright dashmate restart --platform ${renderConfigFlag(config.getName())}}`
+            ? [
+              'The configured node key matches the registered node ID, but Tenderdash',
+              ...(saveNodeId
+                ? [
+                  'has not loaded it yet. Please save the registered node ID, which dashmate checks',
+                  'against the key before it starts Platform, and restart Platform to apply it:',
+                  saveNodeId,
+                ]
+                : ['has not loaded it yet. Please restart Platform to apply it:']),
+              restart,
+            ].join('\n')
             : chalk`The saved node ID matches the registered one, but no configured node key was
 found that gives it. Please check the configured Tenderdash node key first, and set the key
 for the registered node ID if it is missing or wrong:
-  {bold.cyanBright dashmate config set platform.drive.tenderdash.node.key KEY ${renderConfigFlag(config.getName())}}`;
+  {bold.cyanBright dashmate config set platform.drive.tenderdash.node.key KEY ${flag}}`;
 
           const problem = new Problem(
             'Tenderdash is running with a node ID other than the one found in the ProReg transaction',
@@ -139,6 +159,16 @@ for the registered node ID if it is missing or wrong:
           );
 
           problems.push(problem);
+        } else if (saveNodeId) {
+          problems.push(new Problem(
+            'The saved Platform node ID is not the one the configured node key gives',
+            [
+              'The configured node key gives the registered node ID, but dashmate refuses to',
+              'start or restart Platform until the saved node ID is that one too. Please save it:',
+              saveNodeId,
+            ].join('\n'),
+            SEVERITY.MEDIUM,
+          ));
         }
       }
 
@@ -205,7 +235,7 @@ And then update your configuration with {bold.cyanBright dashmate config set pla
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new certificate`,
               },
               [ZEROSSL_ERRORS.PRIVATE_KEY_IS_NOT_PRESENT]: {
-                description: chalk`ZeroSSL private key file not found in ${ssl?.data?.privateKeyFilePath}.`,
+                description: chalk`ZeroSSL private key file ${ssl?.data?.privateKeyFilePath} is missing or cannot be loaded.`,
                 solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
@@ -215,7 +245,7 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
             and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CSR_FILE_IS_NOT_PRESENT]: {
-                description: chalk`ZeroSSL certificate request file not found in ${ssl?.data?.csrFilePath}.
+                description: chalk`ZeroSSL certificate request file ${ssl?.data?.csrFilePath} is missing or cannot be used.
 This makes auto-renewal impossible.`,
                 solution: chalk`If you need auto renew, please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,

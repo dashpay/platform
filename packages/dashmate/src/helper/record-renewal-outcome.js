@@ -135,7 +135,8 @@ export function recordRenewalFailure({
     // reached the authority. Unlike the case above this is not a certainty,
     // and it withholds the same advice for a different reason.
     const isIssuanceUnconfirmed = classified.code === RENEWAL_FAILURE_CODES.RESULT_UNKNOWN
-      || classified.code === RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED;
+      || classified.code === RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED
+      || classified.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED_MID_RENEWAL;
 
     const issuanceUncertainAt = isIssuanceUnconfirmed
       || previousMayBeHidingAnIssuance(renewalRecordRepository, configName)

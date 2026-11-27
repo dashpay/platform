@@ -12,14 +12,17 @@ import forge from 'node-forge';
  * @param {string} [options.ip] - placed in the subject alternative name and common name
  * @param {boolean} [options.withIpSan] - false to leave the address in the common name only
  * @param {number} [options.days] - days from now the certificate expires, negative for expired
+ * @param {string} [options.serialNumber] - in hex
  * @return {{cert: string, key: string}} PEM encoded
  */
-export default function createCertificateForTest({ ip = '127.0.0.1', days = 30, withIpSan = true } = {}) {
+export default function createCertificateForTest({
+  ip = '127.0.0.1', days = 30, withIpSan = true, serialNumber = '01',
+} = {}) {
   const keys = forge.pki.rsa.generateKeyPair(2048);
   const certificate = forge.pki.createCertificate();
 
   certificate.publicKey = keys.publicKey;
-  certificate.serialNumber = '01';
+  certificate.serialNumber = serialNumber;
 
   // Anchored to the expiry so an already-expired certificate still starts before it ends
   certificate.validity.notAfter = new Date(Date.now() + days * 24 * 60 * 60 * 1000);

@@ -5,6 +5,7 @@ import { NETWORK_MAINNET, NETWORK_TESTNET, SSL_PROVIDERS } from '../constants.js
 import { parseIpAddresses } from './readCertificateBundle.js';
 import isCertificatePairInstalled from './letsencrypt/isCertificatePairInstalled.js';
 import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from './selectLeafCertificate.js';
+import { isSelfSigned, readValidityWindow } from './leafCertificateChecks.js';
 
 export const CERTIFICATE_STATUS = {
   // Deliberately not VALID. This function runs a fixed list of local checks; it
@@ -101,11 +102,11 @@ const EXPIRING_SOON_DAYS = 1;
  * reported as disagreeing with anything.
  *
  * @param {X509Certificate} leaf
- * @param {boolean} isSelfSigned
+ * @param {boolean} isLeafSelfSigned
  * @return {string|null}
  */
-function identifyIssuer(leaf, isSelfSigned) {
-  if (isSelfSigned) {
+function identifyIssuer(leaf, isLeafSelfSigned) {
+  if (isLeafSelfSigned) {
     return SSL_PROVIDERS.SELF_SIGNED;
   }
 
@@ -294,31 +295,35 @@ export default function checkGatewayCertificateFactory(homeDir) {
       return verdict();
     }
 
-    // A certificate that verifies under its own public key is self-signed by
-    // definition. Subject equal to issuer is only a naming convention: a
-    // self-signed certificate may name any issuer it likes, and a private-CA
-    // certificate can render the two identically.
-    let isSelfSigned = false;
-    try {
-      isSelfSigned = leaf.verify(leaf.publicKey);
-    } catch {
-      isSelfSigned = false;
+    const validity = readValidityWindow(leaf);
+
+    // Before anything reads the dates: nothing can be said about the window,
+    // and every report formats the expiry.
+    if (validity.isUnreadable) {
+      reasons.push({
+        code: CERTIFICATE_REASONS.BUNDLE_UNREADABLE,
+        message: `The certificate in ${bundleFilePath} cannot be used: its validity dates`
+          + ' cannot be read',
+      });
+
+      return verdict();
     }
 
-    const validTo = new Date(leaf.validTo);
+    const isLeafSelfSigned = isSelfSigned(leaf);
+    const { validTo } = validity;
     const expiresInDays = (validTo.getTime() - Date.now()) / DAY_MS;
 
     const installed = {
       subject: leaf.subject,
       issuer: leaf.issuer,
-      validFrom: new Date(leaf.validFrom),
+      validFrom: validity.validFrom,
       validTo,
       ipAddresses: parseIpAddresses(leaf.subjectAltName),
       fingerprint256: leaf.fingerprint256,
-      selfSigned: isSelfSigned,
+      selfSigned: isLeafSelfSigned,
     };
 
-    if (isSelfSigned) {
+    if (isLeafSelfSigned) {
       const message = 'The installed certificate is self-signed. Self-signed TLS is not'
         + ' publicly trusted and standards-compliant clients will reject it';
 
@@ -335,10 +340,9 @@ export default function checkGatewayCertificateFactory(homeDir) {
     }
 
     // Unservable in exactly the way an expired certificate is - clients reject
-    // it on the same field. Nothing is concluded about the clock here: a fast
-    // local clock and a genuinely future start date look identical from disk,
-    // so this says only that the certificate cannot be served as it stands.
-    if (installed.validFrom.getTime() > Date.now()) {
+    // it on the same field. This says only that the certificate cannot be
+    // served as it stands.
+    if (validity.isNotYetValid) {
       reasons.push({
         code: CERTIFICATE_REASONS.NOT_YET_VALID,
         message: 'The installed certificate is not valid until'
@@ -346,7 +350,7 @@ export default function checkGatewayCertificateFactory(homeDir) {
       });
     }
 
-    if (expiresInDays <= 0) {
+    if (validity.isExpired) {
       reasons.push({
         code: CERTIFICATE_REASONS.EXPIRED,
         message: `The installed certificate expired on ${validTo.toISOString().slice(0, 10)}`
@@ -398,7 +402,7 @@ export default function checkGatewayCertificateFactory(homeDir) {
     } else if (provider !== SSL_PROVIDERS.FILE) {
       // A certificate the operator supplied themselves can come from any
       // authority, so its issuer says nothing about the configuration.
-      const issuedBy = identifyIssuer(leaf, isSelfSigned);
+      const issuedBy = identifyIssuer(leaf, isLeafSelfSigned);
 
       if (issuedBy !== null && issuedBy !== provider) {
         warnings.push({

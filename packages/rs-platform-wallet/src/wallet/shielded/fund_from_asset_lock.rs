@@ -47,7 +47,10 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{OrchardProver, ProvedShieldFromAssetLockBundle};
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::{
+    compute_minimum_shielded_fee, max_shield_from_asset_lock_actions,
+    max_shielded_actions_per_transition,
+};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -93,7 +96,26 @@ use crate::PlatformWalletError;
 ///
 /// With `dummy_outputs == 0` this returns `2`, the historical single-output count.
 pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize {
-    (1 + dummy_outputs).max(2)
+    dummy_outputs.saturating_add(1).max(2)
+}
+
+/// Refuse a `ShieldFromAssetLock` batch of `num_actions` that no proof can carry: above
+/// [`max_shielded_actions_per_transition`] even the ChainLock proof's transition exceeds
+/// `max_state_transition_size`. The batch is never shrunk to fit (that would change the fee and
+/// the payout); it is refused before any Core funds are committed or any proof is awaited.
+pub(crate) fn ensure_shield_batch_fits(
+    num_actions: usize,
+    platform_version: &dpp::version::PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let max_actions = max_shielded_actions_per_transition(platform_version);
+    if num_actions > usize::from(max_actions) {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "a ShieldFromAssetLock of {num_actions} actions does not fit one transition at \
+             protocol version {} (at most {max_actions}); request fewer anonymity fillers",
+            platform_version.protocol_version
+        )));
+    }
+    Ok(())
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -291,6 +313,9 @@ impl PlatformWallet {
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
+        // A batch no proof can carry is refused first: on every funding path (wallet balance,
+        // account or wallet drain, resume) nothing is funded, reserved or awaited for it.
+        ensure_shield_batch_fits(num_actions, self.sdk.version())?;
         // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
         // SAME flat fee consensus charges (`transform_into_action` Step 3b).
         // The initial protocol-version snapshot sizes a fresh lock and prices
@@ -549,6 +574,14 @@ impl PlatformWallet {
         // residual to the (sole) `None` bucket; the preflight will
         // change in lockstep with the DPP-side multi-output bundle
         // builder.
+        //
+        // The batch, and with it the fee and the recipient's payout, is the one the caller
+        // asked for, whichever proof carries it: a resume of this lock that starts from a
+        // saved ChainLock proof pays what an uninterrupted call pays. An InstantSend proof of
+        // a funding transaction with many inputs can leave no room for the batch; it then
+        // gives way to the lock's ChainLock proof before anything is built, through the same
+        // persisted upgrade the submit's IS→ChainLock fallback uses. The value is read from
+        // the proof the funding resolved with, before any upgrade.
         let asset_lock_value_credits =
             lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
 
@@ -567,6 +600,19 @@ impl PlatformWallet {
             pool_fee_credits =
                 Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
         }
+        let proof = if instant_proof_cannot_carry_batch(dummy_outputs, &proof, platform_version) {
+            tracing::warn!(
+                "IS-lock proof leaves no room for {} actions in shielded fund-from-asset-lock \
+                 (tx {}); using the ChainLock proof",
+                num_actions,
+                out_point_from_proof(&proof).txid
+            );
+            self.asset_locks
+                .upgrade_to_persisted_chain_lock_proof(&out_point_from_proof(&proof), cl_wait)
+                .await?
+        } else {
+            proof
+        };
         let shield_amount = shield_amount_after_fee(asset_lock_value_credits, pool_fee_credits)?;
 
         // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
@@ -857,7 +903,7 @@ impl PlatformWallet {
     /// (`shield_from_asset_lock_num_actions(dummy_outputs)` — `2` for the
     /// classic single-output bundle, up to `6` for a pool-seeding batch
     /// (the 20 KiB `max_state_transition_size` cap, see
-    /// `MAX_ACTIONS_PER_BATCH` in `seed_pool.rs`; not the 16-action
+    /// `max_shielded_actions_per_transition` in dpp; not the 16-action
     /// consensus cap)).
     /// `asset_lock_base_cost` (`albc`) is the same constant Type 14 (address
     /// funding) uses, read from `dpp.state_transitions.identities.asset_locks`
@@ -866,6 +912,8 @@ impl PlatformWallet {
         num_actions: usize,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, PlatformWalletError> {
+        // No fee is quoted for a batch consensus would reject (the wallet-drain preview).
+        ensure_shield_batch_fits(num_actions, platform_version)?;
         let albc_duffs = platform_version
             .dpp
             .state_transitions
@@ -1266,6 +1314,21 @@ where
     })
 }
 
+/// Whether `proof` is an InstantSend proof that leaves no room, under
+/// `max_state_transition_size`, for the batch of `dummy_outputs` fillers: it embeds its whole
+/// funding transaction, which takes room from the Orchard actions. The batch is never shrunk
+/// to fit (that would change the fee, and the payout, with the proof); the lock's ChainLock
+/// proof, which names only the outpoint, carries it instead.
+fn instant_proof_cannot_carry_batch(
+    dummy_outputs: usize,
+    proof: &AssetLockProof,
+    platform_version: &dpp::version::PlatformVersion,
+) -> bool {
+    matches!(proof, AssetLockProof::Instant(_))
+        && usize::from(max_shield_from_asset_lock_actions(platform_version, proof))
+            < shield_from_asset_lock_num_actions(dummy_outputs)
+}
+
 /// `lock_value − pool_fee`, the amount a single-recipient
 /// `ShieldFromAssetLock` moves into the pool; errors when the lock cannot
 /// cover the fee with something left to shield.
@@ -1389,6 +1452,68 @@ mod tests {
     use crate::wallet::asset_lock::{AssetLockOperationContext, AssetLockOperationRegistration};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+
+    /// The batch a funding asks for is never shrunk to fit its proof, so the fee and the
+    /// recipient's payout do not depend on whether an attempt carries the InstantSend proof or,
+    /// after a fallback or on resume, the ChainLock one. An InstantSend proof that leaves no room
+    /// for the batch gives way to the ChainLock proof instead; a ChainLock proof never does.
+    #[test]
+    fn should_keep_the_requested_batch_and_move_an_instant_proof_that_cannot_carry_it() {
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use dpp::tests::fixtures::{
+            instant_asset_lock_is_lock_fixture,
+            instant_asset_lock_proof_transaction_fixture_with_inputs,
+        };
+        use dpp::version::PlatformVersion;
+
+        let version = PlatformVersion::latest();
+        let full_batch = 5;
+        let instant = |inputs: u32| {
+            let mut transaction =
+                instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, inputs);
+            for input in &mut transaction.input {
+                input.script_sig = dashcore::ScriptBuf::from_bytes(vec![0x30; 107]);
+            }
+            let mut lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+            lock.inputs = transaction
+                .input
+                .iter()
+                .map(|i| i.previous_output)
+                .collect();
+            AssetLockProof::Instant(InstantAssetLockProof::new(lock, transaction, 0))
+        };
+        let chain = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::from([11u8; 36]),
+        });
+
+        let cannot = |dummy_outputs, proof: &AssetLockProof| {
+            instant_proof_cannot_carry_batch(dummy_outputs, proof, version)
+        };
+        assert!(
+            !cannot(full_batch, &chain),
+            "a ChainLock proof carries the batch"
+        );
+        assert!(!cannot(full_batch, &instant(1)));
+        assert!(
+            cannot(full_batch, &instant(7)),
+            "a 7-input lock does not fit 6 actions: the ChainLock proof carries them"
+        );
+        assert!(
+            !cannot(2, &instant(7)),
+            "3 actions fit beside a 7-input proof"
+        );
+        assert!(
+            cannot(0, &instant(100)),
+            "no batch fits a 100-input InstantSend proof"
+        );
+        assert!(
+            cannot(full_batch, &instant(100)),
+            "the 6 requested actions are kept, not clamped to the InstantSend proof"
+        );
+        // The fee is priced from the requested batch alone, whichever proof carries it.
+        assert_eq!(shield_from_asset_lock_num_actions(full_batch), 6);
+    }
 
     // The preflight is a pure length/cardinality check; the
     // recipient type is irrelevant for what we're testing. Using

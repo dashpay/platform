@@ -674,6 +674,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_token_redemption_cycles: 128,
         max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,
+        shielded_action_wire_size: 2_681, // measured, see SystemLimits; client-side only
+        shielded_transition_fixed_wire_size: 3_000, // measured, see SystemLimits; client-side only
         max_token_pool_notes_for_outgoing: 250,
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,

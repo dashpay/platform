@@ -1398,3 +1398,85 @@ async fn should_refuse_a_pending_drain_retry_on_a_handle_kept_past_its_removal()
     assert!(wallet.asset_locks.list_tracked_locks().await.is_empty());
     assert!(persistence.staged.lock().unwrap().is_empty());
 }
+
+/// A batch no proof can carry (one output and six fillers: seven actions, above the six that
+/// fit `max_state_transition_size`) is refused before anything is funded on every funding path:
+/// no lock reaches the observer or the Core broadcaster, a drain records that nothing was sent,
+/// a resumed lock stays as it was, and the drain preview quotes no fee for it.
+#[tokio::test]
+async fn should_refuse_a_batch_no_proof_can_carry_before_any_core_funding() {
+    let dummy_outputs = 6;
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, _persistence, _coordinator, _dir, signer) =
+        signed_wallet_fixture(&lock, keys).await;
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
+    let tracked_before = wallet.asset_locks.list_tracked_locks().await.len();
+    let operation = Arc::new(AssetLockOperationContext::new([0x6b; 16]));
+    let fundings = [
+        AssetLockFunding::FromWalletBalance {
+            amount_duffs: 5_000_000,
+            account_index: 0,
+        },
+        AssetLockFunding::DrainWalletBalance {
+            account_index: 0,
+            minimum_lock_duffs: None,
+            operation: operation.clone(),
+        },
+        AssetLockFunding::FromExistingAssetLock {
+            out_point: lock.out_point,
+            consume_invitation_voucher: false,
+        },
+    ];
+
+    for funding in fundings {
+        let label = format!("{funding:?}");
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+        let error = wallet
+            .shielded_fund_from_asset_lock(
+                funding,
+                vec![(recipient, None)],
+                &signer,
+                prover,
+                None,
+                dummy_outputs,
+                None,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("a batch no proof can carry is refused");
+        assert!(
+            matches!(&error, PlatformWalletError::ShieldedBuildError(m) if m.contains("7 actions")),
+            "{label}: got {error:?}"
+        );
+        assert!(
+            seen.into_inner().unwrap().is_empty(),
+            "{label}: no lock built"
+        );
+        assert_eq!(
+            wallet.asset_locks.list_tracked_locks().await.len(),
+            tracked_before,
+            "{label}: no lock tracked or removed"
+        );
+    }
+    let snapshot = operation.snapshot();
+    assert_eq!(snapshot.state, AssetLockOperationState::NotSent);
+    assert!(snapshot.out_point.is_none());
+
+    let preview = wallet
+        .shielded_wallet_drain_preview(0, dummy_outputs)
+        .await
+        .map(|_| ());
+    assert!(
+        matches!(preview, Err(PlatformWalletError::ShieldedBuildError(_))),
+        "the preview quotes no fee for it: {preview:?}"
+    );
+    // Five fillers (six actions) still fit.
+    wallet
+        .shielded_wallet_drain_preview(0, dummy_outputs - 1)
+        .await
+        .expect("six actions fit one transition");
+}

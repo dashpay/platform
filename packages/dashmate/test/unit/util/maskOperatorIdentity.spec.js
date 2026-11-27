@@ -81,4 +81,35 @@ describe('maskOperatorIdentity', () => {
   it('should pass through anything that is not a string', () => {
     expect(maskOperatorIdentity(42, { username: 'alice', homePath: '/home/alice' })).to.equal(42);
   });
+
+  // Where the result has to stay an absolute path, the home directory can be
+  // written as one
+  it('should write the home directory with the replacement it is given', () => {
+    expect(maskOperatorIdentity(
+      '/home/alice/.dashmate/logs/core.log',
+      { username: 'bob', homePath: '/home/alice' },
+      { homeReplacement: '/~' },
+    )).to.equal('/~/.dashmate/logs/core.log');
+  });
+
+  it('should mask every home directory it is given, one inside another included', () => {
+    expect(maskOperatorIdentity(
+      'a /srv/dash-data/x b /home/alice/y c /home/alice/nested/z',
+      { username: 'bob', homePath: '/home/alice', homePaths: ['/home/alice/nested', '/srv/dash-data', '/home/alice'] },
+    )).to.equal('a ~/x b ~/y c ~/z');
+  });
+
+  // A service account can have the root of the file system as its home, and
+  // masking that would rewrite every path and URL in the text
+  it('should not treat the root of the file system as a home directory', () => {
+    expect(maskOperatorIdentity(
+      'https://example.com/a /var/log/b',
+      { username: 'bob', homePath: '/', homePaths: ['/', 'C:\\'] },
+    )).to.equal('https://example.com/a /var/log/b');
+  });
+
+  it('should mask a home directory given with a trailing separator', () => {
+    expect(maskOperatorIdentity('/home/alice/x', { username: 'bob', homePaths: ['/home/alice/'] }))
+      .to.equal('~/x');
+  });
 });

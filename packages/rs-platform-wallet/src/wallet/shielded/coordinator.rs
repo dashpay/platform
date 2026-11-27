@@ -4487,6 +4487,7 @@ mod tests {
                 attempts: 0,
                 identity_nonce_finalized: true,
                 identity_user_abandoned: false,
+                spend_context: None,
                 anchor_height: None,
             },
             cmxs,
@@ -5069,6 +5070,7 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        spend_context: None,
                         activity_id: row.id,
                         anchor: [0x52; 32],
                         nullifiers: vec![PURCHASE_INPUT_NF],
@@ -5812,6 +5814,7 @@ mod tests {
                         .arm_redrive(
                             id,
                             PendingRedrive {
+                                spend_context: None,
                                 activity_id: row.id,
                                 anchor: pruned_anchor,
                                 nullifiers: vec![fee_nf],
@@ -5973,6 +5976,7 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        spend_context: None,
                         activity_id: row.id,
                         anchor: [0xF2; 32],
                         nullifiers: vec![fee_nf],
@@ -6133,6 +6137,7 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        spend_context: None,
                         activity_id: row.id,
                         anchor: pruned_anchor,
                         nullifiers: vec![fee_nf],
@@ -6691,6 +6696,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         coordinator
@@ -6861,6 +6867,7 @@ mod tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    spend_context: None,
                 },
             )
             .unwrap();
@@ -7496,6 +7503,9 @@ mod tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: Some(1),
+                    // An unresolved spend keeps the dropped account; no
+                    // fee-bound recovery attempt is needed for that.
+                    spend_context: None,
                 },
             )
             .unwrap();
@@ -8205,6 +8215,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         coordinator
@@ -8319,6 +8330,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: true,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -9186,6 +9198,7 @@ mod tests {
                             attempts: 0,
                             identity_nonce_finalized: false,
                             identity_user_abandoned: false,
+                            spend_context: None,
                             anchor_height: Some(*anchor_height),
                         },
                     )
@@ -9291,6 +9304,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )
@@ -9390,6 +9404,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )

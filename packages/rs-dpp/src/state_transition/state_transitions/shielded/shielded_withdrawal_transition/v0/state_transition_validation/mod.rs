@@ -353,4 +353,56 @@ mod tests {
             )]
         );
     }
+
+    /// The shared preflight and the structure validator, which both own the rules through the
+    /// same DPP functions, agree on every rate and reserve below: the validator's rate and range
+    /// verdicts are the preflight's, at the generation before the cap and the one with it.
+    #[test]
+    fn the_structure_validator_and_the_withdrawal_preflight_agree() {
+        for version in [13, 14] {
+            let platform_version = PlatformVersion::get(version).expect("protocol version");
+            let platform_fee =
+                compute_shielded_withdrawal_fee(1, platform_version).expect("platform fee");
+            let limits = &platform_version.system_limits;
+            let reserves = [
+                limits.min_withdrawal_amount,
+                limits.min_withdrawal_amount + core_fee_in_credits(1).expect("fee") - 1,
+                limits.min_withdrawal_amount + core_fee_in_credits(1).expect("fee"),
+                1_000_000_001,
+                2_000_000_999,
+                limits.max_withdrawal_amount,
+                limits.max_withdrawal_amount + 1,
+            ];
+            for rate in [0, 1, 4, 5, 6_765, 10_946] {
+                for reserve in reserves {
+                    let validated = transition(reserve + platform_fee, rate)
+                        .validate_structure(platform_version);
+                    let preflight = crate::withdrawal::preflight_shielded_withdrawal(
+                        reserve,
+                        rate,
+                        platform_version,
+                    );
+                    // Before the cap generation the validator leaves the reserve range to drive.
+                    let range_only = matches!(
+                        &preflight,
+                        Err(ConsensusError::BasicError(
+                            BasicError::WithdrawalBelowMinAmountError(_)
+                                | BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(
+                                    _
+                                )
+                        ))
+                    );
+                    if version == 13 && range_only {
+                        assert!(validated.is_valid(), "v{version} {rate} {reserve}");
+                        continue;
+                    }
+                    assert_eq!(
+                        validated.errors.first(),
+                        preflight.as_ref().err(),
+                        "v{version} rate {rate} reserve {reserve}"
+                    );
+                }
+            }
+        }
+    }
 }

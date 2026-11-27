@@ -484,8 +484,9 @@ struct IdentitiesContentView: View {
     /// Delete a single identity from this device. This does **not** touch
     /// Dash Platform: the identity on chain is untouched and can be loaded
     /// again later with its keys. Runs
-    /// `removeIdentityLocally(_:modelContext:deleteSpecialKey:deleteKeyData:deleteAllForIdentity:)`
-    /// with the shared Keychain and reports what it could not do.
+    /// `removeIdentityLocally(_:modelContext:removeFromLiveWallets:deleteSpecialKey:deleteKeyData:deleteAllForIdentity:)`
+    /// with the running wallets and the shared Keychain, and reports what it
+    /// could not do.
     private func removeIdentityLocally(_ identity: PersistentIdentity) {
         let keychain = KeychainManager.shared
         let keysLeft: [String]
@@ -493,12 +494,18 @@ struct IdentitiesContentView: View {
             keysLeft = try Self.removeIdentityLocally(
                 identity,
                 modelContext: modelContext,
+                removeFromLiveWallets: { try walletManager.removeIdentityFromLiveWallets(identityId: $0) },
                 deleteSpecialKey: { keychain.deleteSpecialKey(identityId: $0, keyType: $1) },
                 deleteKeyData: { keychain.deleteKeyData(identifier: $0) },
                 deleteAllForIdentity: { identityId, publicKeys in
                     try keychain.deleteAllPrivateKeys(ofIdentityId: identityId, publicKeys: publicKeys)
                 }
             )
+        } catch let refusal as IdentityLiveWalletRemovalRefused {
+            platformState.showError(
+                message: "The identity was not removed from this device: \(refusal.reason.localizedDescription). Nothing was deleted."
+            )
+            return
         } catch {
             platformState.showError(
                 message: "The identity was not removed from this device: \(error.localizedDescription). Its keys were not deleted. Its DPNS names and DashPay data on this device, including ignored senders, may already be deleted; remove it again to finish."
@@ -513,30 +520,41 @@ struct IdentitiesContentView: View {
         )
     }
 
-    /// Delete `identity`'s SwiftData rows, then its Keychain items. Returns
-    /// the names of the Keychain items that could not be deleted (for
-    /// example "voting key", "key 2"); throws when the rows could not be
-    /// deleted, in which case the Keychain was not touched.
+    /// Remove `identity` from the running wallets, then delete its SwiftData
+    /// rows, then its Keychain items. Returns the names of the Keychain items
+    /// that could not be deleted (for example "voting key", "key 2"). Throws
+    /// `IdentityLiveWalletRemovalRefused` when the wallets refused, in which
+    /// case nothing was deleted, and the row delete's error when the rows
+    /// could not be deleted, in which case the Keychain was not touched.
     ///
     /// Order, so a failure before the row is gone cannot leave a row whose
-    /// keys are deleted:
+    /// keys are deleted, and a wallet that still syncs the identity cannot
+    /// store its row again without its keys:
     ///  1. Snapshot the Keychain identifiers, since a deleted row can no
     ///     longer be read: each public key's `privateKeyKeychainIdentifier`
     ///     (both write formats, `privkey_<identityHex>_<keyIndex>` from
     ///     `storePrivateKey` and `identity_privkey.<walletId>.<path>` from
     ///     the wallet persister) and the voting / owner / payout identifiers
     ///     on the row.
-    ///  2. Delete the rows with `PersistentIdentity.deleteChildrenFirst`.
+    ///  2. `removeFromLiveWallets`
+    ///     (`PlatformWalletManager.removeIdentityFromLiveWallets`): Rust
+    ///     removes the identity from every wallet managing it, or refuses
+    ///     while its DashPay contact request channel is held. Accepted, the
+    ///     persistence handler deletes the rows on its own context, so the
+    ///     `identity` object is not read again after this call.
+    ///  3. Delete the rows still in the store (an identity no wallet
+    ///     managed, or a row the handler left) with
+    ///     `PersistentIdentity.deleteChildrenFirst`.
     ///     The cascade alone is not enough: DPNS names, the DashPay profile
     ///     and the other DashPay rows have a non-optional inverse to the
     ///     identity, and SwiftData fatals in `save()` when deleting the
     ///     identity has to null one, which no `catch` can catch. A failed
     ///     save rolls the context back and throws.
-    ///  3. Clear the voting / owner / payout slots by identity id, so a key
+    ///  4. Clear the voting / owner / payout slots by identity id, so a key
     ///     stored without a row reference (a load whose save failed) goes
     ///     too and a later load can store the key again, then delete the
     ///     snapshotted identifiers.
-    ///  4. Sweep the Keychain for this identity
+    ///  5. Sweep the Keychain for this identity
     ///     (`deleteAllForIdentity`, `KeychainManager.deleteAllPrivateKeys(ofIdentityId:publicKeys:)`):
     ///     the `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
     ///     accounts, and the `identity_privkey.*` items whose metadata
@@ -550,13 +568,14 @@ struct IdentitiesContentView: View {
     ///     not the old `identity_privkey.*` one). So removing the identity
     ///     again cleans up what an earlier removal left behind.
     ///
-    /// A failed Keychain delete in steps 3 and 4 (for example while the
+    /// A failed Keychain delete in steps 4 and 5 (for example while the
     /// device is locked) is returned rather than ignored. Deleting the
     /// Keychain items before the rows would instead turn a failed save into
     /// a row with no keys.
     static func removeIdentityLocally(
         _ identity: PersistentIdentity,
         modelContext: ModelContext,
+        removeFromLiveWallets: (Data) throws -> Bool,
         deleteSpecialKey: (Data, SpecialKeyType) -> Bool,
         deleteKeyData: (String) -> Bool,
         deleteAllForIdentity: (Data, [Data]) throws -> Void
@@ -578,7 +597,14 @@ struct IdentitiesContentView: View {
             referenced.append((name: "\(keyType.rawValue) key", identifier: identifier))
         }
 
-        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
+        do {
+            _ = try removeFromLiveWallets(identityId)
+        } catch {
+            throw IdentityLiveWalletRemovalRefused(reason: error)
+        }
+        // A failed lookup throws: the Keychain is only touched once the row
+        // is known to be gone.
+        try PersistentIdentity.deleteChildrenFirst(identityId: identityId, in: modelContext)
 
         // `deleteSpecialKey` and `deleteKeyData` treat an absent item as
         // success, so `false` means the Keychain refused.
@@ -601,6 +627,12 @@ struct IdentitiesContentView: View {
         }
         return keysLeft
     }
+}
+
+/// The running wallets did not remove an identity, so nothing of it was
+/// deleted from the device. `reason` is the error the removal call threw.
+struct IdentityLiveWalletRemovalRefused: Error {
+    let reason: Error
 }
 
 /// Section view backing the Identities tab's "Resumable Registrations"
