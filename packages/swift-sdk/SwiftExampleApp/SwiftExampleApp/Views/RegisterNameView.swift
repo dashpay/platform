@@ -32,6 +32,15 @@ struct RegisterNameView: View {
   @State private var contestFund = ContestFundState.idle
   /// The normalized name `contestFund` was read for.
   @State private var contestFundName = ""
+  /// Raised to read the fund of the same name again.
+  @State private var contestFundReadCount = 0
+
+  /// What a read of the contest fund is keyed by: the name, and how many
+  /// times its fund was asked for again.
+  private struct ContestFundRead: Hashable {
+    let name: String
+    let count: Int
+  }
 
   /// The read of what joining the typed name's contest costs now.
   private enum ContestFundState: Equatable {
@@ -373,9 +382,10 @@ struct RegisterNameView: View {
             }
             .accessibilityIdentifier("dpnsContestFundToJoin")
           }
-          // Re-read whenever the contested name changes; a read for a name
-          // the user has typed past is cancelled and its result dropped.
-          .task(id: normalizedUsername) {
+          // Re-read whenever the contested name changes, or a registration
+          // failed; a read for a name the user has typed past is cancelled
+          // and its result dropped.
+          .task(id: ContestFundRead(name: normalizedUsername, count: contestFundReadCount)) {
             await loadContestFund(for: normalizedUsername)
           }
         }
@@ -568,6 +578,11 @@ struct RegisterNameView: View {
           errorMessage = "Registration failed: \(error.localizedDescription)"
           showingError = true
           isRegistering = false
+          // The contest may have grown past the fund this attempt stated,
+          // which Platform refuses for a fee. Drop the shown fund and read
+          // it again, so another attempt states a fund the user has seen.
+          contestFund = .loading
+          contestFundReadCount += 1
         }
       }
     }
