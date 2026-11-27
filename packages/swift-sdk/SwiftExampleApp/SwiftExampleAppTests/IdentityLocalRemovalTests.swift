@@ -11,7 +11,8 @@ import XCTest
 /// inverse to the identity. These tests build an identity with every such
 /// child and check that `PersistentIdentity.deleteChildrenFirst` removes it
 /// without a crash, leaves a sibling identity alone, and that
-/// `IdentitiesContentView.removeIdentityLocally` only touches the Keychain
+/// `IdentitiesContentView.removeIdentityLocally` asks the running wallets
+/// first, deletes nothing when they refuse, and only touches the Keychain
 /// once the rows are gone.
 @MainActor
 final class IdentityLocalRemovalTests: XCTestCase {
@@ -94,6 +95,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
         let keysLeft = try IdentitiesContentView.removeIdentityLocally(
             doomed,
             modelContext: context,
+            removeFromLiveWallets: { _ in false },
             deleteSpecialKey: { identityId, keyType in
                 XCTAssertEqual(identityId, self.doomedId)
                 rowsLeftAtKeychainCall.append(identityRowCount())
@@ -133,6 +135,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
         let keysLeft = try IdentitiesContentView.removeIdentityLocally(
             doomed,
             modelContext: context,
+            removeFromLiveWallets: { _ in false },
             deleteSpecialKey: { _, keyType in keyType != .voting },
             deleteKeyData: { identifier in
                 identifier != "privkey_key_1" && identifier != "specialkey_voting"
@@ -155,6 +158,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
         let keysLeft = try IdentitiesContentView.removeIdentityLocally(
             doomed,
             modelContext: context,
+            removeFromLiveWallets: { _ in false },
             deleteSpecialKey: { _, _ in true },
             deleteKeyData: { _ in true },
             deleteAllForIdentity: { _, _ in throw Refused() }
@@ -164,6 +168,102 @@ final class IdentityLocalRemovalTests: XCTestCase {
         // sweep is refused, and the rows are gone either way.
         XCTAssertEqual(keysLeft, ["other private keys"])
         try assertNoRows(in: container)
+    }
+
+    func testRemoveIdentityLocallyDeletesNothingWhenTheLiveWalletsRefuse() throws {
+        struct Refused: Error {}
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let doomed = makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context)
+        doomed.votingPrivateKeyIdentifier = "specialkey_voting"
+        try context.save()
+
+        var keychainCalls = 0
+        XCTAssertThrowsError(
+            try IdentitiesContentView.removeIdentityLocally(
+                doomed,
+                modelContext: context,
+                removeFromLiveWallets: { identityId in
+                    XCTAssertEqual(identityId, self.doomedId)
+                    throw Refused()
+                },
+                deleteSpecialKey: { _, _ in keychainCalls += 1; return true },
+                deleteKeyData: { _ in keychainCalls += 1; return true },
+                deleteAllForIdentity: { _, _ in keychainCalls += 1 }
+            )
+        ) { error in
+            XCTAssertTrue((error as? IdentityLiveWalletRemovalRefused)?.reason is Refused)
+        }
+
+        XCTAssertEqual(keychainCalls, 0)
+        let fresh = ModelContext(container)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentIdentity>()), 1)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentDPNSName>()), 1)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentDashpayProfile>()), 1)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentPublicKey>()), 2)
+    }
+
+    /// A wallet that managed the identity has its rows deleted by the
+    /// persistence handler, on another context, during the removal call. The
+    /// row object the view passed in is stale by then; the Keychain cleanup
+    /// still runs from the identifiers read before the call.
+    func testRemoveIdentityLocallyCleansTheKeychainWhenTheLiveWalletRemovalDeletedTheRows() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let doomed = makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context)
+        doomed.votingPrivateKeyIdentifier = "specialkey_voting"
+        try context.save()
+        let expectedPublicKeys = doomed.publicKeys.map(\.publicKeyData)
+
+        var order: [String] = []
+        var identifierDeletes: [String] = []
+        var sweeps: [(Data, [Data])] = []
+        let keysLeft = try IdentitiesContentView.removeIdentityLocally(
+            doomed,
+            modelContext: context,
+            removeFromLiveWallets: { identityId in
+                order.append("wallets")
+                let other = ModelContext(container)
+                let row = try XCTUnwrap(PersistentIdentity.fetch(in: other, identityId: identityId))
+                try PersistentIdentity.deleteChildrenFirst(row, in: other)
+                return true
+            },
+            deleteSpecialKey: { _, _ in order.append("keychain"); return true },
+            deleteKeyData: { identifier in
+                identifierDeletes.append(identifier)
+                return true
+            },
+            deleteAllForIdentity: { identityId, publicKeys in sweeps.append((identityId, publicKeys)) }
+        )
+
+        XCTAssertEqual(keysLeft, [])
+        XCTAssertEqual(order, ["wallets", "keychain", "keychain", "keychain"])
+        XCTAssertEqual(identifierDeletes, ["privkey_key_0", "privkey_key_1", "specialkey_voting"])
+        XCTAssertEqual(sweeps.map { $0.0 }, [doomedId])
+        XCTAssertEqual(sweeps.map { Set($0.1) }, [Set(expectedPublicKeys)])
+        try assertNoRows(in: container)
+    }
+
+    func testDeleteOrphanDeletesNothingWhenTheLiveWalletsRefuse() throws {
+        struct Refused: Error {}
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let doomed = makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context)
+        try context.save()
+
+        XCTAssertThrowsError(
+            try WalletKeyHealthChecker.deleteOrphan(
+                identity: doomed,
+                modelContext: context,
+                removeFromLiveWallets: { _ in throw Refused() }
+            )
+        ) { error in
+            XCTAssertTrue((error as? IdentityLiveWalletRemovalRefused)?.reason is Refused)
+        }
+
+        let fresh = ModelContext(container)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentIdentity>()), 1)
+        XCTAssertEqual(try fresh.fetchCount(FetchDescriptor<PersistentDPNSName>()), 1)
     }
 
     /// The removal sweep deletes every format a key of the identity can be

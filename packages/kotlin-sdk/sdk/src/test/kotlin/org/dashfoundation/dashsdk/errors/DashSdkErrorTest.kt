@@ -495,7 +495,9 @@ class DashSdkErrorTest {
      */
     @Test
     fun shouldReportAnUnavailableMerkleWitnessByItsOwnCode() {
-        val detail = "shielded withdraw failed: Shielded Merkle witness unavailable: position 7"
+        val detail = "Shielded Merkle witness unavailable: no checkpoint of the commitment tree " +
+            "covers the note at position 7 yet; try again after the next shielded sync, " +
+            "which checkpoints the tree"
         val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 88, detail)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedMerkleWitnessUnavailable)
