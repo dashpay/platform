@@ -54,8 +54,9 @@ public final class PersistentCoreAddress {
     public var firstSeenHeight: UInt32
     /// SPV height of the most recent transaction touching this address.
     public var lastSeenHeight: UInt32
-    /// Cached balance in duffs from `AddressInfo.balance`. Updated by
-    /// subsequent `on_persist_account_address_pools_fn` pulses.
+    /// Unused: key-wallet keeps no per-address balance and the persistence
+    /// callbacks neither write nor read it. Kept so the store needs no
+    /// schema migration.
     public var balance: UInt64
     /// Record timestamps.
     public var createdAt: Date

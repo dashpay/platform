@@ -5783,8 +5783,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     poolTypeTag: entry.poolTypeTag,
                     addressIndex: entry.addressIndex,
                     derivationPath: entry.derivationPath,
-                    isUsed: entry.isUsed,
-                    balance: entry.balance
+                    isUsed: entry.isUsed
                 )
                 backgroundContext.insert(row)
                 roundIndex?.coreAddressesByAddress[address] = row
@@ -5796,7 +5795,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             row.addressIndex = entry.addressIndex
             row.derivationPath = entry.derivationPath
             row.isUsed = entry.isUsed
-            row.balance = entry.balance
             row.account = account
             row.lastUpdated = Date()
 
@@ -6001,7 +5999,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     addressIndex: entry.addressIndex,
                     derivationPath: entry.derivationPath,
                     isUsed: entry.isUsed,
-                    balance: entry.balance,
+                    balance: 0,
                     nonce: 0,
                     walletId: walletId
                 )
@@ -6023,9 +6021,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row.isUsed = true
             } else if row.balance == 0 && row.nonce == 0 {
                 row.isUsed = false
-            }
-            if row.balance == 0 && entry.balance != 0 {
-                row.balance = entry.balance
             }
             row.account = account
             row.walletId = walletId
@@ -6087,7 +6082,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let poolTypeTag: UInt8
         let addressIndex: UInt32
         let isUsed: Bool
-        let balance: UInt64
         let derivationPath: String
     }
 
@@ -8352,7 +8346,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 e.pool_type_tag = group.poolTypeTag
                 e.address_index = row.addressIndex
                 e.is_used = row.isUsed
-                e.balance = row.balance
                 e.address_base58 = UnsafePointer(
                     duplicateCString(row.address, allocation: allocation)
                 )
@@ -10607,7 +10600,6 @@ private func persistAccountAddressPoolsCallback(
                     poolTypeTag: entry.pool_type_tag,
                     addressIndex: entry.address_index,
                     isUsed: entry.is_used,
-                    balance: entry.balance,
                     derivationPath: derivationPath
                 ))
             }
