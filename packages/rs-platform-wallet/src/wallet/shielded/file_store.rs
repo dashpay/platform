@@ -2096,13 +2096,8 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
-        // The redrive table IS durable (unlike the rest of subwallet
-        // state), so purging the in-memory map alone would leave this
-        // wallet's rows to rehydrate stale reservations / rebroadcast
-        // state on the next open. Delete them first, scoped by
-        // wallet_id — SQL before memory, so an Err return means neither
-        // store was touched (fail-atomic) rather than a memory purge
-        // the caller can't distinguish from a no-op.
+        // Delete the durable recovery rows before clearing the in-memory state,
+        // so reopening the store cannot restore a reservation the cache forgot.
         // Three steps, each committed before the next, so a later failure
         // never keeps what an earlier one deleted: the wallet's saved spends,
         // the recipients it confirmed for its tips and its kept identity
@@ -3387,6 +3382,9 @@ mod tests {
             .keep_identity_accounts(id.wallet_id, accounts)
             .expect("keep");
         store
+            .confirm_tip_recipient(id.wallet_id, "alice", &([0x11; 32], [0x22; 43]))
+            .expect("recipient");
+        store
             .pending_conn
             .lock()
             .unwrap()
@@ -3436,12 +3434,14 @@ mod tests {
             );
             assert_eq!(count_rows(&store, "shielded_pending_spends"), 1);
             assert_eq!(count_rows(&store, "shielded_identity_accounts"), 1);
+            assert_eq!(count_rows(&store, "shielded_tip_recipients"), 1);
 
             assert!(store.purge_wallet(id.wallet_id).is_err());
             assert!(store.pending_redrives(id).expect("redrives").is_empty());
             assert_eq!(store.kept_identity_accounts().get(&id.wallet_id), None);
             assert_eq!(count_rows(&store, "shielded_pending_spends"), 0);
             assert_eq!(count_rows(&store, "shielded_identity_accounts"), 0);
+            assert_eq!(count_rows(&store, "shielded_tip_recipients"), 0);
         }
         let _ = std::fs::remove_file(&path);
     }
@@ -3472,6 +3472,7 @@ mod tests {
         for table in [
             "shielded_pending_spends",
             "shielded_identity_accounts",
+            "shielded_tip_recipients",
             "shielded_token_pool_notes",
         ] {
             let rows: i64 = conn
