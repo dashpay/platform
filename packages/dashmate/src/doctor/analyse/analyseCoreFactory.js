@@ -17,7 +17,7 @@ export default function analyseCoreFactory() {
     // Core is synced
     const masternodeSyncStatus = samples.getServiceInfo('core', 'masternodeSyncStatus');
 
-    if (masternodeSyncStatus?.IsSynced === false) {
+    if (masternodeSyncStatus?.IsBlockchainSynced === false) {
       const blockchainInfo = samples.getServiceInfo('core', 'blockchainInfo');
       const verificationProgress = blockchainInfo?.verificationprogress ?? 0;
 
@@ -25,6 +25,16 @@ export default function analyseCoreFactory() {
         'Core is syncing blockchain data. Some node services may be temporarily unresponsive',
         chalk`Sync is ${(verificationProgress * 100).toFixed(1)}% complete. Please wait until Core is fully synced`,
         SEVERITY.MEDIUM,
+      );
+
+      problems.push(problem);
+    } else if (masternodeSyncStatus?.IsSynced === false) {
+      // Once the blocks are in, Core only has governance data left to fetch
+      // before it reports itself synced.
+      const problem = new Problem(
+        'Core has synced the blockchain and is now syncing governance data',
+        'Please wait until Core finishes syncing governance data',
+        SEVERITY.LOW,
       );
 
       problems.push(problem);

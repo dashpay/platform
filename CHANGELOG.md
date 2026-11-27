@@ -10,6 +10,59 @@
   `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
   instead of a borrowed, non-`'static` prover.
 
+## [5.1.0](https://github.com/dashpay/platform/compare/v5.1.0-rc.2...v5.1.0) (2026-11-26)
+
+
+### Build System
+
+* **dashmate:** upgrade Tenderdash to the 2.0 release line ([#6331](https://github.com/dashpay/platform/issues/6331))
+
+
+### Miscellaneous Chores
+
+* pin GroveDB and rust-dashcore by release tag ([#6332](https://github.com/dashpay/platform/issues/6332))
+
+
+### Continuous Integration
+
+* **release:** sign and notarize the macOS installer sooner ([#6329](https://github.com/dashpay/platform/issues/6329))
+
+
+### Documentation
+
+* **dashmate:** install and update the deb from Dash's apt repository ([#6338](https://github.com/dashpay/platform/issues/6338))
+
+## [5.1.0-rc.2](https://github.com/dashpay/platform/compare/v5.1.0-rc.1...v5.1.0-rc.2) (2026-11-26)
+
+
+### Features
+
+* **dashmate:** ship the apt repository's source file and keyring in the deb ([#6267](https://github.com/dashpay/platform/issues/6267))
+
+
+### Bug Fixes
+
+* **dashmate:** move every Core 23 image of dashpay/dashd to Core 24 ([#6209](https://github.com/dashpay/platform/issues/6209))
+* **dashmate:** redact container environment and known secrets in the doctor report ([#6316](https://github.com/dashpay/platform/issues/6316))
+* **dashmate:** refuse to overwrite a config a newer dashmate migrated ([#6301](https://github.com/dashpay/platform/issues/6301))
+
+
+### Miscellaneous Chores
+
+* add the qa-fix-loop skill for device QA, fix threads and retests ([#6279](https://github.com/dashpay/platform/issues/6279))
+
+
+### Continuous Integration
+
+* **dashmate:** ask the apt publisher to publish a release's debs ([#6289](https://github.com/dashpay/platform/issues/6289))
+* let QuantumExplorer sign dashmate release checksums ([#6274](https://github.com/dashpay/platform/issues/6274))
+
+
+### Documentation
+
+* **dashmate:** describe updating a Debian package installation ([#6210](https://github.com/dashpay/platform/issues/6210))
+* **dashmate:** drop the Platform reset from major updates ([#6315](https://github.com/dashpay/platform/issues/6315))
+
 ## [5.1.0-rc.1](https://github.com/dashpay/platform/compare/v5.1.0-dev.4...v5.1.0-rc.1) (2026-11-24)
 
 
@@ -3909,7 +3962,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 * source shielded minimum-fee from compute_minimum_shielded_fee ([#3829](https://github.com/dashpay/platform/issues/3829))
 * **wallet-storage:** add missing wallet_group_id in test initializers ([#3833](https://github.com/dashpay/platform/issues/3833))
 
-## [4.0.0-beta.4](///compare/v4.0.0-beta.3...v4.0.0-beta.4) (2026-06-09)
+## [4.0.0-beta.4](https://github.com/dashpay/platform/compare/v4.0.0-beta.3...v4.0.0-beta.4) (2026-06-09)
 
 
 ### ⚠ BREAKING CHANGES
@@ -3956,7 +4009,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 * **platform-version:** gate shielded-pool block methods to protocol v12 ([#3782](https://github.com/dashpay/platform/issues/3782))
 
-## [4.0.0-beta.1](///compare/v3.1.0-dev.8...v4.0.0-beta.1) (2026-06-02)
+## [4.0.0-beta.1](https://github.com/dashpay/platform/compare/v3.1.0-dev.8...v4.0.0-beta.1) (2026-06-02)
 
 
 ### Features

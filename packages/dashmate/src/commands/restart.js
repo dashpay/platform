@@ -3,6 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
+import printUnwrapped from '../oclif/errors/printUnwrapped.js';
 
 export default class RestartCommand extends ConfigBaseCommand {
   static description = 'Restart node';
@@ -20,6 +21,7 @@ export default class RestartCommand extends ConfigBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {restartNodeTask} restartNodeTask
    * @param {Config} config
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -33,7 +35,16 @@ export default class RestartCommand extends ConfigBaseCommand {
     dockerCompose,
     restartNodeTask,
     config,
+    assertPlatformCanStart,
   ) {
+    // Before the node is stopped: a restart that cannot start again would
+    // leave it down.
+    try {
+      await assertPlatformCanStart(config);
+    } catch (e) {
+      throw printUnwrapped(e);
+    }
+
     const tasks = new Listr(
       [
         {

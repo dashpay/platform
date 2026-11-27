@@ -13,14 +13,14 @@
 //! dropped spend all move the signal, and the comparison decides whether the
 //! host hears about it.
 //!
-//! The read waits for the store rather than giving up: a scan holds the store
-//! write lock for its whole download, and the update comes out once the scan
-//! releases it, whatever the scan's outcome. The read takes the locks in the
+//! The read waits for the store rather than giving up: a writer (a scan's
+//! append or commit, a spend) holds the store write lock, and the update
+//! comes out once it releases it, whatever the writer's outcome. The read takes the locks in the
 //! documented order (`lifecycle` -> `store`) and releases them before the sink
 //! runs, so the emitter never holds a lock across a host callback and cannot
 //! deadlock with Clear, unregister or a bind. Each pass reads the wallets that
 //! are no longer registered first: their `Unbound` needs no store read, so it
-//! is not held up behind a bound wallet's read while a scan holds the store.
+//! is not held up behind a bound wallet's read while a writer holds the store.
 //!
 //! A ledger the read cannot sum (one account's stored notes past `u64`) is
 //! delivered as [`ShieldedLocalBalanceState::RestoreIncomplete`]: not an

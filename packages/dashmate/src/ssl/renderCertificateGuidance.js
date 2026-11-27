@@ -3,6 +3,8 @@ import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
 import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from './renewalGuidance.js';
 import renderObtainCommand from './renderObtainCommand.js';
+import renderGatewayRestartCommand from './renderGatewayRestartCommand.js';
+import { RENEWAL_FAILURE_CODES } from './renewal-failure.js';
 
 /**
  * Faults in the files themselves. The gateway is handed the pair as-is, so any
@@ -133,7 +135,7 @@ function renderSwitchIncompleteGuidance(config, cfg) {
   then load the certificate that is already there:
 
       dashmate config set ${cfg} platform.gateway.ssl.provider letsencrypt
-      dashmate restart ${cfg} --platform
+      ${renderGatewayRestartCommand(config)}
 `;
 }
 
@@ -211,6 +213,18 @@ function renderWithheldObtain(cfg, renewal) {
     return `  An earlier attempt may already have been issued a certificate without dashmate
   seeing it, so asking again could spend a second one. Check whether one
   arrived first:
+
+      dashmate doctor ${cfg}
+`;
+  }
+
+  // Refused before an issuance task existed, so nothing was asked of the
+  // authority and nothing about a request can be claimed either way.
+  if (renewal.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED) {
+    return `  On its last attempt the dashmate helper refused to save over the newer
+  configuration before it asked for a certificate, so none was requested. Use
+  the newer dashmate for every dashmate command on this node, and check the
+  certificate here before obtaining one:
 
       dashmate doctor ${cfg}
 `;

@@ -1,0 +1,15 @@
+{
+  "chain": "regtest",
+  "blocks": 1306,
+  "headers": 1306,
+  "bestblockhash": "63f33aeb6865c53c5ff3f1709deb4d120a4e0504de3d656296b45a731d59f66b",
+  "difficulty": 4.656542373906925e-10,
+  "time": 1795676389,
+  "mediantime": 1795676388,
+  "verificationprogress": 1,
+  "initialblockdownload": false,
+  "chainwork": "0000000000000000000000000000000000000000000000000000000000000a36",
+  "size_on_disk": 1023607,
+  "pruned": false,
+  "warnings": "Make sure to encrypt your wallet and delete all non-encrypted backups after you have verified that the wallet works!"
+}

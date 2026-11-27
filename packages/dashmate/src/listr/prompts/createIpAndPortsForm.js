@@ -1,5 +1,5 @@
 import { publicIpv4 } from 'public-ip';
-import validatePort from './validators/validatePort.js';
+import createPortValidators from './validators/createPortValidators.js';
 import validateIPv4 from './validators/validateIPv4.js';
 import { PRESET_MAINNET } from '../../constants.js';
 import wait from '../../util/wait.js';
@@ -17,42 +17,11 @@ export default function createIpAndPortsFormFactory(defaultConfigs) {
    * @returns {Object}
    */
   async function createIpAndPortsForm(network, options = {}) {
-    const mainnetCfg = defaultConfigs.get(PRESET_MAINNET);
-
-    function validateCoreP2PPort(value) {
-      if (!validatePort(value)) {
-        return false;
-      }
-
-      if (network !== PRESET_MAINNET
-        && value === mainnetCfg.get('core.p2p.port').toString()) {
-        return false;
-      }
-
-      return true;
-    }
-
-    function validatePlatformP2PPort(value) {
-      if (!validatePort(value)) {
-        return false;
-      }
-
-      if (network !== PRESET_MAINNET
-        && value === mainnetCfg.get('platform.drive.tenderdash.p2p.port').toString()) {
-        return 'this port is reserved for mainnet';
-      }
-
-      return true;
-    }
-
-    function validatePlatformHTTPPort(value) {
-      if (network !== PRESET_MAINNET
-        && value === mainnetCfg.get('platform.drive.tenderdash.p2p.port').toString()) {
-        return 'this port is reserved for mainnet';
-      }
-
-      return validatePort(value);
-    }
+    const {
+      validateCoreP2PPort,
+      validatePlatformP2PPort,
+      validatePlatformHTTPPort,
+    } = createPortValidators(defaultConfigs, network);
 
     let { initialIp } = options;
     if (initialIp === null || initialIp === undefined) {

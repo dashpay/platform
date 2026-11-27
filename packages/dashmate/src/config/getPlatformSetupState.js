@@ -1,0 +1,365 @@
+import renderConfigFlag from '../util/renderConfigFlag.js';
+import quoteShellArgument, { isShellQuotable } from '../util/quoteShellArgument.js';
+import renderNodeKeyBackup, { NODE_KEY_PATH } from './renderNodeKeyBackup.js';
+
+export const PLATFORM_SETUP_STATE = {
+  CORE_NOT_SET_UP: 'CORE_NOT_SET_UP',
+  ZEROSSL_INTERRUPTED: 'ZEROSSL_INTERRUPTED',
+  PLATFORM_CONFIGURED: 'PLATFORM_CONFIGURED',
+  PLATFORM_UNCONFIGURED: 'PLATFORM_UNCONFIGURED',
+};
+
+const VOLUME_MARKER_PREFIX = 'Docker volume ';
+
+const PRESET_NAMES = ['mainnet', 'testnet'];
+
+/**
+ * Whether the Core part of a config was set up
+ *
+ * Positive evidence only. Every preset is written to config.json on the first
+ * run, and migrations change untouched presets too, so differing from the
+ * defaults proves nothing. Setup always replaces the placeholder RPC passwords;
+ * the dashmate user is the one checked because migrations added the other
+ * users later with the placeholder.
+ *
+ * @param {Config} config
+ * @param {Config} [defaultConfig] - the preset's defaults, when it has them
+ * @return {boolean}
+ */
+function isCoreSetUp(config, defaultConfig) {
+  if (defaultConfig) {
+    if (config.get('network') !== defaultConfig.get('network')) {
+      return false;
+    }
+
+    const passwordPath = 'core.rpc.users.dashmate.password';
+    if (config.get(passwordPath) === defaultConfig.get(passwordPath)) {
+      return false;
+    }
+  }
+
+  if (config.get('core.masternode.enable')) {
+    return config.get('core.masternode.operator.privateKey') !== null
+      && config.get('externalIp') !== null;
+  }
+
+  return true;
+}
+
+/**
+ * Where the Platform part of a config stands, for a Platform-only setup and
+ * the commands that need it done
+ *
+ * "Unconfigured" is decided by what setup itself writes and by what a Platform
+ * that ran leaves behind, not by equality with the defaults. Setup does not own
+ * options such as image pins or log levels, so they are not compared: they
+ * change for reasons of their own and would refuse untouched configs, while a
+ * certificate installed by hand would pass.
+ *
+ * A fullnode's key does not count: the reset generates one straight away, and
+ * nothing registers it.
+ *
+ * @typedef {function} getPlatformSetupState
+ * @param {Config} config
+ * @param {Object} [options]
+ * @param {Config} [options.defaultConfig] - the preset's defaults
+ * @param {string[]} [options.certificateFiles] - gateway certificate files found
+ * @param {string[]} [options.dataVolumes] - Platform data volumes that exist
+ * @param {{ isUsable: boolean, directories: string[] }} [options.certificate] -
+ *  the gateway certificate files, by `inspectCertificateFiles`
+ * @return {{ state: string, markers: string[] }} markers are option paths,
+ *  file paths and volumes, never values
+ */
+export default function getPlatformSetupState(config, {
+  defaultConfig,
+  certificateFiles = [],
+  dataVolumes = [],
+  certificate = { isUsable: false, directories: [] },
+} = {}) {
+  if (!isCoreSetUp(config, defaultConfig)) {
+    return { state: PLATFORM_SETUP_STATE.CORE_NOT_SET_UP, markers: [] };
+  }
+
+  const key = config.get('platform.drive.tenderdash.node.key');
+  const ssl = config.get('platform.gateway.ssl');
+  const zeroSsl = ssl.providerConfigs.zerossl;
+
+  // ZeroSSL saves every answer as soon as it creates a certificate. If the
+  // run stops before it ends, the answers stay and TLS stays off. Whether
+  // the gateway can serve the files on disk is one half of how to finish;
+  // whether ZeroSSL can send the certificate again is the other
+  // (addReusableZeroSslCertificate).
+  if (ssl.provider === 'zerossl' && zeroSsl.id !== null && ssl.enabled === false && key !== null) {
+    return {
+      state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
+      markers: certificateFiles,
+      certificateId: zeroSsl.id,
+      isCertificateInstalled: certificate.isUsable,
+      certificateDirectories: certificate.directories,
+    };
+  }
+
+  const markers = [];
+
+  if (config.get('core.masternode.enable') && key !== null) {
+    markers.push(NODE_KEY_PATH);
+  }
+
+  if (ssl.enabled) {
+    markers.push('platform.gateway.ssl.enabled');
+  }
+
+  if (zeroSsl.apiKey !== null) {
+    markers.push('platform.gateway.ssl.providerConfigs.zerossl.apiKey');
+  }
+
+  if (zeroSsl.id !== null) {
+    markers.push('platform.gateway.ssl.providerConfigs.zerossl.id');
+  }
+
+  markers.push(...certificateFiles);
+  markers.push(...dataVolumes.map((name) => `${VOLUME_MARKER_PREFIX}${name}`));
+
+  return {
+    state: markers.length > 0
+      ? PLATFORM_SETUP_STATE.PLATFORM_CONFIGURED
+      : PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED,
+    markers,
+  };
+}
+
+/**
+ * Add whether ZeroSSL can still install the certificate an interrupted setup
+ * saved, when the advice depends on it
+ *
+ * Only an interrupted ZeroSSL setup whose certificate the gateway cannot
+ * serve depends on it, and ZeroSSL is asked only then.
+ *
+ * @param {Object} setupState - by getPlatformSetupState
+ * @param {Config} config
+ * @param {findReusableZeroSslCertificate} findReusableZeroSslCertificate
+ * @return {Promise<Object>} the state, with `reusableCertificate` when asked
+ */
+export async function addReusableZeroSslCertificate(
+  setupState,
+  config,
+  findReusableZeroSslCertificate,
+) {
+  if (setupState.state !== PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED
+    || setupState.isCertificateInstalled) {
+    return setupState;
+  }
+
+  return {
+    ...setupState,
+    reusableCertificate: await findReusableZeroSslCertificate(config),
+  };
+}
+
+/**
+ * How to finish an interrupted ZeroSSL setup whose certificate the gateway
+ * cannot serve
+ *
+ * Whether ZeroSSL can still send the certificate decides it. Only when it
+ * cannot is a new certificate requested, and when ZeroSSL could not be asked
+ * a plain obtain decides by the same validation.
+ *
+ * @param {string} configName
+ * @param {string} certificateId
+ * @param {{ isReusable: boolean|null, status: string|null, reason: string|null }}
+ *  [reusableCertificate] - by findReusableZeroSslCertificate; not known when absent
+ * @return {string[]}
+ */
+function describeUninstalledZeroSslCertificate(configName, certificateId, reusableCertificate) {
+  const flag = renderConfigFlag(configName);
+  const { isReusable = null, status = null, reason = null } = reusableCertificate ?? {};
+
+  const ending = [
+    `then continue with 'dashmate update ${flag}' and start the node.`,
+    'Do not reset Platform in between: that removes the certificate ID and the API key from',
+    'the config.',
+  ];
+
+  if (isReusable === true && status === 'issued') {
+    return [
+      `An earlier Platform setup of ${configName} stopped after ZeroSSL issued its certificate`,
+      `${certificateId}, before the certificate was installed. Its answers and the certificate's`,
+      'private key were saved, so it can be installed without a new one:',
+      `  dashmate ssl obtain ${flag}    (downloads it again)`,
+      ...ending,
+    ];
+  }
+
+  if (isReusable === true) {
+    return [
+      `An earlier Platform setup of ${configName} stopped while ZeroSSL validated its certificate`,
+      `${certificateId}. Its answers and the certificate's private key were saved, so the`,
+      'certificate can be finished without a new one:',
+      '  1. open inbound TCP port 80 to this node',
+      `  2. dashmate ssl obtain ${flag}`,
+      ...ending,
+    ];
+  }
+
+  if (isReusable === null) {
+    return [
+      `An earlier Platform setup of ${configName} stopped after it created ZeroSSL certificate`,
+      `${certificateId}, before the certificate was installed. Its answers were saved. dashmate`,
+      `could not ask ZeroSSL whether that certificate can still be installed${reason ? `: ${reason}` : ''}.`,
+      'To finish the setup:',
+      '  1. open inbound TCP port 80 to this node',
+      `  2. dashmate ssl obtain ${flag}`,
+      '     It installs the certificate if ZeroSSL issued it or still validates it, and',
+      '     otherwise asks for a new one or names the command that does.',
+      ...ending,
+    ];
+  }
+
+  return [
+    `An earlier Platform setup of ${configName} stopped after it created a ZeroSSL certificate`,
+    'and before the certificate was installed. Its answers were saved, but that certificate',
+    `cannot be completed${reason ? `: ${reason}` : ''}. To finish the setup:`,
+    '  1. open inbound TCP port 80 to this node',
+    `  2. dashmate ssl obtain --force ${flag}    (creates a new certificate)`,
+    `  3. cancel certificate ${certificateId} in the ZeroSSL dashboard, or revoke it if it`,
+    '     was issued',
+    `then continue with 'dashmate update ${flag}' and start the node.`,
+    `('dashmate ssl cleanup ${flag}' would cancel every unfinished certificate of the`,
+    'API key\'s account, other nodes\' included.) Do not reset Platform in between: that',
+    'removes the certificate ID and the API key from the config.',
+  ];
+}
+
+/**
+ * What the state means for the operator and what to run
+ *
+ * @param {{
+ *   state: string,
+ *   markers: string[],
+ *   certificateId?: string,
+ *   isCertificateInstalled?: boolean,
+ *   certificateDirectories?: string[],
+ *   reusableCertificate?: Object,
+ * }} setupState
+ * @param {string} configName
+ * @return {string}
+ */
+export function describePlatformSetupState({
+  state,
+  markers,
+  certificateId,
+  isCertificateInstalled,
+  certificateDirectories = [],
+  reusableCertificate,
+}, configName) {
+  const flag = renderConfigFlag(configName);
+  const setupCommand = `dashmate setup --platform ${flag}`;
+
+  switch (state) {
+    case PLATFORM_SETUP_STATE.CORE_NOT_SET_UP:
+      if (!PRESET_NAMES.includes(configName)) {
+        return `The Core part of ${configName} is not set up: a masternode needs`
+          + ' core.masternode.operator.privateKey and externalIp.';
+      }
+
+      return [
+        `Preset ${configName} is not set up yet. Set the whole node up with:`,
+        `  dashmate setup ${configName}`,
+      ].join('\n');
+
+    case PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED: {
+      if (isCertificateInstalled) {
+        return [
+          `An earlier Platform setup of ${configName} stopped after ZeroSSL issued its certificate`,
+          'and the certificate was installed. Its answers were saved. To finish the setup:',
+          `  dashmate ssl obtain ${flag}`,
+          `then continue with 'dashmate update ${flag}' and start the node.`,
+        ].join('\n');
+      }
+
+      // Compose creates a missing bind-mount source as a directory, and ssl
+      // obtain cannot write a file over one.
+      const removeDirectories = certificateDirectories.length === 0 ? [] : [
+        'Docker created directories where the gateway\'s certificate files go, as it does for a'
+          + ' file it mounts that is missing. Remove them first:',
+        ...certificateDirectories.map((directory) => (isShellQuotable(directory)
+          ? `  rmdir ${quoteShellArgument(directory)}`
+          : `  rmdir ${JSON.stringify(directory)}    (escaped, not to paste)`)),
+      ];
+
+      return [
+        ...removeDirectories,
+        ...describeUninstalledZeroSslCertificate(configName, certificateId, reusableCertificate),
+      ].join('\n');
+    }
+
+    case PLATFORM_SETUP_STATE.PLATFORM_CONFIGURED: {
+      const options = markers.filter((marker) => marker.startsWith('platform.'));
+      const volumes = markers.filter((marker) => marker.startsWith(VOLUME_MARKER_PREFIX));
+      const files = markers.filter((marker) => !options.includes(marker) && !volumes.includes(marker));
+
+      const lines = [
+        `Platform of ${configName} was configured before:`,
+        ...markers.map((marker) => `  ${marker}`),
+      ];
+
+      if (options.length > 0) {
+        lines.push(
+          `To change single options, use 'dashmate config set <option> <value> ${flag}'.`,
+          'To start Platform over instead:',
+        );
+
+        // Only a masternode's key counts as configuration, and it is the one
+        // the registration names. A backup line without a key would write
+        // "null" into the backup.
+        const keyBackup = markers.includes(NODE_KEY_PATH)
+          ? renderNodeKeyBackup(configName)
+          : null;
+
+        if (keyBackup) {
+          lines.push(
+            '  back the node key up, into a new directory only you can open:',
+            `    ${keyBackup.backupCommand}`,
+          );
+        }
+
+        lines.push(
+          `  dashmate stop --platform ${flag}    (if Platform is running)`,
+          `  dashmate reset --platform --hard ${flag}`,
+          `  ${keyBackup ? keyBackup.setupCommand : setupCommand}`,
+        );
+
+        return lines.join('\n');
+      }
+
+      if (files.length > 0) {
+        lines.push(
+          'No Platform option refers to these files. If an earlier Platform setup installed them',
+          'and then failed, remove them:',
+          ...files.map((file) => `  rm '${file}'`),
+        );
+      }
+
+      if (volumes.length > 0) {
+        lines.push(
+          'Platform data from before is still there (a reset with --keep-data keeps it).',
+          'Remove it with:',
+          `  dashmate reset --platform ${flag}`,
+        );
+      }
+
+      lines.push(`Then set Platform up with:\n  ${setupCommand}`);
+
+      return lines.join('\n');
+    }
+
+    case PLATFORM_SETUP_STATE.PLATFORM_UNCONFIGURED:
+      return [
+        `Platform of ${configName} is not set up. Set it up with:`,
+        `  ${setupCommand}`,
+      ].join('\n');
+
+    default:
+      throw new Error(`Unknown Platform setup state ${state}`);
+  }
+}

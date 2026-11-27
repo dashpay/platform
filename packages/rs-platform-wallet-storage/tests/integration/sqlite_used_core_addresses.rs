@@ -772,7 +772,9 @@ fn should_restore_funding_rows_stored_without_a_public_key() {
     let mut restored = state.wallets[&w].wallet_info.clone();
     let pool = unbound_top_up_pool(&mut restored);
     assert!(pool.addresses()[&1].is_used());
-    assert!(!pool.addresses()[&0].is_used());
+    // No row restored index 0, below the highest stored row: the shared
+    // restore keeps such an address ineligible, as a lost row (#6035).
+    assert!(pool.addresses()[&0].is_used());
     let past = &pool.addresses()[&window];
     assert_eq!(past.address, expected[window as usize].address);
     assert_eq!(past.path, expected[window as usize].path);

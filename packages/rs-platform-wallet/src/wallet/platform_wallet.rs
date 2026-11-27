@@ -1630,7 +1630,7 @@ impl PlatformWallet {
         // and watermark. A re-bind racing an in-flight sync pass
         // therefore cannot wipe the pass's results (an
         // unregister-then-register cycle here would purge the whole
-        // wallet behind the pass's store lock and then restore a
+        // wallet — superseding the pass — and then restore a
         // pre-pass snapshot — the "note discovered by sync is
         // unspendable until app restart" / "every pass rescans from
         // 0" failure). Registration also runs BEFORE the restore so
@@ -2393,6 +2393,76 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        self.shielded_transfer_to_with_plan(
+            coordinator,
+            seed,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+            None,
+        )
+        .await
+    }
+
+    /// Plan a shielded spend of `kind` from `account`'s notes: the notes the
+    /// spend would select now, their exact fee, the amount and what leaves the
+    /// pool. Nothing is reserved. Pass the plan's
+    /// [`digest`](super::shielded::note_selection::ShieldedSpendPlan::digest)
+    /// to the spend's `_with_plan` variant (for example
+    /// [`shielded_transfer_to_with_plan`](Self::shielded_transfer_to_with_plan))
+    /// to run exactly that selection, or have it refused with
+    /// [`PlatformWalletError::ShieldedPlanChanged`] when the notes moved.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_plan_spend(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account: u32,
+        kind: super::shielded::note_selection::ShieldedSpendKind,
+        amount: super::shielded::note_selection::ShieldedSpendAmount,
+    ) -> Result<super::shielded::note_selection::ShieldedSpendPlan, PlatformWalletError> {
+        let bound = self
+            .shielded_keys
+            .read()
+            .await
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?
+            .contains_key(&account);
+        if !bound {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                "shielded account {account} not bound"
+            )));
+        }
+        super::shielded::operations::plan_spend(
+            &self.sdk,
+            coordinator.store(),
+            self.wallet_id,
+            account,
+            kind,
+            amount,
+        )
+        .await
+    }
+
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to) against a plan
+    /// from [`shielded_plan_spend`](Self::shielded_plan_spend): with
+    /// `expected_plan`, a selection that no longer matches it is refused with
+    /// [`PlatformWalletError::ShieldedPlanChanged`] before anything is
+    /// reserved or built.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_transfer_to_with_plan<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+        expected_plan: Option<&[u8; 32]>,
+    ) -> Result<(), PlatformWalletError> {
         // Held until the transfer has settled: a removal of the wallet waits
         // for it and a Clear does not purge the store under it.
         let _admission = self.admit_shielded_spend(coordinator).await?;
@@ -2405,6 +2475,7 @@ impl PlatformWallet {
             amount,
             memo,
             prover,
+            expected_plan,
             || async { Ok(()) },
         )
         .await
@@ -2430,6 +2501,7 @@ impl PlatformWallet {
         amount: u64,
         memo: [u8; 36],
         prover: P,
+        expected_plan: Option<&[u8; 32]>,
         once_claimed: C,
     ) -> Result<(), PlatformWalletError>
     where
@@ -2457,6 +2529,7 @@ impl PlatformWallet {
             amount,
             memo,
             &prover,
+            expected_plan,
             once_claimed,
         )
         .await
@@ -2490,6 +2563,34 @@ impl PlatformWallet {
         amount: u64,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        self.shielded_unshield_to_with_plan(
+            coordinator,
+            seed,
+            account,
+            to_platform_addr_bech32m,
+            amount,
+            prover,
+            None,
+        )
+        .await
+    }
+
+    /// [`shielded_unshield_to`](Self::shielded_unshield_to) against a plan,
+    /// refused as
+    /// [`shielded_transfer_to_with_plan`](Self::shielded_transfer_to_with_plan)
+    /// is when it moved.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_unshield_to_with_plan<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        to_platform_addr_bech32m: &str,
+        amount: u64,
+        prover: P,
+        expected_plan: Option<&[u8; 32]>,
+    ) -> Result<(), PlatformWalletError> {
         // Held until the unshield has settled, as the transfer holds it.
         let _admission = self.admit_shielded_spend(coordinator).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
@@ -2500,7 +2601,7 @@ impl PlatformWallet {
             .map_err(|e| {
                 PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}"))
             })?;
-        super::shielded::operations::unshield(
+        super::shielded::operations::unshield_with_plan(
             &self.sdk,
             coordinator.store(),
             coordinator.anchor_cache(),
@@ -2511,6 +2612,7 @@ impl PlatformWallet {
             &to,
             amount,
             &prover,
+            expected_plan,
         )
         .await
     }
@@ -2542,6 +2644,36 @@ impl PlatformWallet {
         amount: u64,
         prover: P,
     ) -> Result<Option<Credits>, PlatformWalletError> {
+        self.shielded_identity_top_up_from_pool_with_plan(
+            coordinator,
+            seed,
+            account,
+            identity_id,
+            amount,
+            prover,
+            None,
+        )
+        .await
+    }
+
+    /// [`shielded_identity_top_up_from_pool`](Self::shielded_identity_top_up_from_pool)
+    /// against a plan, refused as
+    /// [`shielded_transfer_to_with_plan`](Self::shielded_transfer_to_with_plan)
+    /// is when it moved.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_identity_top_up_from_pool_with_plan<
+        P: dpp::shielded::builder::OrchardProver,
+    >(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        prover: P,
+        expected_plan: Option<&[u8; 32]>,
+    ) -> Result<Option<Credits>, PlatformWalletError> {
         // A zero amount must not queue behind a long-running shielded operation.
         ensure_positive_amount(amount)?;
 
@@ -2570,6 +2702,7 @@ impl PlatformWallet {
                 *identity_id,
                 amount,
                 &prover,
+                expected_plan,
             )
             .await?;
 
@@ -3327,6 +3460,36 @@ impl PlatformWallet {
         core_fee_per_byte: u32,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        self.shielded_withdraw_to_with_plan(
+            coordinator,
+            seed,
+            account,
+            to_core_address,
+            amount,
+            core_fee_per_byte,
+            prover,
+            None,
+        )
+        .await
+    }
+
+    /// [`shielded_withdraw_to`](Self::shielded_withdraw_to) against a plan,
+    /// refused as
+    /// [`shielded_transfer_to_with_plan`](Self::shielded_transfer_to_with_plan)
+    /// is when it moved.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_withdraw_to_with_plan<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        to_core_address: &str,
+        amount: u64,
+        core_fee_per_byte: u32,
+        prover: P,
+        expected_plan: Option<&[u8; 32]>,
+    ) -> Result<(), PlatformWalletError> {
         // Held until the withdrawal has settled, as the transfer holds it.
         let _admission = self.admit_shielded_spend(coordinator).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
@@ -3342,7 +3505,7 @@ impl PlatformWallet {
                     "core address network mismatch: {e}"
                 ))
             })?;
-        super::shielded::operations::withdraw(
+        super::shielded::operations::withdraw_with_plan(
             &self.sdk,
             coordinator.store(),
             coordinator.anchor_cache(),
@@ -3354,6 +3517,7 @@ impl PlatformWallet {
             amount,
             core_fee_per_byte,
             &prover,
+            expected_plan,
         )
         .await
     }
@@ -5055,6 +5219,7 @@ mod private_contact_request_redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         }
     }

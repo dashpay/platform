@@ -823,6 +823,28 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
 
+    /// Maps `PlatformWalletError::ShieldedPlanChanged`: a shielded spend run
+    /// against a plan (`platform_wallet_manager_shielded_plan_spend`, then a
+    /// `_with_plan` spend export) selected different notes or a different fee
+    /// than the plan, as the wallet's notes changed since (a sync added or
+    /// spent one, or another spend reserved one), or it is priced at another
+    /// protocol version than the plan. Nothing is built or broadcast and no
+    /// note stays reserved. Plan again and have the new fee confirmed.
+    ErrorShieldedPlanChanged = 77,
+
+    /// Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's
+    /// notes cover a shielded spend (or its plan) only with more notes than
+    /// one shielded transition can spend (`max_shielded_actions_per_transition`).
+    /// Nothing was reserved, built or broadcast. A smaller amount fits, or the
+    /// notes can be merged first.
+    ErrorShieldedSpendTooManyNotes = 78,
+
+    /// Maps `PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`: a
+    /// shielded withdrawal (or its plan) reserves an amount for Core below the
+    /// protocol minimum for its Core fee rate or above the maximum. Nothing was
+    /// reserved, built or broadcast. Another amount fits.
+    ErrorShieldedWithdrawalAmountOutOfRange = 79,
+
     /// Maps `PlatformWalletError::IdentityLookupFailed`: Platform could not be
     /// asked for an identity the operation names (a transport or proof
     /// failure of the lookup, not Platform's answer that the identity does not
@@ -833,6 +855,17 @@ pub enum PlatformWalletFFIResultCode {
     /// signing): the top-up of any identity and the deprecated external and
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
+
+    /// Maps `PlatformWalletError::NetworkProtocolVersionUnsupported`: the
+    /// network runs a protocol version this SDK has no tables for, so a
+    /// shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan, cannot be priced (private document create does not
+    /// check it). Nothing was built or broadcast and no note stays reserved:
+    /// a version verified before the spend refuses it before any note is
+    /// reserved or the network asked, and one the spend learns from its anchor
+    /// fetch releases its notes. Retrying does not help: the host asks the user to update
+    /// the app.
+    ErrorNetworkProtocolVersionUnsupported = 81,
 
     /// Maps `PlatformWalletError::BalanceHistoryInconsistentHeights`: the
     /// balance history read kept getting one page of Platform's address
@@ -1310,6 +1343,18 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+            }
+            PlatformWalletError::ShieldedPlanChanged { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedPlanChanged
+            }
+            PlatformWalletError::ShieldedSpendTooManyNotes { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedSpendTooManyNotes
+            }
+            PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedWithdrawalAmountOutOfRange
+            }
+            PlatformWalletError::NetworkProtocolVersionUnsupported { .. } => {
+                PlatformWalletFFIResultCode::ErrorNetworkProtocolVersionUnsupported
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code

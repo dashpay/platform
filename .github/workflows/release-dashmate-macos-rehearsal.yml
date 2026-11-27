@@ -17,7 +17,7 @@ permissions:
 jobs:
   rehearse:
     name: Sign and notarize without publishing
-    # The image of the macOS leg of release-dashmate-packages in release.yml.
+    # The image of the release-dashmate-macos job in release.yml.
     runs-on: macos-15
     timeout-minutes: 180
     steps:
