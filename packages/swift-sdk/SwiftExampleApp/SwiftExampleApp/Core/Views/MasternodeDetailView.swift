@@ -34,6 +34,12 @@ struct MasternodeDetailView: View {
     @State private var withdrawalKeys: MasternodeWithdrawalKeys?
     @State private var withdrawalKeysError: String?
 
+    /// proTxHashes (display hex) of the masternodes that vote with this
+    /// node's voting key, as the SDK lookup returned them. `nil` until asked.
+    @State private var votingKeyMasternodes: [String]?
+    @State private var votingKeyMasternodesError: String?
+    @State private var loadingVotingKeyMasternodes = false
+
     /// ~0.005 DASH fee headroom kept back from a max claim, in credits.
     private static let claimFeeHeadroomCredits: UInt64 = 500_000_000
 
@@ -116,6 +122,43 @@ struct MasternodeDetailView: View {
                 }
                 if let votingHash = masternode.votingKeyHashHex {
                     MasternodeCopyRow(label: "Voting Key Hash", value: votingHash)
+                }
+                if let votingKeyId = masternode.votingKeyHash {
+                    Button {
+                        Task { await loadVotingKeyMasternodes(votingKeyId) }
+                    } label: {
+                        HStack {
+                            Text("Masternodes Using This Voting Key")
+                            Spacer()
+                            if loadingVotingKeyMasternodes {
+                                ProgressView()
+                            } else if let found = votingKeyMasternodes {
+                                Text("\(found.count)")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(loadingVotingKeyMasternodes)
+                    .accessibilityIdentifier("masternodeDetail.votingKeyMasternodes")
+                    if let found = votingKeyMasternodes {
+                        ForEach(found, id: \.self) { proTxHashHex in
+                            MasternodeCopyRow(label: "ProTxHash", value: proTxHashHex)
+                        }
+                        .accessibilityIdentifier("masternodeDetail.votingKeyMasternodes.result")
+                        if found.isEmpty {
+                            // The SDK call returns an empty list for both.
+                            Text("No matches in the local masternode list, or the list is not available yet.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .accessibilityIdentifier("masternodeDetail.votingKeyMasternodes.empty")
+                        }
+                    }
+                    if let err = votingKeyMasternodesError {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .accessibilityIdentifier("masternodeDetail.votingKeyMasternodes.error")
+                    }
                 }
                 if let operatorKey = masternode.operatorPublicKeyHex {
                     MasternodeCopyRow(label: "Operator Key (BLS)", value: operatorKey)
@@ -267,6 +310,23 @@ struct MasternodeDetailView: View {
         }
         .sheet(isPresented: $showClaimSheet) {
             claimConfirmationSheet
+        }
+    }
+
+    /// Ask the SDK which masternodes on the current list vote with
+    /// `votingKeyId`, and show their proTxHashes in display order.
+    private func loadVotingKeyMasternodes(_ votingKeyId: Data) async {
+        loadingVotingKeyMasternodes = true
+        defer { loadingVotingKeyMasternodes = false }
+        do {
+            let hashes = try await walletManager.masternodeProTxHashes(votingKeyId: votingKeyId)
+            votingKeyMasternodes = hashes.map { hash in
+                hash.reversed().map { String(format: "%02x", $0) }.joined()
+            }
+            votingKeyMasternodesError = nil
+        } catch {
+            votingKeyMasternodes = nil
+            votingKeyMasternodesError = "Lookup failed: \(error.localizedDescription)"
         }
     }
 
