@@ -124,7 +124,9 @@ export default function setupPlatformTaskFactory(
    * registration binds
    *
    * A stored key is kept unless the operator says otherwise; a new one is never
-   * generated over it implicitly.
+   * generated over it implicitly. It is checked as a key given by flag is,
+   * since the schema takes any string, and it keeps the node ID it derives
+   * to: one saved apart from the key can be another key's.
    *
    * @param {Object} ctx
    * @param {Object} task
@@ -136,10 +138,17 @@ export default function setupPlatformTaskFactory(
     }
 
     const storedKey = ctx.config.get('platform.drive.tenderdash.node.key');
-    const stored = storedKey === null ? null : {
-      key: storedKey,
-      id: ctx.config.get('platform.drive.tenderdash.node.id') ?? deriveTenderdashNodeId(storedKey),
-    };
+
+    let stored = null;
+    let storedKeyProblem = null;
+    if (storedKey !== null) {
+      try {
+        stored = parseTenderdashNodeKey(storedKey);
+      } catch (e) {
+        // A fixed text: the key is a secret, and the message never quotes it.
+        storedKeyProblem = e.message;
+      }
+    }
 
     const generate = () => {
       const key = generateTenderdashNodeKey();
@@ -148,6 +157,12 @@ export default function setupPlatformTaskFactory(
     };
 
     if (!ctx.interactive) {
+      if (storedKeyProblem) {
+        throw new Error(`The stored Platform node key (platform.drive.tenderdash.node.key) cannot`
+          + ` be kept: ${storedKeyProblem}. Give one with --platform-node-key-file <path|->, or run`
+          + ' setup at a terminal to generate one');
+      }
+
       return stored ?? generate();
     }
 
@@ -160,10 +175,14 @@ export default function setupPlatformTaskFactory(
       { name: 'enter', message: 'Enter a key' },
     );
 
+    const storedKeyNotice = storedKeyProblem
+      ? `\n  The stored key cannot be kept: ${storedKeyProblem}.\n`
+      : '';
+
     const choice = await promptOrThrow(task, {
       type: 'select',
       header: `  The Platform node key identifies this node to its Platform peers. An Evo
-  fullnode is not registered, so any Ed25519 key serves.\n`,
+  fullnode is not registered, so any Ed25519 key serves.\n${storedKeyNotice}`,
       message: 'Platform node key',
       choices,
       initial: stored ? 'keep' : 'generate',

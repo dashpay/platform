@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Listr } from 'listr2';
+import forge from 'node-forge';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import installCertificateFilesTaskFactory from '../../../src/listr/tasks/ssl/installCertificateFilesTaskFactory.js';
@@ -174,6 +175,23 @@ describe('installCertificateFilesTask', () => {
     const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
     expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
   });
+
+  // Platform setup checks the pair before it starts Core and installs it
+  // after Core has synced, which can outlast what was left of its validity.
+  it('should refuse a pair checked in advance that expired before it is installed', async function it() {
+    const pair = readCertificateFilePair(form);
+
+    this.sinon.useFakeTimers({ now: Date.now() + 31 * 24 * 60 * 60 * 1000, toFake: ['Date'] });
+
+    await expect(installCertificateFilesTask(config).run({
+      fileCertificateProviderForm: form,
+      validatedCertificatePair: pair,
+    })).to.be.rejectedWith('expired on');
+
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+    expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+    expect(fs.existsSync(path.join(sslDir, 'private.key'))).to.be.false();
+  });
 });
 
 describe('readCertificateFilePair', () => {
@@ -207,8 +225,12 @@ describe('readCertificateFilePair', () => {
 
     expect(certificateFile.equals(Buffer.from(pair.pem))).to.be.true();
     expect(privateKeyFile.equals(Buffer.from(pair.keyPem))).to.be.true();
-    // eslint-disable-next-line no-bitwise
-    expect(privateKeyStats.mode & 0o777).to.equal(0o640);
+
+    // Windows reports 0666 for any writable file
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      expect(privateKeyStats.mode & 0o777).to.equal(0o640);
+    }
   });
 
   // The gateway loads every block of the bundle, so a damaged one after the
@@ -217,6 +239,38 @@ describe('readCertificateFilePair', () => {
     fs.writeFileSync(form.chainFilePath, `${pair.pem}-----BEGIN CERTIFICATE-----\nAAAA\n`);
 
     expect(() => readCertificateFilePair(form)).to.throw('cannot be used');
+  });
+
+  // Clients refuse a certificate outside its validity window on either side,
+  // and `update` refuses to go on with one.
+  it('should refuse an expired certificate', () => {
+    fs.writeFileSync(form.chainFilePath, issueCertificate({ ip: '1.2.3.4', keys: pair.keys, days: -1 }).pem);
+
+    expect(() => readCertificateFilePair(form)).to.throw('The certificate expired on');
+  });
+
+  // A date that does not parse compares as neither before nor after now, so
+  // it would pass both window checks.
+  it('should refuse a certificate whose validity dates cannot be read', () => {
+    const asn1 = forge.pki.certificateToAsn1(pair.certificate);
+    // TBSCertificate ::= SEQUENCE { version [0], serialNumber, signature,
+    // issuer, validity { notBefore, notAfter }, ... }, a 13th month here
+    asn1.value[0].value[4].value[1].value = '991399000000Z';
+    fs.writeFileSync(form.chainFilePath, forge.pem.encode({
+      type: 'CERTIFICATE',
+      body: forge.asn1.toDer(asn1).getBytes(),
+    }));
+
+    expect(() => readCertificateFilePair(form)).to.throw('validity dates cannot be read');
+  });
+
+  it('should refuse a certificate that is not valid yet', () => {
+    fs.writeFileSync(
+      form.chainFilePath,
+      issueCertificate({ ip: '1.2.3.4', keys: pair.keys, startsInDays: 2 }).pem,
+    );
+
+    expect(() => readCertificateFilePair(form)).to.throw('The certificate is not valid until');
   });
 
   // Any private key block counts, whatever its type or form: the chain is

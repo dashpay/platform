@@ -33,9 +33,14 @@ export function isSelfSigned(certificate) {
  * concluded about the clock: a fast local clock and a start date in the
  * future look the same from disk.
  *
+ * A date that does not parse gives an invalid Date, which compares as neither
+ * before nor after now, so it would pass both window checks. Such a window is
+ * reported as unreadable, and callers refuse it before reading the rest.
+ *
  * @param {crypto.X509Certificate} certificate
  * @param {Date} [now]
- * @return {{ validFrom: Date, validTo: Date, isNotYetValid: boolean, isExpired: boolean }}
+ * @return {{ validFrom: Date, validTo: Date, isUnreadable: boolean,
+ *   isNotYetValid: boolean, isExpired: boolean }}
  */
 export function readValidityWindow(certificate, now = new Date()) {
   const validFrom = new Date(certificate.validFrom);
@@ -44,6 +49,7 @@ export function readValidityWindow(certificate, now = new Date()) {
   return {
     validFrom,
     validTo,
+    isUnreadable: !Number.isFinite(validFrom.getTime()) || !Number.isFinite(validTo.getTime()),
     isNotYetValid: validFrom.getTime() > now.getTime(),
     isExpired: validTo.getTime() <= now.getTime(),
   };

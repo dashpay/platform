@@ -30,6 +30,10 @@ export default function findCertificatePairProblem(bundlePem, privateKeyPem, now
 
   const validity = readValidityWindow(leaf, now);
 
+  if (validity.isUnreadable) {
+    return 'its certificate\'s validity dates cannot be read';
+  }
+
   if (validity.isNotYetValid) {
     return `its certificate is not valid until ${leaf.validFrom}`;
   }

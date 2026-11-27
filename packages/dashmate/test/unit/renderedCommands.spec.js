@@ -77,6 +77,16 @@ const RESTART_ADVICE_ALLOWED = {
     + 'is the sole reason on the verdict, so every other check passed on it - saving the provider '
     + 'setting leaves a running gateway serving the older certificate, and the interactive repair '
     + 'signals it for exactly this reason',
+  'src/commands/ssl/obtain.js':
+    'the pair just obtained is on disk, and the running gateway cannot load it: the obtain wrote '
+    + 'the bundle as a new file, or the gateway still serves another certificate after the '
+    + 'reload - its bind mount holds a file the obtain did not write, which only a restart replaces',
+  'src/helper/scheduleRenewalJob.js':
+    'the renewal wrote the bundle as a new file, which the running gateway\'s bind mount does not '
+    + 'hold, so a signal would load the previous certificate again',
+  'src/listr/tasks/update/gatewayCertificateTaskFactory.js':
+    'the repaired pair is installed and the gateway could not be signalled to load it, so the '
+    + 'node keeps serving the certificate it had until the gateway is restarted',
 };
 
 const PRE_EXISTING_BARE_COMMANDS = [
@@ -130,6 +140,21 @@ function commandsIn(text) {
  */
 function presentedCommandsIn(source) {
   return [...source.matchAll(PRESENTED_IN_SOURCE)].map((match) => match[1].trim());
+}
+
+/**
+ * Restart advice rendered for a given configuration, which names the command
+ * that restarts the gateway safely there
+ */
+const RENDERED_RESTART_ADVICE = /\$\{renderGatewayRestartCommand\(/;
+
+/**
+ * @param {string} source
+ * @return {boolean}
+ */
+function prescribesRestart(source) {
+  return RENDERED_RESTART_ADVICE.test(source)
+    || presentedCommandsIn(source).some((command) => /dashmate\s+restart/.test(command));
 }
 
 describe('every command dashmate tells an operator to run', () => {
@@ -447,10 +472,7 @@ describe('every command dashmate tells an operator to run', () => {
       const offenders = [];
 
       javascriptFilesIn('src').forEach((file) => {
-        const advises = presentedCommandsIn(fs.readFileSync(file, 'utf8'))
-          .some((command) => /dashmate\s+restart/.test(command));
-
-        if (advises && !RESTART_ADVICE_ALLOWED[file]) {
+        if (prescribesRestart(fs.readFileSync(file, 'utf8')) && !RESTART_ADVICE_ALLOWED[file]) {
           offenders.push(file);
         }
       });
@@ -461,10 +483,7 @@ describe('every command dashmate tells an operator to run', () => {
 
     it('keeps the restart allow-list honest', () => {
       Object.keys(RESTART_ADVICE_ALLOWED).forEach((file) => {
-        const advises = presentedCommandsIn(fs.readFileSync(file, 'utf8'))
-          .some((command) => /dashmate\s+restart/.test(command));
-
-        expect(advises, `${file} no longer prescribes a restart and can leave the list`)
+        expect(prescribesRestart(fs.readFileSync(file, 'utf8')), `${file} no longer prescribes a restart and can leave the list`)
           .to.be.true();
       });
     });

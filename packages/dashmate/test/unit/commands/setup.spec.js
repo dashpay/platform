@@ -496,6 +496,60 @@ describe('Setup command', () => {
     expect(fullSetupContext.interactive).to.be.true();
   });
 
+  // listr2's verbose renderer has no prompt area: it logs every redraw of a
+  // prompt as a line of its own, so the question is lost among them.
+  describe('the renderer of Platform-only setup', () => {
+    let renderers;
+
+    beforeEach(function beforeEach() {
+      renderers = [];
+      this.sinon.stub(Listr.prototype, 'run').callsFake(function run() {
+        renderers.push(this.options.renderer);
+
+        return Promise.resolve();
+      });
+    });
+
+    it('should keep the default renderer under --verbose when it can prompt', async function it() {
+      const env = { ...process.env, CI: '0' };
+      delete env.DASHMATE_NON_INTERACTIVE;
+      this.sinon.stub(process, 'env').value(env);
+
+      // A stream that is not a terminal has no isTTY property at all, so it
+      // is assigned rather than stubbed.
+      const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
+      process.stdin.isTTY = true;
+      process.stdout.isTTY = true;
+
+      let error;
+      try {
+        error = await setup({ preset: 'testnet' }, {
+          platform: true,
+          verbose: true,
+          'ssl-provider': 'letsencrypt',
+          'platform-node-key-file': keyFile,
+        });
+      } finally {
+        process.stdin.isTTY = restore.stdin;
+        process.stdout.isTTY = restore.stdout;
+      }
+
+      expect(error).to.be.null();
+      expect(renderers[0]).to.equal('default');
+    });
+
+    it('should use the verbose renderer under --verbose when it cannot prompt', async () => {
+      const error = await setupPlatform({
+        verbose: true,
+        'ssl-provider': 'letsencrypt',
+        'platform-node-key-file': keyFile,
+      });
+
+      expect(error).to.be.null();
+      expect(renderers[0]).to.equal('verbose');
+    });
+  });
+
   // The command's cleanup on exit force-removes the containers it started.
   // The Core setup started runs on the node's chain database, so everything
   // setup started is stopped first the way `dashmate stop` stops it, with the

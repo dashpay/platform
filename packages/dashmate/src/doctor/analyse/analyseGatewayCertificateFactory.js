@@ -22,6 +22,7 @@ import { SSL_PROVIDERS } from '../../constants.js';
 import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
 import ZeroSslCertificate from '../../ssl/zerossl/Certificate.js';
 import renderObtainCommand from '../../ssl/renderObtainCommand.js';
+import renderGatewayRestartCommand from '../../ssl/renderGatewayRestartCommand.js';
 import { DOCS_LINKS } from '../../docsLinks.js';
 
 /**
@@ -108,7 +109,7 @@ const TRUST_PATH_FAILURES = [
 const LEGO_EXPIRATION_LIMIT_DAYS = LegoCertificate.EXPIRATION_LIMIT_DAYS;
 const ZEROSSL_EXPIRATION_LIMIT_DAYS = ZeroSslCertificate.EXPIRATION_LIMIT_DAYS;
 
-const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
+const restartHint = (config) => chalk`Then restart the gateway so it picks it up: {bold.cyanBright ${renderGatewayRestartCommand(config)}}`;
 
 /**
  * Where an operator can read the whole story rather than one message of it.
@@ -841,7 +842,7 @@ ${certificateRequest(' --force')}`,
         `This node is using a certificate that expired on ${served.certificate.validTo}. `
         + 'A newer one has already been saved and is ready to use',
         chalk`The new certificate was saved but the node never picked it up. Load it:
-{bold.cyanBright dashmate restart ${cfg} --platform}`,
+{bold.cyanBright ${renderGatewayRestartCommand(config)}}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired && onDiskDiffers) {
@@ -881,7 +882,7 @@ ${renderObtainCommand({
           'This node is using an older certificate than the one that has been saved. '
           + `It will stop accepting clients on ${served.certificate.validTo}`,
           chalk`The new certificate was saved but the node never picked it up. Load it:
-{bold.cyanBright dashmate restart ${cfg} --platform}`,
+{bold.cyanBright ${renderGatewayRestartCommand(config)}}`,
           SEVERITY.HIGH,
         ));
       } else {
@@ -907,7 +908,7 @@ ${certificateRequest(installedForce)}`,
           ? chalk`Standard clients will reject this node.
 
 If the bundle is missing the certificates that vouch for the server one, add them.
-${restartHint(cfg)}
+${restartHint(config)}
 
 If the bundle is already complete, the authority that issued it is not one clients
 trust, and no restart changes that. Get a publicly trusted certificate:

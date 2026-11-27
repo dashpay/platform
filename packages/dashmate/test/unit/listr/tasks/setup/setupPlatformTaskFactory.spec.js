@@ -395,6 +395,55 @@ describe('setupPlatformTask', () => {
       expect(saved().get('platform.drive.tenderdash.node.key')).to.equal(storedKey);
     });
 
+    // The schema takes any string as the key, and a node ID saved apart from
+    // the key can be another key's.
+    describe('a stored key that cannot be kept as it is', () => {
+      const NOT_A_KEY = 'not-a-node-key';
+
+      beforeEach(() => {
+        config.set('platform.drive.tenderdash.node.key', NOT_A_KEY);
+        useConfig(config);
+      });
+
+      it('should refuse it unattended before the certificate step, quoting nothing', async () => {
+        const { error } = await run();
+
+        expect(error.message).to.include('platform.drive.tenderdash.node.key')
+          .and.include('--platform-node-key-file')
+          .and.not.include(NOT_A_KEY);
+        expect(configureSSLCertificateTask).to.not.have.been.called();
+        expect(configFileRepository.write).to.not.have.been.called();
+      });
+
+      it('should not offer to keep it at a terminal', async () => {
+        const { error, enquirer } = await run({}, ['generate', { platformP2PPort: '36656', platformHTTPPort: '1443' }]);
+
+        expect(error).to.be.null();
+        const [choice] = enquirer.options;
+        expect(choice.choices.map(({ name }) => name)).to.not.include('keep');
+        expect(choice.initial).to.equal('generate');
+        expect(choice.header).to.include('cannot be kept');
+
+        const { key, id } = saved().get('platform.drive.tenderdash.node');
+        expect(key).to.not.equal(NOT_A_KEY);
+        expect(id).to.equal(deriveTenderdashNodeId(key));
+      });
+
+      it('should keep a valid key with the node ID of that key, not a stale saved one', async () => {
+        config.set('platform.drive.tenderdash.node.key', storedKey);
+        config.set('platform.drive.tenderdash.node.id', 'ab'.repeat(20));
+        useConfig(config);
+
+        const { error } = await run();
+
+        expect(error).to.be.null();
+        expect(saved().get('platform.drive.tenderdash.node')).to.deep.equal({
+          key: storedKey,
+          id: deriveTenderdashNodeId(storedKey),
+        });
+      });
+    });
+
     // A mainnet hard reset disables Platform, and then no key is generated.
     it('should generate a key when none is stored', async () => {
       useConfig(await hardResetPlatform(setUp('mainnet', { masternode: false })));

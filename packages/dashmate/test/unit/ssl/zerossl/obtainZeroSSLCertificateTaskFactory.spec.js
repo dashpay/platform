@@ -11,7 +11,12 @@ import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/z
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 import generateCertificateRequest from '../../../../src/ssl/zerossl/generateCsr.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
-import { createCertificateRequest, issueCertificate } from '../../../../src/test/certificateFixtures.js';
+import loadCertificateRequest from '../../../../src/ssl/zerossl/loadCertificateRequest.js';
+import {
+  createCertificateRequest,
+  issueCertificate,
+  issueCertificateForKey,
+} from '../../../../src/test/certificateFixtures.js';
 
 describe('obtainZeroSSLCertificateTaskFactory', () => {
   let config;
@@ -677,6 +682,33 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(ecKeyPem);
     });
 
+    // Installing an issued certificate needs no request, and renewal needs
+    // one for the key on disk, whatever its type.
+    it('should install an issued certificate for an EC key and write its request', async function it() {
+      this.timeout(30000);
+      const ec = issueCertificateForKey(
+        pair,
+        crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey,
+        { ip: '1.2.3.4', days: 60 },
+      );
+      const bundle = `${ec.pem}${pair.pem}`;
+      fs.writeFileSync(privateKeyFilePath, ec.keyPem);
+      fs.rmSync(bundleFilePath);
+      downloadCertificate.resolves(bundle);
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(createCertificate).to.not.have.been.called();
+      expect(generateKeyPair).to.not.have.been.called();
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(bundle);
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(ec.keyPem);
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+
+      const request = loadCertificateRequest(fs.readFileSync(path.join(sslConfigDir, 'csr.pem'), 'utf8'));
+      expect(request.publicKey.export({ type: 'spki', format: 'der' }))
+        .to.deep.equal(crypto.createPublicKey(ec.keyPem).export({ type: 'spki', format: 'der' }));
+    });
+
     // Renewal saves the new certificate's ID before it installs the bundle,
     // and the bundle of the certificate it replaces still serves. A retry
     // after a rejected download has to install the saved certificate rather
@@ -753,6 +785,92 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(error.message).to.include('run the obtain command again')
         .and.not.include('--force');
       expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem.slice(0, pair.pem.length / 2));
+    });
+
+    // The gateway's bind mount pins the inode of bundle.crt, and renewal only
+    // signals the gateway, so a renewal reaches a running gateway only when
+    // the bundle is written in place.
+    it('should write a bundle that is a file of its own in place, leaving none of the old one', async function it() {
+      this.timeout(30000);
+      fs.writeFileSync(bundleFilePath, `${pair.pem.slice(0, pair.pem.length / 2)}${'#'.repeat(pair.pem.length)}`);
+      const { ino } = fs.statSync(bundleFilePath);
+
+      const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+      await buildTask.call(this).run(ctx);
+
+      expect(fs.statSync(bundleFilePath).ino).to.equal(ino);
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(ctx.isGatewayRestartRequired).to.not.equal(true);
+    });
+
+    // Writing through a link where the bundle goes would overwrite what it
+    // points at, the key the certificate was issued for among them.
+    [
+      ['a symbolic link to the private key', (target, link, test) => {
+        try {
+          fs.symlinkSync(target, link);
+        } catch (e) {
+          // Windows lets only a user with the symbolic-link privilege, or
+          // Developer Mode, create one.
+          if (e.code === 'EPERM') {
+            test.skip();
+          }
+
+          throw e;
+        }
+      }],
+      ['a hard link to the private key', (target, link) => fs.linkSync(target, link)],
+    ].forEach(([description, makeLink]) => {
+      it(`should replace ${description} where the bundle goes rather than write through it`, async function it() {
+        this.timeout(30000);
+        fs.rmSync(bundleFilePath);
+        makeLink(privateKeyFilePath, bundleFilePath, this);
+
+        const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+        await buildTask.call(this).run(ctx);
+
+        expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(pair.keyPem);
+        expect(fs.lstatSync(bundleFilePath).isSymbolicLink()).to.be.false();
+        expect(fs.statSync(bundleFilePath).ino).to.not.equal(fs.statSync(privateKeyFilePath).ino);
+        expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+        expect(fs.readdirSync(sslConfigDir)).to.have.members(['bundle.crt', 'csr.pem', 'private.key']);
+        // The running gateway's mount keeps the file it had.
+        expect(ctx.isGatewayRestartRequired).to.be.true();
+      });
+    });
+
+    // An owner may make the key read-only. A hard link to it cannot be opened
+    // for writing then, and it is replaced all the same.
+    it('should replace a hard link to a read-only private key where the bundle goes', async function it() {
+      if (process.getuid?.() === 0 || process.platform === 'win32') {
+        // root writes whatever the mode says, and Windows has no hard links here
+        this.skip();
+      }
+
+      this.timeout(30000);
+      fs.rmSync(bundleFilePath);
+      fs.chmodSync(privateKeyFilePath, 0o400);
+      fs.linkSync(privateKeyFilePath, bundleFilePath);
+
+      const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+      await buildTask.call(this).run(ctx);
+
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(pair.keyPem);
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(ctx.isGatewayRestartRequired).to.be.true();
+    });
+
+    // A running gateway keeps the file it mounted, deleted or not, and does
+    // not see one written in its place.
+    it('should say a gateway restart is needed when it writes a missing bundle', async function it() {
+      this.timeout(30000);
+      fs.rmSync(bundleFilePath);
+
+      const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+      await buildTask.call(this).run(ctx);
+
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(ctx.isGatewayRestartRequired).to.be.true();
     });
 
     // The bundle is replaced in place, and renewal writes over one the gateway

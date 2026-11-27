@@ -142,23 +142,22 @@ export function issueChain({
 }
 
 /**
- * Replace a certificate's public key with an Ed25519 one and re-sign it.
+ * Issue a certificate for a key of any type, by replacing a certificate's
+ * public key with it and signing it again.
  *
  * node-forge cannot build a certificate around a key type it does not
  * implement, but the certificate only has to carry the key - the signature over
- * it is still the issuer's RSA one, which is a legitimate combination. This is
- * what proves the leaf is selected by comparing key material rather than by an
- * RSA-only signature test.
+ * it is still the issuer's RSA one, which is a legitimate combination.
  *
  * @param {Object} issuer - the authority whose key signs the result
+ * @param {crypto.KeyObject} privateKey - the key the certificate is for
  * @param {Object} [options]
  * @param {string} [options.ip]
  * @param {number} [options.days]
  * @return {{pem: string, keyPem: string}}
  */
-export function issueEd25519Certificate(issuer, { ip = '1.2.3.4', days = 6 } = {}) {
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
-  const spki = publicKey.export({ type: 'spki', format: 'der' });
+export function issueCertificateForKey(issuer, privateKey, { ip = '1.2.3.4', days = 6 } = {}) {
+  const spki = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
 
   const template = issueCertificate({
     subject: {}, issuer, ip, days,
@@ -188,6 +187,58 @@ export function issueEd25519Certificate(issuer, { ip = '1.2.3.4', days = 6 } = {
     pem: toPem(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary')),
     keyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }),
   };
+}
+
+/**
+ * A leaf whose expiry cannot be read, signed by its issuer over that expiry
+ *
+ * The date names a 13th month. Node still loads the certificate and reports
+ * the date as text that does not parse, so only a check of the date refuses
+ * it: the signature verifies under the issuer's key.
+ *
+ * @param {Object} issuer - the authority whose key signs the result
+ * @param {Object} [options]
+ * @param {string} [options.ip]
+ * @return {{pem: string, keyPem: string}}
+ */
+export function issueCertificateWithUnreadableExpiry(issuer, { ip = '1.2.3.4' } = {}) {
+  const leaf = issueCertificate({ subject: {}, issuer, ip });
+
+  const asn1 = forge.pki.certificateToAsn1(leaf.certificate);
+  const tbsCertificate = asn1.value[0];
+
+  // TBSCertificate ::= SEQUENCE { version [0], serialNumber, signature,
+  // issuer, validity { notBefore, notAfter }, ... }
+  tbsCertificate.value[4].value[1].value = '991399000000Z';
+
+  const digest = forge.md.sha256.create();
+  digest.update(forge.asn1.toDer(tbsCertificate).getBytes());
+
+  asn1.value[2] = forge.asn1.create(
+    forge.asn1.Class.UNIVERSAL,
+    forge.asn1.Type.BITSTRING,
+    false,
+    String.fromCharCode(0) + issuer.keys.privateKey.sign(digest),
+  );
+
+  return {
+    pem: toPem(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary')),
+    keyPem: leaf.keyPem,
+  };
+}
+
+/**
+ * A certificate for an Ed25519 key. This is what proves the leaf is selected
+ * by comparing key material rather than by an RSA-only signature test.
+ *
+ * @param {Object} issuer - the authority whose key signs the result
+ * @param {Object} [options]
+ * @param {string} [options.ip]
+ * @param {number} [options.days]
+ * @return {{pem: string, keyPem: string}}
+ */
+export function issueEd25519Certificate(issuer, options = {}) {
+  return issueCertificateForKey(issuer, crypto.generateKeyPairSync('ed25519').privateKey, options);
 }
 
 /**

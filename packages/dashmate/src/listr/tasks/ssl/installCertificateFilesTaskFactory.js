@@ -2,7 +2,10 @@ import { Listr } from 'listr2';
 
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import validateFileExists from '../../prompts/validators/validateFileExists.js';
-import { readCertificateFilePair } from '../../prompts/validators/validateCertificateFilePaths.js';
+import {
+  checkCertificatePair,
+  readCertificateFilePair,
+} from '../../prompts/validators/validateCertificateFilePaths.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask
@@ -75,6 +78,10 @@ export default function installCertificateFilesTaskFactory(saveCertificateTask) 
 
             pair = acceptedPair;
           }
+
+          // Checked again as it is installed: a pair checked in advance waited
+          // for Core to sync, which can outlast what was left of its validity.
+          checkCertificatePair(pair);
 
           ctx.certificateFile = pair.certificateFile;
           ctx.privateKeyFile = pair.privateKeyFile;

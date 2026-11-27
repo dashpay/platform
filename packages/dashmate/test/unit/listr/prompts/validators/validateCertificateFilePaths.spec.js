@@ -52,7 +52,9 @@ describe('readCertificateFilePair: access', () => {
   });
 
   it('should refuse a file it cannot read', function it() {
-    if (process.getuid?.() === 0) {
+    // root reads whatever the mode says, and Windows modes cannot take read
+    // access away
+    if (process.getuid?.() === 0 || process.platform === 'win32') {
       this.skip();
     }
 

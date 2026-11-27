@@ -18,6 +18,98 @@ import findCertificatePairProblem, {
 import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../../ssl/selectLeafCertificate.js';
 
 /**
+ * Write the bundle in place, into the file the gateway has mounted
+ *
+ * @param {string} bundleFilePath
+ * @param {Buffer} content
+ * @return {boolean} false when what is there is not a regular file of its own
+ *  by the time it is opened
+ */
+function writeBundleInPlace(bundleFilePath, content) {
+  let fd;
+  try {
+    // Neither follows a link nor truncates: what is opened is checked first.
+    // Windows has no O_NOFOLLOW; the link was looked for before.
+    // eslint-disable-next-line no-bitwise
+    fd = fs.openSync(bundleFilePath, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0)
+      | fs.constants.O_NONBLOCK);
+  } catch (e) {
+    // Replaced by a symbolic link, or removed, since it was looked at
+    if (e.code === 'ELOOP' || e.code === 'ENOENT') {
+      return false;
+    }
+
+    throw e;
+  }
+
+  try {
+    const stats = fs.fstatSync(fd);
+
+    if (!stats.isFile() || stats.nlink !== 1) {
+      return false;
+    }
+
+    // In place, never by a rename: the gateway's bind mount pins this inode,
+    // and renewal reaches a running gateway only through it.
+    for (let offset = 0; offset < content.length;) {
+      offset += fs.writeSync(fd, content, offset, content.length - offset, offset);
+    }
+
+    // A shorter certificate leaves no tail of the previous one.
+    fs.ftruncateSync(fd, content.length);
+    fs.fsyncSync(fd);
+
+    return true;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Install the bundle the gateway serves
+ *
+ * Compose bind-mounts bundle.crt into the gateway by itself, which pins the
+ * file's inode, and renewal only signals the gateway to load its files again.
+ * So a bundle that is a regular file with no other name is written in place:
+ * replaced by a rename, it would leave the running gateway serving the
+ * certificate it loaded until it expires. Anything else is never written
+ * through: a link to the private key, or a second name of it, would
+ * overwrite the key. It is replaced by a new file, written beside it and
+ * renamed over it. A missing bundle is written as a new file the same way.
+ * The running gateway's mount sees neither.
+ *
+ * @param {string} bundleFilePath
+ * @param {string} certificateFile
+ * @return {boolean} whether it was written as a new file rather than in place
+ */
+function installBundle(bundleFilePath, certificateFile) {
+  const content = Buffer.from(certificateFile, 'utf8');
+
+  // Looked at before it is opened for writing: a hard link to a key its owner
+  // made read-only cannot be opened for writing, and is replaced all the same.
+  const stats = fs.lstatSync(bundleFilePath, { throwIfNoEntry: false });
+
+  if (stats?.isFile() && stats.nlink === 1 && writeBundleInPlace(bundleFilePath, content)) {
+    return false;
+  }
+
+  const temporaryFilePath = `${bundleFilePath}.${process.pid}.tmp`;
+
+  fs.rmSync(temporaryFilePath, { force: true });
+
+  try {
+    fs.writeFileSync(temporaryFilePath, content, { flag: 'wx' });
+    fs.renameSync(temporaryFilePath, bundleFilePath);
+  } catch (e) {
+    fs.rmSync(temporaryFilePath, { force: true });
+
+    throw e;
+  }
+
+  return true;
+}
+
+/**
  * @param {generateCsr} generateCsr
  * @param {generateKeyPair} generateKeyPair
  * @param {createZeroSSLCertificate} createZeroSSLCertificate
@@ -427,7 +519,16 @@ and all Dash service ports listed above.`);
               + ' command again: it downloads the certificate again');
           }
 
-          fs.writeFileSync(ctx.bundleFilePath, ctx.certificateFile, 'utf8');
+          if (installBundle(ctx.bundleFilePath, ctx.certificateFile)) {
+            ctx.isGatewayRestartRequired = true;
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = `${ctx.bundleFilePath} was missing or a link, so it was written as a new`
+              + ' file. A running gateway keeps serving the certificate it loaded until it is'
+              + ' restarted';
+
+            return;
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.bundleFilePath;

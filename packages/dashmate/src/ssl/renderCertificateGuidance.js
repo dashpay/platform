@@ -3,6 +3,7 @@ import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
 import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from './renewalGuidance.js';
 import renderObtainCommand from './renderObtainCommand.js';
+import renderGatewayRestartCommand from './renderGatewayRestartCommand.js';
 import { RENEWAL_FAILURE_CODES } from './renewal-failure.js';
 
 /**
@@ -134,7 +135,7 @@ function renderSwitchIncompleteGuidance(config, cfg) {
   then load the certificate that is already there:
 
       dashmate config set ${cfg} platform.gateway.ssl.provider letsencrypt
-      dashmate restart ${cfg} --platform
+      ${renderGatewayRestartCommand(config)}
 `;
 }
 

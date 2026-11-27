@@ -5,6 +5,7 @@ import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLos
 import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
 import { RENEWAL_FAILURE_CODES } from '../../../ssl/renewal-failure.js';
 import renderObtainCommand from '../../../ssl/renderObtainCommand.js';
+import renderGatewayRestartCommand from '../../../ssl/renderGatewayRestartCommand.js';
 import { RENEWAL_RECORD_STATES } from '../../../ssl/renewalRecord/RenewalRecordRepository.js';
 import {
   CERTIFICATE_REASONS,
@@ -241,7 +242,7 @@ export default function gatewayCertificateTaskFactory(
         throw new Error(`The certificate is installed, but the gateway could not be signalled`
           + ` to load it: ${e.message}\n`
           + 'The node keeps serving the certificate it had until it is loaded:\n'
-          + `    dashmate restart ${renderConfigFlag(config.getName())} --platform`);
+          + `    ${renderGatewayRestartCommand(config)}`);
       }
     }
   }
