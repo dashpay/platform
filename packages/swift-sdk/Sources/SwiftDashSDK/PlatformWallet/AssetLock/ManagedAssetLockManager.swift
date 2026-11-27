@@ -83,6 +83,29 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         /// pays; `nil` for other funding types and for locks tracked before
         /// the recipient was recorded.
         public let shieldedRecipientRaw43: Data?
+        /// 32-byte identity an unbound identity top-up
+        /// (`.identityTopUpNotBound`) was built or assigned to pay, in this
+        /// wallet or not; a resume
+        /// (`ManagedPlatformWallet.resumeTopUpToRecordedRecipient`) pays it
+        /// and refuses another. `nil` when the lock records none.
+        public let identityRecipient: Data?
+        /// An unbound identity top-up that records no identity and that the
+        /// wallet knows is not consumed (status `built` through
+        /// `chainLocked`). No resume pays it: list it for the user, who
+        /// assigns it a recipient (`ManagedPlatformWallet.assignTopUpRecipient`).
+        /// `false` for a recipient-less `recoveredFromChain` lock, which
+        /// Platform may have used long ago; assigning one is refused with
+        /// `assetLockAlreadyConsumed`. Rust decides it; this only carries it.
+        public let identityRecipientUnassigned: Bool
+        /// Whether the lock is an external Platform-address funding that
+        /// recorded the addresses it pays (read them with
+        /// `ManagedPlatformWallet.assetLockPlatformAddressRecipients(txid:vout:)`).
+        /// Such a lock resumes only to exactly those recipients, through
+        /// `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`;
+        /// every other resume, an owned one included, is refused with
+        /// `assetLockRecipientMismatch`. Route recovery by it: never offer
+        /// these locks to an owned top-up resume.
+        public let hasPlatformAddressRecipients: Bool
     }
 
     /// Result of building an asset lock transaction.
@@ -137,7 +160,12 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
                 hasProof: lock.has_proof,
                 shieldedRecipientRaw43: lock.has_shielded_recipient
                     ? withUnsafeBytes(of: lock.shielded_recipient_raw_43) { Data($0) }
-                    : nil
+                    : nil,
+                identityRecipient: lock.has_identity_recipient
+                    ? withUnsafeBytes(of: lock.identity_recipient_32) { Data($0) }
+                    : nil,
+                identityRecipientUnassigned: lock.identity_recipient_unassigned,
+                hasPlatformAddressRecipients: lock.has_platform_address_recipients
             )
         }
     }

@@ -1063,7 +1063,25 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///   - onAssetLockBuilt: Called at most once, with the new asset
     ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
-    ///     `AssetLockBuiltHandler`.
+    ///     `AssetLockBuiltHandler`. Informational only: recovery does not
+    ///     depend on it.
+    ///
+    /// ## Recovery
+    ///
+    /// The SDK records the recipient set with the asset lock, in the same
+    /// atomic round as its row and before the lock is broadcast (stored in
+    /// `PersistentAssetLock.platformAddressRecipients`), so you do not have
+    /// to associate the outpoint with the recipients yourself. The wallet
+    /// refuses this call for a persister that does not attest
+    /// `PlatformWalletPersistenceCapabilities.assetLockPlatformAddressRecipients`.
+    /// A lock left behind by a failed or interrupted call shows
+    /// `TrackedAssetLock.hasPlatformAddressRecipients`; resume it with
+    /// [`resumeFundFromAssetLockToRecordedRecipients`], and show the payees
+    /// first with `ManagedPlatformWallet.assetLockPlatformAddressRecipients(txid:vout:)`.
+    /// Any other resume of it — [`resumeFundFromAssetLock`], or other
+    /// recipients — is refused with `assetLockRecipientMismatch` before
+    /// anything is submitted, so the payment is never returned to this
+    /// wallet.
     ///
     /// Returns `[UpdatedBalance]` for the recipients that resolved to
     /// this wallet — in practice just the remainder/change address. The
@@ -1129,15 +1147,13 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// shape) and to [`fundFromAssetLockExternal`] (same relaxed
     /// recipient rules).
     ///
-    /// The recipients are a PARAMETER, not something recovered from the
-    /// tracked lock: Rust never learns the destination of an
-    /// address-funding asset lock — it only tracks the L1 outpoint, its
-    /// status and its proof. The host is responsible for round-tripping
-    /// the intended recipient, which is what
-    /// `PersistentAssetLock.recipientPlatformAddressHash` /
-    /// `.recipientIsExternal` record. Resuming with a different
-    /// recipient set pays the new set; the asset lock is a bearer input,
-    /// not a commitment to a destination.
+    /// The lock recorded its recipients when it was built: pass exactly the
+    /// ones `ManagedPlatformWallet.assetLockPlatformAddressRecipients(txid:vout:)`
+    /// returns, or use [`resumeFundFromAssetLockToRecordedRecipients`], which
+    /// does not take them. A different recipient set is refused with
+    /// `assetLockRecipientMismatch` before anything is submitted. A lock
+    /// tracked before recipients were recorded carries none and pays
+    /// whatever set you pass.
     ///
     /// - Parameters:
     ///   - outPointTxid: 32-byte raw txid (little-endian wire order) —
@@ -1187,6 +1203,61 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                         &changeset
                     )
                 }
+            }
+            try result.check()
+
+            defer { platform_address_wallet_free_changeset(&changeset) }
+            return Self.decodeChangeset(&changeset)
+        }.value
+    }
+
+    /// Resume an interrupted external Platform-address funding to the
+    /// recipients its tracked lock recorded, without naming them, so a
+    /// recovery cannot redirect the payment or consume it into this wallet.
+    ///
+    /// Wraps `platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer`.
+    /// Refused before anything is submitted for a lock that is not tracked,
+    /// of another funding type, already consumed, or that records no
+    /// recipients (an owned funding: use [`resumeFundFromAssetLock`]).
+    ///
+    /// - Parameters:
+    ///   - outPointTxid: 32-byte raw txid (little-endian wire order) —
+    ///     see [`resumeFundFromAssetLock`].
+    ///   - outPointVout: Funding output index.
+    ///
+    /// Returns `[UpdatedBalance]` for the recorded recipients that belong to
+    /// this wallet — in practice the remainder address. It can be empty
+    /// when sync already applied the balance.
+    @discardableResult
+    public func resumeFundFromAssetLockToRecordedRecipients(
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        signer: KeychainSigner
+    ) async throws -> [UpdatedBalance] {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let coreSigner = MnemonicResolver()
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [UpdatedBalance] in
+            var outPoint = OutPointFFI(
+                txid: Self.txidTuple(from: outPointTxid),
+                vout: outPointVout
+            )
+            var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer(
+                    handle,
+                    &outPoint,
+                    signerHandle,
+                    coreSigner.handle,
+                    &changeset
+                )
             }
             try result.check()
 

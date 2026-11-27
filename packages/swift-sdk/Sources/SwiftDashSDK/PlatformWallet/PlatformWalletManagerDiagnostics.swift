@@ -154,6 +154,27 @@ extension PlatformWalletManager {
         public let registrationIndex: UInt32
         public let instantLockPresent: Bool
         public let chainLockHeight: UInt32
+        /// 32-byte identity an unbound identity top-up
+        /// (lock type 2) was built or assigned to pay, in this
+        /// wallet or not; a resume
+        /// (`ManagedPlatformWallet.resumeTopUpToRecordedRecipient`) pays it
+        /// and refuses another. `nil` when the lock records none.
+        public let identityRecipient: Data?
+        /// An unbound identity top-up that records no identity and that the
+        /// wallet knows is not consumed (status `built` through
+        /// `chainLocked`). No resume pays it: list it for the user, who
+        /// assigns it a recipient (`ManagedPlatformWallet.assignTopUpRecipient`).
+        /// `false` for a recipient-less `recoveredFromChain` lock, which
+        /// Platform may have used long ago; assigning one is refused with
+        /// `assetLockAlreadyConsumed`. Rust decides it; this only carries it.
+        public let identityRecipientUnassigned: Bool
+        /// Whether the lock is an external Platform-address funding that
+        /// recorded the addresses it pays, as on
+        /// `ManagedAssetLockManager.TrackedAssetLock`: it resumes only to
+        /// those, through
+        /// `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`,
+        /// never as an owned top-up.
+        public let hasPlatformAddressRecipients: Bool
     }
 
     public func trackedAssetLocks(for walletId: Data) -> [TrackedAssetLockSnapshot] {
@@ -180,7 +201,12 @@ extension PlatformWalletManager {
                 status: entry.status,
                 registrationIndex: entry.registration_index,
                 instantLockPresent: entry.instant_lock_present,
-                chainLockHeight: entry.chain_lock_height
+                chainLockHeight: entry.chain_lock_height,
+                identityRecipient: entry.has_identity_recipient
+                    ? withUnsafeBytes(of: &entry.identity_recipient) { Data($0) }
+                    : nil,
+                identityRecipientUnassigned: entry.identity_recipient_unassigned,
+                hasPlatformAddressRecipients: entry.has_platform_address_recipients
             )
         }
     }

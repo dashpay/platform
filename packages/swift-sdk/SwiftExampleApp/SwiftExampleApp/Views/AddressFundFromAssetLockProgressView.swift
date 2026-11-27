@@ -72,6 +72,15 @@ struct AddressFundFromAssetLockProgressSection: View {
         )
     }
 
+    /// The lock this funding drives. A resume names it, so every step reads
+    /// that exact row, never a newer lock of the wallet that sorts first.
+    /// A fresh funding's outpoint is not known yet: it falls back to the
+    /// newest row, the lock it is building.
+    private var trackedLock: PersistentAssetLock? {
+        guard let outPoint = controller.assetLockOutPoint else { return activeLocks.first }
+        return activeLocks.first { $0.outPointHex == outPoint }
+    }
+
     var body: some View {
         // Same TimelineView pattern as RegistrationProgressSection
         // so the elapsed-time heuristic distinguishing step 2 / 3 / 4
@@ -122,7 +131,7 @@ struct AddressFundFromAssetLockProgressSection: View {
             // Return 6 so every step row (1...5) is marked `.done`.
             return 6
         case .failed:
-            if let lock = activeLocks.first {
+            if let lock = trackedLock {
                 switch lock.statusRaw {
                 case 0: return 1
                 case 1: return broadcastSubStep(for: lock, now: now)
@@ -132,7 +141,7 @@ struct AddressFundFromAssetLockProgressSection: View {
             }
             return 5
         case .inFlight:
-            guard let lock = activeLocks.first else { return 1 }
+            guard let lock = trackedLock else { return 1 }
             switch lock.statusRaw {
             case 0:
                 return 1
@@ -169,7 +178,7 @@ struct AddressFundFromAssetLockProgressSection: View {
     /// "active" — i.e. the lock came back InstantSend-locked
     /// (statusRaw == 2) so the CL fallback was never needed.
     private var step4WasSkipped: Bool {
-        guard let lock = activeLocks.first else { return false }
+        guard let lock = trackedLock else { return false }
         return lock.statusRaw == 2
     }
 
@@ -189,7 +198,7 @@ struct AddressFundFromAssetLockProgressSection: View {
     ///   step 3 anyway, so a simple `statusRaw != 2` covers it
     ///   cleanly.
     private var step3WasSkipped: Bool {
-        guard let lock = activeLocks.first else { return false }
+        guard let lock = trackedLock else { return false }
         return lock.statusRaw != 2
     }
 
@@ -347,21 +356,27 @@ struct AddressFundFromAssetLockProgressView: View {
         case .completed(let newBalance):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Address funded", systemImage: "checkmark.seal.fill")
+                    Label(
+                        newBalance == nil ? "Payment completed" : "Address funded",
+                        systemImage: "checkmark.seal.fill"
+                    )
                         .foregroundColor(.green)
                         .font(.headline)
-                    HStack {
-                        Text("New balance")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(formatCredits(newBalance))
-                            .font(.system(.body, design: .monospaced))
+                    if let newBalance {
+                        HStack {
+                            Text("New balance")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formatCredits(newBalance))
+                                .font(.system(.body, design: .monospaced))
+                        }
                     }
                     Button {
                         walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
+                            recipientHash: controller.recipientHash,
+                            assetLockOutPoint: controller.assetLockOutPoint
                         )
                         dismiss()
                     } label: {
@@ -394,7 +409,8 @@ struct AddressFundFromAssetLockProgressView: View {
                         walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
+                            recipientHash: controller.recipientHash,
+                            assetLockOutPoint: controller.assetLockOutPoint
                         )
                         dismiss()
                     } label: {

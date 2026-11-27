@@ -8,8 +8,10 @@ import SwiftDashSDK
 ///
 /// Mirrors [`RegistrationCoordinator`] for the
 /// `AddressFundingFromAssetLockTransition` flow. Keyed by
-/// `(walletId, platformAccountIndex, recipientHash)` — that's the
-/// natural unit of work since a wallet can fund many addresses
+/// `(walletId, platformAccountIndex, recipientHash, assetLockOutPoint)`
+/// — a resume also keys on the lock it resumes, so a resume of
+/// another lock that picked the same address never gets this one's
+/// result. That's the natural unit of work since a wallet can fund many addresses
 /// concurrently and "next unused" address allocation happens
 /// Rust-side per call. The single-flight invariant prevents a user
 /// from double-tapping the same address-funding submission during
@@ -20,10 +22,15 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// `walletId` is 32 raw bytes; `recipientHash` is 20 raw bytes;
     /// `platformAccountIndex` is the DIP-17 account that owns the
     /// recipient address.
+    /// An external resume pays its lock's recorded recipients, so its slot
+    /// is the wallet and the outpoint alone: `platformAccountIndex` and
+    /// `recipientHash` are `nil`.
     struct SlotKey: Hashable {
         let walletId: Data
-        let platformAccountIndex: UInt32
-        let recipientHash: Data
+        let platformAccountIndex: UInt32?
+        let recipientHash: Data?
+        /// The resumed lock's `outPointHex`, `nil` for a fresh funding.
+        let assetLockOutPoint: String?
     }
 
     /// Active controllers keyed by slot. Stored as `@Published` so
@@ -62,14 +69,16 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// reuse the existing one.
     func controller(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
+        assetLockOutPoint: String? = nil
     ) -> AddressFundFromAssetLockController? {
         controllers[
             SlotKey(
                 walletId: walletId,
                 platformAccountIndex: platformAccountIndex,
-                recipientHash: recipientHash
+                recipientHash: recipientHash,
+                assetLockOutPoint: assetLockOutPoint
             )
         ]
     }
@@ -96,15 +105,17 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// FFI calls for the same asset lock.
     func startFunding(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data,
-        recipientType: UInt8,
-        body: @escaping () async throws -> UInt64
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
+        recipientType: UInt8?,
+        assetLockOutPoint: String? = nil,
+        body: @escaping () async throws -> UInt64?
     ) -> AddressFundFromAssetLockController {
         let key = SlotKey(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
-            recipientHash: recipientHash
+            recipientHash: recipientHash,
+            assetLockOutPoint: assetLockOutPoint
         )
         if let existing = controllers[key] {
             switch existing.phase {
@@ -129,7 +140,8 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
             recipientHash: recipientHash,
-            recipientType: recipientType
+            recipientType: recipientType,
+            assetLockOutPoint: assetLockOutPoint
         )
         controllers[key] = controller
         // Forward this controller's phase transitions to observers of the
@@ -149,13 +161,15 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// error).
     func dismiss(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
+        assetLockOutPoint: String? = nil
     ) {
         let key = SlotKey(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
-            recipientHash: recipientHash
+            recipientHash: recipientHash,
+            assetLockOutPoint: assetLockOutPoint
         )
         controllers.removeValue(forKey: key)
         phaseObservers.removeValue(forKey: key)

@@ -132,6 +132,26 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
     /// the declaration when all three slots are wired.
     public static let outpointLocks: UInt64 = 1 << 16
+    /// The identity an unbound identity top-up was built or assigned to pay
+    /// survives store and load with its row, never changes once recorded, and
+    /// a row that cannot be read fails the load. Required before Rust builds
+    /// a top-up lock for an identity this wallet does not manage
+    /// (`ManagedPlatformWallet.topUpExternalIdentityWithFunding`) or assigns
+    /// a lock a recipient (`assignTopUpRecipient`). Mirrors
+    /// `PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`; Rust only
+    /// honours the declaration when both recipient slots are wired.
+    public static let assetLockIdentityRecipients: UInt64 = 1 << 17
+    /// The Platform addresses an external Platform-address funding (the
+    /// recipients of `fundFromAssetLockExternal`) was built to pay survive
+    /// store and load with its row, so a resume after restart pays exactly
+    /// those recipients or is refused, and never consumes the lock into the
+    /// wallet. Mirrors
+    /// `PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`.
+    /// Rust only honours the declaration when both recipient slots, the
+    /// begin/end pair and `atomicChangesets` are present: the row and its
+    /// recipients arrive in separate callbacks and must commit as one unit.
+    /// The wallet builds no external Platform-address funding without it.
+    public static let assetLockPlatformAddressRecipients: UInt64 = 1 << 18
 
     public let version: UInt32
     public let bits: UInt64

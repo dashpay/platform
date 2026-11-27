@@ -34,6 +34,8 @@ import SwiftData
 ///   the destination identity. The identity row itself can be
 ///   resolved via `PersistentIdentity` joined on
 ///   `(walletId, identityIndex)`.
+///   An unbound top-up (`fundingTypeRaw == 2`) pays the identity in
+///   `identityRecipient` instead, which need not be one of this wallet's.
 ///
 /// - **Platform address** (`fundingTypeRaw == 4` —
 ///   AssetLockAddressTopUp):
@@ -219,6 +221,42 @@ public final class PersistentAssetLock {
     /// published, V4 schema (`schema-releases.json` registers 3.0.0 only).
     public var shieldedRecipientRaw43: Data?
 
+    /// 32-byte identity an unbound identity top-up (`fundingTypeRaw == 2`)
+    /// was built or assigned to pay, which may be an identity this wallet
+    /// does not manage. Written by Rust with the row before the lock is
+    /// dispatched (or when the user assigns one to a lock that records
+    /// none) and immutable afterwards: a resume pays this identity and
+    /// refuses another (`assetLockRecipientMismatch`). `nil` for other
+    /// funding types and for unbound locks that record no identity, such as
+    /// one rebuilt from the chain; a resume of those is refused
+    /// (`assetLockRecipientUnknown`). Only the SDK writes it, when the lock is
+    /// built or assigned a recipient (`assignTopUpRecipient`, which assigns a
+    /// lock rebuilt from the chain only with `acknowledgeUnknownConsumption`).
+    ///
+    /// Default `nil` on the column keeps SwiftData's lightweight migration
+    /// safe for rows that pre-date this field. Lands in the live, not yet
+    /// published, V5 schema.
+    public internal(set) var identityRecipient: Data?
+
+    /// The Platform addresses an external Platform-address funding
+    /// (`fundingTypeRaw == 4`, built by `fundFromAssetLockExternal`) was
+    /// built to pay, in the opaque form Rust hands over
+    /// (`PlatformAddressRecipients::to_bytes`, at most
+    /// `PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`
+    /// bytes). Written by Rust in the same atomic round as the row, before
+    /// the lock is dispatched, and immutable afterwards: a resume pays
+    /// exactly these recipients or is refused (`assetLockRecipientMismatch`),
+    /// so recovery never consumes the payment into the wallet. Read them
+    /// through `ManagedPlatformWallet.assetLockPlatformAddressRecipients(txid:vout:)`,
+    /// never by parsing these bytes. `nil` for owned fundings, other funding
+    /// types, and locks tracked before recipients were recorded.
+    ///
+    /// Default `nil` keeps SwiftData's lightweight migration safe. Lands in
+    /// the live, not yet published, V5 schema. Read-only outside the SDK,
+    /// like `identityRecipient`: only the checked recipient callback writes
+    /// it, so client code cannot clear a pending payment's recipients.
+    public internal(set) var platformAddressRecipients: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -234,7 +272,9 @@ public final class PersistentAssetLock {
         statusRaw: Int,
         proofBytes: Data? = nil,
         operationId: Data? = nil,
-        shieldedRecipientRaw43: Data? = nil
+        shieldedRecipientRaw43: Data? = nil,
+        identityRecipient: Data? = nil,
+        platformAddressRecipients: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -247,6 +287,8 @@ public final class PersistentAssetLock {
         self.proofBytes = proofBytes
         self.operationId = operationId
         self.shieldedRecipientRaw43 = shieldedRecipientRaw43
+        self.identityRecipient = identityRecipient
+        self.platformAddressRecipients = platformAddressRecipients
         self.createdAt = Date()
         self.updatedAt = Date()
     }

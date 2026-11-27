@@ -270,7 +270,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
     /// A shielded fund-from-asset-lock resume named a different Orchard
-    /// recipient than the one its tracked lock recorded; nothing was paid.
+    /// recipient than the one its tracked lock recorded, or an unbound
+    /// identity top-up lock was resumed or assigned to a different identity
+    /// than the one its row recorded; nothing was paid.
     case errorAssetLockRecipientMismatch = 61
     /// A key of a DashPay invitation claim already belongs to another
     /// identity; the message is a JSON detail naming it.
@@ -340,6 +342,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
+    /// An unbound identity top-up lock records no identity to pay (it was
+    /// rebuilt from the chain, for example after a restore from the seed),
+    /// so no resume pays it. Nothing was submitted or paid. Not retryable as
+    /// is: assign it a recipient the user chooses, then resume it.
+    case errorAssetLockRecipientUnknown = 81
+    /// A lock rebuilt from the chain may already have been used on Platform,
+    /// which the wallet cannot tell, so it was not assigned a recipient.
+    /// Nothing was stored or paid. Assign it again only after telling the
+    /// user, with `acknowledgeUnknownConsumption`.
+    case errorAssetLockConsumptionUnknown = 82
     /// The balance history could not read a page of Platform's address
     /// balance changes at a height consistent with the pages it had already
     /// read, within Rust's per-page retry bound: every attempt got a
@@ -541,6 +553,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN:
+            self = .errorAssetLockRecipientUnknown
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN:
+            self = .errorAssetLockConsumptionUnknown
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS:
             self = .errorBalanceHistoryInconsistentHeights
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS:
@@ -751,7 +767,38 @@ public enum PlatformWalletError: LocalizedError {
     /// (`PersistentAssetLock.shieldedRecipientRaw43` /
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
+    ///
+    /// Also an unbound identity top-up lock resumed or assigned to a
+    /// different identity than the one its row recorded. Nothing was
+    /// submitted; resume it with
+    /// `ManagedPlatformWallet.resumeTopUpToRecordedRecipient`, which pays the
+    /// recorded identity (`TrackedAssetLock.identityRecipient`).
+    ///
+    /// Also raised when a lock built by `fundFromAssetLockExternal` (it
+    /// recorded the Platform addresses it pays,
+    /// `TrackedAssetLock.hasPlatformAddressRecipients`) is resumed as an
+    /// owned funding or to other recipients. Nothing was submitted; resume
+    /// it with `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`.
     case assetLockRecipientMismatch(String)
+    /// Code 81: an unbound identity top-up lock records no identity to pay,
+    /// so no resume pays it; it may have been meant for someone else's
+    /// identity. Nothing was submitted or paid. Not retryable as is: a lock
+    /// flagged `identityRecipientUnassigned` on the tracked-lock lists can be
+    /// assigned a recipient the user chooses
+    /// (`ManagedPlatformWallet.assignTopUpRecipient`) and then resumed. A
+    /// lock rebuilt from the chain (`RecoveredFromChain`, for example after a
+    /// restore from the seed) is not flagged: Platform may have consumed it
+    /// already, so assigning it is refused with
+    /// `assetLockConsumptionUnknown` unless the user was told so and the
+    /// assignment passes `acknowledgeUnknownConsumption`.
+    case assetLockRecipientUnknown(String)
+    /// Code 82: the lock was rebuilt from the chain, so Platform may already
+    /// have used it, which the wallet cannot tell; it was not assigned a
+    /// recipient and nothing was stored or paid. Tell the user, then assign
+    /// it with `acknowledgeUnknownConsumption`: if Platform already used the
+    /// outpoint, the resume is refused there (`assetLockAlreadyConsumed`) and
+    /// nothing is paid twice.
+    case assetLockConsumptionUnknown(String)
     /// The asset lock cannot be used yet: its transaction has not reached the
     /// queried node, or it needs a ChainLock proof and is not chain-locked
     /// yet. Retry later. Produced today by `claimInvitation`.
@@ -1129,6 +1176,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
+             .assetLockRecipientUnknown(let m), .assetLockConsumptionUnknown(let m),
              .assetLockNotChainLocked(let m), .invitationNotReady(let m),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
@@ -1268,6 +1316,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
         case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
+        case .errorAssetLockRecipientUnknown: self = .assetLockRecipientUnknown(detail)
+        case .errorAssetLockConsumptionUnknown: self = .assetLockConsumptionUnknown(detail)
         case .errorAssetLockNotChainLocked: self = .assetLockNotChainLocked(detail)
         case .errorInvitationNotReady: self = .invitationNotReady(detail)
         // Codes 63/64 carry a stable JSON detail naming the identity; a

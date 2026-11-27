@@ -81,7 +81,7 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
                 walletId: walletId, outPoint: rawOutPoint, recipientRaw43: recipient)
             XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
             // A later snapshot without a recipient (a reconstruction or a
-            // status advance) must not erase it; a different one is refused.
+            // status advance) must not erase it; a recipients are refused.
             try persist(handler, status: 1, operationId: nil)
             handler.beginChangeset(walletId: walletId)
             XCTAssertThrowsError(try handler.persistAssetLockShieldedRecipient(
@@ -96,6 +96,130 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(rows.first?.shieldedRecipientRaw43, recipient)
         XCTAssertEqual(rows.first?.statusRaw, 1)
         XCTAssertEqual(try handler.loadAssetLockShieldedRecipient(walletId: walletId, outPoint: rawOutPoint), recipient)
+    }
+
+    func testPlatformAddressRecipientsSurviveStaleSnapshotsAndStoreReopenAndCannotChange() throws {
+        let recipients = Data([1, 0, 1] + [UInt8](repeating: 0x44, count: 21) + [0])
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            // No row yet: a read is a failure, not a legacy nil.
+            XCTAssertThrowsError(try handler.loadAssetLockPlatformAddressRecipients(walletId: walletId, outPoint: rawOutPoint))
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertTrue(handler.persistAssetLocks(walletId: walletId,
+                upserts: [snapshot(status: 0, operationId: nil)], removed: []))
+            // A row stored without recipients (an owned funding, or a row
+            // from before recipients were recorded) loads with none.
+            XCTAssertNil(try handler.loadAssetLockPlatformAddressRecipients(walletId: walletId, outPoint: rawOutPoint))
+            try handler.persistAssetLockPlatformAddressRecipients(
+                walletId: walletId, outPoint: rawOutPoint, recipients: recipients)
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+            // A later snapshot without recipients must not erase them;
+            // other recipients are refused.
+            try persist(handler, status: 1, operationId: nil)
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertThrowsError(try handler.persistAssetLockPlatformAddressRecipients(
+                walletId: walletId, outPoint: rawOutPoint, recipients: Data([1, 0, 0])))
+            XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+            XCTAssertEqual(try handler.loadAssetLockPlatformAddressRecipients(walletId: walletId, outPoint: rawOutPoint), recipients)
+        }
+        let reopened = try DashModelContainer.create(url: url)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
+        let rows = try handler.loadCachedAssetLocks(walletId: walletId)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.platformAddressRecipients, recipients)
+        XCTAssertEqual(try handler.loadAssetLockPlatformAddressRecipients(walletId: walletId, outPoint: rawOutPoint), recipients)
+    }
+
+    /// The capability is attested on the promise that the row and its
+    /// recipients commit as one unit: recipients outside a round are
+    /// refused, and a rolled-back round keeps neither the row nor them.
+    func testPlatformAddressRecipientsCommitOnlyWithTheirRow() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try DashModelContainer.create(url: directory.appendingPathComponent("wallet.store"))
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let recipients = Data([1, 0, 1] + [UInt8](repeating: 0x44, count: 21) + [0])
+        XCTAssertThrowsError(try handler.persistAssetLockPlatformAddressRecipients(
+            walletId: walletId, outPoint: rawOutPoint, recipients: recipients))
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistAssetLocks(walletId: walletId,
+            upserts: [snapshot(status: 0, operationId: nil)], removed: []))
+        try handler.persistAssetLockPlatformAddressRecipients(
+            walletId: walletId, outPoint: rawOutPoint, recipients: recipients)
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+        XCTAssertTrue(try handler.loadCachedAssetLocks(walletId: walletId).isEmpty)
+        XCTAssertThrowsError(try handler.loadAssetLockPlatformAddressRecipients(
+            walletId: walletId, outPoint: rawOutPoint))
+    }
+
+    /// Rust's `PlatformAddressRecipients::to_bytes` for one P2PKH payee of
+    /// 500,000 credits (0x44…) and a P2PKH remainder (0x55…): format 1, two
+    /// entries, each the bincode address and an optional big-endian amount.
+    private let canonicalRecipients = Data(
+        [0x01, 0x00, 0x02, 0x00] + [UInt8](repeating: 0x44, count: 20)
+            + [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xa1, 0x20]
+            + [0x00] + [UInt8](repeating: 0x55, count: 20) + [0x00]
+    )
+
+    /// The registered persist and load callbacks hand Rust back exactly the
+    /// bytes it stored, across a store reopen: found flag, length and bytes.
+    func testRegisteredRecipientCallbacksRoundTripRustBytesAcrossReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
+        try autoreleasepool {
+            let handler = PlatformWalletPersistenceHandler(
+                modelContainer: try DashModelContainer.create(url: url), network: .testnet)
+            let persist = try XCTUnwrap(
+                handler.makePersistenceCallbacksExtension().on_persist_asset_lock_platform_address_recipients_fn)
+            let context = Unmanaged.passUnretained(handler).toOpaque()
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertTrue(handler.persistAssetLocks(walletId: walletId,
+                upserts: [snapshot(status: 0, operationId: nil)], removed: []))
+            let rc = walletId.withUnsafeBytes { wallet in
+                rawOutPoint.withUnsafeBytes { outPoint in
+                    canonicalRecipients.withUnsafeBytes { bytes in
+                        persist(context,
+                            wallet.bindMemory(to: UInt8.self).baseAddress,
+                            outPoint.bindMemory(to: UInt8.self).baseAddress,
+                            bytes.bindMemory(to: UInt8.self).baseAddress,
+                            UInt(bytes.count))
+                    }
+                }
+            }
+            XCTAssertEqual(rc, 0)
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        }
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: try DashModelContainer.create(url: url), network: .testnet)
+        let load = try XCTUnwrap(
+            handler.makePersistenceCallbacksExtension().on_load_asset_lock_platform_address_recipients_fn)
+        let context = Unmanaged.passUnretained(handler).toOpaque()
+        var found = false
+        var length: UInt = 0
+        var buffer = [UInt8](repeating: 0, count: Int(PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN))
+        let capacity = UInt(buffer.count)
+        let rc = walletId.withUnsafeBytes { wallet in
+            rawOutPoint.withUnsafeBytes { outPoint in
+                buffer.withUnsafeMutableBufferPointer { out in
+                    load(context,
+                        wallet.bindMemory(to: UInt8.self).baseAddress,
+                        outPoint.bindMemory(to: UInt8.self).baseAddress,
+                        &found, out.baseAddress, capacity, &length)
+                }
+            }
+        }
+        XCTAssertEqual(rc, 0)
+        XCTAssertTrue(found)
+        XCTAssertEqual(Int(length), canonicalRecipients.count)
+        XCTAssertEqual(Data(buffer.prefix(Int(length))), canonicalRecipients)
     }
 
     func testPublishedV3MigratesOperationIdToNil() throws {
@@ -121,6 +245,9 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows.first?.operationId)
         XCTAssertNil(rows.first?.shieldedRecipientRaw43)
+        XCTAssertNil(rows.first?.identityRecipient)
+        // A legacy lock carries no recorded payees after the upgrade.
+        XCTAssertNil(rows.first?.platformAddressRecipients)
         XCTAssertEqual(rows.first?.amountDuffs, 1000)
         XCTAssertEqual(DashModelContainer.schema.version, Schema.Version(5, 0, 0))
     }
