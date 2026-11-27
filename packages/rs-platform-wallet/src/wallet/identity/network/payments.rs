@@ -11071,7 +11071,7 @@ mod tests {
             wallet
                 .identity()
                 .dashpay()
-                .store_contact_shielded_address(&owner, &contact, &shared)
+                .store_contact_shielded_address(&owner, &contact, &[0u8; 96], &shared)
                 .await;
         };
         drive().await;
@@ -11102,7 +11102,7 @@ mod tests {
         wallet
             .identity()
             .dashpay()
-            .store_contact_shielded_address(&owner, &contact, &shared)
+            .store_contact_shielded_address(&owner, &contact, &[0u8; 96], &shared)
             .await;
 
         assert_eq!(
@@ -11121,12 +11121,46 @@ mod tests {
         wallet
             .identity()
             .dashpay()
-            .store_contact_shielded_address(&owner, &contact, &shared)
+            .store_contact_shielded_address(&owner, &contact, &[0u8; 96], &shared)
             .await;
 
         assert_eq!(
             stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
             None
+        );
+    }
+
+    /// An account build that finishes after a rotation replaced the request
+    /// holds the key of the request it was built from, not of the live one.
+    #[tokio::test]
+    async fn should_leave_the_shielded_address_alone_when_the_request_was_replaced() {
+        let shared = [0x55u8; 32];
+        let address = orchard_address(7);
+        let field = platform_encryption::encrypt_shielded_address(&shared, &[0x11; 16], &address);
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_contact_shielded_address(Some(field.to_vec()), None).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let dashpay = wallet.identity().dashpay();
+
+        // Built from another request than the live one: nothing is read.
+        dashpay
+            .store_contact_shielded_address(&owner, &contact, &[0x99u8; 96], &shared)
+            .await;
+        assert_eq!(
+            stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
+            None
+        );
+
+        // And an address the live request gave is not cleared by it.
+        dashpay
+            .store_contact_shielded_address(&owner, &contact, &[0u8; 96], &shared)
+            .await;
+        dashpay
+            .store_contact_shielded_address(&owner, &contact, &[0x99u8; 96], &[0x66u8; 32])
+            .await;
+        assert_eq!(
+            stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
+            Some(address)
         );
     }
 

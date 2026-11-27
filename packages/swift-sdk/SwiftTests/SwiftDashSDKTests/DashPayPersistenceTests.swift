@@ -856,10 +856,17 @@ final class DashPayContactPersistenceTests: XCTestCase {
         try context.save()
 
         // Persist an established contact carrying the accepted accounts.
-        applyContacts(upserts: [
-            makeSnapshot(isOutgoing: true, contactAcceptedAccounts: [7, 42]),
-            makeSnapshot(isOutgoing: false, contactAcceptedAccounts: [7, 42]),
-        ])
+        // Each direction carries its own `encryptedShieldedAddress`; only
+        // the incoming row carries the address the wallet read from it.
+        let outgoingEncrypted = Data(repeating: 0xA1, count: 64)
+        let incomingEncrypted = Data(repeating: 0xB2, count: 64)
+        let contactAddress = Data((0..<43).map { UInt8($0 + 1) })
+        var outgoingSnapshot = makeSnapshot(isOutgoing: true, contactAcceptedAccounts: [7, 42])
+        outgoingSnapshot.encryptedShieldedAddress = outgoingEncrypted
+        var incomingSnapshot = makeSnapshot(isOutgoing: false, contactAcceptedAccounts: [7, 42])
+        incomingSnapshot.encryptedShieldedAddress = incomingEncrypted
+        incomingSnapshot.contactShieldedAddress = contactAddress
+        applyContacts(upserts: [outgoingSnapshot, incomingSnapshot])
 
         let (entries, count, errored) = handler.loadWalletList()
         XCTAssertFalse(errored)
@@ -874,6 +881,18 @@ final class DashPayContactPersistenceTests: XCTestCase {
             let identity = walletEntry.identities![iIdx]
             for cIdx in 0..<Int(identity.contacts_count) {
                 let contact = identity.contacts![cIdx]
+                let encrypted = contact.encrypted_shielded_address.map {
+                    Data(bytes: $0, count: Int(contact.encrypted_shielded_address_len))
+                }
+                let address = withUnsafeBytes(of: contact.contact_shielded_address) { Data($0) }
+                if contact.is_outgoing {
+                    XCTAssertEqual(encrypted, outgoingEncrypted)
+                    XCTAssertFalse(contact.has_contact_shielded_address)
+                } else {
+                    XCTAssertEqual(encrypted, incomingEncrypted)
+                    XCTAssertTrue(contact.has_contact_shielded_address)
+                    XCTAssertEqual(address, contactAddress)
+                }
                 if let acceptedPtr = contact.accepted_accounts,
                    contact.accepted_accounts_len > 0 {
                     seen.append(Array(

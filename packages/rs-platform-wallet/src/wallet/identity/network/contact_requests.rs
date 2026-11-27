@@ -1391,6 +1391,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .properties()
             .get("encryptedAccountLabel")
             .and_then(|v: &Value| v.to_binary_bytes().ok());
+        // And its optional `encryptedShieldedAddress`, for the same reason: a
+        // tracked row is never refreshed from the sweep, so what is not
+        // copied here stays missing.
+        contact_request.encrypted_shielded_address = document
+            .properties()
+            .get(ENCRYPTED_SHIELDED_ADDRESS)
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
 
         // Register our receiving (friendship) account from the xpub the signer
         // already derived above: same friendship key, no second derivation and
@@ -4035,6 +4042,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                 self.store_contact_shielded_address(
                                     &entry.owner_identity_id,
                                     &entry.contact_id,
+                                    encrypted_public_key,
                                     &shared,
                                 )
                                 .await;
@@ -4875,20 +4883,29 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Called only where the same `shared_key` has just opened the request's
     /// `encryptedPublicKey` to a well-formed key and the account was built
     /// from it, which is what tells a right key from a wrong one: AES-CBC
-    /// does not. What the wallet takes is decided
-    /// by [`contact_request_shielded_address`], and an address of this wallet's
+    /// does not. `built_from_ciphertext` is that `encryptedPublicKey`. The
+    /// registration ran under another guard, so a rotation may have replaced
+    /// the request since: the address is set, or cleared, only while the
+    /// contact's live request still carries `built_from_ciphertext`, as
+    /// [`Self::note_external_account_registered`] stamps its marker. A
+    /// replaced request is left to its own account build.
+    ///
+    /// What the wallet takes is decided by
+    /// [`contact_request_shielded_address`], and an address of this wallet's
     /// own bound shielded accounts is refused as well. Anything refused leaves
     /// the contact without an address and never fails the caller: a reader
     /// that cannot use the value ignores it, the contact request stands.
     ///
     /// Only the **incoming** request is a source; the outgoing one carries the
-    /// address this wallet gave. Stored on the in-memory contact and flushed
-    /// through an `established` changeset entry, as the label is. The caller
-    /// must hold no wallet-manager guard.
+    /// address this wallet gave. Persisted through an `established` changeset
+    /// entry before the in-memory contact takes it, so memory never holds an
+    /// address the store refused. The caller must hold no wallet-manager
+    /// guard.
     pub(crate) async fn store_contact_shielded_address(
         &self,
         identity_id: &Identifier,
         contact_id: &Identifier,
+        built_from_ciphertext: &[u8],
         shared_key: &[u8; 32],
     ) {
         // The request's ciphertext and the profile address this wallet knows
@@ -4904,12 +4921,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Some(contact) = managed.dashpay().established_contacts().get(contact_id) else {
                 return;
             };
-            let profile_address = managed
-                .dashpay()
-                .contact_profiles
-                .get(contact_id)
-                .and_then(|entry| entry.profile.as_ref())
-                .and_then(|profile| profile.shielded_address.clone());
+            if contact.incoming_request.encrypted_public_key != built_from_ciphertext {
+                return;
+            }
+            // A sender this wallet tracks as an identity keeps its profile on
+            // its own record; any other sender's is in the contact cache.
+            let profile_address = match info.identity_manager.managed_identity(contact_id) {
+                Some(sender) => sender.dashpay().profile.as_ref(),
+                None => managed
+                    .dashpay()
+                    .contact_profiles
+                    .get(contact_id)
+                    .and_then(|entry| entry.profile.as_ref()),
+            }
+            .and_then(|profile| profile.shielded_address.clone());
             (
                 contact.incoming_request.encrypted_shielded_address.clone(),
                 profile_address,
@@ -4939,17 +4964,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let Some(contact) = managed.established_contact_mut(contact_id) else {
             return;
         };
-        // The lock was released above: a rotation since then replaced the
-        // request, and its own account build stores the new one's address.
-        if contact.incoming_request.encrypted_shielded_address != ciphertext {
+        // The lock was released above: still the request the account was
+        // built from, with the field that was read.
+        if contact.incoming_request.encrypted_public_key != built_from_ciphertext
+            || contact.incoming_request.encrypted_shielded_address != ciphertext
+        {
             return;
         }
         // Idempotent — skip the changeset write when nothing changed.
         if contact.contact_shielded_address == address {
             return;
         }
-        contact.contact_shielded_address = address;
-        let snapshot = contact.clone();
+        let mut updated = contact.clone();
+        updated.contact_shielded_address = address;
 
         let mut cs = ContactChangeSet::default();
         cs.established.insert(
@@ -4957,14 +4984,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 owner_id: *identity_id,
                 recipient_id: *contact_id,
             },
-            snapshot,
+            updated.clone(),
         );
         if let Err(e) = self.persister.store(cs.into()) {
             tracing::error!(
                 "Failed to persist contact shielded-address changeset: {}",
                 e
             );
+            return;
         }
+        *contact = updated;
     }
 
     /// Whether `address` belongs to one of this wallet's bound shielded
@@ -5427,8 +5456,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // The shielded address their request carries, only here: this is
             // where `shared` has just opened the request's xpub, which is what
             // says it is the right key. Never fails the accept.
-            self.store_contact_shielded_address(our_identity_id, contact_id, &shared)
-                .await;
+            self.store_contact_shielded_address(
+                our_identity_id,
+                contact_id,
+                contact_encrypted_xpub,
+                &shared,
+            )
+            .await;
         }
 
         // Surface the contact's account label from the same ECDH shared key

@@ -6,6 +6,7 @@
 //! the platform wallet handing it one.
 
 use super::AccountViewingKeys;
+use grovedb_commitment_tree::PaymentAddress;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -42,14 +43,19 @@ impl ContactShieldedAddresses {
     }
 
     /// Whether the raw 43-byte `address` belongs to one of the bound accounts, at any
-    /// diversifier index. `false` while the wallet is not bound: with no viewing key
-    /// there is nothing to compare with.
+    /// diversifier index and in either scope (an account's internal addresses are its
+    /// own too). `false` while the wallet is not bound: with no viewing key there is
+    /// nothing to compare with. `false` for bytes that are not an Orchard address.
     pub(crate) async fn is_own_address(&self, address: &[u8; 43]) -> bool {
-        self.viewing_keys
-            .read()
-            .await
-            .as_ref()
-            .is_some_and(|keys| keys.values().any(|keys| keys.is_own_recipient(address)))
+        let Some(address) =
+            Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(address))
+        else {
+            return false;
+        };
+        self.viewing_keys.read().await.as_ref().is_some_and(|keys| {
+            keys.values()
+                .any(|keys| keys.full_viewing_key.scope_for_address(&address).is_some())
+        })
     }
 }
 
@@ -70,6 +76,9 @@ mod tests {
         let own_address = ours
             .address_at(5u32, Scope::External)
             .to_raw_address_bytes();
+        let own_internal_address = ours
+            .address_at(5u32, Scope::Internal)
+            .to_raw_address_bytes();
         let other_address = theirs
             .address_at(5u32, Scope::External)
             .to_raw_address_bytes();
@@ -82,6 +91,7 @@ mod tests {
             AccountViewingKeys::from_full_viewing_key(ours),
         )])))));
         assert!(bound.is_own_address(&own_address).await);
+        assert!(bound.is_own_address(&own_internal_address).await);
         assert!(!bound.is_own_address(&other_address).await);
     }
 }
