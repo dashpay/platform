@@ -2563,19 +2563,29 @@ mod remove_versus_recreate_tests {
             let manager_for_hook = Arc::clone(&manager);
             let recreated_slot = Arc::clone(&recreated);
             // One-shot: the re-registration must not recurse into a later
-            // removal. Only this test's wallet fires it: another test's
-            // removal running meanwhile passes through.
-            let fired = AtomicBool::new(false);
+            // removal. Only this manager's removal of this test's wallet fires
+            // it: every fixture shares the wallet id, and another test's
+            // removal running meanwhile passes through. At this midpoint this
+            // manager's inner manager no longer holds the wallet.
+            let fired = Arc::new(AtomicBool::new(false));
             let target = wallet_id;
             *REMOVE_WALLET_MIDPOINT_HOOK
                 .lock()
                 .expect("midpoint hook mutex") = Some(Box::new(move |id| {
-                let already_fired = *id != target || fired.swap(true, Ordering::SeqCst);
                 let manager = Arc::clone(&manager_for_hook);
                 let recreated_slot = Arc::clone(&recreated_slot);
+                let fired = Arc::clone(&fired);
                 let id = *id;
                 Box::pin(async move {
-                    if already_fired {
+                    if id != target
+                        || manager
+                            .wallet_manager
+                            .read()
+                            .await
+                            .get_wallet_and_info(&id)
+                            .is_some()
+                        || fired.swap(true, Ordering::SeqCst)
+                    {
                         return;
                     }
                     let mnemonic =

@@ -1677,11 +1677,16 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
         // (a host's handle, or the event handlers that reach it through the
         // wallet map). Emptying the slot releases the coordinator and its
         // store with the manager, and refuses a later shielded operation on
-        // such a wallet as unconfigured. A slot locked at this moment (an
-        // operation still resolving it) is left as it is.
+        // such a wallet as unconfigured. A reader holds the slot only to clone
+        // the coordinator out, so a slot locked at this moment is emptied on
+        // a thread of its own once that read ends, without blocking the drop.
         #[cfg(feature = "shielded")]
-        if let Ok(mut slot) = self.shielded_coordinator.try_write() {
-            *slot = None;
+        match self.shielded_coordinator.try_write() {
+            Ok(mut slot) => *slot = None,
+            Err(_) => {
+                let slot = Arc::clone(&self.shielded_coordinator);
+                std::thread::spawn(move || *slot.blocking_write() = None);
+            }
         }
     }
 }
@@ -1936,6 +1941,38 @@ mod tests {
             Arc::new(NoopPersister),
             Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
         ))
+    }
+
+    /// A manager dropped while a wallet is reading its coordinator slot still
+    /// empties the slot once that read ends, so a wallet kept past the manager
+    /// reads as unconfigured and the coordinator is released.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_empty_a_coordinator_slot_read_while_the_manager_drops() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let mgr = make_manager();
+        mgr.configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configured");
+        let _ = mgr.shutdown().await;
+        let slot = Arc::clone(&mgr.shielded_coordinator);
+        let released = Arc::downgrade(slot.read().await.as_ref().expect("configured"));
+        let reading = slot.read().await;
+
+        drop(Arc::into_inner(mgr).expect("the only manager handle"));
+        assert!(reading.is_some(), "the read in progress is not disturbed");
+        drop(reading);
+
+        let emptied = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while slot.read().await.is_some() || released.strong_count() > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(
+            emptied.is_ok(),
+            "the slot is emptied and the coordinator released"
+        );
     }
 
     /// The constructor must register [`SpendObservationHandler`] on the event
