@@ -775,7 +775,9 @@ final class ErrorHandlingTests: XCTestCase {
         )
         XCTAssertEqual(code, .errorShieldedMerkleWitnessUnavailable)
         XCTAssertEqual(code.rawValue, 88)
-        let detail = "shielded withdraw failed: Shielded Merkle witness unavailable: position 7"
+        let detail = "Shielded Merkle witness unavailable: no checkpoint of the commitment tree "
+            + "covers the note at position 7 yet; try again after the next shielded sync, "
+            + "which checkpoints the tree"
         guard case .shieldedMerkleWitnessUnavailable(let message) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed merkle-witness-unavailable error")
