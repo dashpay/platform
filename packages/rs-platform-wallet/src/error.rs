@@ -2017,7 +2017,10 @@ impl PlatformWalletError {
             Self::FinalityTimeout(out_point)
             | Self::AssetLockInputContested { out_point, .. }
             | Self::AssetLockRecipientMismatch { out_point, .. }
-            | Self::AssetLockIdentityRecipientMismatch { out_point, .. } => LockHeld(*out_point),
+            | Self::AssetLockIdentityRecipientMismatch { out_point, .. }
+            | Self::AssetLockPlatformAddressRecipientMismatch { out_point, .. } => {
+                LockHeld(*out_point)
+            }
             // An identity top-up lock a resume cannot pay yet: it records no
             // identity (the user assigns one), or its bound identity is not
             // loaded. Nothing was submitted; the lock is held and the payment
@@ -2354,6 +2357,7 @@ impl PlatformWalletError {
                 | Self::AssetLockInputContested { .. }
                 | Self::AssetLockRecipientMismatch { .. }
                 | Self::AssetLockIdentityRecipientMismatch { .. }
+                | Self::AssetLockPlatformAddressRecipientMismatch { .. }
                 | Self::AssetLockRecipientUnknown(_)
                 | Self::AssetLockIdentityNotLoaded { .. }
                 | Self::AssetLockProofWait(_)
@@ -3565,6 +3569,7 @@ mod payment_delivery_tests {
             E::AssetLockRecipientUnknown(_) => 131,
             E::AssetLockIdentityNotLoaded { .. } => 132,
             E::AssetLockConsumptionUnknown(_) => 133,
+            E::AssetLockPlatformAddressRecipientMismatch { .. } => 134,
         }
     }
 
@@ -3715,6 +3720,18 @@ mod payment_delivery_tests {
             ),
             (
                 E::AssetLockRecipientUnknown(out_point()),
+                LockHeld(out_point()),
+            ),
+            (
+                E::AssetLockPlatformAddressRecipientMismatch {
+                    out_point: out_point(),
+                    recorded: Box::new(
+                        crate::changeset::PlatformAddressRecipients::new(
+                            [(dpp::address_funds::PlatformAddress::P2pkh([3u8; 20]), None)].into(),
+                        )
+                        .expect("one remainder"),
+                    ),
+                },
                 LockHeld(out_point()),
             ),
             (

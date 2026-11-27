@@ -117,13 +117,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| TrackedResumeMetadata {
-                funding_type: lock.funding_type,
-                identity_index: lock.identity_index,
-                status: lock.status.clone(),
-                identity_recipient: lock.identity_recipient,
-                shielded_recipient: lock.shielded_recipient,
-            })
+            .map(TrackedResumeMetadata::of)
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.
@@ -133,19 +127,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
             .and_then(|lock| lock.operation_id)
-    }
-
-    /// The Orchard recipient a tracked shielded funding was built to pay, if
-    /// the row recorded one (see `TrackedAssetLock::shielded_recipient`).
-    #[cfg(feature = "shielded")]
-    pub(crate) async fn tracked_shielded_recipient(
-        &self,
-        out_point: &OutPoint,
-    ) -> Option<crate::changeset::ShieldedRecipientRaw> {
-        let wm = self.wallet_manager.read().await;
-        wm.get_wallet_info(&self.wallet_id)
-            .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .and_then(|lock| lock.shielded_recipient)
     }
 
     /// The Platform addresses a tracked external Platform-address funding was

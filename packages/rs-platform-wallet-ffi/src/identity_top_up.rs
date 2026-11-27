@@ -694,6 +694,8 @@ pub(crate) fn catch_top_up_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The panic may come after the broadcast: maybe sent, never retried.
+        Some(panicked_payment_class()),
         TOP_UP_PANIC_GUIDANCE,
         body,
     )

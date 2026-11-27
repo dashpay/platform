@@ -649,6 +649,8 @@ fn catch_assignment_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        // An assignment sends nothing: no payment class.
+        None,
         "Nothing was paid. The assignment may or may not have been stored; assigning the same \
          identity again is safe.",
         body,
