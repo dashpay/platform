@@ -8,6 +8,7 @@ import {
 } from './record-renewal-outcome.js';
 import renewCertificate from './renewCertificate.js';
 import watchCertificateConfig from './watchCertificateConfig.js';
+import renderConfigFlag from '../util/renderConfigFlag.js';
 
 export const RETRY_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -109,28 +110,38 @@ export default function scheduleRenewalJob({
 
         isRenewed = true;
 
-        // A signal is sufficient and nothing here needs to restart the
-        // container. PID 1 in the gateway container is Envoy's hot-restarter,
-        // not Envoy: its SIGHUP handler forks and re-execs Envoy with an
-        // incremented restart epoch against the same envoy.yaml. The new
-        // process parses that file from scratch and opens the certificate by
-        // name, so the renewed certificate takes effect while the old process
-        // drains. A container restart would achieve the same thing and cost an
-        // outage.
-        try {
-          await dockerCompose.execCommand(renewal.config, 'gateway', 'kill -SIGHUP 1');
-        } catch (e) {
-          // A gateway that is down is not a certificate problem and is already
-          // reported as a stopped service; the documented upgrade procedure
-          // leaves it down on purpose. Anything else means the certificate is
-          // installed and the gateway is still serving the previous one.
-          reloadFailure = e instanceof ServiceIsNotRunningError ? null : e;
+        if (renewal.isGatewayRestartRequired) {
+          // The obtain replaced the bundle rather than writing it in place,
+          // and the gateway's bind mount keeps the file it had: a signal would
+          // load the previous certificate again.
+          // eslint-disable-next-line no-console
+          console.log(`${providerName} certificate renewed, but its bundle file was replaced, so the`
+            + ' gateway serves it only after a restart: dashmate restart --platform'
+            + ` ${renderConfigFlag(configName)}`);
+        } else {
+          // A signal is sufficient and nothing here needs to restart the
+          // container. PID 1 in the gateway container is Envoy's hot-restarter,
+          // not Envoy: its SIGHUP handler forks and re-execs Envoy with an
+          // incremented restart epoch against the same envoy.yaml. The new
+          // process parses that file from scratch and opens the certificate by
+          // name, so the renewed certificate takes effect while the old process
+          // drains. A container restart would achieve the same thing and cost an
+          // outage.
+          try {
+            await dockerCompose.execCommand(renewal.config, 'gateway', 'kill -SIGHUP 1');
+          } catch (e) {
+            // A gateway that is down is not a certificate problem and is already
+            // reported as a stopped service; the documented upgrade procedure
+            // leaves it down on purpose. Anything else means the certificate is
+            // installed and the gateway is still serving the previous one.
+            reloadFailure = e instanceof ServiceIsNotRunningError ? null : e;
 
-          throw e;
+            throw e;
+          }
+
+          // eslint-disable-next-line no-console
+          console.log(`${providerName} certificate renewed successfully`);
         }
-
-        // eslint-disable-next-line no-console
-        console.log(`${providerName} certificate renewed successfully`);
 
         completion = 'success';
       }

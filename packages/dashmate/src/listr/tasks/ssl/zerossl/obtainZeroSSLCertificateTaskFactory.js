@@ -18,6 +18,80 @@ import findCertificatePairProblem, {
 import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../../ssl/selectLeafCertificate.js';
 
 /**
+ * Install the bundle the gateway serves
+ *
+ * Compose bind-mounts bundle.crt into the gateway by itself, which pins the
+ * file's inode, and renewal only signals the gateway to load its files again.
+ * So a bundle that is a regular file with no other name is written in place:
+ * replaced by a rename, it would leave the running gateway serving the
+ * certificate it loaded until it expires. Anything else is never written
+ * through: a link to the private key, or a second name of it, would
+ * overwrite the key. It is replaced by a new file, written beside it and
+ * renamed over it, which the running gateway's mount does not see.
+ *
+ * @param {string} bundleFilePath
+ * @param {string} certificateFile
+ * @return {boolean} whether a bundle that was there was replaced rather than
+ *  written in place
+ */
+function installBundle(bundleFilePath, certificateFile) {
+  const content = Buffer.from(certificateFile, 'utf8');
+
+  let fd = null;
+  let isPresent = true;
+  try {
+    // Neither follows a link nor truncates: what is opened is checked first.
+    // eslint-disable-next-line no-bitwise
+    fd = fs.openSync(bundleFilePath, fs.constants.O_WRONLY | fs.constants.O_NOFOLLOW
+      | fs.constants.O_NONBLOCK);
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      isPresent = false;
+    } else if (e.code !== 'ELOOP') {
+      // ELOOP is a symbolic link, replaced below
+      throw e;
+    }
+  }
+
+  if (fd !== null) {
+    try {
+      const stats = fs.fstatSync(fd);
+
+      if (stats.isFile() && stats.nlink === 1) {
+        // In place, never by a rename: the gateway's bind mount pins this
+        // inode, and renewal reaches a running gateway only through it.
+        for (let offset = 0; offset < content.length;) {
+          offset += fs.writeSync(fd, content, offset, content.length - offset, offset);
+        }
+
+        // A shorter certificate leaves no tail of the previous one.
+        fs.ftruncateSync(fd, content.length);
+        fs.fsyncSync(fd);
+
+        return false;
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  const temporaryFilePath = `${bundleFilePath}.${process.pid}.tmp`;
+
+  fs.rmSync(temporaryFilePath, { force: true });
+
+  try {
+    fs.writeFileSync(temporaryFilePath, content, { flag: 'wx' });
+    fs.renameSync(temporaryFilePath, bundleFilePath);
+  } catch (e) {
+    fs.rmSync(temporaryFilePath, { force: true });
+
+    throw e;
+  }
+
+  return isPresent;
+}
+
+/**
  * @param {generateCsr} generateCsr
  * @param {generateKeyPair} generateKeyPair
  * @param {createZeroSSLCertificate} createZeroSSLCertificate
@@ -427,7 +501,16 @@ and all Dash service ports listed above.`);
               + ' command again: it downloads the certificate again');
           }
 
-          fs.writeFileSync(ctx.bundleFilePath, ctx.certificateFile, 'utf8');
+          if (installBundle(ctx.bundleFilePath, ctx.certificateFile)) {
+            ctx.isGatewayRestartRequired = true;
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = `${ctx.bundleFilePath} was a link or another name of a file, so it was`
+              + ' replaced rather than written through. A running gateway keeps serving the'
+              + ' certificate it loaded until it is restarted';
+
+            return;
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.bundleFilePath;

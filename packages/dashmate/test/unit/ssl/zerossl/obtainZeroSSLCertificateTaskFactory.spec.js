@@ -787,6 +787,46 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem.slice(0, pair.pem.length / 2));
     });
 
+    // The gateway's bind mount pins the inode of bundle.crt, and renewal only
+    // signals the gateway, so a renewal reaches a running gateway only when
+    // the bundle is written in place.
+    it('should write a bundle that is a file of its own in place, leaving none of the old one', async function it() {
+      this.timeout(30000);
+      fs.writeFileSync(bundleFilePath, `${pair.pem.slice(0, pair.pem.length / 2)}${'#'.repeat(pair.pem.length)}`);
+      const { ino } = fs.statSync(bundleFilePath);
+
+      const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+      await buildTask.call(this).run(ctx);
+
+      expect(fs.statSync(bundleFilePath).ino).to.equal(ino);
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(ctx.isGatewayRestartRequired).to.not.equal(true);
+    });
+
+    // Writing through a link where the bundle goes would overwrite what it
+    // points at, the key the certificate was issued for among them.
+    [
+      ['a symbolic link to the private key', (target, link) => fs.symlinkSync(target, link)],
+      ['a hard link to the private key', (target, link) => fs.linkSync(target, link)],
+    ].forEach(([description, makeLink]) => {
+      it(`should replace ${description} where the bundle goes rather than write through it`, async function it() {
+        this.timeout(30000);
+        fs.rmSync(bundleFilePath);
+        makeLink(privateKeyFilePath, bundleFilePath);
+
+        const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+        await buildTask.call(this).run(ctx);
+
+        expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(pair.keyPem);
+        expect(fs.lstatSync(bundleFilePath).isSymbolicLink()).to.be.false();
+        expect(fs.statSync(bundleFilePath).ino).to.not.equal(fs.statSync(privateKeyFilePath).ino);
+        expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+        expect(fs.readdirSync(sslConfigDir)).to.have.members(['bundle.crt', 'csr.pem', 'private.key']);
+        // The running gateway's mount keeps the file it had.
+        expect(ctx.isGatewayRestartRequired).to.be.true();
+      });
+    });
+
     // The bundle is replaced in place, and renewal writes over one the gateway
     // is serving.
     it('should not replace the bundle with a download the key on disk cannot serve', async function it() {

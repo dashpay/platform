@@ -34,8 +34,10 @@ describe('scheduleRenewalJob', () => {
    * @param {Object} options
    * @return {Promise<void>}
    */
-  async function run({ obtainError = null, execError = null } = {}) {
+  async function run({ obtainError = null, execError = null, isBundleReplaced = false } = {}) {
     dockerCompose.execCommand = async () => {
+      dockerCompose.signalled = true;
+
       if (execError) {
         throw execError;
       }
@@ -49,9 +51,13 @@ describe('scheduleRenewalJob', () => {
       providerName: "Let's Encrypt",
       expirationDays: 2,
       obtainCertificateTask: () => ({
-        run: async () => {
+        run: async (ctx) => {
           if (obtainError) {
             throw obtainError;
+          }
+
+          if (isBundleReplaced) {
+            ctx.isGatewayRestartRequired = true;
           }
         },
       }),
@@ -187,6 +193,21 @@ describe('scheduleRenewalJob', () => {
     expect(record.getGatewayReloadFailedAt()).to.not.equal(null);
     expect(record.getConsecutiveFailures()).to.equal(0);
     expect(record.getLastSuccessAt()).to.not.equal(null);
+  });
+
+  // The gateway's mount keeps the bundle a renewal replaced, so a signal
+  // would load the previous certificate and the log would claim otherwise.
+  it('should name a gateway restart instead of signalling when the bundle was replaced', async function it() {
+    const logged = [];
+    this.sinon.stub(console, 'log').callsFake((text) => logged.push(text));
+
+    await run({ isBundleReplaced: true });
+
+    expect(dockerCompose.signalled).to.not.equal(true);
+    expect(logged.join('\n')).to.include('dashmate restart --platform')
+      .and.not.include('renewed successfully');
+    expect(read().record.getLastSuccessAt()).to.not.equal(null);
+    expect(rescheduledWith).to.have.lengthOf(1);
   });
 
   it('should forget the record before handing renewal to another provider', async () => {

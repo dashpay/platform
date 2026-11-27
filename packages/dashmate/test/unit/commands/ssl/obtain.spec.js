@@ -113,6 +113,28 @@ describe('SSL obtain command', () => {
       .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
   });
 
+  // A bundle replaced by a new file is not the one the running gateway has
+  // mounted, so a signal would only load the previous certificate again.
+  it('should name a gateway restart instead of reloading when the bundle was replaced', async function it() {
+    let written = '';
+    this.sinon.stub(process.stdout, 'write').callsFake((chunk) => {
+      written += chunk;
+
+      return true;
+    });
+
+    const dependencies = obtainDependencies(this.sinon, 'zerossl');
+    dependencies.config.getName = this.sinon.stub().returns('testnet');
+    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => { ctx.isGatewayRestartRequired = true; },
+    }]));
+
+    await runObtain(dependencies);
+
+    expect(dependencies.dockerCompose.execCommand).to.not.have.been.called();
+    expect(written).to.include('dashmate restart --platform --config testnet');
+  });
+
   // Nothing on disk reveals which certificate a running Envoy actually holds,
   // so an obtain that writes no new files still has to reload. Otherwise an
   // operator whose earlier reload failed can never recover by running the
