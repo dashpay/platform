@@ -473,4 +473,82 @@ extension SDK {
     else { return false }
     return !state.isResolved
   }
+
+  // MARK: - Contest fund
+
+  /// The fund, in credits, a registration of `name` pays to join the name's
+  /// contest now, or `nil` when the name joins no contest (it is not
+  /// contested, or empty).
+  ///
+  /// The fund doubles once a contest holds 250 contenders and again for
+  /// every 50 more, so it is read from the network (one proved request for
+  /// the DPNS contract and one per 100 contenders) rather than taken from a
+  /// table. It is what `registerDpnsName(identityId:name:signer:maxContestFund:)`
+  /// states and is charged when `maxContestFund` is `nil`; pass the value read
+  /// here as `maxContestFund` to pay no more than the figure shown. A
+  /// registration signed later may need more: the contest grows.
+  ///
+  /// Whether a name is contested, and what its contest costs, is decided in
+  /// Rust (`Sdk::dpns_contest_fund_to_join`); nothing is computed here.
+  ///
+  /// - Parameter name: A label or a full name, in any case (`"alice"`,
+  ///   `"Alice.DASH"`); Rust strips the `.dash` suffix and normalizes it.
+  ///
+  /// `nonisolated`: the read blocks on the network inside Rust, so it runs on
+  /// the shared Platform query queue (see ``SDK/performBlockingQuery(_:)``).
+  public nonisolated func dpnsContestFundToJoin(name: String) async throws -> UInt64? {
+    try await performBlockingQuery { handle in
+      let result = name.withCString { dash_sdk_dpns_get_contest_fund_to_join(handle, $0) }
+
+      if let error = result.error {
+        let sdkError = SDKError.fromDashSDKError(error.pointee)
+        dash_sdk_error_free(error)
+        throw sdkError
+      }
+      guard let dataPtr = result.data else {
+        throw SDKError.internalError("DPNS contest fund read returned no data")
+      }
+
+      let json = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+      dash_sdk_string_free(dataPtr)
+      return try Self.decodeContestFundToJoin(json: json)
+    }
+  }
+
+  /// Decode the `dash_sdk_dpns_get_contest_fund_to_join` payload:
+  /// `{"contestFund": 10000000000}` (credits), or `{"contestFund": null}` for
+  /// a name that joins no contest. A payload without the key is refused
+  /// rather than read as "no contest".
+  ///
+  /// `internal` rather than `private` so the hermetic decoder tests can drive
+  /// it without a live SDK handle.
+  nonisolated static func decodeContestFundToJoin(json: String) throws -> UInt64? {
+    do {
+      return try JSONDecoder().decode(DPNSContestFundToJoinPayload.self, from: Data(json.utf8))
+        .contestFund
+    } catch {
+      throw SDKError.serializationError("Failed to parse DPNS contest fund: \(error)")
+    }
+  }
+}
+
+/// The `dash_sdk_dpns_get_contest_fund_to_join` payload. `contestFund` must be
+/// present: a number of credits, or `null`.
+private struct DPNSContestFundToJoinPayload: Decodable {
+  let contestFund: UInt64?
+
+  private enum CodingKeys: String, CodingKey {
+    case contestFund
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.contestFund) else {
+      throw DecodingError.keyNotFound(
+        CodingKeys.contestFund,
+        DecodingError.Context(
+          codingPath: container.codingPath, debugDescription: "contestFund is missing"))
+    }
+    contestFund = try container.decode(UInt64?.self, forKey: .contestFund)
+  }
 }

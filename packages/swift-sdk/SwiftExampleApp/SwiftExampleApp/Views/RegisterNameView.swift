@@ -29,6 +29,16 @@ struct RegisterNameView: View {
   @State private var availabilityGate = AvailabilityRequestGate()
   @State private var isRegistering = false
   @State private var registrationSuccess = false
+  @State private var contestFund = ContestFundState.idle
+
+  /// The read of what joining the typed name's contest costs now.
+  private enum ContestFundState: Equatable {
+    case idle
+    case loading
+    /// The fund in credits; `nil` when Platform says the name joins no contest.
+    case loaded(UInt64?)
+    case failed(String)
+  }
 
   private var normalizedUsername: String {
     // Use the FFI function to normalize the username
@@ -154,6 +164,33 @@ struct RegisterNameView: View {
       let result = dash_sdk_dpns_is_contested_username(namePtr)
       return result == 1
     }
+  }
+
+  /// Reads the fund to join the contest of `name` from Platform
+  /// (`SDK.dpnsContestFundToJoin`), after a short pause so a name still
+  /// being typed is not read letter by letter.
+  private func loadContestFund(for name: String) async {
+    contestFund = .loading
+    guard let sdk = appState.sdk else {
+      contestFund = .failed("SDK not initialized")
+      return
+    }
+    do {
+      try await Task.sleep(nanoseconds: 500_000_000)
+      let credits = try await sdk.dpnsContestFundToJoin(name: name)
+      guard !Task.isCancelled else { return }
+      contestFund = .loaded(credits)
+    } catch is CancellationError {
+      return
+    } catch {
+      guard !Task.isCancelled else { return }
+      contestFund = .failed(error.localizedDescription)
+    }
+  }
+
+  /// 1 DASH is 100,000,000,000 credits.
+  private static func formatDash(credits: UInt64) -> String {
+    String(format: "%.4f DASH", Double(credits) / 100_000_000_000)
   }
 
   var body: some View {
@@ -291,6 +328,36 @@ struct RegisterNameView: View {
               }
             }
             .padding(.vertical, 4)
+
+            HStack {
+              Text("Fund to join")
+              Spacer()
+              switch contestFund {
+              case .idle, .loading:
+                ProgressView()
+              case .loaded(let credits?):
+                VStack(alignment: .trailing, spacing: 2) {
+                  Text(Self.formatDash(credits: credits))
+                  Text("\(credits) credits")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+              case .loaded(nil):
+                Text("None")
+                  .foregroundColor(.secondary)
+              case .failed(let message):
+                Text(message)
+                  .font(.caption)
+                  .foregroundColor(.red)
+                  .multilineTextAlignment(.trailing)
+              }
+            }
+            .accessibilityIdentifier("dpnsContestFundToJoin")
+          }
+          // Re-read whenever the contested name changes; a read for a name
+          // the user has typed past is cancelled and its result dropped.
+          .task(id: normalizedUsername) {
+            await loadContestFund(for: normalizedUsername)
           }
         }
 
