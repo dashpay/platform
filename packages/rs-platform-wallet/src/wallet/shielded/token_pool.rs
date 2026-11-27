@@ -456,8 +456,7 @@ pub(super) fn purge_wallet(tx: &Transaction<'_>, wallet_id: WalletId) -> rusqlit
 
 /// Drop one account's notes and scan state in every pool, as dropping or
 /// re-keying the account does. The wallet keeps watching its pools.
-pub(super) fn purge_subwallet(conn: &mut Connection, id: SubwalletId) -> rusqlite::Result<()> {
-    let tx = conn.transaction()?;
+pub(super) fn purge_subwallet(tx: &Transaction<'_>, id: SubwalletId) -> rusqlite::Result<()> {
     for table in [
         "shielded_token_pool_watermarks",
         "shielded_token_pool_notes",
@@ -467,7 +466,7 @@ pub(super) fn purge_subwallet(conn: &mut Connection, id: SubwalletId) -> rusqlit
             params![id.wallet_id.as_slice(), id.account_index],
         )?;
     }
-    tx.commit()
+    Ok(())
 }
 
 /// Drop every token pool row but the watches, as clearing the shielded store

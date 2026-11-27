@@ -335,7 +335,11 @@ impl PlatformWallet {
         // ChainLock wait below must not hold a Clear back. Its epoch fences
         // that write against a Clear completing in between.
         let coordinator = self.shielded_coordinator().await?;
-        let funding_epoch = coordinator.admit().await?.epoch();
+        let (funding_epoch, registered) = {
+            let admission = coordinator.admit().await?;
+            let registered = coordinator.is_wallet_registered(self.wallet_id()).await;
+            (admission.epoch(), registered)
+        };
         let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // A resume pays the recipient its lock was built for. The row recorded
@@ -431,8 +435,9 @@ impl PlatformWallet {
                     ));
                 }
                 // A Clear drops the registration but not the handle's keys: no
-                // sync pass would scan the account the drain pays into.
-                if !coordinator.is_wallet_registered(self.wallet_id()).await {
+                // sync pass would scan the account the drain pays into. Read
+                // under the admission `funding_epoch` comes from.
+                if !registered {
                     return Err(PlatformWalletError::ShieldedNotBound);
                 }
                 platform_version = self.sdk.version();

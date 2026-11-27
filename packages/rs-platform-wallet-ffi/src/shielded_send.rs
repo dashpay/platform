@@ -402,7 +402,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_plan_spend(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
     catch_plan_panic("shielded spend plan", || {
-        let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
+        // The wallet answers for its own shielded readiness.
+        let wallet = match resolve_wallet(handle, &wallet_id) {
             Ok(p) => p,
             Err(result) => return result,
         };

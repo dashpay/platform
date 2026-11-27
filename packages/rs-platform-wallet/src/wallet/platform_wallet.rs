@@ -2200,10 +2200,6 @@ impl PlatformWallet {
         kind: super::shielded::note_selection::ShieldedSpendKind,
         amount: super::shielded::note_selection::ShieldedSpendAmount,
     ) -> Result<super::shielded::note_selection::ShieldedSpendPlan, PlatformWalletError> {
-        // Admitted as a balance read is: refused while a Clear's host wipe is
-        // pending, as the store it would plan against is already reset.
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
         let bound = self
             .shielded_keys
             .read()
@@ -2215,6 +2211,15 @@ impl PlatformWallet {
             return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
                 "shielded account {account} not bound"
             )));
+        }
+        // Admitted as a balance read is, which a pending host wipe refuses. The
+        // handle keeps its keys across a Clear, so the registration is what
+        // says the store holds this wallet's notes: without it they read as
+        // none.
+        let coordinator = self.shielded_coordinator().await?;
+        let _admission = coordinator.admit().await?;
+        if !coordinator.is_wallet_registered(self.wallet_id).await {
+            return Err(PlatformWalletError::ShieldedNotBound);
         }
         super::shielded::operations::plan_spend(
             &self.sdk,

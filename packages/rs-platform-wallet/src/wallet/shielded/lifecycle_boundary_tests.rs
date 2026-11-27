@@ -1042,6 +1042,59 @@ async fn should_refuse_restorations_until_a_failed_host_wipe_is_retried() {
     assert!(!wallet.private_payments_held().await);
 }
 
+/// A spend preview answers from the wallet's state, never from a store a
+/// Clear emptied under keys the handle kept: a never-bound wallet is not
+/// bound even before shielded setup, a failed host wipe asks for the retry,
+/// and a successful Clear leaves the wallet unbound until it binds again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_spend_preview_the_store_cannot_answer() {
+    use crate::wallet::shielded::note_selection::{ShieldedSpendAmount, ShieldedSpendKind};
+    let preview = |wallet: Arc<PlatformWallet>| async move {
+        wallet
+            .shielded_plan_spend(
+                0,
+                ShieldedSpendKind::Transfer,
+                ShieldedSpendAmount::Exact(1_000),
+            )
+            .await
+            .map(|_| ())
+    };
+
+    let (_unconfigured, never_bound) = unconfigured(&BoundaryHost::new()).await;
+    let result = preview(never_bound).await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedNotBound)),
+        "{result:?}"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, _coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+
+    host.fail_wipe.store(true, Ordering::SeqCst);
+    manager
+        .clear_shielded()
+        .await
+        .expect_err("the host wipe fails");
+    let result = preview(Arc::clone(&wallet)).await;
+    assert!(
+        matches!(&result, Err(PlatformWalletError::ShieldedStoreError(message)) if message.contains("did not wipe host storage")),
+        "{result:?}"
+    );
+
+    host.fail_wipe.store(false, Ordering::SeqCst);
+    manager
+        .clear_shielded()
+        .await
+        .expect("the retry wipes the host");
+    let result = preview(wallet).await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedNotBound)),
+        "{result:?}"
+    );
+}
+
 /// A bind parked inside its admission refuses a Clear requested meanwhile
 /// and runs its private payment restoration under that same admission: the
 /// refused Clear neither makes it defer the restoration nor leaves it

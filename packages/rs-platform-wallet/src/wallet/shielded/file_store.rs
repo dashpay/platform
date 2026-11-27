@@ -2154,10 +2154,14 @@ impl ShieldedStore for FileBackedShieldedStore {
         // Note-spend redrives are account-scoped and go with the account.
         // Empty-nullifier ShieldFromIdentity guards are wallet-wide: the signed
         // debit remains executable after its recipient account is re-bound, so
-        // retain those rows and their minimal in-memory state.
+        // retain those rows and their minimal in-memory state. One
+        // transaction with the token pool rows, as in `purge_wallet`.
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            conn.execute(
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let tx = conn.transaction().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("begin subwallet purge: {e}"))
+            })?;
+            tx.execute(
                 "DELETE FROM shielded_pending_spends \
                  WHERE wallet_id = ?1 AND account_index = ?2 \
                    AND length(nullifiers) > 0",
@@ -2166,11 +2170,11 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge pending spends for subwallet: {e}"))
             })?;
-        }
-        {
-            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
-            super::token_pool::purge_subwallet(&mut conn, id).map_err(|e| {
+            super::token_pool::purge_subwallet(&tx, id).map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge token pools for subwallet: {e}"))
+            })?;
+            tx.commit().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("commit subwallet purge: {e}"))
             })?;
         }
         let identity_redrives = self
@@ -2811,8 +2815,9 @@ mod tests {
             assert_eq!(rows, saved.len() as u32, "{damaged}: the rows are kept");
         }
         // A quarantined record resolves as an armed one does: the scan seeing its
-        // nullifier drops the row.
+        // nullifier drops the row, after a scan cleanup too.
         let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        store.forget_wallet_scan(id.wallet_id);
         store
             .save_note(
                 id,
@@ -3338,7 +3343,8 @@ mod tests {
 
     /// A purge whose token pool step fails deletes nothing: the wallet's
     /// recovery row and kept identity accounts stay on disk and in memory,
-    /// for a wallet purge and for a Clear's purge of every wallet.
+    /// for an account purge, a wallet purge and a Clear's purge of every
+    /// wallet.
     #[test]
     fn should_keep_every_recovery_row_when_a_purge_fails_part_way() {
         let path = temp_tree_path("purge_fails_part_way");
@@ -3372,6 +3378,7 @@ mod tests {
                 .execute("DROP TABLE shielded_token_pool_notes", [])
                 .expect("drop");
 
+            assert!(store.purge_subwallet(id).is_err());
             assert!(store.purge_wallet(id.wallet_id).is_err());
             assert!(store.purge_all_subwallets().is_err());
             assert_eq!(store.pending_redrives(id).expect("redrives").len(), 1);
