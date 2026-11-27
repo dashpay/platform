@@ -913,15 +913,23 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::ShieldedMerkleWitnessUnavailable`: no
     /// checkpoint of the wallet's local commitment tree covers a selected note
-    /// yet (its position was appended after the latest checkpoint). Raised
+    /// yet (its position was appended after the latest checkpoint), or a token
+    /// pool spend selected a note past the leaves its pool's scan kept. Raised
     /// while the spend is assembled, before any proof is built or anything
     /// broadcast, and the note reservations are released, so nothing left the
-    /// wallet: RETRYABLE after the next shielded sync, which checkpoints the
-    /// tree at its size. Only that case: a store that cannot produce the path
-    /// (unreadable, poisoned, or a covered position the tree cannot witness)
-    /// is `ShieldedStoreError`, which keeps the generic code. Returned by every
-    /// note spend (transfer, unshield, withdrawal, identity top-up and identity
-    /// create from the pool, private document create). Distinct from
+    /// wallet: RETRYABLE. For a credit pool note, the next shielded sync
+    /// checkpoints the tree at its size. For a token pool note, a sync gets
+    /// past it only when its scan reads the missing positions: the scan
+    /// resumes from the lowest account watermark rounded down to a chunk
+    /// boundary, so a gap before that point returns 88 after every sync until
+    /// a scan starts at or before it (a shielded Clear restarts the scan from
+    /// position 0). Only those cases: a store that cannot produce the path
+    /// (unreadable, poisoned, a covered position the tree cannot witness, or a
+    /// token pool tree that does not build) is `ShieldedStoreError`, which
+    /// keeps the generic code. Returned by every note spend (transfer,
+    /// unshield, withdrawal, identity top-up and identity create from the
+    /// pool, private document create, token purchase from the pool) and by
+    /// the token pool transfer and unshield. Distinct from
     /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
     ErrorShieldedMerkleWitnessUnavailable = 88,
 

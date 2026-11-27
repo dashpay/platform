@@ -1041,9 +1041,12 @@ pub(crate) fn map_spend_result(
             retry_after_sync_message(&e),
         ),
         // Retryable: no checkpoint of the local commitment tree covers a
-        // selected note yet. Refused while the spend was assembled, before the
-        // proof and the broadcast, with the notes released; the next shielded
-        // sync checkpoints the tree. A store that cannot produce the path is
+        // selected note yet, or a token pool note is past the leaves its scan
+        // kept. Refused while the spend was assembled, before the proof and
+        // the broadcast, with the notes released. For a credit pool note the
+        // next shielded sync checkpoints the tree; a token pool gap before the
+        // scan's resume point needs a scan that starts at or before it (see
+        // `ErrorShieldedMerkleWitnessUnavailable`). A store that cannot produce the path is
         // `ShieldedStoreError` and keeps the generic code below.
         Err(e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)) => {
             PlatformWalletFFIResult::err(

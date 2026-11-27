@@ -1252,7 +1252,8 @@ pub(crate) fn spend_paths(
             .ok_or_else(|| {
                 PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
                     "note {} of the shielded pool of token {token_id} is past the leaves kept; \
-                     sync the shielded pools first",
+                     sync the shielded pools first (a gap before the point the token scan \
+                     resumes from needs a scan from the start, such as after a shielded Clear)",
                     note.position
                 ))
             })?;
