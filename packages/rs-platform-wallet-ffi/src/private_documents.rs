@@ -438,6 +438,7 @@ fn catch_read_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         READ_PANIC_GUIDANCE,
         body,
     )

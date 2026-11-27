@@ -3,7 +3,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
-use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use crate::{check_ptr, unwrap_option_or_return};
 use platform_wallet::PlatformWalletError;
 use std::os::raw::c_char;
 
@@ -68,9 +68,11 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
         unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_STORAGE.remove(transaction_handle));
     let Some(wallet) = CORE_WALLET_STORAGE.with_item(handle, Clone::clone) else {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
-        return PlatformWalletFFIResult::err(
+        let message = "invalid core wallet handle";
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "invalid core wallet handle".to_string(),
+            message,
+            &PlatformWalletError::InvalidParameter(message.to_string()),
         );
     };
     // Same generation identity the registry-token path uses: reject a caller
@@ -78,9 +80,10 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     // under the same id) before acting through the embedded originating wallet.
     if !wallet.is_same_generation(&finalized.wallet) {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
-        return PlatformWalletFFIResult::err(
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "transaction was finalized by a different wallet generation".to_string(),
+            "transaction was finalized by a different wallet generation",
+            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
     let local_txid = finalized.transaction.transaction().txid();
@@ -105,11 +108,11 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     });
     if !wallet_is_live {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
-        return PlatformWalletFFIResult::err(
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::NotFound,
             "wallet is no longer registered in the manager (removed or re-created); the \
-             transaction was NOT broadcast and its reservation was reconciled"
-                .to_string(),
+             transaction was NOT broadcast and its reservation was reconciled",
+            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
 
@@ -122,7 +125,19 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     let Some(txid) = txid else {
         return ffi_result;
     };
-    let c_str = unwrap_result_or_return!(std::ffi::CString::new(txid.to_string()));
+    // A txid that cannot be handed back never crosses unclassified: a failed
+    // dispatch keeps its own result (and class), a successful one carries the
+    // wallet's class for a payment whose result could not be handed back.
+    let c_str = match std::ffi::CString::new(txid.to_string()) {
+        Ok(c_str) => c_str,
+        Err(_) if ffi_result.code != PlatformWalletFFIResultCode::Success => return ffi_result,
+        Err(e) => {
+            return PlatformWalletFFIResult::handback_failure(
+                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                format!("string contained an interior NUL byte: {e}"),
+            )
+        }
+    };
     *out_txid = c_str.into_raw();
     ffi_result
 }

@@ -19,11 +19,13 @@ use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
-use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use crate::error::{
+    catch_funding_panic, catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+};
 use crate::handle::Handle;
 use crate::persistence::{funding_type_from_u8, status_from_u8};
 use crate::runtime::block_on_worker;
-use crate::shielded_send::{catch_funding_panic, resolve_wallet_and_coordinator};
+use crate::shielded_send::resolve_wallet_and_coordinator;
 use crate::types::FFINetwork;
 
 use std::sync::Arc;
@@ -117,6 +119,7 @@ fn catch_wallet_drain_read_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "This read did not submit a transaction; retain any earlier pending operation.",
         body,
     )

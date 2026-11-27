@@ -72,6 +72,44 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("funded identity registration", || {
+        platform_wallet_register_identity_with_funding_signer_inner(
+            wallet_handle,
+            amount_duffs,
+            account_index,
+            identity_index,
+            identity_pubkeys,
+            identity_pubkeys_count,
+            signer_handle,
+            core_signer_handle,
+            out_identity_id,
+            out_identity_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_register_identity_with_funding_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_wallet_register_identity_with_funding_signer_inner(
+    wallet_handle: Handle,
+    amount_duffs: u64,
+    account_index: u32,
+    identity_index: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    signer_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_identity_id: *mut [u8; 32],
+    out_identity_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
     check_ptr!(core_signer_handle);
     check_ptr!(identity_pubkeys);
@@ -189,6 +227,44 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("resumed identity registration", || {
+        platform_wallet_resume_identity_with_existing_asset_lock_signer_inner(
+            wallet_handle,
+            out_point,
+            identity_index,
+            identity_pubkeys,
+            identity_pubkeys_count,
+            signer_handle,
+            core_signer_handle,
+            consume_invitation_voucher,
+            out_identity_id,
+            out_identity_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_resume_identity_with_existing_asset_lock_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_wallet_resume_identity_with_existing_asset_lock_signer_inner(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    identity_index: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    signer_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    consume_invitation_voucher: bool,
+    out_identity_id: *mut [u8; 32],
+    out_identity_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
     check_ptr!(out_point);
     check_ptr!(signer_handle);
     check_ptr!(core_signer_handle);
@@ -293,6 +369,35 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
 /// - `out_new_balance` must be a valid `*mut u64`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock_signer(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    identity_id: *const [u8; 32],
+    core_signer_handle: *mut MnemonicResolverHandle,
+    consume_invitation_voucher: bool,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("resumed identity top-up", || {
+        platform_wallet_topup_identity_with_existing_asset_lock_signer_inner(
+            wallet_handle,
+            out_point,
+            identity_id,
+            core_signer_handle,
+            consume_invitation_voucher,
+            out_new_balance,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_topup_identity_with_existing_asset_lock_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn platform_wallet_topup_identity_with_existing_asset_lock_signer_inner(
     wallet_handle: Handle,
     out_point: *const OutPointFFI,
     identity_id: *const [u8; 32],

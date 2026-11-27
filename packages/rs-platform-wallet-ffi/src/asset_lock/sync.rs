@@ -219,6 +219,37 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     out_proof_len: *mut usize,
     out_derivation_path: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("asset-lock resume", || {
+        asset_lock_manager_resume_inner(
+            handle,
+            txid,
+            vout,
+            timeout_secs,
+            out_proof_bytes,
+            out_proof_len,
+            out_derivation_path,
+        )
+    })
+}
+
+/// Body of [`asset_lock_manager_resume`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn asset_lock_manager_resume_inner(
+    handle: Handle,
+    txid: *const [u8; 32],
+    vout: u32,
+    timeout_secs: u64,
+    out_proof_bytes: *mut *mut u8,
+    out_proof_len: *mut usize,
+    out_derivation_path: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
     check_ptr!(txid);
     check_ptr!(out_proof_bytes);
     check_ptr!(out_proof_len);
@@ -245,15 +276,21 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
         }
     };
     let (proof, path) = unwrap_result_or_return!(result);
-    let bytes = unwrap_result_or_return!(dpp::bincode::encode_to_vec(
-        &proof,
-        dpp::bincode::config::standard()
-    ));
+    // The resumed lock stays tracked: a failure to hand the result back is
+    // `MaybeSent` and names no lock (the tracked asset-lock list offers it). Both fallible steps run before any out-parameter
+    // is written, so a failure leaves nothing for the host to free.
+    let bytes = match dpp::bincode::encode_to_vec(&proof, dpp::bincode::config::standard()) {
+        Ok(bytes) => bytes,
+        Err(e) => return super::lock_handoff_failure(handle, out_point, e.into()),
+    };
+    let path_c = match CString::new(path.to_string()) {
+        Ok(path_c) => path_c,
+        Err(e) => return super::lock_handoff_failure(handle, out_point, e.into()),
+    };
     let len = bytes.len();
     let boxed = bytes.into_boxed_slice();
     *out_proof_bytes = Box::into_raw(boxed) as *mut u8;
     *out_proof_len = len;
-    let path_c = unwrap_result_or_return!(CString::new(path.to_string()));
     *out_derivation_path = path_c.into_raw();
     PlatformWalletFFIResult::ok()
 }
@@ -300,6 +337,26 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 /// from the record.
 #[no_mangle]
 pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
+    handle: Handle,
+    txid: *const [u8; 32],
+    vout: u32,
+    timeout_secs: u64,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("asset-lock catch-up", || {
+        asset_lock_manager_catch_up_blocking_inner(handle, txid, vout, timeout_secs)
+    })
+}
+
+/// Body of [`asset_lock_manager_catch_up_blocking`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn asset_lock_manager_catch_up_blocking_inner(
     handle: Handle,
     txid: *const [u8; 32],
     vout: u32,
@@ -370,31 +427,7 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 error = %e,
                 "asset_lock_manager_catch_up_blocking: resume_asset_lock failed"
             );
-            match e {
-                // Double-spend verdicts route through the typed conversion
-                // so the host receives the real code. In practice that is
-                // always the provisional ErrorAssetLockInputContested
-                // (48), which bounds the wait but keeps the lock for a
-                // later retry: the resume never raises the terminal
-                // ErrorAssetLockInputConflict (47), which stays reserved
-                // for a finalized-ancestry proof the wallet cannot make.
-                // 47 is matched anyway so the reserved code would cross
-                // intact rather than flattening the day it ships.
-                // Flattening either to ErrorWalletOperation would leave
-                // the host with a spinner it can never resolve.
-                //
-                // The input-cap refusal (60) crosses typed for the same
-                // reason: a lock over the cap is never re-sent, so every
-                // catch-up of it ends here, and only the code tells the
-                // host why this row will not complete.
-                typed @ (PlatformWalletError::AssetLockInputConflict { .. }
-                | PlatformWalletError::AssetLockInputContested { .. }
-                | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
-                other => PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorWalletOperation,
-                    format!("{}", other),
-                ),
-            }
+            catch_up_error_result(e)
         }
     }
 }
@@ -461,12 +494,48 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
     PlatformWalletFFIResult::ok()
 }
 
+/// The result a failed catch-up resume reports: the double-spend verdicts and
+/// the input-cap refusal keep their typed codes, everything else folds into
+/// `ErrorWalletOperation`; every arm keeps the error's payment class.
+fn catch_up_error_result(e: PlatformWalletError) -> PlatformWalletFFIResult {
+    // Read through the payment-class wrapper: a contested lock the
+    // resume names no held lock for keeps its typed code.
+    match e.dispatched_source() {
+        // Double-spend verdicts route through the typed conversion
+        // so the host receives the real code. In practice that is
+        // always the provisional ErrorAssetLockInputContested
+        // (48), which bounds the wait but keeps the lock for a
+        // later retry: the resume never raises the terminal
+        // ErrorAssetLockInputConflict (47), which stays reserved
+        // for a finalized-ancestry proof the wallet cannot make.
+        // 47 is matched anyway so the reserved code would cross
+        // intact rather than flattening the day it ships.
+        // Flattening either to ErrorWalletOperation would leave
+        // the host with a spinner it can never resolve.
+        //
+        // The input-cap refusal (60) crosses typed for the same
+        // reason: a lock over the cap is never re-sent, so every
+        // catch-up of it ends here, and only the code tells the
+        // host why this row will not complete.
+        PlatformWalletError::AssetLockInputConflict { .. }
+        | PlatformWalletError::AssetLockInputContested { .. }
+        | PlatformWalletError::AssetLockTooManyInputs { .. } => e.into(),
+        // The fold keeps the error's payment-delivery class, so a
+        // proof wait that timed out still names the lock it holds.
+        _ => PlatformWalletFFIResult::err_from_wallet_error(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("{}", e),
+            &e,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        asset_lock_manager_catch_up_blocking, asset_lock_manager_resume, resume_timeout,
-        timeout_probe, validate_asset_lock_proof_size, MAX_ASSET_LOCK_PROOF_SIZE_BYTES,
-        MAX_TIMEOUT_SECS,
+        asset_lock_manager_catch_up_blocking, asset_lock_manager_resume, catch_up_error_result,
+        resume_timeout, timeout_probe, validate_asset_lock_proof_size,
+        MAX_ASSET_LOCK_PROOF_SIZE_BYTES, MAX_TIMEOUT_SECS,
     };
     use crate::error::PlatformWalletFFIResultCode;
     use crate::handle::{Handle, ASSET_LOCK_MANAGER_STORAGE};
@@ -626,6 +695,30 @@ mod tests {
     /// with one input more than the cap. It carries no asset-lock payload:
     /// the resume asks only DPP's input check, which reads the input count
     /// and nothing else.
+    #[test]
+    fn should_keep_a_contested_lock_typed_when_the_resume_names_no_held_lock() {
+        use platform_wallet::PlatformWalletError;
+        let contested = PlatformWalletError::AssetLockInputContested {
+            out_point: OutPoint::new(Txid::from_byte_array([1u8; 32]), 0),
+            input: OutPoint::new(Txid::from_byte_array([2u8; 32]), 1),
+            spent_by: Txid::from_byte_array([3u8; 32]),
+            height: None,
+        };
+        let wrapped = PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: None,
+            source: Box::new(contested),
+        };
+        let result = catch_up_error_result(wrapped);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputContested
+        );
+        assert_eq!(
+            result.payment_delivery,
+            crate::error::PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+    }
+
     #[test]
     fn should_keep_the_input_cap_refusal_typed_through_the_exported_catch_up() {
         let (manager, handle) = live_manager_handle();

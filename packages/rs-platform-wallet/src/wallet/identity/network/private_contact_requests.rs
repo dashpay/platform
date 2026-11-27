@@ -1052,13 +1052,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 {
                     return None;
                 }
+                // An earlier public request to the pair blocks this one,
+                // refused before anything is reserved or paid (`NotSent`,
+                // not retryable until that one settles).
                 if managed
                     .dashpay()
                     .public_contact_request_unconfirmed(recipient_identity_id)
                 {
                     return Some(Err(PlatformWalletError::PublicContactRequestUnconfirmed(
                         *recipient_identity_id,
-                    )));
+                    )
+                    .before_dispatch()));
                 }
                 if held_by_wallet {
                     return Some(Ok(None));
@@ -1103,7 +1107,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // never left the wallet.
         let keep_pending = reservation.payment_may_have_executed
             || matches!(
-                &sent,
+                sent.as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::PrivateContactRequestPending(_)
                     | PlatformWalletError::ShieldedSpendUnconfirmed { .. }
                     | PlatformWalletError::ShieldedBroadcastMaybeDelivered(_))
@@ -1832,10 +1837,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 );
                 None
             });
+        // Paid for: pending, never `NotSent` (the payment may execute).
         let Some(contact_request) = recorded else {
-            return Err(PlatformWalletError::PrivateContactRequestPending(
-                *recipient_identity_id,
-            ));
+            return Err(
+                PlatformWalletError::PrivateContactRequestPending(*recipient_identity_id)
+                    .after_dispatch(),
+            );
         };
         if let Err(e) = self
             .register_contact_account(
@@ -2740,6 +2747,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
 #[cfg(test)]
 mod tests {
+    /// `result` with its error read through the payment-class wrappers: a
+    /// paid request not read back is `PrivateContactRequestPending` under
+    /// `PaymentAlreadyDispatched`, a request another one blocks is its
+    /// refusal under `RefusedBeforeDispatch`.
+    fn source_of<T>(result: &Result<T, PlatformWalletError>) -> Result<&T, &PlatformWalletError> {
+        result
+            .as_ref()
+            .map_err(PlatformWalletError::dispatched_source)
+    }
+
     use super::super::contact_requests::sent_contact_request_query;
     use super::super::contact_shielded_address::test_hooks::give_every_contact;
     use super::*;
@@ -3672,7 +3689,7 @@ mod tests {
         let paid = fixture.send_again(keep_entry(&retry)).await;
         assert!(
             matches!(
-                paid,
+                source_of(&paid),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {paid:?}"
@@ -5198,7 +5215,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {sent:?}"
@@ -6024,7 +6041,7 @@ mod tests {
                 .await
             };
         }
-        let pending = |result: &Result<ContactRequest, PlatformWalletError>| matches!(result, Err(PlatformWalletError::PrivateContactRequestPending(id)) if *id == bob.id());
+        let pending = |result: &Result<ContactRequest, PlatformWalletError>| matches!(source_of(result), Err(PlatformWalletError::PrivateContactRequestPending(id)) if *id == bob.id());
 
         // A payment that definitely failed releases the recipient.
         let failed = send!(|_, _| std::future::ready(Err(
@@ -6385,7 +6402,7 @@ mod tests {
                 .accept_contact_request_with_external_signer(&request, &alice_signer, &alice_crypto)
                 .await;
             assert!(
-                matches!(&again, Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
+                matches!(source_of(&again), Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
                     if *recipient == bob.id()),
                 "{again:?}"
             );
@@ -6701,13 +6718,18 @@ mod tests {
             .await;
         assert!(
             matches!(
-                &second,
+                source_of(&second),
                 Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
                     if *recipient == bob.id()
             ),
             "{:?}",
             second.err()
         );
+        // The earlier send blocks this one: nothing was signed for it, so it
+        // is `NotSent`, and not retryable until the earlier one settles.
+        let blocked = second.as_ref().err().expect("refused");
+        assert_eq!(blocked.payment_delivery(), crate::PaymentDelivery::NotSent);
+        assert!(!blocked.is_retryable());
         let sent = view
             .send_contact_request_with_external_signer(
                 &alice.id(),
@@ -6720,7 +6742,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                &sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
                     if *recipient == bob.id()
             ),
@@ -7202,12 +7224,19 @@ mod tests {
             .await;
         assert!(
             matches!(
-                &sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PrivateContactRequestPending(recipient))
                     if *recipient == bob.id()
             ),
             "{sent:?}"
         );
+        // Paid for, so never `NotSent`: the payment may execute.
+        let pending = sent.as_ref().expect_err("pending");
+        assert_eq!(
+            pending.payment_delivery(),
+            crate::PaymentDelivery::MaybeSent
+        );
+        assert!(!pending.is_retryable());
     }
 
     /// A send retried after an unconfirmed outcome, whose request is on
@@ -7847,11 +7876,16 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(&sent, Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
+            matches!(source_of(&sent), Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
                 if *recipient == bob.id()),
             "{sent:?}"
         );
         assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+        // The public request blocks this private one, which paid nothing:
+        // `NotSent`, not retryable until the public one settles.
+        let blocked = sent.as_ref().expect_err("refused");
+        assert_eq!(blocked.payment_delivery(), crate::PaymentDelivery::NotSent);
+        assert!(!blocked.is_retryable());
 
         let iw = alice_wallet.identity();
         let mut wm = iw.wallet_manager.write().await;
@@ -8361,7 +8395,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                next,
+                source_of(&next),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "{next:?}"
@@ -8394,7 +8428,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "{sent:?}"
@@ -8456,7 +8490,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "{sent:?}"
@@ -9301,7 +9335,7 @@ mod tests {
         // Paid for, and pending until a sync reads it back.
         assert!(
             matches!(
-                next,
+                source_of(&next),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "{next:?}"
@@ -10162,7 +10196,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                after,
+                source_of(&after),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "{after:?}"
@@ -10868,7 +10902,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                replied,
+                source_of(&replied),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {replied:?}"
@@ -11178,7 +11212,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                retried,
+                source_of(&retried),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {retried:?}"
@@ -11435,7 +11469,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                retried,
+                source_of(&retried),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {retried:?}"
@@ -11517,7 +11551,7 @@ mod tests {
         let retried = fixture.send_again(keep_entry(&retry)).await;
         assert!(
             matches!(
-                retried,
+                source_of(&retried),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {retried:?}"
@@ -11586,7 +11620,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {sent:?}"
@@ -11877,7 +11911,7 @@ mod tests {
             let retried = self.send_again(keep_entry(&retry)).await;
             assert!(
                 matches!(
-                    retried,
+                    source_of(&retried),
                     Err(PlatformWalletError::PrivateContactRequestPending(_))
                 ),
                 "{case}: paid, not read back: {retried:?}"
@@ -12013,7 +12047,7 @@ mod tests {
         let retried = fixture.send_again(keep_entry(&retry)).await;
         assert!(
             matches!(
-                retried,
+                source_of(&retried),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {retried:?}"
@@ -12227,7 +12261,7 @@ mod tests {
         let private = fixture.send_again(keep_entry(&retry)).await;
         assert!(
             matches!(
-                private,
+                source_of(&private),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {private:?}"
@@ -12502,7 +12536,7 @@ mod tests {
         let retried = send(Arc::clone(&kept)).await;
         assert!(
             matches!(
-                retried,
+                source_of(&retried),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {retried:?}"
@@ -13785,7 +13819,7 @@ mod tests {
                     let rotated = fixture.send_again(keep_entry(&rotation)).await;
                     assert!(
                         matches!(
-                            rotated,
+                            source_of(&rotated),
                             Err(PlatformWalletError::PrivateContactRequestPending(_))
                         ),
                         "read back, then rotated: {rotated:?}"
@@ -14229,7 +14263,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                paid,
+                source_of(&paid),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid and confirmed, not read back: {paid:?}"
@@ -14315,7 +14349,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                paid,
+                source_of(&paid),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid and confirmed, not read back: {paid:?}"
@@ -14431,7 +14465,7 @@ mod tests {
             .await;
         assert!(
             matches!(
-                accepted,
+                source_of(&accepted),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "a private reply, paid and not read back: {accepted:?}"
@@ -15101,7 +15135,7 @@ mod tests {
         let sent = send!(keep_entry(&paid));
         assert!(
             matches!(
-                sent,
+                source_of(&sent),
                 Err(PlatformWalletError::PrivateContactRequestPending(_))
             ),
             "paid, not read back: {sent:?}"

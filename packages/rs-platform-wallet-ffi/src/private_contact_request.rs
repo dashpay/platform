@@ -89,15 +89,19 @@ const SHIELDED_ADDRESS_LEN: usize = 43;
 /// (`platform_wallet_read_private_document_entries`) check that the
 /// resolver's seed is the wallet's before reading anything. A
 /// mismatch takes the code every DashPay export gives it, and the seed
-/// check reports (`ErrorInvalidParameter`); any other error is handed back.
+/// check reports (`ErrorInvalidParameter`), with the error's own payment
+/// class; any other error is handed back.
 pub(crate) fn seed_mismatch_result(
     error: PlatformWalletError,
 ) -> Result<PlatformWalletFFIResult, PlatformWalletError> {
     match error {
-        error @ PlatformWalletError::SeedMismatch { .. } => Ok(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            error.to_string(),
-        )),
+        error @ PlatformWalletError::SeedMismatch { .. } => {
+            Ok(PlatformWalletFFIResult::err_from_wallet_error(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                error.to_string(),
+                &error,
+            ))
+        }
         error => Err(error),
     }
 }
@@ -1000,7 +1004,7 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
                 .ok()
                 .and_then(|mut slot| slot.take())
             {
-                return PlatformWalletFFIResult::err(code, message);
+                return PlatformWalletFFIResult::err_from_wallet_error(code, message, &error);
             }
             let error = match seed_mismatch_result(error) {
                 Ok(result) => return result,
@@ -1020,20 +1024,33 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CStr;
 
     /// A wrong seed refused by the private sync, or by the store read a send
-    /// or accept makes first, takes the code every DashPay export gives it;
-    /// any other error is left to the export's own mapping.
+    /// or accept makes first, takes the code every DashPay export gives it,
+    /// with Rust's class (NotSent, not retryable), never the unclassified
+    /// `Unknown` a host holds as unconfirmed; any other error is left to the
+    /// export's own mapping.
     #[test]
     fn should_report_a_seed_mismatch_from_the_private_store_by_its_dashpay_code() {
-        let result = seed_mismatch_result(PlatformWalletError::SeedMismatch {
+        let error = PlatformWalletError::SeedMismatch {
             wallet_id: "ab".to_string(),
-        })
-        .expect("a seed mismatch is mapped here");
+        };
+        let message = error.to_string();
+        let result = seed_mismatch_result(error).expect("a seed mismatch is mapped here");
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+        assert_eq!(
+            unsafe { CStr::from_ptr(result.message) }.to_str().unwrap(),
+            message
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert!(!result.retryable);
         assert!(matches!(
             seed_mismatch_result(PlatformWalletError::PrivateContactPaymentsNotRestored),
             Err(PlatformWalletError::PrivateContactPaymentsNotRestored)

@@ -814,6 +814,12 @@ impl ShieldedSpendPlan {
 /// output DPP pays at `platform_version`, not checked by the spend: protocol versions 12 and 13
 /// truncate the reserve to whole duffs and take no Core fee from it, 14 also takes the Core fee,
 /// and a withdrawal still queued when a later version pools it is paid at that version.
+///
+/// Errors are the bare diagnostics, so their [`payment_delivery`](PlatformWalletError::payment_delivery)
+/// is the variant's own class: a zero amount or a spend kind not active at `platform_version`
+/// reads `MaybeSent`, although planning sends nothing. A caller that needs the operation's
+/// delivery class calls [`PlatformWallet::shielded_plan_spend`](crate::PlatformWallet::shielded_plan_spend),
+/// which reports every planning failure as `NotSent`.
 pub fn plan_spend(
     unspent: &[ShieldedNote],
     kind: ShieldedSpendKind,

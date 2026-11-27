@@ -69,6 +69,7 @@ pub unsafe extern "C" fn platform_address_wallet_balance_history(
     catch_panic_to_code(
         "platform address balance history",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "This read changed nothing; it can be retried.",
         || {
             // Clone the wallet out of handle storage so the storage lock is

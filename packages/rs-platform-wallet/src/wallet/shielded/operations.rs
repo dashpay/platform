@@ -1243,11 +1243,14 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         .await?
         .ok_or(PlatformWalletError::IdentityBalanceUnavailable(identity_id))?;
     if available < required {
+        // Refused before the guard is armed or anything is signed: `NotSent`,
+        // unlike the same verdict from Platform after a broadcast.
         return Err(PlatformWalletError::InsufficientIdentityCredits {
             identity_id,
             required,
             available,
-        });
+        }
+        .before_dispatch());
     }
 
     let nonce = sdk
@@ -2440,6 +2443,11 @@ pub struct ShieldedTokenSpendPreview {
 /// or more notes than fit ([`PlatformWalletError::ShieldedTooManyNotes`]).
 /// The spend itself may still be refused for what this does not read: the
 /// network, the token's configuration, the anchors.
+///
+/// Errors are the bare diagnostics, so their [`payment_delivery`](PlatformWalletError::payment_delivery)
+/// is the variant's own class: a zero amount or a failed store read reads
+/// `MaybeSent`, although a preview sends nothing.
+/// [`token_pool_spend_preview_for`] reports every failure as `NotSent`.
 pub async fn token_pool_spend_preview<S>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -2497,6 +2505,12 @@ where
 /// verified, with no network read: an SDK whose version is not that one is
 /// refused here as the spend refuses it
 /// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]).
+///
+/// A preview only reads, so every failure is `NotSent`. One whose variant is
+/// otherwise classed possibly sent (a zero amount, a failed store read)
+/// arrives wrapped in [`PlatformWalletError::RefusedBeforeDispatch`]: match
+/// the diagnostic on [`PlatformWalletError::dispatched_source`], and read
+/// delivery and retry from the outer error.
 pub async fn token_pool_spend_preview_for<S>(
     sdk: &dash_sdk::Sdk,
     store: &Arc<RwLock<S>>,
@@ -2511,8 +2525,11 @@ where
     let platform_version = token_pool_paid_signing_version(
         sdk.version(),
         sdk.protocol_version_info().verified_version,
-    )?;
-    token_pool_spend_preview(store, id, token_id, kind, amount, platform_version).await
+    )
+    .map_err(PlatformWalletError::before_dispatch)?;
+    token_pool_spend_preview(store, id, token_id, kind, amount, platform_version)
+        .await
+        .map_err(PlatformWalletError::before_dispatch)
 }
 
 /// The anchors `token_id`'s shielded pool records, read with a proof.
@@ -3964,6 +3981,13 @@ pub async fn transfer_with_plan<S: ShieldedStore, P: OrchardProver>(
 /// here, with the notes already its own: an `Err` releases them and is
 /// returned, with nothing sent.
 ///
+/// A refusal of the addresses, the note reservation or `once_claimed` is
+/// returned through [`PlatformWalletError::before_dispatch`]: `NotSent`, and
+/// one whose variant is otherwise classed possibly sent comes wrapped, with
+/// its diagnostic at [`PlatformWalletError::dispatched_source`]. A later
+/// failure keeps its own class, even one before the build: a failed
+/// recorded-anchor fetch is an SDK error, classed possibly sent.
+///
 /// [`PlatformWallet::send_shielded_tip`]: crate::wallet::platform_wallet::PlatformWallet::send_shielded_tip
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn transfer_once_claimed<S, P, C, CFut>(
@@ -3987,30 +4011,45 @@ where
     C: FnOnce() -> CFut,
     CFut: Future<Output = Result<(), PlatformWalletError>>,
 {
-    let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
-    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
-
     // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
     let platform_version = sdk.version();
-    // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
-    // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
-        sdk,
-        store,
-        id,
-        amount,
-        ShieldedSpendKind::Transfer,
-        expected_plan,
-        platform_version,
-    )
-    .await?;
-    // Nothing is built or recorded yet: a refusal only gives the notes back.
-    if let Err(refusal) = once_claimed().await {
-        reservation.cancel().await;
-        return Err(refusal);
-    }
+    // Nothing is built, recorded or sent until this block returns, so each
+    // of its refusals (an address, the note reservation, `once_claimed`)
+    // is proven before the dispatch.
+    let (recipient_addr, change_addr, selected_notes, total_input, exact_fee, mut reservation) =
+        async {
+            let recipient_addr = payment_address_to_orchard(to_address)?;
+            let change_addr = default_orchard_address(&views)?;
+            // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so
+            // reserve against `ShieldedFeeKind::Base`.
+            let (selected_notes, total_input, exact_fee, reservation) = reserve_unspent_notes(
+                sdk,
+                store,
+                id,
+                amount,
+                ShieldedSpendKind::Transfer,
+                expected_plan,
+                platform_version,
+            )
+            .await?;
+            // A refusal only gives the notes back.
+            if let Err(refusal) = once_claimed().await {
+                reservation.cancel().await;
+                return Err(refusal);
+            }
+            Ok((
+                recipient_addr,
+                change_addr,
+                selected_notes,
+                total_input,
+                exact_fee,
+                reservation,
+            ))
+        }
+        .await
+        .map_err(PlatformWalletError::before_dispatch)?;
 
     info!(
         account,
@@ -5556,6 +5595,12 @@ impl DispatchCheck<'_> {
 /// Plan a `kind` spend of `amount` from `account`'s notes: the notes the spend would select
 /// now and their exact fee ([`note_selection::plan_spend`](super::note_selection::plan_spend)).
 /// Reads the store only; nothing is reserved.
+///
+/// Errors are the bare diagnostics, so their [`payment_delivery`](PlatformWalletError::payment_delivery)
+/// is the variant's own class: a zero amount or a spend kind not active at this protocol version
+/// reads `MaybeSent`, although planning sends nothing. A caller that needs the operation's
+/// delivery class calls [`PlatformWallet::shielded_plan_spend`](crate::PlatformWallet::shielded_plan_spend),
+/// which reports every planning failure as `NotSent`.
 pub async fn plan_spend<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -7425,14 +7470,21 @@ mod redrive_tests {
             identity_shield_on_mock(PlatformVersion::latest(), Some(amount + fee - 1), amount)
                 .await;
 
-        match result {
-            Err(PlatformWalletError::InsufficientIdentityCredits {
+        let error = result.expect_err("a short balance must be refused");
+        // Refused before anything was signed: `NotSent`, unlike the same
+        // verdict from Platform after a broadcast.
+        assert_eq!(
+            error.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
+        match error.dispatched_source() {
+            PlatformWalletError::InsufficientIdentityCredits {
                 required,
                 available,
                 ..
-            }) => {
-                assert_eq!(required, amount + fee);
-                assert_eq!(available, amount + fee - 1);
+            } => {
+                assert_eq!(*required, amount + fee);
+                assert_eq!(*available, amount + fee - 1);
             }
             other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
         }
@@ -14556,6 +14608,55 @@ mod token_shielded_transfer_tests {
                 .await
                 .expect("a preview");
         assert_eq!(preview.fee, kind.fee(2, 2, latest).expect("fee"));
+        assert_nothing_held(&store, 1).await;
+    }
+
+    /// A preview through an SDK sends nothing, so a refusal whose variant is
+    /// otherwise classed possibly sent (a zero amount) reports `NotSent` with
+    /// its diagnostic kept, and a refusal already `NotSent` is unchanged.
+    #[tokio::test]
+    async fn should_class_every_token_spend_preview_refusal_as_never_sent() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(&dir, &[credit_note(1, 0)], &[token_note(10, 0)]).await;
+        let latest = PlatformVersion::latest();
+        let sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_version(latest)
+            .build()
+            .expect("mock sdk");
+        sdk.mock_verified_protocol_version(latest.protocol_version)
+            .expect("a mock SDK");
+        let kind = TokenPoolSpendKind::Unshield;
+
+        let zero = token_pool_spend_preview_for(&sdk, &store, subwallet(), token_id(), kind, 0)
+            .await
+            .expect_err("a zero amount is refused");
+        assert!(
+            matches!(
+                zero.dispatched_source(),
+                PlatformWalletError::ShieldedBuildError(_)
+            ),
+            "got {zero:?}"
+        );
+        assert_eq!(
+            zero.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
+
+        let short = token_pool_spend_preview_for(&sdk, &store, subwallet(), token_id(), kind, 5)
+            .await
+            .expect_err("one credit cannot pay the fee");
+        assert!(
+            matches!(
+                short,
+                PlatformWalletError::ShieldedInsufficientBalance { .. }
+            ),
+            "got {short:?}"
+        );
+        assert_eq!(
+            short.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
         assert_nothing_held(&store, 1).await;
     }
 

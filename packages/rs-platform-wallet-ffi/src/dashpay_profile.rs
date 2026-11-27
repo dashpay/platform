@@ -4,7 +4,9 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
 
-use platform_wallet::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
+use platform_wallet::{
+    panicked_payment_class, DashPayProfile, PaymentAddressUpdate, ProfileUpdate,
+};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -436,6 +438,8 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_a
     catch_panic_to_code(
         "profile write",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         "The profile may or may not have been written; sync profiles before retrying.",
         || {
             check_ptr!(out_profile);

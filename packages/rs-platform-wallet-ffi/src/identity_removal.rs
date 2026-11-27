@@ -53,6 +53,7 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_identity_from_device(
     catch_panic_to_code(
         "platform_wallet_manager_remove_identity_from_device",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "The identity may still be in a wallet; remove it again.",
         || {
             let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {

@@ -223,6 +223,7 @@ pub unsafe extern "C" fn platform_wallet_manager_private_document_recipient_keys
     catch_panic_to_code(
         "private document recipient keys",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         READ_PANIC_GUIDANCE,
         || {
             check_ptr!(identity_id);
@@ -293,6 +294,7 @@ pub unsafe extern "C" fn platform_wallet_manager_private_document_create_fee(
     catch_panic_to_code(
         "private document create fee",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         READ_PANIC_GUIDANCE,
         || {
             check_ptr!(data_contract_id);

@@ -231,6 +231,7 @@ pub unsafe extern "C" fn platform_wallet_preview_data_contract_update(
     catch_panic_to_code(
         "platform_wallet_preview_data_contract_update",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Nothing was signed or broadcast; review the update again.",
         || unsafe {
             preview_data_contract_update(
@@ -345,6 +346,7 @@ pub unsafe extern "C" fn platform_wallet_split_contract_update_source(
     catch_panic_to_code(
         "platform_wallet_split_contract_update_source",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Nothing was changed; paste or import the contract again.",
         || unsafe { split_contract_update_source_inner(text, out_sections_json) },
     )

@@ -183,9 +183,10 @@ unsafe fn local_shielded_balance_snapshot_with_budget(
             )
         })?
         .map_err(|error| {
-            PlatformWalletFFIResult::err(
+            PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 format!("local shielded balance snapshot failed: {error}"),
+                &error,
             )
         })
     });
@@ -275,12 +276,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
         // it may still fire persistence / completion callbacks. Surface
         // that instead of a silent success so the host keeps its callback
         // context alive and does not treat sync as stopped.
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+        // Reported through the wallet error, so the result carries its class.
+        return platform_wallet::PlatformWalletError::ShutdownIncomplete(
             "shielded sync pass did not drain within the quiesce budget; \
              a pass may still be running"
                 .to_string(),
-        );
+        )
+        .into();
     }
     PlatformWalletFFIResult::ok()
 }
@@ -562,6 +564,7 @@ pub(crate) fn catch_query_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         QUERY_PANIC_GUIDANCE,
         body,
     )
@@ -1132,9 +1135,10 @@ pub(crate) fn map_shielded_error(
     match error {
         error @ PlatformWalletError::ShieldedRecoveryCorrupted { .. }
         | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => error.into(),
-        other => PlatformWalletFFIResult::err(
+        other => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {other}"),
+            &other,
         ),
     }
 }
@@ -1229,6 +1233,30 @@ mod recovery_error_tests {
                 message
             );
         }
+    }
+
+    /// Any other error keeps the shared code and its operation's text, and
+    /// carries Rust's class, never the unclassified `Unknown`.
+    #[test]
+    fn should_keep_the_payment_class_of_an_error_folded_into_the_shared_code() {
+        let result = map_shielded_error(
+            PlatformWalletError::SeedMismatch {
+                wallet_id: "ab".into(),
+            },
+            "shielded sync",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert!(unsafe { CStr::from_ptr(result.message) }
+            .to_str()
+            .unwrap()
+            .starts_with("shielded sync failed: "));
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
+        );
     }
 }
 

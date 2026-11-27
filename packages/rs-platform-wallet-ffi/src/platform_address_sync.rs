@@ -240,9 +240,10 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_reset(
         ) {
             return PlatformWalletFFIResult::from(e);
         }
-        return PlatformWalletFFIResult::err(
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("reset_platform_address_sync_state failed: {e}"),
+            &e,
         );
     }
     PlatformWalletFFIResult::ok()
