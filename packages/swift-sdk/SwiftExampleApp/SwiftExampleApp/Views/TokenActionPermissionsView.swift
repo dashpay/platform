@@ -54,6 +54,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
     case setDirectPurchasePrice
     case setConventions
     case updateMaxSupply
+    case updateTradeMode
     case changeDistribution
 
     var id: String { rawValue }
@@ -73,6 +74,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
         case .setDirectPurchasePrice: return "Set Direct Purchase Price"
         case .setConventions: return "Set / Change Conventions"
         case .updateMaxSupply: return "Update Max Supply"
+        case .updateTradeMode: return "Update Trade Mode"
         case .changeDistribution: return "Change Distribution Rules"
         }
     }
@@ -92,6 +94,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
         case .setDirectPurchasePrice: return "Configure or disable the price for direct purchase"
         case .setConventions: return "Update token name / localizations"
         case .updateMaxSupply: return "Change the maximum supply"
+        case .updateTradeMode: return "Allow or stop marketplace trading"
         case .changeDistribution: return "Change perpetual / pre-programmed distribution"
         }
     }
@@ -111,6 +114,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
         case .setDirectPurchasePrice: return "dollarsign.circle"
         case .setConventions: return "textformat"
         case .updateMaxSupply: return "chart.line.uptrend.xyaxis"
+        case .updateTradeMode: return "storefront"
         case .changeDistribution: return "slider.horizontal.3"
         }
     }
@@ -515,6 +519,18 @@ enum TokenActionResolver {
             permission: TokenActionEvaluator.evaluate(
                 rule: token.maxSupplyChangeRules,
                 feature: "Max supply change",
+                identity: identity,
+                contract: contract,
+                token: token
+            )
+        ))
+
+        // Marketplace trade mode
+        rows.append(ResolvedTokenAction(
+            kind: .updateTradeMode,
+            permission: TokenActionEvaluator.evaluate(
+                rule: token.tradeModeChangeRules,
+                feature: "Trade mode change",
                 identity: identity,
                 contract: contract,
                 token: token
@@ -1218,6 +1234,8 @@ struct TokenActionPermissionsView: View {
             TokenSetPriceActionView(token: token, identity: identity)
         case .updateMaxSupply:
             TokenUpdateMaxSupplyActionView(token: token, identity: identity)
+        case .updateTradeMode:
+            TokenUpdateTradeModeActionView(token: token, identity: identity)
         case .setConventions, .changeDistribution:
             // Set Conventions / Change Distribution editors are out of
             // scope for the current wave — full localization tables

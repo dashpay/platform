@@ -119,7 +119,6 @@
     "platform_wallet_sync_private_contact_requests": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
     "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
-    "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
     "platform_wallet_token_update_config_and_refresh": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
     "platform_wallet_top_up_external_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
@@ -449,7 +448,7 @@
       "shared_apis": [
         "platform_wallet_token_transfer",
         "platform_wallet_token_purchase",
-        "platform_wallet_token_update_config"
+        "platform_wallet_token_update_config_and_refresh"
       ],
       "required_persistence_capabilities": [
         "unsigned_token_storage"
@@ -1783,7 +1782,7 @@
       "title": "Shared token authorization and group-proposal decisions",
       "area": "shared_policy",
       "shared_apis": [
-        "platform_wallet_token_update_config"
+        "platform_wallet_token_update_config_and_refresh"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -2336,10 +2335,10 @@
       "required_persistence_capabilities": [],
       "hosts": {
         "swift": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Swift still calls platform_wallet_token_update_config, which reports only success, and patches PersistentToken.maxSupply after a single-signer update; moving it to the outcome and the refreshed contract is tracked by #6069."
+          "reason": "ManagedPlatformWallet.tokenUpdateConfig returns Rust's outcome (pending, applied with the proof-verified contract fetched from the update's confirming block or later, or applied but not refreshed) and the Update Max Supply and Update Trade Mode forms store the contract through ContractDownloader.storeConfigUpdateOutcome; no simulator or device run has covered the applied and not-refreshed paths yet."
         },
         "kotlin": {
           "sdk": "supported",
@@ -2349,6 +2348,21 @@
         }
       },
       "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/TokenConfigUpdateDecodingTests.swift",
+          "id": "testShouldDecodeAnAppliedUpdateWithTheContractItProduced",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/TokenConfigUpdateDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "TOK-14",
+          "covers_restart": false
+        },
         {
           "host": "kotlin",
           "kind": "unit",
@@ -2367,11 +2381,59 @@
       ]
     },
     {
+      "id": "tokens.marketplace_trade_mode_update",
+      "title": "Change a token's marketplace trade mode (protocol version 16)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_token_update_config_and_refresh"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "TokenConfigChange.marketplaceTradeMode renders change item tag 1 and its payload for ManagedPlatformWallet.tokenUpdateConfig, and the Update Trade Mode form (TokenUpdateTradeModeActionView) submits it and stores the contract the update produced. Platform alone decides whether the token may take the mode (dpp's TokenConfiguration::validate_trade_mode: transferable, and protocol version 16 or later); its refusal reaches the form as a consensus rejection. Not yet run against a network at protocol version 16."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "The JNI bridge already passes any change item tag and payload to platform_wallet_token_update_config_and_refresh, but TokenConfigChange has no MarketplaceTradeMode variant and KotlinExampleApp has no control. Port TokenConfigChange.marketplaceTradeMode from packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/Tokens/TokenActions.swift and the SwiftExampleApp TokenUpdateTradeModeActionView, reusing its tokenTradeMode.* accessibility identifiers as testTags."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
+          "id": "should_decode_both_marketplace_trade_modes",
+          "command": "cargo test -p platform-wallet-ffi --lib update_config",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/TokenConfigUpdateDecodingTests.swift",
+          "id": "testShouldRenderTheMarketplaceTradeModePayload",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/TokenConfigUpdateDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "TOK-21",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "tokens.max_supply_proposal_discovery",
       "title": "Pending max-supply group proposals are discoverable",
       "area": "example_app",
       "shared_apis": [
-        "platform_wallet_token_update_config"
+        "platform_wallet_token_update_config_and_refresh"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
