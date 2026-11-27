@@ -1443,7 +1443,9 @@ pub enum PlatformWalletError {
     /// that cannot produce the path (unreadable, poisoned, a position the tree
     /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
     /// which no sync repairs. FFI mirror:
-    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
+    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`,
+    /// whose message is this Display alone (no code 19 prefix), so every text
+    /// it carries says how to get past the refusal.
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 

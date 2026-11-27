@@ -929,7 +929,9 @@ pub enum PlatformWalletFFIResultCode {
     /// keeps the generic code. Returned by every note spend (transfer,
     /// unshield, withdrawal, identity top-up and identity create from the
     /// pool, private document create, token purchase from the pool) and by
-    /// the token pool transfer and unshield. Distinct from
+    /// the token pool transfer and unshield. The message is the wallet's
+    /// diagnostic alone, which says how to get past it, without code 19's
+    /// "try again shortly" prefix. Distinct from
     /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
     ErrorShieldedMerkleWitnessUnavailable = 88,
 
@@ -1211,8 +1213,9 @@ fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIRe
 }
 
 /// The message of a shielded spend refused until the next shielded sync
-/// (codes 19 and 88): what a host can show the user, with the wallet's own
-/// diagnostic after it.
+/// (code 19): what a host can show the user, with the wallet's own
+/// diagnostic after it. Code 88 carries the wallet's diagnostic alone, which
+/// says how to get past it (for a token pool gap, a sync alone may not).
 pub(crate) fn retry_after_sync_message(error: &PlatformWalletError) -> String {
     format!("Wallet is still syncing to a confirmed state — try again shortly. ({error})")
 }
@@ -1656,15 +1659,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }) => PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive,
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        // A spend refused until the next sync says so in words a host can
-        // show, as the spend contract (`map_spend_result`) words it.
-        let message = match &error {
-            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
-                retry_after_sync_message(&error)
-            }
-            _ => error.to_string(),
-        };
-        PlatformWalletFFIResult::err(code, message).with_consensus_of(&error)
+        PlatformWalletFFIResult::err(code, error.to_string()).with_consensus_of(&error)
     }
 }
 
@@ -3690,8 +3685,10 @@ mod private_contact_request_error_tests {
     }
 
     /// A note no checkpoint covers yet is refused before the proof and the
-    /// broadcast, so it reaches the host by its own retryable code and code
-    /// 19's wording, never as the catch-all a host reads as possibly sent.
+    /// broadcast, so it reaches the host by its own retryable code with the
+    /// wallet's own diagnostic (no code 19 prefix: for a token pool gap a
+    /// retry after the next sync is not enough), never as the catch-all a host
+    /// reads as possibly sent.
     #[test]
     fn should_report_an_unavailable_merkle_witness_by_its_own_code() {
         let result = PlatformWalletFFIResult::from(
@@ -3703,7 +3700,8 @@ mod private_contact_request_error_tests {
         );
         assert_eq!(result.code as u32, 88);
         let message = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
-        assert!(message.contains("try again shortly"), "{message}");
+        assert!(!message.contains("try again shortly"), "{message}");
+        assert!(message.contains("position 7"), "{message}");
     }
 
     /// A public contact request a loaded wallet refuses until its private

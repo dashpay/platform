@@ -1264,8 +1264,8 @@ pub(crate) fn spend_paths(
 }
 
 /// A token pool's tree that does not build from the leaves the scan kept.
-/// No sync repairs it, so it is a store fault, not the retry-after-sync
-/// [`PlatformWalletError::ShieldedMerkleWitnessUnavailable`] (code 88), which
+/// No sync repairs it, so it is a store fault, not the retryable witness
+/// refusal [`PlatformWalletError::ShieldedMerkleWitnessUnavailable`] (code 88), which
 /// [`spend_paths`] keeps for a note past the leaves kept.
 fn tree_build_error(token_id: Identifier, error: CommitmentTreeError) -> PlatformWalletError {
     PlatformWalletError::ShieldedStoreError(format!(

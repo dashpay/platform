@@ -338,7 +338,9 @@ sealed class DashSdkError(
          * token pool note, a sync gets past it only when its scan reads the
          * missing positions; a gap before the point the scan resumes from
          * returns this after every sync until a scan starts at or before it (a
-         * shielded Clear restarts the scan from position 0). Only those cases:
+         * shielded Clear restarts the scan from position 0). The message is the
+         * wallet's diagnostic, which says how to get past it, with no "try
+         * again shortly" prefix. Only those cases:
          * a store that cannot produce the path arrives as the generic wallet
          * failure, not as this.
          * ← Swift `PlatformWalletError.shieldedMerkleWitnessUnavailable`.

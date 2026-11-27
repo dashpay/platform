@@ -1046,12 +1046,14 @@ pub(crate) fn map_spend_result(
         // the broadcast, with the notes released. For a credit pool note the
         // next shielded sync checkpoints the tree; a token pool gap before the
         // scan's resume point needs a scan that starts at or before it (see
-        // `ErrorShieldedMerkleWitnessUnavailable`). A store that cannot produce the path is
+        // `ErrorShieldedMerkleWitnessUnavailable`). The message is the wallet's
+        // diagnostic, which says which of those applies, without code 19's
+        // "try again shortly". A store that cannot produce the path is
         // `ShieldedStoreError` and keeps the generic code below.
         Err(e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
-                retry_after_sync_message(&e),
+                e.to_string(),
             )
         }
         // Definitive failure: the transition never left the wallet (refused
@@ -4985,7 +4987,8 @@ mod tests {
 
     /// A note no checkpoint covers yet is refused before the proof and the
     /// broadcast, so every note spend reports it by its own retryable code
-    /// (88) and code 19's wording, never as the generic failure (6) a host
+    /// (88) with the wallet's own diagnostic and no code 19 prefix, never as
+    /// the generic failure (6) a host
     /// must read as possibly sent: every operation the spend contract maps,
     /// the identity create from the pool included (it delegates here). A
     /// store that cannot produce the path keeps the generic code.
@@ -5014,7 +5017,7 @@ mod tests {
             );
             assert_eq!(result.code as u32, 88);
             let message = message_of(&result);
-            assert!(message.contains("try again shortly"), "{message}");
+            assert!(!message.contains("try again shortly"), "{message}");
             assert!(message.contains("position 7395"), "{message}");
 
             let store_failure = map_spend_result(
@@ -5047,7 +5050,8 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
         );
         let message = message_of(&refused);
-        assert!(message.contains("try again shortly"), "{message}");
+        assert!(!message.contains("try again shortly"), "{message}");
+        assert!(message.contains("position 7395"), "{message}");
         assert_eq!(written, None, "a refusal must not write the id");
 
         let derived = dpp::prelude::Identifier::from([0x17; 32]);
