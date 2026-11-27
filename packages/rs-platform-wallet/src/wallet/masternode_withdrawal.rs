@@ -1165,6 +1165,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_refuse_an_owner_key_withdrawal_to_a_chosen_address_before_any_request() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let (signer, hash, _) = fixture();
+        let keys = MasternodeWithdrawalKeys {
+            owner_key: Some((0, DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap())),
+            transfer_key: None,
+            payout_address: None,
+            payout_key_hash160: None,
+        };
+        let request = MasternodeWithdrawalRequest {
+            pro_tx_hash: [0x5A; 32],
+            owner_key_hash: Some(hash),
+            amount_credits: WITHDRAWN,
+            signing_key: MasternodeWithdrawalKey::Owner,
+            destination: Some(DashAddress::dummy(Network::Testnet, 1)),
+        };
+
+        let result = wallet.masternode_withdraw(request, &keys, &signer).await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::InvalidParameter(message))
+                if message.contains("destination cannot be chosen")),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn should_refuse_a_withdrawal_key_platform_would_refuse() {
         use crate::wallet::identity::network::signature_refusal_of;
         use dpp::consensus::signature::SignatureError;

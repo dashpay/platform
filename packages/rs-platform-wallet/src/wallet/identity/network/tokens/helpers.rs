@@ -430,10 +430,12 @@ mod signing_tests {
         );
         let identity_id = identity.id();
         let wallet = wallet_with_identity(identity).await;
-        for (action, accepts_transfer) in [
-            (TokenTransitionActionType::Transfer, true),
-            (TokenTransitionActionType::Claim, true),
-            (TokenTransitionActionType::Burn, false),
+        let with_transfer = [Purpose::AUTHENTICATION, Purpose::TRANSFER];
+        let authentication_only = [Purpose::AUTHENTICATION];
+        for (action, expected) in [
+            (TokenTransitionActionType::Transfer, &with_transfer[..]),
+            (TokenTransitionActionType::Claim, &with_transfer[..]),
+            (TokenTransitionActionType::Burn, &authentication_only[..]),
         ] {
             let error = wallet
                 .identity()
@@ -446,13 +448,21 @@ mod signing_tests {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(
-                &error,
-                PlatformWalletError::NoUsableSigningKey { .. }
-            ));
+            assert!(
+                matches!(
+                    &error,
+                    PlatformWalletError::NoUsableSigningKey { purposes, .. }
+                        if purposes.as_slice() == expected
+                ),
+                "{action:?}: {error:?}"
+            );
             let message = error.to_string();
             assert!(message.contains("AUTHENTICATION"), "{message}");
-            assert_eq!(message.contains("TRANSFER"), accepts_transfer, "{message}");
+            assert_eq!(
+                message.contains("TRANSFER"),
+                expected.contains(&Purpose::TRANSFER),
+                "{message}"
+            );
         }
     }
 
