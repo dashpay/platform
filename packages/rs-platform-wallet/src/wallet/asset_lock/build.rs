@@ -1776,7 +1776,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     ..Default::default()
                 });
                 let mut in_broadcast_pin = in_broadcast_pin;
-                if removal.is_ok() {
+                // The row may have been committed by another flush before its
+                // removal, and the wallet removed and loaded again meanwhile:
+                // the replacement may then track the lock and resume it, so
+                // nothing here may report the build abandoned. A load
+                // re-reads the store after the wallet it replaces is gone,
+                // just before publishing, so once the removal is durable a
+                // generation that is still the wallet's proves no replacement
+                // can hold the row. Otherwise the outcome is unknown: the
+                // index, inputs and fence stay, as on the send path's
+                // generation check.
+                let still_current = removal.is_ok()
+                    && self
+                        .wallet_manager
+                        .read()
+                        .await
+                        .get_wallet_info(&self.wallet_id)
+                        .is_some_and(|info| in_broadcast_pin.is_on(&info.generation));
+                if still_current {
                     in_broadcast_pin.settle_released_on_drop();
                     self.hand_back_unsent_funding_index(
                         &in_broadcast_pin,
@@ -1812,6 +1829,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                              was not made durable before dispatch and the abandoned row's \
                              removal was not made durable ({removal_error}), so a restart \
                              may still resume it and its inputs stay reserved: {error}"
+                        ),
+                    ));
+                }
+                if !still_current {
+                    tracing::warn!(
+                        %out_point,
+                        %error,
+                        "wallet removed while an unsent asset lock's row was abandoned; \
+                         its outcome is unknown"
+                    );
+                    in_broadcast_pin.settle_pending_spend();
+                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                        format!(
+                            "asset lock {out_point} was not sent by this call, but its {kind} \
+                             recipient was not made durable before dispatch and wallet {} was \
+                             removed meanwhile, so a wallet now under that id may have \
+                             restored the lock and may still send it; resume it instead of \
+                             funding another: {error}",
+                            hex::encode(self.wallet_id)
                         ),
                     ));
                 }
@@ -4162,6 +4198,54 @@ mod tests {
         );
         assert_eq!(broadcaster.calls(), 0);
         assert!(persistence.stored.lock().unwrap().is_empty());
+    }
+
+    /// The row's flush fails after another flush may have committed it, and
+    /// the wallet is removed and loaded again before the removal lands: the
+    /// replacement may track the lock and resume it, so the call reports an
+    /// unknown outcome, not a build that is safe to retry, and keeps the
+    /// funding index and inputs.
+    #[tokio::test]
+    async fn should_not_report_a_lock_abandoned_when_the_wallet_turned_over_meanwhile() {
+        use crate::changeset::AssetLockRecipient;
+
+        let identity = dpp::prelude::Identifier::from([0x58; 32]);
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: false,
+            fail_on_flush: Some(1),
+            ..Default::default()
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let wallet_manager = manager.wallet_manager.clone();
+        let wallet_id = manager.wallet_id;
+        *persistence.before_remove.lock().unwrap() = Some(Box::new(move || {
+            let mut wm = wallet_manager
+                .try_write()
+                .expect("no manager lock is held across the removal's store");
+            wm.get_wallet_info_mut(&wallet_id).unwrap().generation =
+                Arc::new(WalletGeneration::new());
+        }));
+
+        let result = fund_unbound_top_up(
+            &manager,
+            &signer,
+            Some(AssetLockRecipient::Identity(identity)),
+        )
+        .await;
+
+        assert!(
+            matches!(&result, Err(PlatformWalletError::TransactionBroadcastUnconfirmed(message))
+                if message.contains("removed meanwhile")),
+            "{result:?}"
+        );
+        assert_eq!(broadcaster.calls(), 0);
+        assert_eq!(persistence.removed_outpoints().len(), 1);
     }
 
     /// A lock row whose store or flush failed before the broadcast has its
