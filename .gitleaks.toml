@@ -63,56 +63,35 @@ paths = ['''^packages/wallet-lib/src/transport/FixtureTransport/README\.md$''']
 regexes = ['''->[ \t]*[1-9A-HJ-NP-Za-km-z]{34}[ \t]*$''']
 
 [[rules.allowlists]]
-description = "Public operator and quorum keys in RPC samples and tests"
+description = "Public quorum key in a verified-context test"
 condition = "AND"
 regexTarget = "match"
 paths = [
-  '''^packages/dapi/test/(?:mocks/coreAPIFixture\.js|unit/grpcServer/handlers/core/getMasternodeStatusHandlerFactory\.spec\.js)$''',
-  '''^packages/dashmate/test/fixtures/coreRpc/24\.0\.3/masternode-status-evonode\.json$''',
-  '''^packages/js-dapi-client/(?:lib/test/fixtures/getMNListDiffsFixture\.js|test/(?:fixtures/coreV24TestnetMasternodeListDiff\.json|unit/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider\.spec\.js))$''',
-  '''^packages/rs-drive-abci/(?:src/rpc/core\.rs|tests/supporting_files/(?:mainnet_protx_list_diffs|core_v24_protx_list_diffs(?:/legacy_operator_key)?)/[0-9]+-[0-9]+\.json)$''',
   '''^packages/wasm-sdk/tests/unit/verified-context\.spec\.ts$''',
 ]
 regexes = [
   '''^(?:pubKeyOperator|QUORUM_KEY)["']?[ \t]*[:=][ \t]*["'][a-f0-9]{96}["']?$''',
-  '''^keyID(?:Operator|Voting)["']?[ \t]*:[ \t]*["'][a-f0-9]{40}["']$''',
 ]
 
 [[rules.allowlists]]
-description = "Public operator keys split at read chunk boundaries in Gitleaks 8.22.1"
+description = "Public masternode voting addresses in Kotlin tests"
 condition = "AND"
 regexTarget = "match"
 paths = [
-  '''^packages/js-dapi-client/test/fixtures/coreV24TestnetMasternodeListDiff\.json$''',
-  '''^packages/rs-drive-abci/tests/supporting_files/mainnet_protx_list_diffs/1-2128896\.json$''',
-]
-regexes = ['''^pubKeyOperator"[ \t]*:[ \t]*"[a-f0-9]{10,95}$''']
-
-[[rules.allowlists]]
-description = "Public secp256k1 inputs and masternode voting addresses in tests"
-condition = "AND"
-regexTarget = "match"
-paths = [
-  '''^packages/dapi/test/unit/transactionsFilter/testTransactionAgainstFilter\.spec\.js$''',
   '''^packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/(?:MasternodeVotingKeyFfiTest|security/MasternodeVotingKeySigningTest)\.kt$''',
 ]
 regexes = [
-  '''^inputPubKey[ \t]*=[ \t]*["'][a-f0-9]{130}["']$''',
   '''^keyOneVotingAddressHex[ \t]*=[ \t]*"[a-f0-9]{40}"$''',
 ]
 
 [[rules.allowlists]]
-description = "Public wallet scripts, extended public keys and deterministic database keys"
+description = "Deterministic database keys in the root hash test"
 condition = "AND"
 regexTarget = "match"
 paths = [
-  '''^packages/wallet-lib/fixtures/(?:[a-z0-9]+-fullstore-snapshot-[0-9]+|getTransactionHistory|increasetable|mockedStore1|gathersail)\.json$''',
-  '''^packages/wallet-lib/src/(?:types/Account/methods/(?:broadcastTransaction|decrypt|getUTXOS)|utils/outputHandler)\.spec\.js$''',
   '''^packages/rs-drive/tests/deterministic_root_hash\.rs$''',
 ]
 regexes = [
-  '''^scriptPubKey["']?[ \t]*:[ \t]*["'][a-f0-9]{50}["']$''',
-  '''^(?:hdpubkey|extPubKey)["']?[ \t]*[:=][ \t]*["'](?:tpub|xpub)[1-9A-HJ-NP-Za-km-z]{107}["']$''',
   '''^key[ \t]*:[ \t]*"(?:[a-f0-9]{40}|[a-f0-9]{64})"$''',
 ]
 
@@ -128,13 +107,6 @@ regexes = [
   '''^key_change_height[ \t]*=[ \t]*V24_ACTIVATION_HEIGHT[ \t]*$''',
   '''^key3Private[ \t]*=[ \t]*self\.key3Private[ \t]*$''',
 ]
-
-[[rules.allowlists]]
-description = "Public upstream Yarn 4.12.0 bundle metadata"
-condition = "AND"
-regexTarget = "match"
-paths = ['''^\.yarn/releases/yarn-4\.12\.0\.cjs$''']
-regexes = ['''^apiKey:"[a-f0-9]{32}"$''']
 
 # Exact matches for deterministic signing vectors and wallet fixtures.
 [[rules.allowlists]]
