@@ -204,7 +204,7 @@ describe('scheduleRenewalJob', () => {
     await run({ isBundleReplaced: true });
 
     expect(dockerCompose.signalled).to.not.equal(true);
-    expect(logged.join('\n')).to.include('dashmate restart --platform')
+    expect(logged.join('\n')).to.include(`dashmate restart --config ${CONFIG_NAME} --platform`)
       .and.not.include('renewed successfully');
     expect(read().record.getLastSuccessAt()).to.not.equal(null);
     expect(rescheduledWith).to.have.lengthOf(1);
@@ -219,7 +219,7 @@ describe('scheduleRenewalJob', () => {
     await run({ isBundleReplaced: true });
 
     expect(logged.join('\n')).to.include(`dashmate restart --config ${CONFIG_NAME}`)
-      .and.not.include('restart --platform');
+      .and.not.include('--platform');
   });
 
   it('should forget the record before handing renewal to another provider', async () => {

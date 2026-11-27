@@ -17,5 +17,5 @@ export default function renderGatewayRestartCommand(config) {
 
   return config.get('platform.quorumList.enabled')
     ? `dashmate restart ${flag}`
-    : `dashmate restart --platform ${flag}`;
+    : `dashmate restart ${flag} --platform`;
 }

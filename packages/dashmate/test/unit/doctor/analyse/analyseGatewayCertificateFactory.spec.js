@@ -173,6 +173,37 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problems[0].getSolution()).to.include('dashmate restart --config base --platform');
   });
 
+  // stop --platform stops Core too when the quorum list is enabled, without
+  // the DKG check a masternode gets before Core stops, and starting Platform
+  // alone then fails.
+  it('should name a restart of the whole node when the quorum list is enabled', () => {
+    config.set('platform.quorumList.enabled', true);
+    installedIsUsable('CC:DD');
+
+    const problems = analyse(served({
+      certificate: { fingerprint256: 'AA:BB', validTo: validTo(-2) },
+      matchesOnDisk: false,
+      onDisk: { fingerprint256: 'CC:DD', validTo: validTo(30) },
+    }));
+
+    expect(problems).to.have.lengthOf(1);
+    expect(stripAnsi(problems[0].getSolution())).to.match(/dashmate restart --config base$/m)
+      .and.not.include('--platform');
+  });
+
+  it('should not call a restart of the whole node a restart of Platform', () => {
+    config.set('platform.quorumList.enabled', true);
+
+    const [problem] = analyse(served({
+      chainVerified: false,
+      chainError: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    }));
+
+    const solution = stripAnsi(problem.getSolution());
+    expect(solution).to.match(/dashmate restart --config base$/m);
+    expect(solution).to.not.include('restart Platform');
+  });
+
   it('should warn before the outage when a renewed certificate has not been picked up', () => {
     // Renewed means the disk copy outlives the served one and was judged
     // sound; together that is what makes a restart the right advice here.

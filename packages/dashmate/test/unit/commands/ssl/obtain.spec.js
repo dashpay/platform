@@ -137,7 +137,7 @@ describe('SSL obtain command', () => {
       await runObtain(dependencies);
 
       expect(dependencies.dockerCompose.execCommand).to.not.have.been.called();
-      expect(logged.join('\n').split('\n')).to.include('  dashmate restart --platform --config testnet');
+      expect(logged.join('\n').split('\n')).to.include('  dashmate restart --config testnet --platform');
     });
 
     // stop --platform stops Core too when the quorum list is enabled, without
