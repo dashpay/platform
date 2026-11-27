@@ -194,7 +194,7 @@ Plain `dashmate setup` does not repair any of this: it refuses to run for a pres
 The reset it suggests instead, `dashmate reset --config <preset> --hard`, also removes the Core data and sets the preset's whole configuration, Core and Platform settings alike, back to the defaults, so it is not a way back for an evonode either.
 The way back is `dashmate setup --platform`, which sets up only the Platform part again. An evonode needs the node key it had, so back it up before the hard reset: see [Starting Platform Over](#starting-platform-over).
 
-A configuration with no defaults of its own (any name other than `mainnet` or `testnet`, outside the `local` group) has nothing to reset its Platform options to, so dashmate refuses the hard Platform reset there and changes nothing.
+dashmate has defaults for the `base`, `mainnet` and `testnet` configurations and for the `local` group. Any other configuration, such as one made with `dashmate config create` or a member of another group, has nothing to reset its Platform options to, so dashmate refuses the hard Platform reset there and changes nothing.
 
 ## Starting Platform Over
 
