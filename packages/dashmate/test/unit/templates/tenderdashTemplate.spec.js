@@ -35,8 +35,8 @@ describe('Tenderdash config template', () => {
     expect(config.getStored('platform.drive.tenderdash.p2p.seeds')).to.deep.equal([self, stale]);
   });
 
-  for (const seeds of [null, undefined]) {
-    it(`should render an empty bootstrap list when seeds are ${seeds}`, () => {
+  for (const seeds of [null, undefined, {}, 'peer']) {
+    it(`should render an empty bootstrap list when seeds are ${JSON.stringify(seeds)}`, () => {
       const config = getBaseConfigFactory()();
       const options = config.getStoredOptions();
       const { p2p } = options.platform.drive.tenderdash;
