@@ -4371,6 +4371,9 @@ mod tests {
     /// under a new instance hash and replaces the expired one in place.
     #[tokio::test]
     async fn should_keep_the_txid_of_a_version_2_withdrawal_when_it_is_re_signed_after_expiry() {
+        // No shadow: this test asserts every core height the node asked Core the coinbase
+        // of, and a shadow puts its own questions to the same Core.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         let config = v24_test_config();
         // V24 is active from the first core height.
         let core_state = V24CoreState::new(1);
@@ -4451,6 +4454,9 @@ mod tests {
     #[tokio::test]
     async fn should_switch_to_version_2_asset_unlocks_at_the_first_chain_locked_height_where_v24_is_active(
     ) {
+        // No shadow: this test asserts every core height the node asked Core the coinbase
+        // of, and a shadow puts its own questions to the same Core.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         const V24_ACTIVATION_HEIGHT: u32 = 50;
         let config = v24_test_config();
         let core_state = V24CoreState::new(V24_ACTIVATION_HEIGHT);
@@ -4560,6 +4566,9 @@ mod tests {
     #[tokio::test]
     async fn should_keep_pooling_version_2_withdrawals_at_an_unchanged_chain_locked_height_without_asking_core_about_v24(
     ) {
+        // No shadow: this test asserts every core height the node asked Core the coinbase
+        // of, and a shadow puts its own questions to the same Core.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         const V24_ACTIVATION_HEIGHT: u32 = 50;
         let config = v24_test_config();
         let mut app_hashes = vec![];

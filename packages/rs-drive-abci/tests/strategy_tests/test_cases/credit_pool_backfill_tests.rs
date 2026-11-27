@@ -157,12 +157,20 @@ mod tests {
     #[test]
     async fn should_backfill_credit_nullifiers_when_accepted_activation_survives_a_rejected_round()
     {
+        // No shadow: `activation_lifecycle` writes to the database of the node between
+        // two runs of its chain, in a transaction of its own. A shadow would not get that
+        // write.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         activation_lifecycle(false).await;
     }
 
     #[stack_size(4 * 1024 * 1024)]
     #[test]
     async fn should_preserve_historical_token_history_flags_across_public_activation_candidates() {
+        // No shadow: `activation_lifecycle` writes to the database of the node between
+        // two runs of its chain, in a transaction of its own. A shadow would not get that
+        // write.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         activation_lifecycle(true).await;
     }
 

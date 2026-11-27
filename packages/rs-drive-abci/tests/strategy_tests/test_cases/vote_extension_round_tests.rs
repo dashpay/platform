@@ -606,6 +606,10 @@ mod tests {
     /// committed.
     #[tokio::test]
     async fn should_not_finalize_a_block_whose_header_app_hash_differs_from_its_execution() {
+        // No shadow: this test gives the node a block whose header carries another app
+        // hash than its execution gives. A shadow fails at that block as the node does,
+        // and the shadow of the suite counts its failure before the node is asked.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         let mut platform = TestPlatformBuilder::new()
             .with_config(config())
             .build_with_mock_rpc();
