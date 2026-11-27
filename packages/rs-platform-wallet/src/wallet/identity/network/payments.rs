@@ -2,6 +2,7 @@
 
 use dpp::prelude::Identifier;
 use key_wallet::account::account_collection::DashpayAccountKey;
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -19,7 +20,7 @@ use super::prepared_payment::{
 };
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::PlatformWalletChangeSet;
+use crate::changeset::{drop_rows_at_or_below_issuance_floors, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::persister::NotDurable;
@@ -1445,8 +1446,9 @@ fn mark_contact_addresses_paid_on_chain(
 }
 
 /// Run [`mark_contact_addresses_paid_on_chain`] for one contact and, when it
-/// marked anything, snapshot the pool to store after the guard drops. Caller
-/// holds the manager write lock.
+/// marked anything, snapshot the pool to store after the guard drops, less
+/// the rows at or below the contact's issuance floor. Caller holds the
+/// manager write lock.
 pub(super) fn record_contact_addresses_paid_on_chain(
     wm: &mut WalletManager<PlatformWalletInfo>,
     wallet_id: WalletId,
@@ -1454,12 +1456,78 @@ pub(super) fn record_contact_addresses_paid_on_chain(
     from_identity_id: &Identifier,
     to_contact_id: &Identifier,
 ) -> Result<Option<PlatformWalletChangeSet>, PlatformWalletError> {
+    let (account_type, floor) =
+        contact_payout_issuance_floor(wm, wallet_id, from_identity_id, to_contact_id);
     let (contact_xpub, external_account) =
         contact_external_account(wm, wallet_id, generation, from_identity_id, to_contact_id)?;
-    Ok(
-        mark_contact_addresses_paid_on_chain(external_account, &contact_xpub)?
-            .then(|| pool_changeset(from_identity_id, to_contact_id, external_account)),
-    )
+    if !mark_contact_addresses_paid_on_chain(external_account, &contact_xpub)? {
+        return Ok(None);
+    }
+    let mut changeset = pool_changeset(from_identity_id, to_contact_id, external_account);
+    let floors = floor
+        .map(|floor| (account_type, floor))
+        .into_iter()
+        .collect();
+    drop_rows_at_or_below_issuance_floors(&mut changeset.account_address_pools, &floors);
+    Ok((!changeset.account_address_pools.is_empty()).then_some(changeset))
+}
+
+/// The contact's payout account type and its issuance floor, if the load set
+/// one.
+fn contact_payout_issuance_floor(
+    wm: &WalletManager<PlatformWalletInfo>,
+    wallet_id: WalletId,
+    from_identity_id: &Identifier,
+    to_contact_id: &Identifier,
+) -> (AccountType, Option<u32>) {
+    let account_type = AccountType::DashpayExternalAccount {
+        index: CONTACT_ACCOUNT_INDEX,
+        user_identity_id: from_identity_id.to_buffer(),
+        friend_identity_id: to_contact_id.to_buffer(),
+    };
+    let floor = wm
+        .get_wallet_info(&wallet_id)
+        .and_then(|info| info.funding_issuance_floors.get(&account_type).copied());
+    (account_type, floor)
+}
+
+/// The contact's next available payout address and its external account.
+/// Refused when the load could not restore the contact's pool past the
+/// address (see [`PlatformWalletInfo::funding_issuance_floors`]): it may
+/// already be paid.
+pub(super) fn next_contact_payout_address<'w>(
+    wm: &'w mut WalletManager<PlatformWalletInfo>,
+    wallet_id: WalletId,
+    generation: Option<&Arc<WalletGeneration>>,
+    from_identity_id: &Identifier,
+    to_contact_id: &Identifier,
+) -> Result<
+    (
+        dashcore::Address,
+        &'w mut key_wallet::managed_account::ManagedCoreFundsAccount,
+    ),
+    PlatformWalletError,
+> {
+    let (_, floor) = contact_payout_issuance_floor(wm, wallet_id, from_identity_id, to_contact_id);
+    let (contact_xpub, external_account) =
+        contact_external_account(wm, wallet_id, generation, from_identity_id, to_contact_id)?;
+    let address = external_account
+        .next_address(Some(&contact_xpub))
+        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+    if let Some(floor) = floor {
+        let index = external_account
+            .managed_account_type()
+            .address_pools()
+            .iter()
+            .find_map(|pool| pool.address_index(&address));
+        if index.is_none_or(|index| index <= floor) {
+            return Err(PlatformWalletError::ContactPayoutPoolNotRestored {
+                contact: *to_contact_id,
+                floor,
+            });
+        }
+    }
+    Ok((address, external_account))
 }
 
 /// Select and claim from the one authoritative pool shared by Core sends
@@ -1474,11 +1542,8 @@ fn reserve_contact_payment_address(
     to_contact_id: &Identifier,
     claim: ContactAddressClaim,
 ) -> Result<(dashcore::Address, PlatformWalletChangeSet), PlatformWalletError> {
-    let (contact_xpub, external_account) =
-        contact_external_account(wm, wallet_id, None, from_identity_id, to_contact_id)?;
-    let payment_address = external_account
-        .next_address(Some(&contact_xpub))
-        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+    let (payment_address, external_account) =
+        next_contact_payout_address(wm, wallet_id, None, from_identity_id, to_contact_id)?;
 
     // `next_address`/`next_unused` only *selects* (and, when the
     // gap-window is exhausted, generates) the next available address —
@@ -12006,6 +12071,56 @@ mod tests {
     // The full drain-then-send of a queued `RegisterExternal` is exercised
     // end-to-end by the live DashPay e2e flow.
 
+    /// A load that could not restore the contact's pool past a row leaves
+    /// every payout address up to it possibly paid, so none is reserved.
+    #[tokio::test]
+    async fn reserve_payment_address_refuses_an_address_at_or_below_the_contacts_issuance_floor() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let (manager, _persister, wallet_id, owner, contact) =
+            register_sender_and_external_account().await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let iw = wallet.identity();
+        let floor = {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).unwrap();
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact.to_buffer(),
+            };
+            let floor = info.core_wallet.accounts.dashpay_external_accounts[&key]
+                .managed_account_type()
+                .address_pools()[0]
+                .highest_generated()
+                .unwrap();
+            info.funding_issuance_floors.insert(
+                key_wallet::account::AccountType::DashpayExternalAccount {
+                    index: key.index,
+                    user_identity_id: key.user_identity_id,
+                    friend_identity_id: key.friend_identity_id,
+                },
+                floor,
+            );
+            floor
+        };
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+
+        let refused = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ContactPayoutPoolNotRestored { contact: c, floor: f })
+                    if c == contact && f == floor
+            ),
+            "{refused:?}"
+        );
+    }
+
     #[tokio::test]
     async fn reserve_payment_address_needs_no_core_funds_and_rotates_with_core_send() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
@@ -15719,6 +15834,60 @@ mod tests {
             )],
         );
         account.transactions_mut().insert(record.txid, record);
+    }
+
+    /// A contact pool the load could not restore may hold refilled addresses
+    /// at the index of a used row the store still keeps, so marking an address
+    /// a resident record pays stores none of its rows at or below the floor.
+    #[tokio::test]
+    async fn should_not_store_rows_at_or_below_the_issuance_floor_when_marking_paid_addresses() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        let floor = 1;
+        let paid = {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.funding_issuance_floors.insert(
+                key_wallet::account::AccountType::DashpayExternalAccount {
+                    index: key.index,
+                    user_identity_id: key.user_identity_id,
+                    friend_identity_id: key.friend_identity_id,
+                },
+                floor,
+            );
+            info.core_wallet.accounts.dashpay_external_accounts[&key]
+                .managed_account_type()
+                .address_pools()[0]
+                .addresses()[&0]
+                .address
+                .clone()
+        };
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+
+        let mut wm = iw.wallet_manager.write().await;
+        let changeset = super::record_contact_addresses_paid_on_chain(
+            &mut wm,
+            wallet_id,
+            None,
+            &owner_id,
+            &contact_id,
+        )
+        .expect("mark the paid address");
+
+        let stored: Vec<_> = changeset
+            .iter()
+            .flat_map(|changeset| &changeset.account_address_pools)
+            .flat_map(|pool| &pool.addresses)
+            .map(|row| row.index)
+            .collect();
+        assert!(stored.iter().all(|index| *index > floor), "{stored:?}");
     }
 
     /// A single-shot send whose reservation cannot be stored sends nothing
