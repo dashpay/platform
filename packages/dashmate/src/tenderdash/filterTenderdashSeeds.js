@@ -14,7 +14,8 @@ export function getTenderdashSeedNodeIds(node) {
 
 /** Omit self while preserving the order and spelling of the other peers. */
 export default function filterTenderdashSeeds(seeds, nodeId) {
-  return (Array.isArray(seeds) ? seeds : []).filter(({ id }) => (
-    nodeId === null || typeof id !== 'string' || id.toLowerCase() !== nodeId
+  return (Array.isArray(seeds) ? seeds : []).filter(seed => (
+    seed !== null && typeof seed === 'object'
+    && (nodeId === null || typeof seed.id !== 'string' || seed.id.toLowerCase() !== nodeId)
   ));
 }

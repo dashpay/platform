@@ -391,6 +391,29 @@ describe('ConfigFileJsonRepository', () => {
       expect(migrated.getStored('platform.drive.tenderdash.p2p')).not.to.have.property('seeds');
     });
 
+    it('should render a 5.1.0 config with a null seed entry on a forced hard reset', () => {
+      const data = JSON.parse(seedConfigFile());
+      data.configFormatVersion = '5.1.0';
+      data.defaultConfigName = 'node1';
+      data.configs.node1 = structuredClone(data.configs.base);
+      data.configs.node1.platform.drive.tenderdash.p2p.seeds = [null];
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      const repository = createMigratingRepository();
+      const skipValidation = ({ name, configFileData }) => name === configFileData.defaultConfigName;
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
+      let rendered;
+
+      const { configFile } = repository.readAndMigrate({ skipValidation }, (configs) => {
+        const config = configs.find(candidate => candidate.getName() === 'node1');
+        rendered = render(config)['platform/drive/tenderdash/config.toml'];
+      });
+
+      expect(rendered?.split('\n')).to.include('bootstrap-peers = ""');
+      expect(configFile.getConfig('node1').getStored('platform.drive.tenderdash.p2p.seeds'))
+        .to.deep.equal([null]);
+    });
+
     it('should render and save a migration while holding the lock', () => {
       seedConfigFile();
 
