@@ -18,7 +18,7 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
-use crate::sqlite::schema::{blob, core_history};
+use crate::sqlite::schema::{blob, core_history, core_history_aliases};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
 // `islock_blob` (transaction records + InstantLocks are public chain data).
@@ -93,9 +93,10 @@ pub fn apply(
                 finalized = excluded.finalized, \
                 record_blob = excluded.record_blob",
         )?;
+        let mut aliases = None;
         for incoming in &cs.records {
             ensure_current_transaction_identity(incoming)?;
-            let record = core_history::preserve_known_details(tx, wallet_id, incoming)?;
+            let record = core_history_aliases::adopt(tx, wallet_id, incoming, &mut aliases)?;
             let block_info = record.block_info();
             let height = block_info.map(|b| i64::from(b.height()));
             let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
@@ -1319,6 +1320,13 @@ pub fn get_tx_record(
     Ok(Some(record))
 }
 
+/// Whether a transaction can carry a pre-stable AssetUnlock identity.
+pub(super) fn is_historical_unlock(record: &TransactionRecord) -> bool {
+    (record.transaction.version as i16) >= 3
+        && matches!(&record.transaction.special_transaction_payload,
+            Some(TransactionPayload::AssetUnlockPayloadType(payload)) if payload.base.version >= 2)
+}
+
 /// Decode historical records without changing their stored identifiers or index keys.
 pub(crate) fn decode_transaction_record(
     payload: &[u8],
@@ -1327,12 +1335,8 @@ pub(crate) fn decode_transaction_record(
     if let Err(error) = ensure_current_transaction_identity(&record) {
         // Before stable AssetUnlock txids, the writer committed the full quorum
         // information. Only that historical payload shape may use an instance hash.
-        let historical_unlock = (record.transaction.version as i16) >= 3
-            && matches!(
-                &record.transaction.special_transaction_payload,
-                Some(TransactionPayload::AssetUnlockPayloadType(payload)) if payload.base.version >= 2
-            )
-            && record.txid == record.transaction.instance_hash();
+        let historical_unlock =
+            is_historical_unlock(&record) && record.txid == record.transaction.instance_hash();
         if !historical_unlock {
             return Err(error);
         }

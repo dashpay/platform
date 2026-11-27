@@ -381,11 +381,17 @@ been persisted still gets a row, carrying only the confirmation height its
 UTXOs report — all UTXOs of that transaction share it. `height` is the sole
 persisted UTXO confirmation-height source: `NULL` is the sole unconfirmed
 marker, and height `0` is a legal confirmed height. On height-only rows,
-`record_blob`, `block_hash`, and `block_time` are NULL and `finalized` is `0`;
-`finalized` is meaningful only on blob-bearing rows. A blob-bearing row always
-takes precedence over a height-only write, even when the latter reports a
-different height. `WalletStorageError::CoreTransactionEntryMismatch` detects
-typed/blob disagreement. The blob is authoritative and the typed columns are
+`record_blob`, `block_hash`, and `block_time` are NULL and `finalized` is `0`.
+Adopted legacy AssetUnlock aliases form a separate blobless row class: only
+`record_blob` is cleared, while height, proof and finality metadata remain as
+physical anchors for existing coins and claimant links. Their archived originals
+prove identity only; alias resolution requires an active canonical record and
+never restores ownership, context or history from the archive.
+
+A blob-bearing row always takes precedence over a height-only write, even when
+the latter reports a different height.
+`WalletStorageError::CoreTransactionEntryMismatch` detects typed/blob
+disagreement. The blob is authoritative and the typed columns are
 left exactly as found — **no read path writes**, in either load policy
 (pinned by `get_core_tx_record_never_writes`). The policy decides only what
 the disagreement costs: under `LoadPolicy::Strict` it aborts the load, under
