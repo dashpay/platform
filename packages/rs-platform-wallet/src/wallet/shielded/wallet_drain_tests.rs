@@ -14,7 +14,9 @@ use dpp::prelude::AssetLockProof;
 use dpp::version::PlatformVersion;
 use key_wallet::account::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
+    AssetLockFundingAccount, AssetLockFundingType,
+};
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
 use tokio::sync::Notify;
@@ -1627,6 +1629,12 @@ async fn should_refuse_a_batch_no_proof_can_carry_before_any_core_funding() {
             account_index: 0,
             minimum_lock_duffs: None,
             operation: operation.clone(),
+        },
+        // The sizing refusal runs before the account is resolved, so the
+        // account needs no funds.
+        AssetLockFunding::DrainAccountBalance {
+            account: AssetLockFundingAccount::CoinJoin { account_index: 0 },
+            minimum_lock_duffs: None,
         },
         AssetLockFunding::FromExistingAssetLock {
             out_point: lock.out_point,
