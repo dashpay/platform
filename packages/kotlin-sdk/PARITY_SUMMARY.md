@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **59**
+Capabilities tracked: **60**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 39 | 18 | 1 | 1 |
-| Swift | Example app | 6 | 39 | 4 | 10 |
-| Kotlin | SDK | 31 | 22 | 5 | 1 |
-| Kotlin | Example app | 7 | 35 | 6 | 11 |
+| Swift | SDK | 40 | 18 | 1 | 1 |
+| Swift | Example app | 7 | 39 | 4 | 10 |
+| Kotlin | SDK | 31 | 22 | 6 | 1 |
+| Kotlin | Example app | 7 | 35 | 7 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 20 | 37 |
-| Kotlin | 9 | 18 | 32 |
+| Swift | 2 | 20 | 38 |
+| Kotlin | 9 | 18 | 33 |
 
 ## Capability status
 
@@ -83,6 +83,7 @@ Capabilities tracked: **59**
 | `dashpay.profile_payment_addresses` | partial / partial / not_applicable | partial / partial / tested |
 | `dashpay.shielded_tips` | supported / partial / required | supported / partial / required |
 | `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
+| `network.masternodes_by_voting_key` | supported / supported / not_applicable | unsupported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

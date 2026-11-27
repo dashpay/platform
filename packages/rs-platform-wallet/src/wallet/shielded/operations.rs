@@ -5135,7 +5135,8 @@ fn select_recorded_spends<S: ShieldedStore>(
                 Ok(Some(path)) => path,
                 Ok(None) if strict => {
                     return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no checkpoint of the commitment tree covers the note at position {position} yet"
+                        "no checkpoint of the commitment tree covers the note at position {position} yet; \
+                         try again after the next shielded sync, which checkpoints the tree"
                     )));
                 }
                 Err(e) if strict => {
@@ -11711,6 +11712,12 @@ mod select_recorded_spends_tests {
         match result {
             Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(message)) => {
                 assert!(message.contains("position 1"), "{message}");
+                // Hosts show this text as is (code 88 has no prefix), so it
+                // carries its own way past the refusal.
+                assert!(
+                    message.contains("after the next shielded sync"),
+                    "{message}"
+                );
             }
             Err(other) => panic!("expected ShieldedMerkleWitnessUnavailable, got {other:?}"),
             Ok(_) => panic!("expected ShieldedMerkleWitnessUnavailable, got Ok"),
