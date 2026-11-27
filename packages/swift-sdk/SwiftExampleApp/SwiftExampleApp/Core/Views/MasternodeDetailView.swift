@@ -145,6 +145,13 @@ struct MasternodeDetailView: View {
                             MasternodeCopyRow(label: "ProTxHash", value: proTxHashHex)
                         }
                         .accessibilityIdentifier("masternodeDetail.votingKeyMasternodes.result")
+                        if found.isEmpty {
+                            // The SDK call returns an empty list for both.
+                            Text("No matches in the local masternode list, or the list is not available yet.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .accessibilityIdentifier("masternodeDetail.votingKeyMasternodes.empty")
+                        }
                     }
                     if let err = votingKeyMasternodesError {
                         Text(err)
