@@ -53,7 +53,10 @@ fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
 /// exists in a production build, and it is not part of any public API.
 #[cfg(test)]
 pub(crate) type RemoveWalletMidpointHook = Box<
-    dyn Fn(&WalletId) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    dyn Fn(
+            &WalletId,
+            &Arc<WalletGeneration>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
         + Send
         + Sync,
 >;
@@ -1087,7 +1090,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .lock()
                 .expect("remove-wallet midpoint hook mutex")
                 .as_ref()
-                .map(|hook| hook(wallet_id));
+                .map(|hook| hook(wallet_id, &generation));
             if let Some(rendezvous) = pending {
                 rendezvous.await;
             }
@@ -2563,29 +2566,21 @@ mod remove_versus_recreate_tests {
             let manager_for_hook = Arc::clone(&manager);
             let recreated_slot = Arc::clone(&recreated);
             // One-shot: the re-registration must not recurse into a later
-            // removal. Only this manager's removal of this test's wallet fires
+            // removal. Only the removal of this test's own generation fires
             // it: every fixture shares the wallet id, and another test's
-            // removal running meanwhile passes through. At this midpoint this
-            // manager's inner manager no longer holds the wallet.
-            let fired = Arc::new(AtomicBool::new(false));
-            let target = wallet_id;
+            // removal running meanwhile passes through.
+            let fired = AtomicBool::new(false);
+            let target = Arc::clone(original.generation());
             *REMOVE_WALLET_MIDPOINT_HOOK
                 .lock()
-                .expect("midpoint hook mutex") = Some(Box::new(move |id| {
+                .expect("midpoint hook mutex") = Some(Box::new(move |id, generation| {
+                let already_fired =
+                    !Arc::ptr_eq(generation, &target) || fired.swap(true, Ordering::SeqCst);
                 let manager = Arc::clone(&manager_for_hook);
                 let recreated_slot = Arc::clone(&recreated_slot);
-                let fired = Arc::clone(&fired);
                 let id = *id;
                 Box::pin(async move {
-                    if id != target
-                        || manager
-                            .wallet_manager
-                            .read()
-                            .await
-                            .get_wallet_and_info(&id)
-                            .is_some()
-                        || fired.swap(true, Ordering::SeqCst)
-                    {
+                    if already_fired {
                         return;
                     }
                     let mnemonic =
