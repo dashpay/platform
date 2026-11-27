@@ -124,13 +124,16 @@ mod tests {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::core_script::CoreScript;
     use dpp::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
         IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
     };
+    use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
     use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
     use dpp::withdrawal::Pooling;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
@@ -608,8 +611,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_masternode_credit_withdrawal_with_withdrawal_address_creates_when_signing_with_owner_key_should_fail(
-        ) {
+        async fn should_refuse_a_raw_owner_signed_withdrawal_with_an_output_script() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -629,7 +631,7 @@ mod tests {
 
             fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
-            let (identity, signer, _, _) = setup_masternode_owner_identity(
+            let (identity, signer, owner_key, _) = setup_masternode_owner_identity(
                 &mut platform,
                 rng.gen(),
                 dash_to_credits!(0.5),
@@ -638,25 +640,25 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let withdrawal_amount = dash_to_credits!(0.1);
-
-            let credit_withdrawal_transition =
-                IdentityCreditWithdrawalTransition::try_from_identity(
-                    &identity,
-                    Some(CoreScript::random_p2pkh(&mut rng)),
-                    withdrawal_amount,
-                    Pooling::Never,
-                    1,
-                    0,
-                    signer,
-                    None,
-                    PreferredKeyPurposeForSigningWithdrawal::OwnerOnly,
-                    2,
-                    platform_version,
-                    None,
+            // Build the raw transition so this test exercises the node's refusal.
+            let mut credit_withdrawal_transition =
+                StateTransition::from(IdentityCreditWithdrawalTransitionV1 {
+                    identity_id: identity.id(),
+                    amount: dash_to_credits!(0.1),
+                    core_fee_per_byte: 1,
+                    pooling: Pooling::Never,
+                    output_script: Some(CoreScript::random_p2pkh(&mut rng)),
+                    nonce: 2,
+                    ..Default::default()
+                });
+            credit_withdrawal_transition
+                .sign_external(
+                    &owner_key,
+                    &signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
                 )
                 .await
-                .expect("expected a credit withdrawal transition");
+                .expect("expected a signed credit withdrawal transition");
 
             let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
                 .serialize_to_bytes()

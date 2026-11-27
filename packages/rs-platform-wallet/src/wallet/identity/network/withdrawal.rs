@@ -3,15 +3,14 @@
 use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
-use dpp::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::core_script::CoreScript;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
+use dpp::state_transition::identity_credit_withdrawal_transition::methods::validate_withdrawal_output_script;
 use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
@@ -216,25 +215,18 @@ pub(crate) fn check_withdrawal_destination(
     to_address: Option<&DashAddress>,
     signing_key: Option<&IdentityPublicKey>,
 ) -> Result<(), dash_sdk::Error> {
-    if let Some((address, owner_key)) = to_address
-        .zip(signing_key)
-        .filter(|(_, key)| key.purpose() == Purpose::OWNER)
-    {
+    if let Some((address, key)) = to_address.zip(signing_key) {
         check_signing_key_eligibility(
-            owner_key,
+            key,
             &[Purpose::TRANSFER, Purpose::OWNER],
             &CREDIT_SIGNING_LEVELS,
             &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         )?;
-        // Drive rejects the output script before expiry; local signer access is irrelevant.
-        return Err(ConsensusError::from(
-            WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
-                CoreScript::new(address.script_pubkey()),
-                owner_key.id(),
-            ),
-        )
-        .into());
+        // Drive rejects the output script before expiry and signer availability.
+        let output_script = CoreScript::new(address.script_pubkey());
+        validate_withdrawal_output_script(key, Some(&output_script))
+            .map_err(ConsensusError::from)?;
     }
     Ok(())
 }
