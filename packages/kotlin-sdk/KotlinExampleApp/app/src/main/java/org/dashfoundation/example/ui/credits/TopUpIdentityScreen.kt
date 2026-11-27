@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.example.di.LocalAppContainer
@@ -96,7 +97,7 @@ private const val SHIELDED_TOP_UP_ACCOUNT = 0
  *   ([org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.addressesWithBalances]),
  *   greedily packs them up to the requested amount (largest-balance-first,
  *   matching Swift's `buildInputs`), then credits the identity through
- *   [org.dashfoundation.dashsdk.credits.IdentityCredits.topUpFromAddresses].
+ *   [org.dashfoundation.dashsdk.credits.IdentityCredits.topUpIdentityFromAddresses].
  * - **Shielded Balance** (Type 22, SH-22): spends notes of the identity's
  *   wallet's shielded account 0 through
  *   [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedIdentityTopUpFromPool].
@@ -132,6 +133,9 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    // The top-up may have been broadcast and its outcome is not confirmed
+    // (code 20): shown as pending, and the same top-up cannot be sent again.
+    var pending by remember { mutableStateOf(false) }
     var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
     var isChecking by remember { mutableStateOf(false) }
 
@@ -386,15 +390,26 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                 }
             }
 
+            if (pending) {
+                Text(
+                    "Top-up pending: it may still complete. Don't send it again; " +
+                        "a later sync refreshes the balance but can't confirm this top-up.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("topup.pending"),
+                )
+            }
+
             SubmitButton(
                 text = when {
                     done -> "Topped Up"
+                    pending -> "Top-Up Pending"
                     topUpRunning ->
                         "Building proof, this takes tens of seconds…"
                     else -> "Top Up Balance"
                 },
                 isLoading = isBusy,
-                enabled = canSubmit && !done && !isBusy,
+                enabled = canSubmit && !done && !pending && !isBusy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(
@@ -420,13 +435,17 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                                         "$amt credits."
                                     return@launch
                                 }
-                                mgr.identityCredits.topUpFromAddresses(
+                                mgr.identityCredits.topUpIdentityFromAddresses(
                                     walletHandle = w.handle,
                                     identityId = idBytes,
                                     inputs = inputs,
                                     signerHandle = mgr.signerHandle,
                                 )
                                 done = true
+                            } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
+                                // Not a failure: the top-up may still execute, so no
+                                // retry is offered.
+                                pending = true
                             } catch (e: Exception) {
                                 error = e.message ?: "Top up failed"
                             } finally {

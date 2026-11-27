@@ -126,6 +126,12 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// only honours the declaration when the extension carries the five
     /// scan-state callbacks.
     public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// Locked outpoints (masternode collateral, and outpoints locked by
+    /// hand) are persisted and restored across restarts, through the
+    /// persistence extension's outpoint-lock persist / load / free slots.
+    /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
+    /// the declaration when all three slots are wired.
+    public static let outpointLocks: UInt64 = 1 << 16
 
     public let version: UInt32
     public let bits: UInt64
@@ -340,6 +346,7 @@ struct PlatformWalletNativeLoadCalls: @unchecked Sendable {
 /// inner one the FFI's in-band "no tip" (`0` seconds), which does publish.
 struct PlatformWalletPollSnapshot: Sendable {
     var spvProgress: PlatformSpvSyncProgress?
+    var spvProgressReadStartedAt: TimeInterval?
     var spvIsRunning: Bool?
     var spvPeers: [PlatformSpvPeerInfo]?
     var platformAddressSyncIsSyncing: Bool?
@@ -462,6 +469,14 @@ public class PlatformWalletManager: ObservableObject {
     /// The current SPV sync progress. Updated by the polling task
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
+
+    private let spvProgressObservationSubject = PassthroughSubject<PlatformSpvProgressObservation, Never>()
+
+    /// Emits every accepted native progress read on the main actor, including unchanged values.
+    /// No previous observation is replayed, and emissions do not trigger `objectWillChange`.
+    public var spvProgressObservations: AnyPublisher<PlatformSpvProgressObservation, Never> {
+        spvProgressObservationSubject.eraseToAnyPublisher()
+    }
 
     @Published public private(set) var spvIsRunning: Bool = false
 
@@ -697,6 +712,7 @@ public class PlatformWalletManager: ObservableObject {
                 "manager shutdown is in progress; \(name) rejected")
         }
         activeNativeOpCount += 1
+        nativeOpAdmissionObserver?(name)
     }
 
     func finishNativeOp() {
@@ -746,13 +762,26 @@ public class PlatformWalletManager: ObservableObject {
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
 
     /// Test seam for the native calls of the admitted shielded spend
-    /// wrappers (pool spends, shields, identity-debit abandonment); same
-    /// contract as [`nativeTeardownCalls`].
+    /// wrappers (pool spends with and without a plan, the spend plan,
+    /// shields, identity-debit abandonment); same contract as
+    /// [`nativeTeardownCalls`].
     internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
 
     /// Native snapshot reads and their paired allocation release. Kept
     /// injectable so ownership and shutdown admission are tested together.
     internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
+
+    /// Test seam for the native call behind
+    /// `shieldedShieldFromIdentityToRecipient`, so its shutdown admission is
+    /// tested without a signer or network; same contract as
+    /// [`nativeTeardownCalls`].
+    internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
+        platform_wallet_manager_shielded_shield_from_identity_to_recipient
+
+    /// Test-only: told the operation name each time [`admitNativeOp`] admits
+    /// an operation, so a test can prove an entry point is admitted without a
+    /// seam for its native call. Always `nil` in production.
+    internal var nativeOpAdmissionObserver: ((String) -> Void)?
 
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].
@@ -1423,7 +1452,8 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
+    /// `clearShielded`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an
@@ -1444,7 +1474,13 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
-    private func ensureSyncNativeOpAllowed(_ name: String) throws {
+    /// Whether an async native operation is admitted and has not finished.
+    /// For a synchronous entrypoint that reports that refusal by a typed
+    /// error of its own instead of [`ensureSyncNativeOpAllowed`]'s
+    /// `invalidHandle`.
+    var hasAdmittedNativeOp: Bool { activeNativeOpCount > 0 }
+
+    func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
@@ -3235,6 +3271,7 @@ public class PlatformWalletManager: ObservableObject {
     nonisolated static func performManagerPoll(
         _ handle: Handle,
         calls: PlatformWalletNativePollCalls = .live,
+        uptime: @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         isStale: @Sendable () -> Bool = { false }
     ) -> PlatformWalletPollSnapshot {
         let start = ContinuousClock.now
@@ -3244,7 +3281,11 @@ public class PlatformWalletManager: ObservableObject {
         // does — the remaining reads must not fire against a manager whose
         // teardown already started.
         guard !isStale() else { return snapshot }
-        snapshot.spvProgress = try? calls.syncProgress(handle)
+        let readStartedAt = uptime()
+        if let progress = try? calls.syncProgress(handle) {
+            snapshot.spvProgress = progress
+            snapshot.spvProgressReadStartedAt = readStartedAt
+        }
         guard !isStale() else { return snapshot }
         snapshot.spvIsRunning = try? calls.isSpvRunning(handle)
         guard !isStale() else { return snapshot }
@@ -3334,6 +3375,10 @@ public class PlatformWalletManager: ObservableObject {
            spvProgress == baseline.spvProgress {
             if value != spvProgress {
                 spvProgress = value
+            }
+            if let readStartedAt = snapshot.spvProgressReadStartedAt {
+                spvProgressObservationSubject.send(PlatformSpvProgressObservation(
+                    progress: value, readStartedAtSystemUptime: readStartedAt))
             }
         }
         if let value = snapshot.spvIsRunning,

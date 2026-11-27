@@ -1,7 +1,4 @@
-/**
- * Values a POSIX shell passes through untouched.
- */
-const SHELL_SAFE = /^[A-Za-z0-9._@%+=:,/-]+$/;
+import quoteShellArgument from './quoteShellArgument.js';
 
 /**
  * Render the --config flag for a command an operator is meant to copy and run.
@@ -15,7 +12,5 @@ const SHELL_SAFE = /^[A-Za-z0-9._@%+=:,/-]+$/;
  * @return {string}
  */
 export default function renderConfigFlag(configName) {
-  const name = String(configName);
-
-  return `--config ${SHELL_SAFE.test(name) ? name : `'${name.replace(/'/g, "'\\''")}'`}`;
+  return `--config ${quoteShellArgument(configName)}`;
 }

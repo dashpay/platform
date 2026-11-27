@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,8 +38,10 @@ import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.persistence.hexToByteArray
+import org.dashfoundation.dashsdk.persistence.logReference
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.persistence.toHex
+import org.dashfoundation.dashsdk.persistence.txoReconcileOrNull
 import org.json.JSONArray
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
@@ -1374,6 +1377,12 @@ class PlatformWalletManager(
         _wallets.value[key]?.let { runCatching { it.close() } }
         _wallets.update { it - key }
         _dashPayUnlockStatus.update { it - key }
+        // A TXO-store reconcile in flight for any wallet stops at its next
+        // page or store step (each re-checks under the callback gate, so
+        // none writes after the cascade below). Coarse on purpose — the
+        // cadence re-runs the others. The native removal above already
+        // forgot the wallet's reconcile cadence and place.
+        txoReconcileEpoch.incrementAndGet()
 
         // 3. Snapshot → atomic secret delete → Room cascade, with both
         //    persistence callbacks and app-side key writers excluded.
@@ -1697,6 +1706,242 @@ class PlatformWalletManager(
      */
     suspend fun accountBalances(walletId: ByteArray): String? = withContext(Dispatchers.IO) {
         mapNativeErrors { DashpayNative.walletManagerAccountBalances(managerHandle, walletId) }
+    }
+
+    /**
+     * Reconcile the Room `txos` mirror of [walletId] against the engine,
+     * once the SPV scan has reached a trustworthy steady state — the Kotlin
+     * port of Swift's `reconcileCoreTxoStore(for:)` (dashpay/platform#4638
+     * Part 2). The mirror is what the engine is restored from at every
+     * launch, so this inserts engine coins the store lacks and marks spent
+     * the rows the engine proves spent; it never deletes a row, never
+     * un-marks one, and never acts on absence. See
+     * [PlatformWalletPersistenceHandler.reconcileTxos] for the passes.
+     *
+     * Whether the run may start is the native start gate's decision
+     * ([WalletManagerNative.walletManagerTxoReconcileBegin], backed by
+     * `platform_wallet::manager::txo_reconcile`): one run per wallet at a
+     * time, SPV in steady state with a scan tip, no latched sync fault
+     * ([syncFaultDetected]), and the wallet's own scan watermark as the
+     * engine holds it within the native margin of the tip. Each refusal is a
+     * [TxoReconcileOutcome.Skipped], not an error; so is a closed manager or
+     * a wallet this manager has not loaded, checked here first.
+     *
+     * How much one run reads, and where it starts, are the native
+     * reconciler's decisions too: begin says where the run starts, every
+     * engine read is one page of the run's budget, and the handler reports
+     * each page it applied, which is what moves the wallet's place. A larger
+     * inventory is finished by the wallet's later runs, each picking up
+     * where the previous one stopped (the report's `stoppedOnBudget` and
+     * `resumedFromCheckpoint`).
+     *
+     * The run holds a [teardownGate] borrow, so the native manager is not
+     * destroyed under an engine read. A granted begin is always followed by
+     * the release of the last page's engine guard and then the native
+     * finish ([endTxoReconcileRun]) — after a completed run, a failed page,
+     * an exception or a cancelled caller alike: a claim left behind would
+     * refuse every later run of the wallet as
+     * [TxoReconcileSkipReason.ALREADY_RUNNING], and a guard left behind
+     * would hold the engine's writers off. [closeSuspending] and
+     * [removeWallet] move [txoReconcileEpoch] first, and the run stops
+     * between pages, reporting `completed = false`; such a run does not
+     * restart the wallet's cadence (the native removal already forgot the
+     * removed wallet's cadence and place).
+     *
+     * Runs automatically when the native schedule says so (see
+     * [maybeReconcileTxoStores]); hosts may also call it. Logs one skip
+     * line (reason and wallet reference) or the handler's summary line —
+     * counts and reference digests only.
+     */
+    suspend fun reconcileTxoStore(walletId: ByteArray): TxoReconcileOutcome {
+        val walletRef = logReference(walletId)
+        fun skip(reason: TxoReconcileSkipReason): TxoReconcileOutcome {
+            android.util.Log.d(
+                "PlatformWalletManager",
+                "txos reconcile: skipped reason=${reason.name} wallet=$walletRef",
+            )
+            return TxoReconcileOutcome.Skipped(reason)
+        }
+        if (isClosed) return skip(TxoReconcileSkipReason.MANAGER_CLOSED)
+        if (walletId.size != 32 || _wallets.value[walletId.toHex()] == null) {
+            return skip(TxoReconcileSkipReason.WALLET_UNKNOWN)
+        }
+        val generation = txoReconcileEpoch.get()
+        val isCancelled = { isClosed || txoReconcileEpoch.get() != generation }
+        // Closed, or a wallet was removed since this run was asked for: a
+        // removed and re-added wallet must not be claimed by a run of the
+        // lifecycle before it.
+        fun stale() = skip(
+            if (isClosed) TxoReconcileSkipReason.MANAGER_CLOSED else TxoReconcileSkipReason.WALLET_UNKNOWN,
+        )
+        return try {
+            teardownGate.withOp {
+                if (isCancelled()) return@withOp stale()
+                val startOut = IntArray(1)
+                val storeAfterOut = arrayOfNulls<ByteArray>(1)
+                // NonCancellable: a RUN return holds a native claim that only
+                // the `finally` below releases. A cancellable withContext would
+                // discard that result and throw before the `try` is entered,
+                // leaking the claim for the rest of the session. Cancellation
+                // is still observed at the first suspension inside the `try`.
+                val gate = withContext(NonCancellable + Dispatchers.IO) {
+                    mapNativeErrors {
+                        WalletManagerNative.walletManagerTxoReconcileBegin(
+                            managerHandle, walletId, startOut, storeAfterOut,
+                        )
+                    }
+                }
+                if (gate != WalletManagerNative.TXO_RECONCILE_GATE_RUN) {
+                    return@withOp skip(TxoReconcileSkipReason.fromGateCode(gate))
+                }
+                val engine = NativeTxoReconcileEngine(managerHandle, walletId, walletRef)
+                var ran = false
+                try {
+                    // Inside the `try`, so a start this build cannot read
+                    // still releases the claim.
+                    val start = txoReconcileStart(startOut[0], storeAfterOut[0])
+                    if (isCancelled()) return@withOp stale()
+                    val report = persistenceHandler.reconcileTxos(
+                        walletId = walletId,
+                        start = start,
+                        engine = engine,
+                        isCancelled = isCancelled,
+                    )
+                    // A run a close or a removal overtook stopped early, and
+                    // does not restart the cadence of a wallet that may be
+                    // gone or added again.
+                    ran = !isCancelled()
+                    TxoReconcileOutcome.Reconciled(report)
+                } finally {
+                    // The teardown borrow is still held, so the handle is live.
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        endTxoReconcileRun(
+                            walletRef = walletRef,
+                            freeHeldVerdicts = engine::releaseVerdicts,
+                            finish = {
+                                mapNativeErrors {
+                                    WalletManagerNative.walletManagerTxoReconcileFinish(managerHandle, walletId, ran)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            // A subclass of IllegalStateException on the JVM: rethrow it
+            // before the catch below can turn a cancellation into a skip.
+            throw cancelled
+        } catch (closing: IllegalStateException) {
+            // The teardown gate refuses new borrows once close began.
+            if (isClosed) skip(TxoReconcileSkipReason.MANAGER_CLOSED) else throw closing
+        }
+    }
+
+    /**
+     * The handler's view of where a reconcile run starts, from what
+     * [WalletManagerNative.walletManagerTxoReconcileBegin] wrote to
+     * `outStart[0]` and `outStoreAfter[0]`. A code this build does not know,
+     * or a classify start with no store cursor, is a contract violation
+     * between the JNI layer and this reader and throws.
+     */
+    private fun txoReconcileStart(
+        code: Int,
+        storeAfter: ByteArray?,
+    ): PlatformWalletPersistenceHandler.TxoReconcileStart = when (code) {
+        WalletManagerNative.TXO_RECONCILE_START_HEAL ->
+            PlatformWalletPersistenceHandler.TxoReconcileStart.NewCycle
+        WalletManagerNative.TXO_RECONCILE_START_HEAL_RESUMED ->
+            PlatformWalletPersistenceHandler.TxoReconcileStart.HealResumed
+        WalletManagerNative.TXO_RECONCILE_START_CLASSIFY ->
+            PlatformWalletPersistenceHandler.TxoReconcileStart.Classify(
+                checkNotNull(storeAfter) { "a classify start carries no store cursor" },
+            )
+        else -> error("unknown reconcile start $code")
+    }
+
+    /**
+     * The engine side of one claimed reconcile run, over the native calls —
+     * the Kotlin twin of Swift's `NativeCoreTxoReconcileEngine`. Each call
+     * runs off the caller's thread; a native failure is logged by kind and
+     * exception type only (the message of a native error can echo the input
+     * it rejected) and becomes the null the handler's stop-and-report
+     * contract is written against.
+     *
+     * [held] is the engine guard the last heal page or classification is
+     * held under, 0 when none is. A held read keeps the guard it wrote to
+     * `outHeld` even when the call failed after writing it, and a guard the
+     * handler did not release is freed, never overwritten.
+     */
+    private class NativeTxoReconcileEngine(
+        private val managerHandle: Long,
+        private val walletId: ByteArray,
+        private val walletRef: String,
+    ) : PlatformWalletPersistenceHandler.TxoReconcileEngine {
+        private val held = AtomicLong(0L)
+
+        override suspend fun healPage(limit: Int): String? = call("engine inventory page") {
+            val outHeld = LongArray(1)
+            try {
+                WalletManagerNative.walletManagerTxoHealPageJson(managerHandle, walletId, limit, outHeld)
+            } finally {
+                keepHeld(outHeld)
+            }
+        }
+
+        override suspend fun healPageApplied(): Boolean? = call("heal page applied") {
+            WalletManagerNative.walletManagerTxoReconcileHealPageApplied(managerHandle, walletId)
+        }
+
+        override suspend fun classify(queriesJson: String): PlatformWalletPersistenceHandler.OutpointVerdicts? =
+            call("outpoint classification") {
+                val outHeld = LongArray(1)
+                val outBudgetSpent = BooleanArray(1)
+                try {
+                    WalletManagerNative.walletManagerTxoReconcileClassifyOutpoints(
+                        managerHandle, walletId, queriesJson, outBudgetSpent, outHeld,
+                    )?.let { classes ->
+                        PlatformWalletPersistenceHandler.OutpointVerdicts(classes, outBudgetSpent[0])
+                    }
+                } finally {
+                    keepHeld(outHeld)
+                }
+            }
+
+        override suspend fun classifyPageApplied(nextAfter: ByteArray?): Boolean? = call("classify page applied") {
+            WalletManagerNative.walletManagerTxoReconcileClassifyPageApplied(managerHandle, walletId, nextAfter)
+        }
+
+        override fun retryStalePage(staleInARow: Int): Boolean =
+            // A failed call stops the run: retrying is the engine's call,
+            // and an engine that cannot answer has not allowed it.
+            runCatching { WalletManagerNative.txoReconcileRetryStalePage(staleInARow) }.getOrDefault(false)
+
+        /**
+         * Release the guard [held] carries, at most once (the value is taken
+         * out before it is freed). The native free takes no manager handle
+         * and never waits: it must complete while a registry writer — a
+         * manager being created or destroyed — is queued behind a native
+         * read that waits on the engine behind a writer that waits on this
+         * guard.
+         */
+        override fun releaseVerdicts() {
+            val token = held.getAndSet(0L)
+            if (token != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(token)
+        }
+
+        private fun keepHeld(outHeld: LongArray) {
+            val previous = held.getAndSet(outHeld[0])
+            if (previous != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(previous)
+        }
+
+        private suspend fun <T> call(what: String, read: () -> T): T? =
+            withContext(Dispatchers.IO) {
+                txoReconcileOrNull(
+                    onFailure = { android.util.Log.w("PlatformWalletManager", it) },
+                    what = "$what failed",
+                    walletRef = walletRef,
+                ) { mapNativeErrors { read() } }
+            }
     }
 
     /**
@@ -2131,7 +2376,7 @@ class PlatformWalletManager(
      * Shield from Platform balance (Type 15) — port of Swift's
      * `shieldedShield`. Spends [amount] credits from the wallet's
      * [paymentAccount] Platform-Payment addresses (auto-selected in
-     * ascending derivation order) into its own bound shielded pool
+     * lexicographic Platform-address order) into its own bound shielded pool
      * ([shieldedAccount]). Signed by the Keystore address signer
      * ([signerHandle]); self-shield only (Rust always targets this wallet's
      * own default Orchard address, so there is no recipient parameter).
@@ -2167,6 +2412,89 @@ class PlatformWalletManager(
     }
 
     /**
+     * Platform → EXTERNAL shielded (Type 15) — port of Swift's
+     * `PlatformWalletManager.shieldedShieldToRecipient(walletId:shieldedAccount:paymentAccount:recipientRaw43:amount:memo:addressSigner:)`
+     * in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift.
+     *
+     * This is the same Type 15 shield as [shieldedShield], with the same
+     * input selection (the [paymentAccount] Platform-Payment addresses,
+     * lexicographic Platform-address order), the same fees, the same error
+     * shapes and the same Keystore address signer ([signerHandle]). The only
+     * difference is that the note is assigned to [recipientRaw43], a third
+     * party's raw 43-byte Orchard payment address, instead of this wallet's
+     * own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShield].
+     *
+     * A bound shielded account ([shieldedAccount]) is still required: the
+     * send is OVK-encrypted to that account and recorded there, which is how
+     * the wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules (and the 36-byte
+     * on-chain encoding), so an over-long memo surfaces as a native error,
+     * not a Kotlin precondition.
+     *
+     * Throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
+     * when the broadcast was accepted but its execution result couldn't be
+     * confirmed. The shield may already be on chain, so the caller must NOT
+     * retry: a retry rebuilds the bundle and could double-pay. The next sync
+     * reconciles the outcome. A shield spends no notes, so nothing is
+     * reserved wallet-side.
+     *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, this still returns normally (see
+     * [opReturningCompletedResult]), so a completed shield is never hidden.
+     * Handle the return before the next suspension point.
+     *
+     * Blocks for the ~30s Halo 2 proof.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11). Negative values are
+     *   rejected here; Rust rejects zero.
+     * @param memo optional UTF-8 memo for the recipient's note.
+     */
+    suspend fun shieldedShieldToRecipient(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        paymentAccount: Int = 0,
+        memo: String? = null,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        // Sign check only, before the native unsigned cast; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        require(paymentAccount >= 0) {
+            "paymentAccount must be non-negative, got $paymentAccount"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                paymentAccount,
+                recipientRaw43,
+                amount,
+                memo,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Shield from a Platform IDENTITY's balance (Type 21). Sibling of
      * [shieldedShield] with the identity, rather than the transparent
      * Platform-Payment addresses, as the funding side: [amount] credits move
@@ -2183,12 +2511,22 @@ class PlatformWalletManager(
      * default Orchard address, so there is no recipient parameter). Blocks for
      * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
      *
+     * Refused before anything is signed or broadcast, so nothing was debited:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
+     *    the identity's proved balance cannot cover [amount] plus the
+     *    admission fee floor. The error reports the required and available
+     *    credits, not the final metered fee, which can be lower.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *    Platform has no balance for the identity yet; retry later.
+     *
      * @param walletId the 32-byte wallet id.
      * @param identityId the 32-byte funding identity id.
      * @param amount credits to shield (1 DASH = 1e11).
-     * @return the identity's proven post-debit credit balance; the wallet only
-     *   confirms on the identity's own balance proof, any other result throws
-     *   the shielded-spend-unconfirmed error (do not resubmit).
+     * @return the funding identity's credit balance from the verified snapshot,
+     *   or a newer balance already known to the wallet. This balance does not
+     *   confirm the debit; the shielded scan confirms the activity separately.
+     *   An unconfirmed outcome throws the shielded-spend-unconfirmed error
+     *   (do not resubmit).
      */
     suspend fun shieldedShieldFromIdentity(
         walletId: ByteArray,
@@ -2210,6 +2548,100 @@ class PlatformWalletManager(
                 shieldedAccount,
                 identityId,
                 amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Identity → EXTERNAL shielded (Type 21). The same `ShieldFromIdentity`
+     * transition as [shieldedShieldFromIdentity], with the same identity
+     * debit ([amount] plus the metered fee plus the shielded compute fee),
+     * the same Keystore identity signer ([signerHandle], TRANSFER key) and
+     * the same error shapes. The only difference is that the note is
+     * assigned to [recipientRaw43], a third party's raw 43-byte Orchard
+     * payment address, instead of this wallet's own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShieldFromIdentity]. A bound shielded
+     * account ([shieldedAccount]) is still required: the send is
+     * OVK-encrypted to that account and recorded there, which is how the
+     * wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules, as it owns the
+     * zero-amount rejection, so a violation surfaces as a native error, not a
+     * Kotlin precondition.
+     *
+     * Refused before anything is signed or broadcast, so nothing was debited:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
+     *    the identity's proved balance cannot cover [amount] plus the
+     *    admission fee floor. The error reports the required and available
+     *    credits, not the final metered fee, which can be lower.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *    Platform has no balance for the identity yet; retry later.
+     *
+     * Do NOT retry on either of these errors; the original debit may have executed:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
+     *    the transition may already have executed.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedIdentityDebitPending]:
+     *    an earlier identity debit is still unresolved, so this one was
+     *    never built or broadcast.
+     *
+     * Sync attempts reconciliation but can leave the debit unresolved. Use
+     * [shieldedIdentityDebitRecoveryRecords] to inspect its recovery state;
+     * a completed sync is not permission to resubmit the payment.
+     *
+     * Cancellation: if the native call successfully returns a balance,
+     * cancellation during the handoff does not discard it (see
+     * [opReturningCompletedResult]). Handle the result before the next
+     * suspension point.
+     *
+     * Blocks for the ~30s Halo 2 proof. A successful return does not confirm
+     * that this debit executed or that the recipient received the note. The
+     * wallet confirms the outgoing activity when shielded sync observes its
+     * note commitments on-chain. Do not use the returned balance as a receipt.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte funding identity id; must be managed by
+     *   this wallet.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11).
+     * @param memo optional UTF-8 memo for the recipient's note.
+     * @return the funding identity's credit balance from the verified
+     *   snapshot, or a newer balance already known to the wallet.
+     */
+    suspend fun shieldedShieldFromIdentityToRecipient(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        memo: String? = null,
+    ): Long = teardownGate.opReturningCompletedResult {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        // Sign checks only, before the native unsigned casts; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldFromIdentityToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                identityId,
+                recipientRaw43,
+                amount,
+                memo,
                 signerHandle,
             )
         }
@@ -3376,7 +3808,61 @@ class PlatformWalletManager(
                     // SPV stopped — reset so the overlay clears.
                     _spvProgress.value = SpvSyncProgressData.EMPTY
                 }
+                // Every tick, running or not: the poll is the native
+                // reconcile schedule's clock, and a stopped client arms its
+                // next steady-state edge.
+                maybeReconcileTxoStores()
                 delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Cancellation generation of the TXO-store reconcile: moved by
+     * [closeSuspending] and [removeWallet]; a run captures it at start and
+     * stops between pages once it moves.
+     */
+    private val txoReconcileEpoch = AtomicLong()
+
+    /** The automatic runs [maybeReconcileTxoStores] launched that have not
+     *  ended yet: one per wallet ([TxoReconcileLaunches]). */
+    private val txoReconcileLaunches = TxoReconcileLaunches()
+
+    /**
+     * SDK-internal trigger for [reconcileTxoStore], called on every tick of
+     * the progress poll, SPV running or not: the poll is the native
+     * schedule's clock, and a stopped client arms its next steady-state
+     * edge. Launches a run for each loaded wallet the native schedule
+     * reports due ([WalletManagerNative.walletManagerTxoReconcileDueWallets],
+     * which owns the steady-state edge and the cadence) — never inline, so
+     * the poll tick stays cheap. A wallet the engine already holds but this
+     * manager has not wrapped yet (creation and restore publish the native
+     * wallet first) is skipped; being reported spends none of its cadence —
+     * only the native claim in [reconcileTxoStore] restarts it — so it is
+     * reported again on the next tick. A wallet whose launched run has not
+     * ended is not launched again ([txoReconcileLaunches]). Lives here
+     * rather than in the host apps so every host gets the repair without
+     * wiring anything. A run that throws is logged (exception type and
+     * wallet reference only) and retried when the schedule next reports it
+     * due — never allowed to kill the progress poll.
+     */
+    private suspend fun maybeReconcileTxoStores() {
+        if (isClosed) return
+        val due = runCatching {
+            withContext(Dispatchers.IO) {
+                mapNativeErrors { WalletManagerNative.walletManagerTxoReconcileDueWallets(managerHandle) }
+            }
+        }.getOrNull() ?: return
+        val loaded = wallets.value
+        for (id in splitIds(due)) {
+            val key = id.toHex()
+            val walletId = loaded[key]?.walletId ?: continue
+            txoReconcileLaunches.launch(scope, key) {
+                txoReconcileOrNull(
+                    onFailure = { android.util.Log.w("PlatformWalletManager", it) },
+                    what = "run failed",
+                    walletRef = logReference(walletId),
+                ) { reconcileTxoStore(walletId) }
             }
         }
     }
@@ -3807,6 +4293,10 @@ class PlatformWalletManager(
      * teardown hops to [Dispatchers.IO]).
      */
     suspend fun closeSuspending() {
+        // Stale any TXO-store reconcile in flight first: it stops at its next
+        // page or store step instead of holding teardown behind the rest of
+        // its walk.
+        txoReconcileEpoch.incrementAndGet()
         val bundle = bundleRef.getAndSet(0)
         if (bundle == 0L) return
         // NonCancellable from the moment the bundle is claimed: bundleRef

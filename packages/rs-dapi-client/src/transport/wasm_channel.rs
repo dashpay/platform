@@ -21,6 +21,17 @@ pub type PlatformGrpcClient = PlatformClient<WasmClient>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<WasmClient>;
 
+/// Create a Platform client over `channel`. Browsers negotiate HTTP compression
+/// themselves, and `grpc-accept-encoding` would fail the gateway's CORS preflight.
+pub fn new_platform_client(channel: WasmClient) -> PlatformGrpcClient {
+    PlatformClient::new(channel)
+}
+
+/// Create a Core client over `channel`. See [new_platform_client].
+pub fn new_core_client(channel: WasmClient) -> CoreGrpcClient {
+    CoreClient::new(channel)
+}
+
 /// Create a channel that will be used to communicate with the DAPI.
 pub fn create_channel(
     uri: Uri,

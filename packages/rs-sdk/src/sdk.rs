@@ -40,6 +40,7 @@ use rs_dapi_client::{
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
+#[cfg(any(feature = "mocks", not(target_arch = "wasm32")))]
 use std::path::Path;
 #[cfg(feature = "mocks")]
 use std::path::PathBuf;
@@ -47,6 +48,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
+#[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]
+use tokio::task::coop::unconstrained;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
@@ -528,6 +531,7 @@ impl Sdk {
     /// Check the freshness of `metadata` ([`Self::verify_response_metadata`]), with
     /// optional arrival-time height and clock anchors, and learn its protocol version
     /// as the stored one, without recording it as verified.
+    #[cfg(any(test, feature = "mocks"))]
     pub(crate) fn verify_response_metadata_as_of(
         &self,
         method_name: &str,
@@ -958,10 +962,11 @@ impl Sdk {
                 let arrival = self.metadata_arrival();
                 // The mock is released before the error is classified, which may ask it
                 // for the network's version.
-                let parsed =
-                    mock.lock()
-                        .await
-                        .parse_proof_with_metadata(request, response, self.version());
+                let parsed = lock_mock(mock).await.parse_proof_with_metadata(
+                    request,
+                    response,
+                    self.version(),
+                );
                 let (verified, from_expectation) = match parsed {
                     Ok(parsed) => parsed,
                     Err(error) => {
@@ -993,6 +998,12 @@ impl Sdk {
     /// [`Sdk::set_context_provider`] does not change it.
     pub fn context_provider(&self) -> Option<impl ContextProvider> {
         Some(Arc::clone(&**self.context_provider.load()))
+    }
+
+    /// The installed [ContextProvider] as its shared pointer, so a caller can
+    /// tell whether [`Sdk::set_context_provider`] replaced it since.
+    pub fn context_provider_arc(&self) -> Arc<dyn ContextProvider> {
+        Arc::clone(&**self.context_provider.load())
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -1298,11 +1309,24 @@ impl DapiRequestExecutor for Sdk {
             SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
-                let dapi_guard = dapi.lock().await;
+                let dapi_guard = lock_mock(dapi).await;
                 dapi_guard.execute(request, settings).await
             }
         }
     }
+}
+
+/// Lock a mock's mutex without yielding for coop budget once it holds the lock: a call
+/// left unpolled there would keep the lock from every other call (tokio#8772).
+#[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]
+async fn lock_mock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    unconstrained(mutex.lock()).await
+}
+
+/// Without a tokio runtime there is no coop budget to yield for.
+#[cfg(all(feature = "mocks", target_arch = "wasm32"))]
+async fn lock_mock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().await
 }
 
 /// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].

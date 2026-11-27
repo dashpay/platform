@@ -247,7 +247,8 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
 /// empty string) → `Ok(None)` — the FFI treats a null memo pointer as "no
 /// memo", and Rust's `encode_memo_text` maps an empty string to the same
 /// all-zero memo anyway, so both normalize to null here. Returns `Err(())`
-/// (after throwing) on an interior NUL; a JNI read error is treated as null.
+/// (after throwing) on a JNI read error or an interior NUL, so a memo the
+/// caller supplied is never silently dropped from a paid send.
 fn read_cstring_opt(
     env: &mut JNIEnv,
     s: &JString,
@@ -260,7 +261,8 @@ fn read_cstring_opt(
         Ok(v) => v.into(),
         Err(_) => {
             let _ = env.exception_clear();
-            return Ok(None);
+            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            return Err(());
         }
     };
     if owned.is_empty() {
@@ -663,9 +665,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 // Each is a single blocking FFI call that runs the ~30s Halo 2 proof on a
 // Rust worker thread and returns only a status code. The retry-semantics-
 // bearing error codes (`ErrorShieldedSpendUnconfirmed` = do NOT retry,
-// `ErrorShieldedNoRecordedAnchor` / `ErrorShieldedBroadcastFailed` =
-// retryable) surface through `take_pwffi_error`'s offset codes and map to
-// the dedicated `DashSdkError.PlatformWallet` types on the Kotlin side.
+// `ErrorShieldedNoRecordedAnchor` / `ErrorShieldedBroadcastFailed` /
+// `ErrorShieldedMerkleWitnessUnavailable` = retryable) surface through
+// `take_pwffi_error`'s offset codes and map to the dedicated
+// `DashSdkError.PlatformWallet` types on the Kotlin side.
 
 /// Shield from Platform balance (Type 15) — bridges
 /// `platform_wallet_manager_shielded_shield`.
@@ -673,7 +676,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// Mirrors Swift's `PlatformWalletManager.shieldedShield`
 /// (`PlatformWalletManagerShieldedSync.swift`): spends `amount` credits
 /// (1 DASH = 1e11) from the wallet's `payment_account` Platform-Payment
-/// addresses (auto-selected in ascending derivation order) into the
+/// addresses (auto-selected in lexicographic Platform-address order) into the
 /// wallet's own bound shielded pool (`shielded_account`). Unlike the
 /// transfer/unshield/withdraw spends — which move notes already inside the
 /// pool and need no host signer — the shield spends the *transparent*
@@ -730,6 +733,76 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
+/// Shield from Platform balance to a third-party Orchard address (Type 15)
+/// — bridges `platform_wallet_manager_shielded_shield_to_recipient`. See
+/// Kotlin's `PlatformWalletManager.shieldedShieldToRecipient` for the
+/// contract.
+///
+/// `memo_text` null or empty maps to a null pointer (no memo); the FFI owns
+/// the memo rules. The caller retains ownership of `signer_address_handle`.
+/// Blocks for the ~30s Halo 2 proof; nothing is returned on success.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldToRecipient(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    shielded_account: jint,
+    payment_account: jint,
+    recipient_raw43: JByteArray,
+    amount: jlong,
+    memo_text: JString,
+    signer_address_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary: negatives would otherwise
+        // bit-cast to huge unsigned values (never clamp).
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must be non-negative");
+            return;
+        }
+        if shielded_account < 0 {
+            throw_sdk_exception(env, 1, "shieldedAccount must be non-negative");
+            return;
+        }
+        if payment_account < 0 {
+            throw_sdk_exception(env, 1, "paymentAccount must be non-negative");
+            return;
+        }
+        if signer_address_handle == 0 {
+            throw_sdk_exception(env, 1, "signerAddressHandle must be non-null");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+            return;
+        };
+        // null / empty memo → null pointer (no memo). The CString owns the
+        // bytes through the blocking FFI call below.
+        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
+            Ok(m) => m,
+            Err(()) => return,
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_shield_to_recipient(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                shielded_account as u32,
+                payment_account as u32,
+                recipient.as_ptr(),
+                amount as u64,
+                memo_ptr,
+                signer_address_handle as *const SignerHandle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Shield from a Platform IDENTITY's balance, Type 21 (bridges
 /// `platform_wallet_manager_shielded_shield_from_identity`).
 ///
@@ -748,10 +821,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// transition is authorized by the identity's TRANSFER key. The caller
 /// retains ownership.
 ///
-/// Blocks for the ~30s Halo 2 proof; returns the identity's proven
-/// post-debit credit balance (the wallet only confirms on the identity's own
-/// balance proof), mirroring [`Java_..._transferCreditsToAddresses`]. The
-/// note itself arrives on the next shielded sync pass.
+/// Blocks for the ~30s Halo 2 proof; returns the funding identity's credit
+/// balance from the verified snapshot (or a newer one the wallet already
+/// knows), not a receipt for this debit. The shielded scan confirms the
+/// outgoing activity when it observes the note commitments.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldFromIdentity(
     mut env: JNIEnv,
@@ -792,6 +865,84 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 shielded_account as u32,
                 id.as_ptr(),
                 amount as u64,
+                signer_identity_handle as *const SignerHandle,
+                &mut out_balance as *mut u64,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_balance as i64
+    })
+}
+
+/// Shield from a Platform IDENTITY's balance to a third-party Orchard address,
+/// Type 21 (bridges `platform_wallet_manager_shielded_shield_from_identity_to_recipient`).
+/// See Kotlin's `PlatformWalletManager.shieldedShieldFromIdentityToRecipient`
+/// for the contract.
+///
+/// Only marshals: sign checks before the unsigned casts, the fixed-size id and
+/// recipient arrays, and the memo string. A zero amount, the memo rules and the
+/// own-address rejection belong to the FFI and the wallet. `memo_text` null or
+/// empty maps to a null pointer (no memo). The caller retains ownership of
+/// `signer_identity_handle`. Blocks for the ~30s Halo 2 proof; returns the
+/// funding identity's credit balance from the verified snapshot (or a newer
+/// one the wallet already knows), not a receipt for this debit.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldFromIdentityToRecipient(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    shielded_account: jint,
+    identity_id: JByteArray,
+    recipient_raw43: JByteArray,
+    amount: jlong,
+    memo_text: JString,
+    signer_identity_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        // Reject sign errors at the boundary: negatives would otherwise
+        // bit-cast to huge unsigned values (never clamp).
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must be non-negative");
+            return 0;
+        }
+        if shielded_account < 0 {
+            throw_sdk_exception(env, 1, "shieldedAccount must be non-negative");
+            return 0;
+        }
+        if signer_identity_handle == 0 {
+            throw_sdk_exception(env, 1, "signerIdentityHandle must be non-null");
+            return 0;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+            return 0;
+        };
+        // null / empty memo → null pointer (no memo). The CString owns the
+        // bytes through the blocking FFI call below.
+        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
+            Ok(m) => m,
+            Err(()) => return 0,
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let mut out_balance: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                shielded_account as u32,
+                id.as_ptr(),
+                recipient.as_ptr(),
+                amount as u64,
+                memo_ptr,
                 signer_identity_handle as *const SignerHandle,
                 &mut out_balance as *mut u64,
             )

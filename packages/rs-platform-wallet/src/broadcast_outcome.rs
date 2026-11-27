@@ -3,7 +3,8 @@
 //! Shared by every Platform money-moving path that must keep "never left the
 //! wallet, safe to retry" apart from "may have reached a node, may still
 //! execute, do not retry". Shielded spends that consume notes, shields from
-//! Platform addresses and masternode credit withdrawals broadcast through
+//! Platform addresses, identity top-ups from Platform addresses and
+//! masternode credit withdrawals broadcast through
 //! [`broadcast_tracking_delivery`], which keeps every dispatch's outcome so an
 //! earlier dispatch that may have been delivered is never hidden by a later
 //! refusal: only a refusal before anything was sent reads as failed. The
@@ -12,6 +13,8 @@
 //! whether it waits for a result: it reports unconfirmed either way. The
 //! shapes are SDK-transport facts, not operation-specific, so they live here
 //! rather than behind the `shielded` feature.
+
+use dash_sdk::platform::transition::put_settings::PutSettings;
 
 /// Whether an SDK error carries Platform's own consensus verdict on the
 /// transition. Two shapes qualify:
@@ -70,8 +73,9 @@ pub(crate) fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
 /// failed while it may still execute invites a second one, so every path
 /// whose retry signs a new transition classifies with
 /// [`broadcast_tracking_delivery`] instead: shielded spends, shields from
-/// Platform addresses (to the wallet's own notes or to a recipient's) and
-/// masternode credit withdrawals. The one caller left here is the shield
+/// Platform addresses (to the wallet's own notes or to a recipient's),
+/// identity top-ups from Platform addresses and masternode credit
+/// withdrawals. The one caller left here is the shield
 /// from an identity, which holds a durable guard on the exact signed
 /// transition: a refusal only makes it skip the result wait for a proven
 /// read of the identity nonce, and it reports unconfirmed either way.
@@ -141,14 +145,31 @@ pub(crate) enum BroadcastDelivery {
 }
 
 /// How many single dispatches [`broadcast_tracking_delivery`] makes at most
-/// on `sdk`: its configured overall budget, one dispatch and its effective
-/// retries, so a client configured with no retries dispatches once.
-pub(crate) fn spend_broadcast_dispatches(sdk: &dash_sdk::Sdk) -> usize {
-    sdk.query_settings()
-        .request_settings
+/// on `sdk` under the caller's `settings`: the overall budget the SDK's
+/// configuration overridden by `settings` gives, one dispatch and its
+/// effective retries, so a client or a caller asking for no retries
+/// dispatches once.
+pub(crate) fn spend_broadcast_dispatches(
+    sdk: &dash_sdk::Sdk,
+    settings: Option<&PutSettings>,
+) -> usize {
+    let configured = *sdk.query_settings().request_settings;
+    settings
+        .map_or(configured, |settings| {
+            configured.override_by(settings.request_settings)
+        })
         .finalize()
         .retries
         .saturating_add(1)
+}
+
+/// The settings of each single dispatch of [`broadcast_tracking_delivery`]:
+/// the caller's `settings` (timeouts, address banning, fee increase, …) with
+/// no SDK retry inside the dispatch, as the tracker makes the retries.
+pub(crate) fn single_dispatch_settings(settings: Option<PutSettings>) -> PutSettings {
+    let mut single = settings.unwrap_or_default();
+    single.request_settings.retries = Some(0);
+    single
 }
 
 /// Broadcast `state_transition` (a shielded spend, a shield from Platform
@@ -177,22 +198,48 @@ pub(crate) fn spend_broadcast_dispatches(sdk: &dash_sdk::Sdk) -> usize {
 /// dispatch can reach that node again and spend one of the budget's
 /// dispatches on the same answer. The broadcast is maybe delivered either
 /// way.
+///
+/// `settings` are the caller's request settings: every dispatch is sent with
+/// them ([`single_dispatch_settings`]), and their retries, or the SDK's when
+/// they name none, set the budget.
 pub(crate) async fn broadcast_tracking_delivery(
     sdk: &dash_sdk::Sdk,
     state_transition: &dpp::state_transition::StateTransition,
+    settings: Option<PutSettings>,
 ) -> BroadcastDelivery {
-    use dash_sdk::dapi_client::RequestSettings;
-    use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-    use dash_sdk::platform::transition::put_settings::PutSettings;
+    broadcast_tracking_delivery_checked(sdk, state_transition, settings, || {
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .await
+    .unwrap_or_else(|stopped| match stopped.error {})
+}
 
-    let single_dispatch = PutSettings {
-        request_settings: RequestSettings {
-            retries: Some(0),
-            ..RequestSettings::default()
-        },
-        ..PutSettings::default()
-    };
-    track_delivery(state_transition, spend_broadcast_dispatches(sdk), || {
+/// A broadcast that `check` stopped before a dispatch
+/// ([`broadcast_tracking_delivery_checked`]).
+#[derive(Debug)]
+pub(crate) struct DispatchStopped<E> {
+    /// What the check refused with.
+    pub(crate) error: E,
+    /// An earlier dispatch was sent, so the transition may have been delivered and may still
+    /// execute. False when the check refused the very first dispatch: nothing was sent.
+    pub(crate) may_have_been_delivered: bool,
+}
+
+/// [`broadcast_tracking_delivery`], running `check` immediately before every single dispatch,
+/// the first one included. A refusal stops the dispatches: the transition is not sent again,
+/// and the [`DispatchStopped`] says whether an earlier dispatch may have delivered it, which
+/// the caller must not read as "never left the wallet".
+pub(crate) async fn broadcast_tracking_delivery_checked<E>(
+    sdk: &dash_sdk::Sdk,
+    state_transition: &dpp::state_transition::StateTransition,
+    settings: Option<PutSettings>,
+    check: impl FnMut() -> Result<(), E>,
+) -> Result<BroadcastDelivery, DispatchStopped<E>> {
+    use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+
+    let dispatches = spend_broadcast_dispatches(sdk, settings.as_ref());
+    let single_dispatch = single_dispatch_settings(settings);
+    track_delivery_checked(state_transition, dispatches, check, || {
         state_transition.broadcast(sdk, Some(single_dispatch))
     })
     .await
@@ -201,12 +248,36 @@ pub(crate) async fn broadcast_tracking_delivery(
 /// The classification [`broadcast_tracking_delivery`] makes of
 /// `state_transition`'s broadcast, over the outcomes `dispatch` returns, one
 /// call per single dispatch, at most `dispatches` of them.
-async fn track_delivery<F, Fut>(
+#[cfg(test)]
+pub(crate) async fn track_delivery<F, Fut>(
     state_transition: &dpp::state_transition::StateTransition,
     dispatches: usize,
-    mut dispatch: F,
+    dispatch: F,
 ) -> BroadcastDelivery
 where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
+{
+    track_delivery_checked(
+        state_transition,
+        dispatches,
+        || Ok::<(), std::convert::Infallible>(()),
+        dispatch,
+    )
+    .await
+    .unwrap_or_else(|stopped| match stopped.error {})
+}
+
+/// [`track_delivery`], running `check` before every dispatch
+/// ([`broadcast_tracking_delivery_checked`]).
+async fn track_delivery_checked<E, C, F, Fut>(
+    state_transition: &dpp::state_transition::StateTransition,
+    dispatches: usize,
+    mut check: C,
+    mut dispatch: F,
+) -> Result<BroadcastDelivery, DispatchStopped<E>>
+where
+    C: FnMut() -> Result<(), E>,
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
 {
@@ -214,9 +285,18 @@ where
 
     let mut maybe_delivered: Option<dash_sdk::Error> = None;
     for _ in 0..dispatches.max(1) {
+        // Immediately before every dispatch, nothing awaited in between: the context the
+        // transition was built in must still hold. Any earlier dispatch that got here was
+        // sent and did not prove the transition left out of every mempool.
+        if let Err(error) = check() {
+            return Err(DispatchStopped {
+                error,
+                may_have_been_delivered: maybe_delivered.is_some(),
+            });
+        }
         let error = match dispatch().await {
-            Ok(()) => return BroadcastDelivery::Admitted,
-            Err(error) if node_holds_transition(&error) => return BroadcastDelivery::Admitted,
+            Ok(()) => return Ok(BroadcastDelivery::Admitted),
+            Err(error) if node_holds_transition(&error) => return Ok(BroadcastDelivery::Admitted),
             Err(error) => error,
         };
         // Refused before anything was sent: no address, or the SDK's own
@@ -234,27 +314,27 @@ where
                 )
         );
         if never_sent {
-            return match maybe_delivered {
+            return Ok(match maybe_delivered {
                 Some(_) => BroadcastDelivery::MaybeDelivered(error),
                 None => BroadcastDelivery::NeverDelivered(error),
-            };
+            });
         }
         // An endpoint's verdict ends the dispatches, and proves nothing. The
         // verdict of a node that is behind does not end them: the same bytes
         // go to the next dispatch's node.
         if carries_consensus_rejection(&error) && !is_address_nonce_ahead(state_transition, &error)
         {
-            return BroadcastDelivery::MaybeDelivered(error);
+            return Ok(BroadcastDelivery::MaybeDelivered(error));
         }
         maybe_delivered = Some(error);
     }
-    match maybe_delivered {
+    Ok(match maybe_delivered {
         Some(error) => BroadcastDelivery::MaybeDelivered(error),
         // Unreachable: every pass sets it or returns.
         None => BroadcastDelivery::MaybeDelivered(dash_sdk::Error::Generic(
             "no broadcast dispatch was made".to_string(),
         )),
-    }
+    })
 }
 
 /// Whether `error` says a node already holds the transition
@@ -393,6 +473,7 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
+    use std::time::Duration;
 
     /// Another error of the same shape as `error`, which is not `Clone`.
     fn copy(error: &dash_sdk::Error) -> dash_sdk::Error {
@@ -557,7 +638,7 @@ mod tests {
             })
             .build()
             .expect("an SDK");
-        assert_eq!(spend_broadcast_dispatches(&no_retries), 1);
+        assert_eq!(spend_broadcast_dispatches(&no_retries, None), 1);
         let three_retries = dash_sdk::SdkBuilder::new_mock()
             .with_settings(RequestSettings {
                 retries: Some(3),
@@ -565,12 +646,12 @@ mod tests {
             })
             .build()
             .expect("an SDK");
-        assert_eq!(spend_broadcast_dispatches(&three_retries), 4);
+        assert_eq!(spend_broadcast_dispatches(&three_retries, None), 4);
 
         let dispatched = Mutex::new(0usize);
         let delivery = track_delivery(
             &withdrawal(),
-            spend_broadcast_dispatches(&no_retries),
+            spend_broadcast_dispatches(&no_retries, None),
             || {
                 *dispatched.lock().expect("count") += 1;
                 std::future::ready(Err(grpc(Code::Unavailable)))
@@ -579,6 +660,64 @@ mod tests {
         .await;
         assert!(matches!(delivery, BroadcastDelivery::MaybeDelivered(_)));
         assert_eq!(*dispatched.lock().expect("count"), 1);
+    }
+
+    /// The caller's settings reach every dispatch: its request fields and fee
+    /// increase are kept, only the per-dispatch retries are forced to none,
+    /// and its retries set the budget over the SDK's.
+    #[test]
+    fn should_send_each_dispatch_with_the_callers_settings() {
+        use dash_sdk::dapi_client::RequestSettings;
+
+        let caller = PutSettings {
+            request_settings: RequestSettings {
+                connect_timeout: Some(Duration::from_secs(3)),
+                timeout: Some(Duration::from_secs(7)),
+                retries: Some(2),
+                ban_failed_address: Some(false),
+                ..RequestSettings::default()
+            },
+            user_fee_increase: Some(5),
+            wait_timeout: Some(Duration::from_secs(11)),
+            ..PutSettings::default()
+        };
+
+        let single = single_dispatch_settings(Some(caller));
+        let request = single.request_settings;
+        assert_eq!(
+            (
+                request.connect_timeout,
+                request.timeout,
+                request.retries,
+                request.ban_failed_address
+            ),
+            (
+                Some(Duration::from_secs(3)),
+                Some(Duration::from_secs(7)),
+                Some(0),
+                Some(false)
+            )
+        );
+        assert_eq!(single.user_fee_increase, Some(5));
+        assert_eq!(single.wait_timeout, Some(Duration::from_secs(11)));
+        assert_eq!(
+            single_dispatch_settings(None).request_settings.retries,
+            Some(0)
+        );
+
+        let three_retries = dash_sdk::SdkBuilder::new_mock()
+            .with_settings(RequestSettings {
+                retries: Some(3),
+                ..RequestSettings::default()
+            })
+            .build()
+            .expect("an SDK");
+        assert_eq!(spend_broadcast_dispatches(&three_retries, Some(&caller)), 3);
+        let no_retries_named = PutSettings::default();
+        assert_eq!(
+            spend_broadcast_dispatches(&three_retries, Some(&no_retries_named)),
+            4
+        );
     }
 
     /// An attempt admitted with its response lost, then retries refused for
@@ -667,13 +806,14 @@ mod tests {
         let transition = withdrawal();
 
         let delivery =
-            broadcast_tracking_delivery(&test_sdks::sdk_without_addresses(), &transition).await;
+            broadcast_tracking_delivery(&test_sdks::sdk_without_addresses(), &transition, None)
+                .await;
         assert!(
             matches!(delivery, BroadcastDelivery::NeverDelivered(_)),
             "{delivery:?}"
         );
         let (refusing, _port) = test_sdks::sdk_refusing_connections();
-        let delivery = broadcast_tracking_delivery(&refusing, &transition).await;
+        let delivery = broadcast_tracking_delivery(&refusing, &transition, None).await;
         assert!(
             matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
             "{delivery:?}"
@@ -815,5 +955,77 @@ mod tests {
             matches!(delivery, BroadcastDelivery::Admitted),
             "{delivery:?}"
         );
+    }
+
+    /// What [`track_delivery_checked`] makes of dispatches that fail as `lost` says, when
+    /// `check` refuses once `moved` is set (which the first dispatch does), and how many
+    /// dispatches it made.
+    async fn tracked_with_moving_check(
+        lost: dash_sdk::Error,
+        moves_at_dispatch: usize,
+    ) -> (Result<BroadcastDelivery, DispatchStopped<String>>, usize) {
+        let dispatched = Mutex::new(0usize);
+        let lost = &lost;
+        let delivery = track_delivery_checked(
+            &withdrawal(),
+            BUDGET,
+            || {
+                if *dispatched.lock().expect("count") > moves_at_dispatch {
+                    Err("the context moved".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            || {
+                *dispatched.lock().expect("count") += 1;
+                std::future::ready(Err(copy(lost)))
+            },
+        )
+        .await;
+        let dispatched = *dispatched.lock().expect("count");
+        (delivery, dispatched)
+    }
+
+    /// The check runs before every dispatch: one that moves after a failed first dispatch stops
+    /// the second, which is not sent, and the stop says the first may have been delivered.
+    #[tokio::test]
+    async fn should_not_send_a_later_dispatch_the_check_stops_and_keep_the_earlier_one_maybe_delivered(
+    ) {
+        for lost in [grpc(Code::Unavailable), grpc(Code::DeadlineExceeded)] {
+            let (delivery, dispatched) = tracked_with_moving_check(lost, 0).await;
+            assert_eq!(dispatched, 1, "the second dispatch is not sent");
+            let Err(stopped) = delivery else {
+                panic!("the check stops the broadcast: {delivery:?}");
+            };
+            assert_eq!(stopped.error, "the context moved");
+            assert!(stopped.may_have_been_delivered);
+        }
+    }
+
+    /// A check that refuses before the first dispatch sends nothing, and the stop says nothing
+    /// could have been delivered.
+    #[tokio::test]
+    async fn should_not_send_anything_when_the_check_refuses_the_first_dispatch() {
+        let (delivery, dispatched) =
+            tracked_with_moving_check(grpc(Code::Unavailable), usize::MAX).await;
+        assert!(delivery.is_ok());
+        assert!(dispatched > 1, "a check that holds changes nothing");
+
+        let dispatched = Mutex::new(0usize);
+        let delivery = track_delivery_checked(
+            &withdrawal(),
+            BUDGET,
+            || Err::<(), _>("moved"),
+            || {
+                *dispatched.lock().expect("count") += 1;
+                std::future::ready(Err(grpc(Code::Unavailable)))
+            },
+        )
+        .await;
+        let Err(stopped) = delivery else {
+            panic!("the check stops the broadcast: {delivery:?}");
+        };
+        assert!(!stopped.may_have_been_delivered);
+        assert_eq!(*dispatched.lock().expect("count"), 0);
     }
 }

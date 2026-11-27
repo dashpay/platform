@@ -2010,7 +2010,7 @@ mod token_market_tests {
     use crate::document::transfer::Transferable;
     use crate::nft::TradeMode;
     use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
-    use platform_version::version::mocks::v5_test::TEST_PLATFORM_V5;
+    use platform_version::version::v16::PLATFORM_V16;
 
     /// The order types are what the marketplace transitions rely on: only they create orders,
     /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
@@ -2018,11 +2018,9 @@ mod token_market_tests {
     /// `depth` index sums what the order holds in escrow.
     #[test]
     fn should_load_the_order_types_the_marketplace_writes() {
-        // The token marketplace starts with protocol version 16, which has no tables yet: the
-        // test version that selects it stands in.
-        let contract =
-            load_system_data_contract(SystemDataContract::TokenMarket, &TEST_PLATFORM_V5)
-                .expect("the token market contract loads with full validation");
+        // The token marketplace starts with protocol version 16.
+        let contract = load_system_data_contract(SystemDataContract::TokenMarket, &PLATFORM_V16)
+            .expect("the token market contract loads with full validation");
         assert_eq!(contract.id(), token_market_contract::ID);
         assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
         assert_eq!(contract.document_types().len(), 2);

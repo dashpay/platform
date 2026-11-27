@@ -258,7 +258,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // DashPay accounts are funds-bearing; use the typed
         // `insert_funds_bearing_account` API exposed by the post-split
         // collection rather than wrapping in `OwnedManagedCoreAccount`.
-        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account)
+            .map_err(|source| PlatformWalletError::DashpayAccountBuild {
+                account_type,
+                source,
+            })?;
 
         // Persist the registration BEFORE the in-memory inserts: a store
         // failure aborts with nothing mutated, while an insert failure
@@ -595,7 +599,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // DashpayExternalAccount is funds-bearing; insert via the
         // typed `insert_funds` API after the upstream split.
-        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        // An xpub that cannot derive the account's address pool stays unusable on every retry.
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account)
+            .map_err(|source| {
+                Permanent(PlatformWalletError::DashpayAccountBuild {
+                    account_type,
+                    source,
+                })
+            })?;
 
         #[cfg(test)]
         registration_rendezvous::wait(&contact_identity_id).await;

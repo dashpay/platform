@@ -53,6 +53,7 @@ mod sqlite_identity_scan_state;
 mod sqlite_legacy_state_migration;
 mod sqlite_load_reconstruction;
 mod sqlite_load_wiring;
+mod sqlite_locked_outpoints;
 mod sqlite_migration_execution;
 mod sqlite_migrations;
 mod sqlite_money_column_overflow_on_read;

@@ -17,6 +17,8 @@ use crate::{
     transport::TransportRequest, DapiClientError, DapiRequestExecutor, ExecutionError,
     ExecutionResponse, ExecutionResult, RequestSettings,
 };
+// Re-exported so `rs_dapi_client::mock::MockError` keeps working.
+pub use crate::MockError;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
@@ -245,19 +247,6 @@ impl Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.encode_hex::<String>(), f)
     }
-}
-
-#[derive(Debug, thiserror::Error, Clone)]
-#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-/// Mock errors
-pub enum MockError {
-    #[error("mock expectation not found for request: {0}")]
-    /// Expectation not found
-    MockExpectationNotFound(String),
-
-    #[error("expectation already defined for request: {0}")]
-    /// Expectation already defined for request
-    MockExpectationConflict(String),
 }
 
 #[derive(Debug)]

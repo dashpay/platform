@@ -48,6 +48,9 @@ pub struct MockDashPlatformSdk {
     /// The block time the metadata of a response answered from an expectation reports
     /// ([Self::set_response_time_ms]); 0 unless set.
     response_time_ms: u64,
+    /// The protocol version the metadata of a response answered from an expectation reports
+    /// ([Self::set_response_protocol_version]); the latest unless set.
+    response_protocol_version: u32,
     /// The block height the metadata of a response answered from an expectation reports
     /// ([Self::set_response_height]); 0 unless set.
     response_height: u64,
@@ -67,6 +70,25 @@ impl MockDashPlatformSdk {
     /// Number of transport executions of this exact request, including failures.
     pub async fn request_count<R: Mockable>(&self, request: &R) -> usize {
         self.dapi.lock().await.request_count(request)
+    }
+
+    /// Expect a request that is not a proved fetch, such as a Core query, and
+    /// answer it with `response`.
+    #[cfg(test)]
+    pub(crate) async fn expect_request<R>(
+        &mut self,
+        request: &R,
+        response: R::Response,
+    ) -> Result<&mut Self, Error>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+    {
+        self.dapi
+            .lock()
+            .await
+            .expect(request, &Ok(mock_execution_response(response)))?;
+        Ok(self)
     }
 
     /// Returns true when requests should use proofs.
@@ -93,6 +115,7 @@ impl MockDashPlatformSdk {
             dapi,
             sdk: ArcSwapOption::new(None),
             response_time_ms: 0,
+            response_protocol_version: dpp::version::LATEST_VERSION,
             response_height: 0,
             response_heights_of: BTreeMap::new(),
             response_heights_for: BTreeMap::new(),
@@ -117,6 +140,14 @@ impl MockDashPlatformSdk {
     /// expectation reports, for code under test that reads the time a response was proved at.
     pub fn set_response_time_ms(&mut self, time_ms: u64) -> &mut Self {
         self.response_time_ms = time_ms;
+        self
+    }
+
+    /// Sets the protocol version the metadata of every response answered from an expectation
+    /// reports, for code under test that needs the SDK to learn a newer version at a chosen
+    /// moment: the SDK ratchets to the version of the next response it verifies.
+    pub fn set_response_protocol_version(&mut self, protocol_version: u32) -> &mut Self {
+        self.response_protocol_version = protocol_version;
         self
     }
 
@@ -649,11 +680,7 @@ impl MockDashPlatformSdk {
         let mut dapi_guard = self.dapi.lock().await;
         dapi_guard.expect(
             &wire_request,
-            &Ok(ExecutionResponse {
-                inner: Default::default(),
-                retries: 0,
-                address: "http://127.0.0.1".parse().expect("failed to parse address"),
-            }),
+            &Ok(mock_execution_response(Default::default())),
         )?;
 
         Ok(())
@@ -694,14 +721,14 @@ impl MockDashPlatformSdk {
         let key = Key::new(&request);
 
         let data = match self.from_proof_expectations.get(&key) {
-            // Report the latest protocol version so the proof path's ratchet
+            // Report the latest protocol version unless set, so the proof path's ratchet
             // (`maybe_update_protocol_version`) fires as it would against a real
             // network; `default()` reports 0, which the ratchet ignores.
             Some(d) => (
                 (
                     Option::<O>::mock_deserialize(self, d),
                     ResponseMetadata {
-                        protocol_version: dpp::version::LATEST_VERSION,
+                        protocol_version: self.response_protocol_version,
                         time_ms: self.response_time_ms,
                         height: self
                             .response_heights_for
@@ -766,6 +793,15 @@ fn load_expectation<T: TransportRequest>(
         ))
     })?;
     Ok(())
+}
+
+/// A transport answer from the mock DAPI client carrying `inner`.
+fn mock_execution_response<T>(inner: T) -> ExecutionResponse<T> {
+    ExecutionResponse {
+        inner,
+        retries: 0,
+        address: "http://127.0.0.1".parse().expect("failed to parse address"),
+    }
 }
 
 #[cfg(test)]

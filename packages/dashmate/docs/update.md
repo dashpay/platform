@@ -162,7 +162,7 @@ A testnet or devnet may restart Platform from a new genesis, which starts its Pl
 Only then is the node's old Platform data useless, and it has to be removed with `dashmate reset --platform`.
 The reset asks for confirmation, then removes the Platform containers and the Drive and Tenderdash data, and keeps the configuration and the Core data.
 Each testnet restart so far has shipped its new genesis in a dashmate release, as a configuration migration that applies when the new version first runs, so install that release before the reset.
-A node that does not run Platform (`platform.enable` is `false`) can skip the reset, and dashmate refuses a Platform-only reset there anyway. If it ran Platform before, it still has that old Platform data, and it would use it if Platform were enabled again. To clear the data, enable Platform for the reset only: `dashmate config set platform.enable true`, then `dashmate reset --platform`, then `dashmate config set platform.enable false`.
+A node that does not run Platform (`platform.enable` is `false`) can skip the reset. If it ran Platform before, it still has that old Platform data, and it would use it if Platform were enabled again. `dashmate reset --platform` clears that data on such a node too, and leaves its configuration as it is.
 
 As with any update, run the steps one at a time in the same shell, and stop at the first one that fails:
 
@@ -181,14 +181,6 @@ $ dashmate update
 $ dashmate start
 ```
 
-If the quorum list service is enabled (`platform.quorumList.enabled` is `true`), the Platform-only reset fails with `service "quorum_list" depends on undefined service "core"`, because that service depends on Core, which the reset leaves out. Turn the service off for the reset and back on before you start the node:
-
-```bash
-$ dashmate config set platform.quorumList.enabled false
-$ dashmate reset --platform
-$ dashmate config set platform.quorumList.enabled true
-```
-
 On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet's operators publish with `dashmate config set platform.drive.tenderdash.genesis '<genesis JSON>'` before `dashmate start`.
 
 ### Do not add `--hard`
@@ -197,10 +189,54 @@ On a devnet, dashmate does not bring the new genesis. Set the genesis the devnet
 
 * It sets the whole Platform part of the configuration back to the defaults. On an evonode this clears the Tenderdash node key, whose node ID is registered on the network for this evonode, and dashmate does not create a new one for a masternode: the key stays empty until you set it again.
 * It also resets the gateway and SSL settings, and deletes the configuration's `platform` directory in the dashmate home directory (`~/.dashmate/<config name>/platform` by default), which holds the SSL certificate and its private key.
-* A configuration with no defaults of its own (any name other than `mainnet` or `testnet`, outside the `local` group) has nothing to reset to, so the hard reset removes the whole configuration.
 
-`dashmate setup` does not repair any of this: it refuses to run for a preset that is already configured, so it cannot be re-run on a configured node.
+Plain `dashmate setup` does not repair any of this: it refuses to run for a preset that is already configured, so it cannot be re-run on a configured node.
 The reset it suggests instead, `dashmate reset --config <preset> --hard`, also removes the Core data and sets the preset's whole configuration, Core and Platform settings alike, back to the defaults, so it is not a way back for an evonode either.
+The way back is `dashmate setup --platform`, which sets up only the Platform part again. An evonode needs the node key it had, so back it up before the hard reset: see [Starting Platform Over](#starting-platform-over).
+
+A hard Platform reset looks up the defaults by the configuration's `group`, or by its name when it has no group. dashmate has defaults for `base`, `local`, `mainnet` and `testnet`. A configuration whose group is one of these is reset to that group's defaults whatever its own name is, so a configuration made with `dashmate config create` and put in group `testnet` is reset, not refused. Any other configuration, such as one with no group and a name of its own, or a member of a group with another name, has nothing to reset its Platform options to, so dashmate refuses the hard Platform reset there and changes nothing.
+
+## Starting Platform Over
+
+`dashmate reset --platform --hard` sets every Platform option back to the preset's defaults: the node key, the Platform ports, the certificate provider and the certificate. Nothing of Platform survives it. On mainnet it also disables Platform, because the mainnet preset does. Set Platform up again with `dashmate setup --platform`, which configures only Platform and leaves Core as it is.
+
+An evonode's node key is bound to its registration (the ProRegTx or a later ProUpServTx records its node ID), and the hard reset keeps no copy of it, so the flow starts with a backup into a new directory in your home directory, named after the config, that only you can open. `mkdir` refuses a directory or file of that name that exists, so an earlier backup is never lost or written into; a failed export removes what it wrote, so the command can run again; and the parentheses keep the `umask` from staying set in your shell. Check that the backup is not empty before you reset, and keep it in that directory or another one only you can open:
+
+```bash
+$ dashmate stop --platform --config testnet            # skip if Platform is not running
+$ (umask 077 && mkdir -m 700 "$HOME"/node-key-testnet && set -o noclobber && { dashmate config get platform.drive.tenderdash.node.key --config testnet > "$HOME"/node-key-testnet/node-key || { rm -f "$HOME"/node-key-testnet/node-key; rmdir "$HOME"/node-key-testnet; exit 1; }; })
+$ dashmate reset --platform --hard --config testnet
+$ dashmate setup --platform --config testnet --platform-node-key-file "$HOME"/node-key-testnet/node-key
+$ dashmate update --config testnet                     # now pulls the Platform images
+$ dashmate start --platform --config testnet           # or `dashmate start --config testnet` if Core is stopped
+```
+
+`setup --platform` reads the registration from the masternode list, through Core, and accepts only the key whose node ID is registered. If Core is stopped it starts Core for the duration of the command and waits until Core has synced. It also obtains the gateway certificate.
+
+Run setup before `update`. On mainnet the reset disables Platform, so an earlier `update` pulls no Platform images, and `dashmate start` runs Core alone without saying so: nothing reminds you that Platform still has to be set up. On testnet an earlier `update` says that Platform must be set up first and skips its certificate check, and `start`, `restart` and `core reindex` refuse to start Platform, on a masternode and on an Evo fullnode, until it is set up. To run Core alone in the meantime, disable Platform with `dashmate config set platform.enable false --config testnet`; setup enables it again.
+
+If `platform.quorumList.enabled` is `true`, stop the whole node with `dashmate stop --config testnet` instead: `stop --platform` also stops Core then.
+
+To combine this with a dashmate upgrade, do the normal upgrade first (stop the node, install the new version, check `dashmate --version`), then continue from the backup above; Platform is already stopped.
+
+Unattended, with the key read from stdin rather than the command line:
+
+```bash
+$ dashmate setup --platform testnet --non-interactive --ssl-provider letsencrypt \
+    --platform-node-key-file - < "$HOME"/node-key-testnet/node-key
+```
+
+See [setup](./commands/setup.md#platform-only-setup) for every flag.
+
+### Lost node key
+
+dashmate cannot recover a deleted node key, and it does not change a registration. Register a new key first, then set Platform up with it:
+
+1. Generate a key in DMT, or with `tenderdash gen-node-key` where Tenderdash is installed: it prints a `node_key.json`; redirect it into a file only you can read.
+2. Submit a ProUpServTx with the new node ID and the existing endpoints: DMT "Update service", or `protx update_service_evo` in the Dash-Qt console. Its third argument is the operator BLS private key, so do not paste it into a shell. Update the DMT entry too, or a later DMT "Update service" sends the old node ID again.
+3. Wait until the transaction is mined, then run `dashmate setup --platform --config testnet --platform-node-key-file <file>`. The check confirms the new registration.
+
+Until then dashmate refuses to start Platform on the node. To run Core alone in the meantime, disable Platform with `dashmate config set platform.enable false --config testnet`; setup enables it again.
 
 ## Local Network Updates
 

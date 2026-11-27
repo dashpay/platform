@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -148,9 +149,7 @@ describe('archiveSamples', () => {
           + 'build: proxy auth proxyPassword7Qx rejected\n',
       );
 
-      await archiveSamples(samples, archiveRoot, config);
-
-      const archivePath = path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`);
+      const archivePath = await archiveSamples(samples, archiveRoot, config);
       const archived = zlib.gunzipSync(fs.readFileSync(archivePath)).toString('utf8');
 
       expect(archived).to.not.contain('acmePassword7Qx');
@@ -165,6 +164,75 @@ describe('archiveSamples', () => {
 
       expect(restored.getDashmateConfig().get('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl'))
         .to.equal('https://********:***************@acme.example.com/directory');
+    });
+
+    // A percent-escape means the same character whichever case its hex digits
+    // are written in, and a service quoting a credential can write them in
+    // either
+    [
+      ['lower', 'pass%2fWord%7e7Qx', 'pass%2FWord%7E7Qx'],
+      ['upper', 'pass%2FWord%7E7Qx', 'pass%2fWord%7e7Qx'],
+    ].forEach(([written, inConfig, inLog]) => {
+      it(`should scrub a credential written with ${written} case escapes whatever case a log uses`, async () => {
+        config.set(
+          'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+          `https://acmeUser:${inConfig}@acme.example.com/directory`,
+        );
+        samples.setDashmateConfig(obfuscateConfig(config));
+
+        samples.setServiceInfo('gateway', 'stdOut', `lego: auth ${inLog} rejected, 100%2F of 5\n`);
+
+        const archived = await archiveAndRead();
+
+        expect(archived).to.not.contain(inLog);
+        expect(archived).to.contain(`lego: auth ${'*'.repeat(inLog.length)} rejected, 100%2F of 5`);
+      });
+    });
+
+    // A URL in a query value is encoded once more, its own escapes included,
+    // and a log quoting the outer URL can write those in either case too
+    [
+      ['lower', '%2f', '%252F'],
+      ['upper', '%2F', '%252f'],
+    ].forEach(([written, inConfig, inLog]) => {
+      it(`should scrub a nested URL's credential written with ${written} case escapes whatever case a log uses`, async () => {
+        const inner = `https://innerUser:inner${inConfig}Password7Qx@inner.example.com/`;
+        const outer = `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}`;
+
+        config.set('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl', outer);
+        samples.setDashmateConfig(obfuscateConfig(config));
+
+        const quoted = outer.replace(encodeURIComponent(inConfig), inLog);
+
+        expect(quoted).to.contain(`inner${inLog}Password7Qx`);
+
+        samples.setServiceInfo('gateway', 'stdOut', `lego: directory ${quoted} unreachable\n`);
+
+        const archived = await archiveAndRead();
+
+        expect(archived).to.not.contain('Password7Qx');
+        expect(archived).to.contain('lego: directory https://acme.example.com/directory?upstream=');
+      });
+    });
+
+    // The outer URL's own escapes can change case while the inner ones stay
+    // as the config writes them
+    it("should scrub a nested URL's credential when a log changes the case of the outer escapes only", async () => {
+      const inner = 'https://innerUser:inner%2F:Password7Qx@inner.example.com/';
+      const outer = `https://acme.example.com/directory?upstream=${encodeURIComponent(inner)}`;
+
+      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl', outer);
+      samples.setDashmateConfig(obfuscateConfig(config));
+
+      const quoted = outer.replace(/%(?!25)[0-9A-F]{2}/g, (escape) => escape.toLowerCase());
+
+      expect(quoted).to.contain('inner%252F%3aPassword7Qx');
+
+      samples.setServiceInfo('gateway', 'stdOut', `lego: directory ${quoted} unreachable\n`);
+
+      const archived = await archiveAndRead();
+
+      expect(archived).to.not.contain('Password7Qx');
     });
 
     // Masking one secret must not hide part of another from the search: each
@@ -286,6 +354,108 @@ describe('archiveSamples', () => {
       expect(inspect.Config.Labels.quoted).to.match(/^"\*+"$/);
     });
 
+    // In a sample whose fields doctor decides on, a free-text field is
+    // scrubbed with everything in it, however deep, and nothing else is
+    it('should scrub all of a free-text field of a fact sample and keep its facts', async () => {
+      const code = 'CERTIFICATE_IP_MISMATCH';
+
+      config.set('core.rpc.users.tenderdash.password', code);
+
+      samples.setServiceInfo('gateway', 'ssl', {
+        error: code,
+        data: {
+          legoCertPath: `/srv/${code}/cert.crt`,
+          certificate: { ipAddresses: [`10.0.0.1 ${code}`] },
+        },
+      });
+
+      const archivePath = await archiveSamples(samples, archiveRoot, config);
+
+      const ssl = (await unarchiveSamplesFactory(() => [{ name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'ssl');
+
+      const masked = '*'.repeat(code.length);
+
+      expect(ssl).to.deep.equal({
+        error: code,
+        data: {
+          legoCertPath: `/srv/${masked}/cert.crt`,
+          certificate: { ipAddresses: [`10.0.0.1 ${masked}`] },
+        },
+      });
+    });
+
+    // Core's and Tenderdash's answers keep only the facts doctor decides on,
+    // found by the keys that lead to them, even when a secret is spelled
+    // like one; the same value anywhere else in them is scrubbed. A key with
+    // a dot in it, or an empty one, is a key of its own, never a path.
+    it('should keep only the facts of an RPC answer that are where they should be', async () => {
+      const nodeIdSecret = '5b'.repeat(20);
+      const stateSecret = 'PLANTED_STATE_SECRET';
+
+      config.set('core.rpc.users.tenderdash.password', nodeIdSecret);
+      config.set('core.rpc.users.dashmate.password', stateSecret);
+
+      samples.setServiceInfo('core', 'masternodeStatus', {
+        state: stateSecret,
+        'dmnState.platformNodeID': nodeIdSecret,
+        '': { state: stateSecret },
+        dmnState: { platformNodeID: nodeIdSecret, ownerAddress: nodeIdSecret },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'status', {
+        value: { result: { node_info: { id: nodeIdSecret } }, 'result.node_info.id': nodeIdSecret },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', nodeIdSecret);
+
+      const restored = await unarchiveSamplesFactory(() => [{ name: 'core' }, { name: 'drive_tenderdash' }])(
+        await archiveSamples(samples, archiveRoot, config),
+      );
+
+      const maskedNodeId = '*'.repeat(nodeIdSecret.length);
+
+      expect(restored.getServiceInfo('core', 'masternodeStatus')).to.deep.equal({
+        state: stateSecret,
+        'dmnState.platformNodeID': maskedNodeId,
+        '': { state: '*'.repeat(stateSecret.length) },
+        dmnState: { platformNodeID: nodeIdSecret, ownerAddress: maskedNodeId },
+      });
+      expect(restored.getServiceInfo('drive_tenderdash', 'status')).to.deep.equal({
+        value: { result: { node_info: { id: nodeIdSecret } }, 'result.node_info.id': maskedNodeId },
+      });
+      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(nodeIdSecret);
+    });
+
+    // Where a fact belongs, what is kept is only what looks like that fact
+    it('should scrub a value where a fact of an RPC answer belongs that does not look like it', async () => {
+      const secret = 'plantedFactSecret7Qx';
+      const nodeId = 'a'.repeat(40);
+
+      config.set('core.rpc.users.tenderdash.password', secret);
+
+      samples.setServiceInfo('core', 'masternodeStatus', {
+        state: secret,
+        dmnState: { platformNodeID: `${nodeId} ${secret}` },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'status', {
+        value: { result: { node_info: { id: `${nodeId} ${secret}` } } },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', `${nodeId} ${secret}`);
+
+      const restored = await unarchiveSamplesFactory(() => [{ name: 'core' }, { name: 'drive_tenderdash' }])(
+        await archiveSamples(samples, archiveRoot, config),
+      );
+
+      const masked = '*'.repeat(secret.length);
+
+      expect(restored.getServiceInfo('core', 'masternodeStatus')).to.deep.equal({
+        state: masked,
+        dmnState: { platformNodeID: `${nodeId} ${masked}` },
+      });
+      expect(restored.getServiceInfo('drive_tenderdash', 'status').value.result.node_info.id)
+        .to.equal(`${nodeId} ${masked}`);
+      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(`${nodeId} ${masked}`);
+    });
+
     // A secret can be spelled like a field name or be all digits. Masking it
     // in the serialized text would rename every such key - the config then
     // fails validation on the way back in - or break numbers that contain it.
@@ -318,11 +488,9 @@ describe('archiveSamples', () => {
     it('should keep the collection date when a secret reads like it', async () => {
       config.set('core.rpc.users.tenderdash.password', samples.date.toISOString().slice(0, 10));
 
-      await archiveSamples(samples, archiveRoot, config);
+      const archivePath = await archiveSamples(samples, archiveRoot, config);
 
-      const restored = await unarchiveSamplesFactory(() => [])(
-        path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`),
-      );
+      const restored = await unarchiveSamplesFactory(() => [])(archivePath);
 
       expect(restored.date.toISOString()).to.equal(samples.date.toISOString());
     });
@@ -344,18 +512,22 @@ describe('archiveSamples', () => {
     it('should leave only the archive behind', async () => {
       samples.setServiceInfo('core', 'stdOut', 'log line\n');
 
-      await archiveSamples(samples, archiveRoot, config);
+      const archivePath = await archiveSamples(samples, archiveRoot, config);
 
-      expect(fs.readdirSync(archiveRoot)).to.deep.equal([
-        `dashmate-report-${samples.date.toISOString()}.tar.gz`,
-      ]);
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal([path.basename(archivePath)]);
     });
 
     it('should not pack files it did not write', async () => {
-      const presetDir = path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}`);
+      // Under each name the staging directory has had: the collection time
+      // as it is, and with the ':' a Windows file name cannot hold replaced
+      const isoDate = samples.date.toISOString();
 
-      fs.mkdirSync(presetDir);
-      fs.writeFileSync(path.join(presetDir, 'planted.txt'), 'content from elsewhere');
+      for (const timestamp of [isoDate, isoDate.replace(/:/g, '-')]) {
+        const presetDir = path.join(archiveRoot, `dashmate-report-${timestamp}`);
+
+        fs.mkdirSync(presetDir);
+        fs.writeFileSync(path.join(presetDir, 'planted.txt'), 'content from elsewhere');
+      }
 
       samples.setServiceInfo('core', 'stdOut', 'log line\n');
 
@@ -382,12 +554,12 @@ describe('archiveSamples', () => {
     it('should not pack an entry for the staging directory itself', async () => {
       samples.setServiceInfo('core', 'stdOut', 'log line\n');
 
-      await archiveSamples(samples, archiveRoot, config);
+      const archivePath = await archiveSamples(samples, archiveRoot, config);
 
       const entries = [];
 
       await list({
-        file: path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`),
+        file: archivePath,
         onReadEntry: (entry) => entries.push(entry.path),
       });
 
@@ -401,12 +573,12 @@ describe('archiveSamples', () => {
   it('should not record who owns the archived files', async () => {
     samples.setServiceInfo('core', 'stdOut', 'log line\n');
 
-    await archiveSamples(samples, archiveRoot, config);
+    const archivePath = await archiveSamples(samples, archiveRoot, config);
 
     const owners = [];
 
     await list({
-      file: path.join(archiveRoot, `dashmate-report-${samples.date.toISOString()}.tar.gz`),
+      file: archivePath,
       onReadEntry: (entry) => owners.push([
         entry.header.uname || null,
         entry.header.gname || null,
@@ -417,5 +589,303 @@ describe('archiveSamples', () => {
 
     expect(owners).to.not.be.empty();
     expect(owners).to.deep.equal(owners.map(() => [null, null, null, null]));
+  });
+
+  // The archive is written into the operator's working directory, apart from
+  // the temp directory the samples are staged in
+  describe('archive file', () => {
+    let outputDir;
+
+    beforeEach(() => {
+      outputDir = path.join(archiveRoot, 'output');
+      fs.mkdirSync(outputDir);
+
+      samples.date = new Date('2026-11-26T10:15:30.123Z');
+      samples.setDashmateVersion('5.2.0');
+    });
+
+    // Operators run doctor on Windows too, where a file name cannot contain ':'
+    it('should name the archive with a timestamp that is a valid file name everywhere', async () => {
+      const archiveFilePath = await archiveSamples(samples, outputDir, config);
+
+      const archiveName = 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz';
+
+      expect(fs.readdirSync(outputDir)).to.deep.equal([archiveName]);
+      expect(archiveFilePath).to.equal(path.join(outputDir, archiveName));
+    });
+
+    // The file name is only a label: the collection time an analysis judges
+    // certificate dates against is the one recorded inside the archive
+    it('should keep the exact collection time inside the archive', async () => {
+      await archiveSamples(samples, outputDir, config);
+
+      const [archiveName] = fs.readdirSync(outputDir);
+      const unarchived = await unarchiveSamplesFactory(() => [])(path.join(outputDir, archiveName));
+
+      expect(unarchived.date.toISOString()).to.equal('2026-11-26T10:15:30.123Z');
+    });
+
+    // The archive holds diagnostics about the node, and it is written under a
+    // temporary name first: if renaming and removing it both fail, it stays
+    // behind, so it is created readable by its owner only
+    it('should create the archive accessible to its owner only', async function it() {
+      if (process.platform === 'win32') {
+        // Windows does not express access through file modes
+        this.skip();
+      }
+
+      // A umask that leaves files readable by others, as most systems have
+      const previousUmask = process.umask(0o022);
+
+      let archiveFilePath;
+      try {
+        archiveFilePath = await archiveSamples(samples, outputDir, config);
+      } finally {
+        process.umask(previousUmask);
+      }
+
+      // eslint-disable-next-line no-bitwise
+      expect(fs.statSync(archiveFilePath).mode & 0o777).to.equal(0o600);
+    });
+
+    // Packing succeeded, but the archive could not be put under its name
+    it('should not leave the packed archive behind when it cannot be renamed into place', async () => {
+      fs.mkdirSync(path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz'));
+
+      const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+      expect(error).to.be.an('error');
+      expect(error.syscall).to.equal('rename');
+      expect(fs.readdirSync(outputDir).filter((name) => name.endsWith('.partial'))).to.be.empty();
+    });
+
+    // A temporary name already taken belongs to someone else
+    it('should not remove a temporary file it did not create', async function it() {
+      this.sinon.stub(crypto, 'randomBytes').returns(Buffer.from('0badf00d', 'hex'));
+
+      const takenPath = path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz.0badf00d.partial');
+      fs.writeFileSync(takenPath, 'not ours');
+
+      await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EEXIST');
+
+      expect(fs.readFileSync(takenPath, 'utf8')).to.equal('not ours');
+    });
+
+    // Once the archive file is open, only a finished or failed pack closes
+    // it. A failure before packing starts, such as listing the staged
+    // samples, must not leave the file open or behind.
+    it('should not open the archive file when the staged samples cannot be listed', async function it() {
+      // The writer stages under the system temp directory, which Windows does
+      // not take from TMPDIR, so the fault below is aimed where it stages
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const { readdirSync } = fs;
+      this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => {
+        if (path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+
+        return readdirSync(dirPath, ...args);
+      });
+      const openSync = this.sinon.spy(fs, 'openSync');
+
+      await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
+
+      const partialOpens = openSync.getCalls().filter((call) => String(call.args[0]).endsWith('.partial'));
+
+      expect(partialOpens).to.be.empty();
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+    });
+
+    // Nothing to pack makes the packer refuse before it takes over the open
+    // file, so the file would be left open; an empty listing is refused
+    // before the file is opened
+    it('should not open the archive file when no staged samples are listed', async function it() {
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const { readdirSync } = fs;
+      this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => (
+        path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')
+          ? []
+          : readdirSync(dirPath, ...args)
+      ));
+      const openSync = this.sinon.spy(fs, 'openSync');
+
+      await expect(archiveSamples(samples, outputDir, config))
+        .to.be.rejectedWith('No samples were left in the staging directory to pack');
+
+      const partialOpens = openSync.getCalls().filter((call) => String(call.args[0]).endsWith('.partial'));
+
+      expect(partialOpens).to.be.empty();
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+    });
+
+    // Once the archive file is open, any failure before packing takes it
+    // over closes it and removes it
+    it('should close and remove the archive file when it cannot be written to', async function it() {
+      const openSync = this.sinon.spy(fs, 'openSync');
+      this.sinon.stub(fs, 'createWriteStream').throws(new Error('cannot write'));
+
+      await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('cannot write');
+
+      const [partialOpen] = openSync.getCalls().filter((call) => String(call.args[0]).endsWith('.partial'));
+
+      expect(partialOpen).to.exist();
+      expect(() => fs.fstatSync(partialOpen.returnValue)).to.throw().with.property('code', 'EBADF');
+      expect(fs.readdirSync(outputDir)).to.be.empty();
+    });
+
+    // A failure is reported as it was thrown when the staged samples could
+    // be removed: nothing is added to it
+    it('should rethrow a failure that is not an error as it is', async function it() {
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const failure = { code: 'EODD', message: 'not an error' };
+
+      const { readdirSync } = fs;
+      this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => {
+        if (path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')) {
+          throw failure;
+        }
+
+        return readdirSync(dirPath, ...args);
+      });
+
+      const rejection = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+      expect(rejection).to.equal(failure);
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+    });
+
+    // The report was saved, so the operator is told where, and where the
+    // staged samples were left
+    it('should say where the report was saved and the staged files were left when removing them fails', async function it() {
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const { rmSync } = fs;
+      let stagingDir;
+      this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+        if (path.dirname(filePath) === archiveRoot && path.basename(filePath).startsWith('dashmate-report-')) {
+          stagingDir = filePath;
+
+          throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+        }
+
+        return rmSync(filePath, ...args);
+      });
+
+      const archiveFilePath = path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz');
+
+      const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+      expect(error.message).to.equal(
+        `The report was saved to ${archiveFilePath}, but the staged samples could not be removed`
+          + ` (EPERM: operation not permitted): remove ${stagingDir} yourself`,
+      );
+      expect(fs.existsSync(archiveFilePath)).to.be.true();
+    });
+
+    describe('when packing fails', () => {
+      beforeEach(function beforeEach() {
+        // Root reads a file whatever its mode, and Windows cannot revoke read
+        // access with a mode, so packing cannot be made to fail there
+        if (process.getuid?.() === 0 || process.platform === 'win32') {
+          this.skip();
+        }
+
+        // Make one staged sample unreadable, so that packing fails after the
+        // archive file has been opened
+        const { writeFileSync } = fs;
+        this.sinon.stub(fs, 'writeFileSync').callsFake((filePath, ...args) => {
+          writeFileSync(filePath, ...args);
+
+          if (path.basename(filePath) === 'dashmateVersion.txt') {
+            fs.chmodSync(filePath, 0);
+          }
+        });
+      });
+
+      // A truncated archive looks like a report to whoever is sent it, and
+      // doctor cannot analyse it
+      it('should not leave a partial archive behind', async () => {
+        await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
+
+        expect(fs.readdirSync(outputDir)).to.be.empty();
+        // Nor the staged samples it was packing
+        expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+      });
+
+      // A report already at that path was not written by this run
+      it('should keep a report that was already at the destination', async () => {
+        const existingReport = path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz');
+        fs.writeFileSync(existingReport, 'previous report');
+
+        await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
+
+        expect(fs.readFileSync(existingReport, 'utf8')).to.equal('previous report');
+      });
+
+      // The packing failure is what the operator has to act on
+      it('should report the packing error when the cleanup fails too', async function it() {
+        const { rmSync } = fs;
+        this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+          if (filePath.startsWith(outputDir)) {
+            throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+          }
+
+          return rmSync(filePath, ...args);
+        });
+
+        await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
+      });
+
+      // Whatever the removal threw, the packing failure is what is reported
+      it('should report the packing error when removing the staged files throws something else', async function it() {
+        const { rmSync } = fs;
+        this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+          if (path.dirname(filePath) === archiveRoot && path.basename(filePath).startsWith('dashmate-report-')) {
+            throw null; // eslint-disable-line no-throw-literal
+          }
+
+          return rmSync(filePath, ...args);
+        });
+
+        const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+        expect(error.code).to.equal('EACCES');
+        expect(error.message).to.match(/^EACCES[^]*\nThe staged samples could not be removed \(null\): remove /);
+      });
+
+      // Removing the staged samples can fail as well. The packing failure is
+      // still what the operator has to act on first, but the samples are left
+      // under a name no later run looks for, so the operator is told where
+      it('should report the packing error, and where the staged files were left, when removing them fails too', async function it() {
+        const { rmSync } = fs;
+        let stagingDir;
+        this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+          if (path.dirname(filePath) === archiveRoot && path.basename(filePath).startsWith('dashmate-report-')) {
+            stagingDir = filePath;
+
+            throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+          }
+
+          return rmSync(filePath, ...args);
+        });
+
+        const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+        // The removal was attempted and failed, rather than never tried
+        expect(stagingDir).to.be.a('string');
+        expect(fs.existsSync(stagingDir)).to.be.true();
+
+        expect(error.code).to.equal('EACCES');
+        expect(error.message).to.match(/^EACCES/);
+        expect(error.message).to.contain(
+          `The staged samples could not be removed (EPERM: operation not permitted): remove ${stagingDir} yourself`,
+        );
+      });
+    });
   });
 });

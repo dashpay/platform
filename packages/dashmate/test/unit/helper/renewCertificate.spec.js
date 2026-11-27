@@ -139,6 +139,7 @@ describe('renewCertificate', () => {
     expect(result).to.deep.equal({
       config: renewedConfig,
       renewed: true,
+      isGatewayRestartRequired: false,
     });
     expect(persisted.get('description')).to.equal('updated after helper startup');
     expect(persisted.get('platform.gateway.ssl.providerConfigs.zerossl.id'))
@@ -146,6 +147,29 @@ describe('renewCertificate', () => {
     expect(obtainCertificateTask).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(renewedConfig);
     expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+  });
+
+  // A signal cannot load a bundle that replaced the one the gateway mounted,
+  // and the job that signals the gateway has to know.
+  it('should report that the gateway needs a restart when the obtain replaced the bundle', async function it() {
+    const obtainCertificateTask = this.sinon.stub().callsFake((config) => ({
+      run: async (ctx) => {
+        config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'renewed-certificate-id-0000000000');
+        ctx.isGatewayRestartRequired = true;
+      },
+    }));
+
+    const result = await renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: repository,
+      writeConfigTemplates: (config) => config.markAsSaved(),
+    });
+
+    expect(result.renewed).to.be.true();
+    expect(result.isGatewayRestartRequired).to.be.true();
   });
 
   it('should keep renewed state saved when service-file rendering fails', async function it() {

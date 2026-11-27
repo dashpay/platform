@@ -29,20 +29,23 @@ use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDire
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
+use super::anchor_cache::{fetch_recorded_anchor_set, RecordedAnchorCache};
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    ensure_allowed_denomination, ensure_positive_amount, ensure_token_purchase_count,
-    ensure_token_unshield_amount, max_token_purchase_fee_notes, select_notes_for_denomination,
-    select_notes_with_fee, token_pool_spend_token_actions, ShieldedFeeKind, TokenPoolSpendKind,
+    ensure_allowed_denomination, ensure_plan_holds, ensure_positive_amount,
+    ensure_spend_kind_active, ensure_token_purchase_count, ensure_token_unshield_amount,
+    ensure_withdrawal_amount_in_range, max_token_purchase_fee_notes, select_notes_for_denomination,
+    select_notes_with_fee, token_pool_spend_token_actions, ShieldedFeeKind, ShieldedSpendAmount,
+    ShieldedSpendKind, ShieldedSpendPlan, TokenPoolSpendKind, SPEND_MIN_ACTIONS,
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
-    SubwalletId,
+    SpendContext, SubwalletId,
 };
 use super::token_pool::{self, reserve_token_notes, TokenNoteReservation, TokenPoolConnection};
 use crate::broadcast_outcome::{
-    broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
-    BroadcastDelivery,
+    broadcast_tracking_delivery, broadcast_tracking_delivery_checked, broadcast_was_refused,
+    carries_consensus_rejection, BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -57,7 +60,6 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
-use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::{
     identity_top_up_from_shielded_pool_requirement, shield_from_identity_requirement,
     token_purchase_from_shielded_pool_requirement,
@@ -878,7 +880,7 @@ where
     S: ShieldedStore,
     D: Fn(&dash_sdk::Error) -> String,
 {
-    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     // A transition that names no input is no shield from addresses: its
     // result then shows nothing spent, and it settles as unconfirmed.
     let no_inputs = BTreeMap::new();
@@ -1124,6 +1126,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                spend_context: None,
                 anchor_height: None,
             },
         )
@@ -1629,6 +1632,7 @@ mod shield_from_identity_build_error_tests {
 pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -1637,9 +1641,10 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<Option<Credits>, PlatformWalletError> {
-    identity_top_up_from_pool_with_metadata(
+    identity_top_up_from_pool_with_plan(
         sdk,
         store,
+        anchor_cache,
         persister,
         wallet_id,
         keys,
@@ -1647,6 +1652,39 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
         identity_id,
         amount,
         prover,
+        None,
+    )
+    .await
+}
+
+/// [`identity_top_up_from_pool`] against a plan, refused as [`transfer_with_plan`] is when it
+/// moved.
+#[allow(clippy::too_many_arguments)]
+pub async fn identity_top_up_from_pool_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    identity_id: Identifier,
+    amount: u64,
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<Option<Credits>, PlatformWalletError> {
+    identity_top_up_from_pool_with_metadata(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        identity_id,
+        amount,
+        prover,
+        expected_plan,
     )
     .await
     .map(|(result, _)| result)
@@ -1659,6 +1697,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 >(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -1666,6 +1705,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     identity_id: Identifier,
     amount: u64,
     prover: &P,
+    expected_plan: Option<&[u8; 32]>,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
     // A zero amount is refused before anything asks the network.
     ensure_positive_amount(amount)?;
@@ -1677,8 +1717,18 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::IdentityTopUp).await?;
+    // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
+    let platform_version = sdk.version();
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::IdentityTopUp,
+        expected_plan,
+        platform_version,
+    )
+    .await?;
 
     info!(
         account,
@@ -1692,8 +1742,15 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
+        ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         let anchor_bytes = anchor.to_bytes();
 
         let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
@@ -1706,13 +1763,21 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             anchor,
             prover,
             [0u8; 36],
-            sdk.version(),
+            platform_version,
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved identity top up fee"
-        );
+        // The fee the builder charged must be the selected one and the one the network applies
+        // at the SDK's version now; the same check runs again right before dispatch.
+        let dispatch_check = DispatchCheck {
+            sdk,
+            platform_version,
+            fee_kind: ShieldedSpendKind::IdentityTopUp.fee_kind(),
+            note_count: selected_notes.len(),
+            selected_fee: exact_fee,
+            built_fee: fee_used,
+            expected_plan,
+        };
+        dispatch_check.ensure_holds()?;
 
         pending_entry = record_pending_activity(
             store,
@@ -1744,6 +1809,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         // identity-create paths accept the same class of outcome.
         broadcast_shielded_spend_with_redrive_with_metadata(
             sdk,
+            &dispatch_check,
             store,
             id,
             &pending_entry,
@@ -1758,6 +1824,13 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok((proof, metadata)) => {
@@ -2098,12 +2171,15 @@ pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(
             &mut reservation,
             &state_transition,
             TOKEN_PURCHASE_OPERATION,
+            None,
+            || Ok(()),
             || {
                 broadcast_shielded_spend_classified(
                     sdk,
                     &state_transition,
                     TOKEN_PURCHASE_OPERATION,
                     SpendResultWait::AffectedState,
+                    || Ok(()),
                 )
             },
         )
@@ -2256,6 +2332,8 @@ async fn purchase_token_with_outcome<S: ShieldedStore>(
         &mut reservation,
         &state_transition,
         TOKEN_PURCHASE_OPERATION,
+        None,
+        || Ok(()),
         move || std::future::ready(outcome),
     )
     .await;
@@ -2747,7 +2825,9 @@ where
         }
         // The fee bundle's anchor too: a write to the credit pool during
         // proving may have pruned it.
-        let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk).await?;
+        let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk)
+            .await
+            .map_err(PlatformWalletError::from)?;
         if !credit_anchors_now.contains(&fee_anchor.to_bytes()) {
             return Err(PlatformWalletError::ShieldedNoRecordedAnchor(
                 "the credit pool no longer records the anchor this spend's fee was built \
@@ -2818,12 +2898,15 @@ where
             &mut reservation,
             &state_transition,
             operation,
+            None,
+            || Ok(()),
             || {
                 broadcast_shielded_spend_classified(
                     sdk,
                     &state_transition,
                     operation,
                     SpendResultWait::AffectedState,
+                    || Ok(()),
                 )
             },
         )
@@ -3051,6 +3134,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 &state_transition,
                 "private document create from shielded pool",
                 SpendResultWait::AffectedState,
+                || Ok(()),
             )
             .await
         },
@@ -3562,6 +3646,7 @@ pub(crate) async fn pay_private_document_with_outcome<S: ShieldedStore>(
 pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3570,20 +3655,61 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    unshield_with_plan(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        prover,
+        None,
+    )
+    .await
+}
+
+/// [`unshield`] against a plan, refused as [`transfer_with_plan`] is when it moved.
+#[allow(clippy::too_many_arguments)]
+pub async fn unshield_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PlatformAddress,
+    amount: u64,
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
+    // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
+    let platform_version = sdk.version();
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
     // for 1 would under-fee a single-note transition and the builder would reject it locally.
     // Unshield is carved with `compute_shielded_unshield_fee` (the base fee PLUS the flat storage
     // cost of the single `AddBalanceToAddress` write crediting the net to the output address), so
     // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
-    // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
-    // debug assert below would fire).
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
+    // address-write cost and the builder would reject the spend (and the built-fee check below
+    // would refuse it).
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::Unshield,
+        expected_plan,
+        platform_version,
+    )
+    .await?;
 
     info!(
         account,
@@ -3604,8 +3730,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // it. A build failure leaves it `None` and records nothing.
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
+        ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3623,15 +3756,21 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            sdk.version(),
+            platform_version,
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_shielded_unshield_fee with the same action count; lock that they agree.
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved unshield fee"
-        );
+        // The fee the builder charged must be the selected one and the one the network applies
+        // at the SDK's version now; the same check runs again right before dispatch.
+        let dispatch_check = DispatchCheck {
+            sdk,
+            platform_version,
+            fee_kind: ShieldedSpendKind::Unshield.fee_kind(),
+            note_count: selected_notes.len(),
+            selected_fee: exact_fee,
+            built_fee: fee_used,
+            expected_plan,
+        };
+        dispatch_check.ensure_holds()?;
 
         // Live activity: a confirmed Unshield is `direction out`,
         // counterparty = the 21-byte serialized PlatformAddress, exact
@@ -3658,6 +3797,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         trace!("Unshield: state transition built, saving and broadcasting...");
         broadcast_shielded_spend_with_redrive(
             sdk,
+            &dispatch_check,
             store,
             id,
             &pending_entry,
@@ -3672,6 +3812,13 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok(_) => {
@@ -3746,6 +3893,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3755,9 +3903,10 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    transfer_once_claimed(
+    transfer_with_plan(
         sdk,
         store,
+        anchor_cache,
         persister,
         wallet_id,
         keys,
@@ -3766,12 +3915,48 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         amount,
         memo,
         prover,
+        None,
+    )
+    .await
+}
+
+/// [`transfer`], refused with [`PlatformWalletError::ShieldedPlanChanged`] before anything is
+/// reserved or built when `expected_plan` is given and its notes no longer select the
+/// [`ShieldedSpendPlan::digest`] it names ([`plan_spend`]).
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PaymentAddress,
+    amount: u64,
+    memo: [u8; 36],
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
+    transfer_once_claimed(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        memo,
+        prover,
+        expected_plan,
         || async { Ok(()) },
     )
     .await
 }
 
-/// [`transfer`], with `once_claimed` run right after the notes are reserved
+/// [`transfer_with_plan`], with `once_claimed` run right after the notes are reserved
 /// and before anything is built, recorded or sent. The wait for the store
 /// that reserving takes can be as long as a scan, so a caller whose
 /// permission to spend the account can lapse meanwhile (a tip paid from an
@@ -3784,6 +3969,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 pub(crate) async fn transfer_once_claimed<S, P, C, CFut>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3792,6 +3978,7 @@ pub(crate) async fn transfer_once_claimed<S, P, C, CFut>(
     amount: u64,
     memo: [u8; 36],
     prover: &P,
+    expected_plan: Option<&[u8; 32]>,
     once_claimed: C,
 ) -> Result<(), PlatformWalletError>
 where
@@ -3805,10 +3992,20 @@ where
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
+    // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
+    let platform_version = sdk.version();
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
     // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::Transfer,
+        expected_plan,
+        platform_version,
+    )
+    .await?;
     // Nothing is built or recorded yet: a refusal only gives the notes back.
     if let Err(refusal) = once_claimed().await {
         reservation.cancel().await;
@@ -3826,8 +4023,15 @@ where
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
+        ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3845,15 +4049,21 @@ where
             anchor,
             prover,
             memo,
-            sdk.version(),
+            platform_version,
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_minimum_shielded_fee with the same action count; lock that they agree.
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved minimum fee"
-        );
+        // The fee the builder charged must be the selected one and the one the network applies
+        // at the SDK's version now; the same check runs again right before dispatch.
+        let dispatch_check = DispatchCheck {
+            sdk,
+            platform_version,
+            fee_kind: ShieldedSpendKind::Transfer.fee_kind(),
+            note_count: selected_notes.len(),
+            selected_fee: exact_fee,
+            built_fee: fee_used,
+            expected_plan,
+        };
+        dispatch_check.ensure_holds()?;
 
         // Live activity: a confirmed transfer is a `Sent` (direction out),
         // counterparty = the recipient's 43-byte raw Orchard address, memo
@@ -3880,6 +4090,7 @@ where
         trace!("Shielded transfer: state transition built, saving and broadcasting...");
         broadcast_shielded_spend_with_redrive(
             sdk,
+            &dispatch_check,
             store,
             id,
             &pending_entry,
@@ -3894,6 +4105,13 @@ where
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok(_) => {
@@ -3950,6 +4168,7 @@ where
 pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -3959,21 +4178,67 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     core_fee_per_byte: u32,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    withdraw_with_plan(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        core_fee_per_byte,
+        prover,
+        None,
+    )
+    .await
+}
+
+/// [`withdraw`] against a plan, refused as [`transfer_with_plan`] is when it moved.
+#[allow(clippy::too_many_arguments)]
+pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &dashcore::Address,
+    amount: u64,
+    core_fee_per_byte: u32,
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
+    // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
+    let platform_version = sdk.version();
+    // The amount is the reserve for Core: `reserve_unspent_notes` refuses it outside the
+    // protocol bounds for this Core fee rate before any note is reserved.
+    let kind = ShieldedSpendKind::Withdrawal { core_fee_per_byte };
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
     // for 1 would under-fee a single-note transition and the builder would reject it locally.
     // ShieldedWithdrawal is carved with `compute_shielded_withdrawal_fee` (the base fee PLUS the
     // flat Core withdrawal-document storage cost), so reserve against
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
-    // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
-    // below would fire).
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
+    // cost and the builder would reject the spend (and the built-fee check below would refuse
+    // it).
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        kind,
+        expected_plan,
+        platform_version,
+    )
+    .await?;
 
     info!(
         account,
@@ -3991,8 +4256,15 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
+        ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -4013,15 +4285,21 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            sdk.version(),
+            platform_version,
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_shielded_withdrawal_fee with the same action count; lock that they agree.
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved withdrawal fee"
-        );
+        // The fee the builder charged must be the selected one and the one the network applies
+        // at the SDK's version now; the same check runs again right before dispatch.
+        let dispatch_check = DispatchCheck {
+            sdk,
+            platform_version,
+            fee_kind: kind.fee_kind(),
+            note_count: selected_notes.len(),
+            selected_fee: exact_fee,
+            built_fee: fee_used,
+            expected_plan,
+        };
+        dispatch_check.ensure_holds()?;
 
         // Live activity: a Withdrawal (direction out), counterparty = the
         // Core output script bytes, exact metered fee.
@@ -4047,6 +4325,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         trace!("Shielded withdrawal: state transition built, saving and broadcasting...");
         broadcast_shielded_spend_with_redrive(
             sdk,
+            &dispatch_check,
             store,
             id,
             &pending_entry,
@@ -4061,6 +4340,13 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok(_) => {
@@ -4134,6 +4420,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 pub async fn identity_create_from_shielded_pool<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -4198,7 +4485,8 @@ where
     let mut derived_identity_id = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes, None)
+                .await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed create can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -4281,6 +4569,13 @@ where
         .await
     }
     .await;
+    // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
+    if result.is_err() {
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
+    }
 
     match result {
         Ok((identity_id, identity)) => {
@@ -4384,6 +4679,8 @@ async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
         reservation,
         st,
         IDENTITY_CREATE_OPERATION,
+        None,
+        || Ok(()),
         || broadcast_identity_create(sdk, st, identity_id, submitted_public_keys),
     )
     .await
@@ -4426,7 +4723,7 @@ async fn broadcast_identity_create(
         })
     };
 
-    match broadcast_tracking_delivery(sdk, st).await {
+    match broadcast_tracking_delivery(sdk, st, None).await {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -4618,7 +4915,8 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// frequently a value Platform never recorded — building against it
 /// unconditionally is what made such spends fail and never land.
 ///
-/// This fetches Platform's recorded anchor set (outside the store lock), then
+/// This obtains Platform's recorded anchor set — from `anchor_cache` when it
+/// holds a usable one, otherwise fetched (outside the store lock) — then
 /// selects the shallowest checkpoint depth whose root is in that set — depth 0
 /// being the fully-synced fast path — witnessing every note at that same depth
 /// so the anchor and the authentication paths agree (the builder derives the
@@ -4631,6 +4929,118 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// Returns the proved height of the recorded anchor set the anchor was chosen
 /// from too: the anchor was in the set at that height, so a set proved at or
 /// above it that lacks the anchor shows it pruned rather than newer.
+///
+/// A spend checked against a confirmed plan (`expected_plan`) never reuses a cached set: the
+/// fetch is the verified answer that teaches the SDK the network's current protocol version
+/// before the plan's version check runs. A set cached under an earlier version would let the
+/// spend build at the version, and so the fee, the plan was confirmed at after the network
+/// had already moved to another fee schedule.
+async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    notes: &[ShieldedNote],
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError> {
+    // Nothing selected — fail before the network round-trip.
+    if notes.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "no spendable notes selected — anchor undefined".to_string(),
+        ));
+    }
+
+    // A cache bound to another SDK, or one that cannot reuse a set now (a
+    // zero TTL, or a provider reporting no policy revision), is skipped
+    // without reading the tree size for it, and so is any cache for a
+    // plan-checked spend.
+    let Some(anchor_cache) = anchor_cache
+        .for_sdk(sdk)
+        .filter(|anchor_cache| expected_plan.is_none() && anchor_cache.can_reuse())
+    else {
+        return extract_spends_and_recorded_anchor(sdk, store, notes).await;
+    };
+    select_spends_with_anchor_cache(store, anchor_cache, notes, || async {
+        Ok(fetch_recorded_anchor_set(sdk).await?)
+    })
+    .await
+}
+
+/// [`extract_spends_and_cached_anchor`]'s anchor-set sourcing, with the network fetch
+/// injected so the cache policy is testable without an SDK.
+///
+/// 1. If the store lock is free and `anchor_cache` holds a set that is younger
+///    than its TTL and was fetched at the tree's current size, probe against
+///    it under that one read guard. A selection, or any error other than
+///    `ShieldedNoRecordedAnchor`, is final — no network round trip.
+/// 2. Otherwise (no usable set, the lock is contended, or the cached set
+///    covers none of the checkpoints) `fetch` a fresh set OUTSIDE the store
+///    lock, record it in the cache when the pre-fetch tree size was read,
+///    and probe against it.
+///
+/// See [`RecordedAnchorCache`] for why a cached set selects the same anchor a
+/// fresh fetch from an equally current node would.
+async fn select_spends_with_anchor_cache<S, F, Fut>(
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    notes: &[ShieldedNote],
+    fetch: F,
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError>
+where
+    S: ShieldedStore,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(HashSet<[u8; 32]>, u64), PlatformWalletError>>,
+{
+    // `try_read`, not `read().await`: when a writer (a sync's append or
+    // commit, another spend) holds the store, waiting here would serialize the lock wait in front of the fetch below, which
+    // otherwise overlaps it. A contended lock simply takes the fetch path
+    // and leaves the cache untouched (no pre-fetch tree size to pin).
+    let tree_size_before_fetch = match store.try_read() {
+        Ok(guard) => match guard.tree_size() {
+            Ok(tree_size) => {
+                if let Some((recorded, height)) = anchor_cache.get(tree_size) {
+                    match select_recorded_spends(&*guard, notes, &recorded) {
+                        Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {
+                            debug!(
+                                tree_size,
+                                "cached recorded-anchor set covers no checkpoint; refetching"
+                            );
+                        }
+                        selected => {
+                            return selected.map(|(spends, anchor)| (spends, anchor, height))
+                        }
+                    }
+                }
+                Some(tree_size)
+            }
+            Err(e) => {
+                debug!(error = %e, "tree_size unavailable; skipping the recorded-anchor cache");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
+    // Fetch the recorded anchor set OUTSIDE the store lock so the network
+    // round-trip doesn't serialize with other store users, and so the lock is
+    // held only for the mutually-consistent depth/witness probe below.
+    let fetch_started = anchor_cache.stamp();
+    let (recorded, height) = fetch().await?;
+    let recorded = Arc::new(recorded);
+    if let Some(tree_size) = tree_size_before_fetch {
+        anchor_cache.insert(Arc::clone(&recorded), fetch_started, tree_size, height);
+    }
+
+    // Hold a single read lock across the whole probe so the checkpoint depths
+    // and the per-note witnesses stay mutually consistent: a concurrent sync
+    // checkpointing mid-probe would otherwise shift the depth indices out from
+    // under us.
+    let store = store.read().await;
+    select_recorded_spends(&*store, notes, &recorded)
+        .map(|(spends, anchor)| (spends, anchor, height))
+}
+
+/// [`extract_spends_and_cached_anchor`] without the cache: always fetches the
+/// recorded anchor set. Same selection and the same returned proved height.
 async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -4655,15 +5065,6 @@ async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     let store = store.read().await;
     select_recorded_spends(&*store, notes, &recorded)
         .map(|(spends, anchor)| (spends, anchor, height))
-}
-
-/// Platform's recorded anchor set, with the proved height it was read at.
-async fn fetch_recorded_anchor_set(
-    sdk: &Arc<dash_sdk::Sdk>,
-) -> Result<(HashSet<[u8; 32]>, u64), PlatformWalletError> {
-    let (dash_sdk::query_types::ShieldedAnchors(recorded_anchors), metadata) =
-        dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(sdk).await?;
-    Ok((recorded_anchors.into_iter().collect(), metadata.height))
 }
 
 /// Pick the shallowest checkpoint depth whose tree root is in `recorded`,
@@ -4710,9 +5111,13 @@ fn select_recorded_spends<S: ShieldedStore>(
     // Build every selected note's `SpendableNote` plus the shared anchor at a
     // single checkpoint `depth`.
     //
-    // `strict` (depth 0 only): a missing/failed witness is a hard
-    // `ShieldedMerkleWitnessUnavailable` (the note is expected to be witnessable
-    // at the current tip). At depth > 0, `Ok(None)` means the note post-dates
+    // `strict` (depth 0 only): a note no checkpoint covers yet (`Ok(None)`) is
+    // `ShieldedMerkleWitnessUnavailable`, which the next sync's checkpoint
+    // resolves; a store failure (`Err`: an unreadable store, a poisoned
+    // mutex, a position the tree does not hold, a tree that cannot produce a
+    // path for a covered position) is
+    // `ShieldedStoreError`, which no sync repairs. At depth > 0, `Ok(None)`
+    // means the note post-dates
     // this older checkpoint, so the depth is unusable — return `Ok(None)` and
     // let the caller stop probing deeper; a genuine store `Err` (poisoned mutex,
     // IO, tree corruption) is logged — the probe would otherwise discard the
@@ -4730,13 +5135,13 @@ fn select_recorded_spends<S: ShieldedStore>(
                 Ok(Some(path)) => path,
                 Ok(None) if strict => {
                     return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no witness available for note at position {position} (not marked, or pruned past this position)"
+                        "no checkpoint of the commitment tree covers the note at position {position} yet"
                     )));
                 }
                 Err(e) if strict => {
-                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
-                        e.to_string(),
-                    ));
+                    return Err(PlatformWalletError::ShieldedStoreError(format!(
+                        "witness for the note at position {position}: {e}"
+                    )));
                 }
                 // depth > 0: the note isn't witnessable at this older checkpoint
                 // (appended after it, or the depth doesn't exist).
@@ -4791,7 +5196,7 @@ fn select_recorded_spends<S: ShieldedStore>(
         // Unreachable — a strict build returns `Some` or errors — but stay
         // fund-safe (a clean error, never a panic) if that invariant breaks.
         None => {
-            return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+            return Err(PlatformWalletError::ShieldedBuildError(
                 "depth-0 witness probe returned no witness for a selected note".to_string(),
             ));
         }
@@ -4828,7 +5233,26 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// Also drops any matching pending reservation so the
 /// confirmed-spent state and the in-flight-spend state can't
 /// disagree.
-async fn mark_notes_spent<S: ShieldedStore>(
+///
+/// The changeset carries each note itself, marked spent, not only its
+/// nullifier. A note a sync pass just found can be spent before the
+/// pass's receipt round reaches the host; the host then has no row for
+/// `nullifiers_spent` to flip, and the receipt would land unspent. A
+/// spent row saved here is kept by the host whatever arrives later
+/// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
+/// read under the same guard: a sync pass may have re-saved the note
+/// with newer metadata since `notes` were selected.
+///
+/// The round is queued before that guard drops, downgraded to a read guard
+/// so balance reads can run alongside the host I/O, unless a writer has
+/// queued ahead of them. Until the round has reached the host, no writer
+/// gets in:
+/// - a sync pass can't commit a newer copy of a note and have its round
+///   overtake this one, which would roll the host back to older metadata;
+/// - a Clear can't purge the store and return. The host deletes its rows
+///   once Clear returns, so a round landing after that would put a deleted
+///   note back.
+pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
@@ -4836,19 +5260,41 @@ async fn mark_notes_spent<S: ShieldedStore>(
     notes: &[ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
     let mut changeset = ShieldedChangeSet::default();
-    {
-        let mut store = store.write().await;
-        for note in notes {
-            if store
-                .mark_spent(id, &note.nullifier)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-            {
-                changeset.record_nullifier_spent(id, note.nullifier);
+    let mut store = store.write().await;
+    for note in notes {
+        if store
+            .mark_spent(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+        {
+            if let Some(stored) = stored_note_to_save(&*store, id, &note.nullifier) {
+                changeset.record_note(id, stored);
             }
+            changeset.record_nullifier_spent(id, note.nullifier);
         }
     }
+    let _round_guard = store.downgrade();
     queue_shielded_changeset(persister, wallet_id, changeset);
     Ok(())
+}
+
+/// `id`'s stored copy of the note with `nullifier`, for a spend's round to
+/// save. A failed read is logged and skipped rather than failing the spend:
+/// the note is already marked spent, and the round still carries its
+/// nullifier.
+fn stored_note_to_save<S: ShieldedStore>(
+    store: &S,
+    id: SubwalletId,
+    nullifier: &[u8; 32],
+) -> Option<ShieldedNote> {
+    store.get_note(id, nullifier).unwrap_or_else(|e| {
+        tracing::warn!(
+            wallet_id = %hex::encode(id.wallet_id),
+            account = id.account_index,
+            error = %e,
+            "Could not read a spent note to save it with its spend"
+        );
+        None
+    })
 }
 
 /// Select unspent notes and reserve them against an in-flight
@@ -4869,17 +5315,266 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// (on failure); until the notes are handed over
 /// ([`NoteReservation::hand_over`]), the returned guard releases them when
 /// the spend is dropped.
+///
+/// With `expected_plan`, a selection that does not match that [`ShieldedSpendPlan::digest`]
+/// is refused with [`PlatformWalletError::ShieldedPlanChanged`] before any note is reserved.
+///
+/// `platform_version` is the version the spend captured once: it selects here, checks the plan
+/// and builds the transition at it, so an SDK whose version moves meanwhile cannot change the fee.
+///
+/// A network whose protocol version `sdk` already verified and has no tables for is refused
+/// here with [`PlatformWalletError::NetworkProtocolVersionUnsupported`], first: before any
+/// check priced at `platform_version`, any note is reserved or the network is asked for
+/// anything; one learned later, during the anchor fetch, is refused by
+/// [`ensure_version_unchanged`].
 async fn reserve_unspent_notes<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     amount: u64,
-    outputs: usize,
-    fee_kind: ShieldedFeeKind,
+    kind: ShieldedSpendKind,
+    expected_plan: Option<&[u8; 32]>,
+    platform_version: &PlatformVersion,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
-    // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
+    // An unsupported network version first: the checks below are priced at the SDK's version,
+    // which the network does not run, so their verdicts would be wrong.
+    ensure_verified_network_version_supported(sdk)?;
+    // All amount-based spends reject zero before waiting on a concurrent sync's store lock, and
+    // a transition their protocol version does not activate.
     ensure_positive_amount(amount)?;
-    reserve_notes_covering(sdk, store, id, amount, outputs, fee_kind).await
+    ensure_spend_kind_active(kind, platform_version)?;
+    // A withdrawal's amount is the reserve for Core: outside the protocol bounds for its Core
+    // fee rate consensus rejects the transition after the proof.
+    if let ShieldedSpendKind::Withdrawal { core_fee_per_byte } = kind {
+        ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?;
+    }
+    reserve_notes_matching(
+        Some(sdk),
+        store,
+        id,
+        amount,
+        SPEND_MIN_ACTIONS,
+        kind.fee_kind(),
+        expected_plan.map(|digest| (kind, digest)),
+        usize::MAX,
+        platform_version,
+    )
+    .await
+}
+
+/// Refuse a spend when the network version `sdk` last verified is one this SDK has no tables
+/// for: it cannot be priced at that version, and a retry does not change that.
+fn ensure_verified_network_version_supported(
+    sdk: &Arc<dash_sdk::Sdk>,
+) -> Result<(), PlatformWalletError> {
+    match sdk.protocol_version_info().verified_version {
+        Some(network) if PlatformVersion::get(network).is_err() => {
+            Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                network,
+                latest_supported: PlatformVersion::latest().protocol_version,
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Refuse a spend, before anything is built, saved or broadcast, when the protocol version
+/// the network applies is no longer `platform_version`, the one the spend captured to select
+/// its notes and check its plan: the SDK's own version moved (the anchor fetch that precedes
+/// the build can teach it a newer one), or the SDK's last verified network observation differs
+/// from it. The two are not the same: a version pinned with `SdkBuilder::with_version` never
+/// moves, while verified answers still advance the observation, and the network then applies
+/// its fee at its own version whatever the SDK builds at. The pin is never overridden; the
+/// spend is refused instead. With `expected_plan` the refusal is
+/// [`PlatformWalletError::ShieldedPlanChanged`] with no fresh selection: repricing the notes
+/// already selected is not what a new plan at that version would select. Without one, a build
+/// error naming both versions. A network
+/// version this SDK has no tables for is
+/// [`PlatformWalletError::NetworkProtocolVersionUnsupported`] either way: it cannot be priced.
+fn ensure_version_unchanged(
+    sdk: &Arc<dash_sdk::Sdk>,
+    platform_version: &PlatformVersion,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
+    let captured = platform_version.protocol_version;
+    if network_applies_version(sdk, captured) {
+        return Ok(());
+    }
+    let current = sdk.version();
+    let network = sdk.protocol_version_info().verified_version;
+    // What the network applies: its verified version when the SDK has one, else the SDK's.
+    let applied_version = match network {
+        Some(n) => PlatformVersion::get(n).map_err(|_| {
+            PlatformWalletError::NetworkProtocolVersionUnsupported {
+                network: n,
+                latest_supported: PlatformVersion::latest().protocol_version,
+            }
+        })?,
+        None => current,
+    };
+    if expected_plan.is_none() {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "the protocol version moved from {captured} to {} while the spend was prepared",
+            applied_version.protocol_version
+        )));
+    }
+    Err(PlatformWalletError::ShieldedPlanChanged {
+        fresh_selection: None,
+    })
+}
+
+/// Whether the protocol version the network applies is `captured`: the SDK builds at it, and
+/// the network version it last verified, if any, is it ([`ensure_version_unchanged`]).
+fn network_applies_version(sdk: &Arc<dash_sdk::Sdk>, captured: u32) -> bool {
+    sdk.version().protocol_version == captured
+        && !matches!(sdk.protocol_version_info().verified_version, Some(n) if n != captured)
+}
+
+/// Whether the `context` a saved spend of `note_count` notes was priced and built in still
+/// holds, for a recovery broadcast of it: the network applies the version it was built at
+/// ([`network_applies_version`]), the network version it was saved under was that one, and the
+/// fee at it is the planned one. A saved context is never overridden or repaired: a spend
+/// whose context does not hold is not broadcast.
+fn recovery_context_holds(
+    sdk: &Arc<dash_sdk::Sdk>,
+    context: &SpendContext,
+    note_count: usize,
+) -> bool {
+    network_applies_version(sdk, context.operation_version)
+        && !matches!(context.network_version, Some(n) if n != context.operation_version)
+        && context
+            .fee_kind
+            .compute(note_count.max(SPEND_MIN_ACTIONS), sdk.version())
+            .is_ok_and(|fee| fee == context.planned_fee)
+}
+
+/// Refuse to plan a spend, whose fee is priced at the `captured` version, when the SDK has
+/// verified a different network version or builds at another one now: the network would apply
+/// its fee at its own, and the SDK's version is a pin that is not overridden here. Plan again
+/// once the SDK builds at the version the network runs.
+fn ensure_plan_version_matches_network(
+    sdk: &Arc<dash_sdk::Sdk>,
+    captured: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let version = captured.protocol_version;
+    let network = sdk
+        .protocol_version_info()
+        .verified_version
+        .filter(|network| *network != version)
+        .or_else(|| {
+            (sdk.version().protocol_version != version).then(|| sdk.version().protocol_version)
+        });
+    match network {
+        Some(network) if PlatformVersion::get(network).is_err() => {
+            Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                network,
+                latest_supported: PlatformVersion::latest().protocol_version,
+            })
+        }
+        Some(network) => Err(PlatformWalletError::ShieldedBuildError(format!(
+            "the SDK builds at protocol version {version} but the network runs {network}, \
+             so a spend would be priced at a version the network does not apply"
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// Refuse, before it is broadcast, a built spend whose fee is not `selected_fee`, the fee its
+/// `note_count` notes were selected (and, with `expected_plan`, confirmed) for, or whose
+/// `applied_fee` is not: the fee the network carves from the signed gross amount at the SDK's
+/// version now, so that the recipient receives what was confirmed. With a plan the refusal is
+/// [`PlatformWalletError::ShieldedPlanChanged`] with no fresh selection (the same notes
+/// repriced are not a selection), without one a build error.
+fn ensure_built_fee(
+    built_fee: Credits,
+    selected_fee: Credits,
+    applied_fee: Credits,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
+    if built_fee == selected_fee && applied_fee == selected_fee {
+        return Ok(());
+    }
+    Err(match expected_plan {
+        Some(_) => PlatformWalletError::ShieldedPlanChanged {
+            fresh_selection: None,
+        },
+        None => PlatformWalletError::ShieldedBuildError(format!(
+            "the built fee {built_fee} and the fee the network applies {applied_fee} are not \
+             the selected fee {selected_fee}"
+        )),
+    })
+}
+
+/// What a built shielded spend must still match when it is dispatched: the protocol version
+/// it captured, and the fee it was selected, confirmed and built at. Checked once the
+/// transition is built and again by [`save_spend_then_broadcast`] after every awaited write
+/// that follows, because the SDK's version can advance at any `.await` (a verified query of
+/// another task) while the build and the writes were made at the captured one.
+struct DispatchCheck<'a> {
+    sdk: &'a Arc<dash_sdk::Sdk>,
+    /// The version the spend captured to select its notes, check its plan and build.
+    platform_version: &'a PlatformVersion,
+    fee_kind: ShieldedFeeKind,
+    note_count: usize,
+    /// The fee the notes were selected (and, with a plan, confirmed) for.
+    selected_fee: Credits,
+    /// The fee the builder charged, which the signed gross amount carries.
+    built_fee: Credits,
+    expected_plan: Option<&'a [u8; 32]>,
+}
+
+impl DispatchCheck<'_> {
+    /// What the spend's recovery record keeps of this check, so that no recovery broadcast
+    /// dispatches the saved transition once it no longer holds ([`SpendContext`]).
+    fn spend_context(&self) -> SpendContext {
+        SpendContext {
+            operation_version: self.platform_version.protocol_version,
+            network_version: self.sdk.protocol_version_info().verified_version,
+            fee_kind: self.fee_kind,
+            planned_fee: self.selected_fee,
+        }
+    }
+
+    /// The SDK's version is the captured one, and the fee the network applies at it is the
+    /// selected and built one, so the recipient receives the amount that was confirmed.
+    fn ensure_holds(&self) -> Result<(), PlatformWalletError> {
+        ensure_version_unchanged(self.sdk, self.platform_version, self.expected_plan)?;
+        let applied_fee = self
+            .fee_kind
+            .compute(self.note_count.max(SPEND_MIN_ACTIONS), self.sdk.version())
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        ensure_built_fee(
+            self.built_fee,
+            self.selected_fee,
+            applied_fee,
+            self.expected_plan,
+        )
+    }
+}
+
+/// Plan a `kind` spend of `amount` from `account`'s notes: the notes the spend would select
+/// now and their exact fee ([`note_selection::plan_spend`](super::note_selection::plan_spend)).
+/// Reads the store only; nothing is reserved.
+pub async fn plan_spend<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    wallet_id: WalletId,
+    account: u32,
+    kind: ShieldedSpendKind,
+    amount: ShieldedSpendAmount,
+) -> Result<ShieldedSpendPlan, PlatformWalletError> {
+    // The pricing version is captured once; the store read is an await, during which another
+    // task can verify a different network version, so it is checked again right before the
+    // notes are planned at it.
+    let version = sdk.version();
+    ensure_plan_version_matches_network(sdk, version)?;
+    let unspent = store
+        .read()
+        .await
+        .get_unspent_notes(SubwalletId::new(wallet_id, account))
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    ensure_plan_version_matches_network(sdk, version)?;
+    super::note_selection::plan_spend(&unspent, kind, amount, version)
 }
 
 /// Select and reserve, in one write-locked critical section, notes covering
@@ -4896,12 +5591,14 @@ async fn reserve_notes_covering<S: ShieldedStore>(
     outputs: usize,
     fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
-    reserve_notes_covering_at_most(
+    reserve_notes_matching(
+        None,
         store,
         id,
         amount,
         outputs,
         fee_kind,
+        None,
         usize::MAX,
         sdk.version(),
     )
@@ -4922,12 +5619,86 @@ async fn reserve_notes_covering_at_most<S: ShieldedStore>(
     max_notes: usize,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
+    reserve_notes_matching(
+        None,
+        store,
+        id,
+        amount,
+        outputs,
+        fee_kind,
+        None,
+        max_notes,
+        platform_version,
+    )
+    .await
+}
+
+/// [`reserve_notes_covering`], refusing with [`PlatformWalletError::ShieldedPlanChanged`],
+/// before any note is reserved, a selection that does not match `expected_plan`: the plan
+/// digest of a spend of that kind. With a plan, a selection the notes can no longer make (they
+/// were spent or reserved since, no longer cover it, or no longer fit one transition) is a
+/// changed plan too.
+///
+/// With `network_version_gate` (the four spends [`reserve_unspent_notes`] serves, which gate
+/// on it before waiting too), a network version that SDK verified while the spend waited for
+/// the store, and has no tables for, is refused with
+/// [`PlatformWalletError::NetworkProtocolVersionUnsupported`] once the lock is held, before any
+/// note is selected or reserved. A selection needing more than `max_notes` notes is refused
+/// with [`PlatformWalletError::ShieldedTooManyNotes`] before anything is reserved.
+#[allow(clippy::too_many_arguments)]
+async fn reserve_notes_matching<S: ShieldedStore>(
+    network_version_gate: Option<&Arc<dash_sdk::Sdk>>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    amount: u64,
+    outputs: usize,
+    fee_kind: ShieldedFeeKind,
+    expected_plan: Option<(ShieldedSpendKind, &[u8; 32])>,
+    max_notes: usize,
+    platform_version: &PlatformVersion,
+) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
     let mut guard = store.write().await;
+    // A verified response can record another network version while the spend waits for the
+    // store: refuse it before selecting at the old tables or marking notes. A plan-checked
+    // spend refuses any move, as a changed plan with no fresh selection, so it never quotes a
+    // selection made at a version the network no longer applies; a spend without a plan only
+    // a version this SDK has no tables for.
+    if let Some(sdk) = network_version_gate {
+        match expected_plan {
+            Some((_, expected)) => ensure_version_unchanged(sdk, platform_version, Some(expected))?,
+            None => ensure_verified_network_version_supported(sdk)?,
+        }
+    }
     let unspent = guard
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, fee_kind, platform_version)?.into_owned();
+    let selection =
+        match select_notes_with_fee(&unspent, amount, outputs, fee_kind, platform_version) {
+            // The notes no longer make the confirmed selection: spent or reserved since, no
+            // longer covering it, or now needing more actions than one transition fits.
+            Err(
+                PlatformWalletError::ShieldedNoUnspentNotes
+                | PlatformWalletError::ShieldedInsufficientBalance { .. }
+                | PlatformWalletError::ShieldedSpendTooManyNotes { .. },
+            ) if expected_plan.is_some() => {
+                return Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None,
+                })
+            }
+            other => other?,
+        };
+    if let Some((kind, expected)) = expected_plan {
+        let (selected, _, exact_fee) = &selection;
+        ensure_plan_holds(
+            expected,
+            kind,
+            amount,
+            *exact_fee,
+            selected,
+            platform_version,
+        )?;
+    }
+    let (selected, total_input, exact_fee) = selection.into_owned();
     if selected.len() > max_notes {
         return Err(PlatformWalletError::ShieldedTooManyNotes {
             required_notes: selected.len(),
@@ -5245,6 +6016,7 @@ pub(super) const MAX_REDRIVE_ATTEMPTS: u32 = 3;
 #[allow(clippy::too_many_arguments)]
 async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
+    dispatch_check: &DispatchCheck<'_>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
@@ -5258,6 +6030,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
 ) -> Result<StateTransitionProofResult, SpendFailure> {
     broadcast_shielded_spend_with_redrive_with_metadata(
         sdk,
+        dispatch_check,
         store,
         id,
         pending_entry,
@@ -5287,6 +6060,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
 #[allow(clippy::too_many_arguments)]
 async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
+    dispatch_check: &DispatchCheck<'_>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
@@ -5308,7 +6082,13 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
         reservation,
         state_transition,
         operation,
-        || broadcast_shielded_spend_classified(sdk, state_transition, operation, wait),
+        Some(dispatch_check.spend_context()),
+        || dispatch_check.ensure_holds(),
+        || {
+            broadcast_shielded_spend_classified(sdk, state_transition, operation, wait, || {
+                dispatch_check.ensure_holds()
+            })
+        },
     )
     .await
 }
@@ -5326,13 +6106,21 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 /// the caller releases them ([`settle_failed_spend`]), and so does a spend
 /// dropped while a save waits for the store.
 ///
-/// Once the record is saved the notes are handed over, with nothing awaited
+/// The record carries `context`, when the spend has one, so that a recovery broadcast of it
+/// ([`redrive_pending_spends`]) holds to the same check: it is dispatchable by recovery from
+/// the moment it is saved, before `still_dispatchable` has run, and after a restart.
+///
+/// Right after the record is saved, `still_dispatchable` is the last check before dispatch:
+/// a spend that no longer matches what it was built and confirmed for is refused with nothing
+/// broadcast, as one whose transition never left the wallet ([`settle_failed_spend`]).
+///
+/// Once the record is saved and checked the notes are handed over, with nothing awaited
 /// in between: from then on they belong to the spend's resolution, whatever
 /// happens to this call. An exit or a drop during the dispatches or the
 /// result wait leaves the reservation and the record, which a restart
 /// restores and the redrive pass resolves.
 #[allow(clippy::too_many_arguments)]
-async fn save_spend_then_broadcast<S, B, Fut, T>(
+async fn save_spend_then_broadcast<S, R, B, Fut, T>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
@@ -5342,15 +6130,18 @@ async fn save_spend_then_broadcast<S, B, Fut, T>(
     reservation: &mut NoteReservation<S>,
     state_transition: &StateTransition,
     operation: &'static str,
+    context: Option<SpendContext>,
+    still_dispatchable: R,
     broadcast: B,
 ) -> Result<T, SpendFailure>
 where
     S: ShieldedStore,
+    R: FnOnce() -> Result<(), PlatformWalletError>,
     B: FnOnce() -> Fut,
     Fut: Future<Output = Result<T, SpendFailure>>,
 {
     arm_pending_release(store, id, anchor, anchor_height, pending_entry, notes).await?;
-    arm_redrive_before_broadcast(
+    arm_redrive_with_context(
         store,
         id,
         pending_entry.as_ref().map(|entry| entry.id),
@@ -5361,8 +6152,19 @@ where
         None,
         None,
         anchor_height,
+        context,
     )
     .await?;
+    // The last check, after every write awaited above: what the spend was built and
+    // confirmed for (`still_dispatchable`) must still hold. When it does not, nothing is
+    // sent and the spend fails as one that never left the wallet, which retires the record
+    // just saved, releases the notes and fails the activity row.
+    if let Err(error) = still_dispatchable() {
+        return Err(SpendFailure {
+            error,
+            never_delivered: true,
+        });
+    }
     // Saved: the notes are the spend's resolution's from here on.
     reservation.hand_over();
     broadcast().await
@@ -5496,6 +6298,38 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     payment_started: Option<&PaymentStarted>,
     anchor_recorded_at: u64,
 ) -> Result<(), PlatformWalletError> {
+    arm_redrive_with_context(
+        store,
+        id,
+        activity_id,
+        anchor,
+        nullifiers,
+        state_transition,
+        operation,
+        private_contact,
+        payment_started,
+        anchor_recorded_at,
+        None,
+    )
+    .await
+}
+
+/// [`arm_redrive_before_broadcast`], keeping `spend_context` with the record
+/// ([`PendingRedrive::spend_context`]).
+#[allow(clippy::too_many_arguments)]
+async fn arm_redrive_with_context<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: Option<[u8; 32]>,
+    anchor: [u8; 32],
+    nullifiers: Vec<[u8; 32]>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+    private_contact: Option<PrivateContactPayment>,
+    payment_started: Option<&PaymentStarted>,
+    anchor_recorded_at: u64,
+    spend_context: Option<SpendContext>,
+) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
     let activity_id = activity_id.ok_or_else(|| {
@@ -5530,6 +6364,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         attempts: 0,
         identity_nonce_finalized: false,
         identity_user_abandoned: false,
+        spend_context,
         anchor_height: Some(anchor_recorded_at),
     };
     let mut store = store.write().await;
@@ -5717,22 +6552,38 @@ async fn bump_redrive_attempts_logged<S: ShieldedStore>(
 /// since `redrive` was read is not claimed, and not broadcast. Returns the
 /// attempt count, or `None` when nothing was claimed: a counter that fails to
 /// persist claims nothing.
+///
+/// The live record's saved context is checked under the same lock, before the
+/// counter moves: a network version learned while the claim waited for the store
+/// claims nothing, so the record stays retirable by the spend that saved it
+/// (`attempts == 0`) instead of holding its notes until the prune backstop.
 async fn claim_redrive_attempt<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     redrive: &PendingRedrive,
 ) -> Option<u32> {
     let mut store = store.write().await;
-    let live = store.pending_redrives(id).is_ok_and(|current| {
-        current.iter().any(|record| {
+    let live = store.pending_redrives(id).ok().and_then(|current| {
+        current.into_iter().find(|record| {
             record.activity_id == redrive.activity_id
                 && record.st_bytes == redrive.st_bytes
                 && record.attempts < MAX_REDRIVE_ATTEMPTS
         })
     });
-    if !live {
+    let Some(live) = live else {
         debug!("redrive: the record was retired or changed since it was read; not re-broadcast");
         return None;
+    };
+    if let Some(context) = &live.spend_context {
+        if !recovery_context_holds(sdk, context, live.nullifiers.len()) {
+            warn!(
+                saved = ?context,
+                "redrive: the context the spend was priced in stopped holding while the claim \
+                 waited; claiming no attempt and keeping the record"
+            );
+            return None;
+        }
     }
     match store.bump_redrive_attempts(id, &redrive.activity_id) {
         Ok(attempts) if attempts > 0 => Some(attempts),
@@ -5946,6 +6797,21 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         if !recorded.contains(&redrive.anchor) || redrive.attempts >= MAX_REDRIVE_ATTEMPTS {
             continue;
         }
+        // A record saved with the context it was priced and built in is re-broadcast only
+        // while that still holds. It is kept, unclaimed, never retired from here: whether
+        // the foreground spend dispatched it before the context changed is not known, and
+        // the spend that saved it settles it as it ends, or the scan or the prune backstop
+        // resolves it.
+        if let Some(context) = &redrive.spend_context {
+            if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) {
+                warn!(
+                    saved = ?context,
+                    "redrive: the context the spend was priced in no longer holds; keeping the \
+                     record without re-broadcasting it"
+                );
+                continue;
+            }
+        }
         let st = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
             Ok(st) => st,
             Err(e) => {
@@ -5980,10 +6846,43 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 Some(Ok(())) => {}
             }
         }
-        let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
+        let Some(attempts) = claim_redrive_attempt(sdk, store, id, &redrive).await else {
             continue;
         };
-        let broadcast_result = st.broadcast(sdk, None).await;
+        // The context is checked immediately before every dispatch, the first one included
+        // (the claim waited for the store, and another task can verify a newer network
+        // version meanwhile, or while an earlier dispatch is in flight), and the SDK's own
+        // retries are not used: no attempt is sent unchecked. A refusal sends nothing more.
+        // The claimed attempt stays counted and the record stays, unretired.
+        let broadcast_result = match broadcast_tracking_delivery_checked(sdk, &st, None, || {
+            match &redrive.spend_context {
+                Some(context)
+                    if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) =>
+                {
+                    Err(())
+                }
+                _ => Ok(()),
+            }
+        })
+        .await
+        {
+            Ok(BroadcastDelivery::Admitted) => Ok(()),
+            // Recovery never retires a record from here: a spend that was never delivered is
+            // resolved by the spend that saved it, the scan or the prune backstop.
+            Ok(BroadcastDelivery::MaybeDelivered(e) | BroadcastDelivery::NeverDelivered(e)) => {
+                Err(e)
+            }
+            Err(stopped) => {
+                warn!(
+                    saved = ?redrive.spend_context,
+                    may_have_been_delivered = stopped.may_have_been_delivered,
+                    "redrive: the context the spend was priced in stopped holding before a \
+                     dispatch; not sending it again, keeping the record and its notes (an \
+                     earlier dispatch, if any, may have been delivered)"
+                );
+                continue;
+            }
+        };
         let err_display = broadcast_result
             .as_ref()
             .err()
@@ -6064,6 +6963,10 @@ impl From<PlatformWalletError> for SpendFailure {
 /// result, telling a failure whose transition never left the wallet from one
 /// that may have reached the network:
 ///
+/// - `still_dispatchable` runs immediately before every dispatch. When it refuses the first,
+///   nothing was sent and the spend never left the wallet (the check's error,
+///   [`SpendFailure::never_delivered`] set); when it refuses a later one, an earlier dispatch
+///   may have been delivered, so no further one is sent and the spend reads as unconfirmed;
 /// - refused before anything was sent ([`BroadcastDelivery::NeverDelivered`]):
 ///   [`PlatformWalletError::ShieldedBroadcastFailed`], with
 ///   [`SpendFailure::never_delivered`] set, so the caller retires the saved
@@ -6084,8 +6987,44 @@ async fn broadcast_shielded_spend_classified(
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
+    still_dispatchable: impl FnMut() -> Result<(), PlatformWalletError>,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
-    match broadcast_tracking_delivery(sdk, state_transition).await {
+    let delivery =
+        match broadcast_tracking_delivery_checked(sdk, state_transition, None, still_dispatchable)
+            .await
+        {
+            Ok(delivery) => delivery,
+            // The check refused a dispatch: the transition is not sent again, whatever the
+            // build, the writes and the earlier dispatches were made under.
+            Err(stopped) if !stopped.may_have_been_delivered => {
+                return Err(SpendFailure {
+                    error: stopped.error,
+                    never_delivered: true,
+                });
+            }
+            // An earlier dispatch may have been delivered and may still execute: the outcome
+            // stays unconfirmed, with the notes reserved and the record saved, for the scan
+            // and the redrive pass (which holds to the same context) to resolve.
+            Err(stopped) => {
+                warn!(
+                    operation,
+                    error = %stopped.error,
+                    "Shielded spend not dispatched again: its context no longer holds, and an \
+                     earlier dispatch may have been delivered"
+                );
+                return Err(SpendFailure::from(
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation,
+                        reason: format!(
+                            "a later dispatch was not sent because its context no longer \
+                             holds ({}), and an earlier one may have been delivered",
+                            stopped.error
+                        ),
+                    },
+                ));
+            }
+        };
+    match delivery {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -6670,6 +7609,7 @@ mod redrive_tests {
             .arm_redrive(
                 SubwalletId::new(wallet_id, 0),
                 PendingRedrive {
+                    spend_context: None,
                     activity_id: [0x77; 32],
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -6740,6 +7680,7 @@ mod redrive_tests {
         let result = identity_top_up_from_pool(
             &sdk,
             &store,
+            &RecordedAnchorCache::new(),
             None,
             wallet_id,
             &keys,
@@ -6778,6 +7719,7 @@ mod redrive_tests {
         let result = identity_top_up_from_pool_with_metadata(
             &sdk,
             &store,
+            &RecordedAnchorCache::new(),
             None,
             wallet_id,
             &keys,
@@ -6785,6 +7727,7 @@ mod redrive_tests {
             Identifier::from([0x74; 32]),
             1_000_000,
             &UnreachableIdentityProver,
+            None,
         )
         .await;
 
@@ -6824,6 +7767,7 @@ mod redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: true,
+            spend_context: None,
             anchor_height: None,
         };
         store.arm_redrive(id, archived.clone()).unwrap();
@@ -6875,6 +7819,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -6948,6 +7893,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -6977,6 +7923,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -7089,6 +8036,7 @@ mod redrive_tests {
                     attempts: MAX_REDRIVE_ATTEMPTS,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -7464,6 +8412,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
                 payment,
@@ -8208,6 +9157,7 @@ mod redrive_tests {
             .arm_redrive(
                 id,
                 PendingRedrive {
+                    spend_context: None,
                     activity_id: [0x7A; 32],
                     anchor,
                     nullifiers: vec![[1; 32]],
@@ -8301,6 +9251,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -8338,6 +9289,7 @@ mod redrive_tests {
             attempts,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -8398,6 +9350,7 @@ mod redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -8540,9 +9493,22 @@ mod redrive_tests {
             id: SubwalletId,
         ) -> Result<(), SpendFailure> {
             let transition = self.transition();
+            let fee = ShieldedFeeKind::Base
+                .compute(spend.notes.len().max(SPEND_MIN_ACTIONS), sdk.version())
+                .expect("a fee");
+            let dispatch_check = DispatchCheck {
+                sdk,
+                platform_version: sdk.version(),
+                fee_kind: ShieldedFeeKind::Base,
+                note_count: spend.notes.len(),
+                selected_fee: fee,
+                built_fee: fee,
+                expected_plan: None,
+            };
             match self {
                 Self::Shared => broadcast_shielded_spend_with_redrive_with_metadata(
                     sdk,
+                    &dispatch_check,
                     &spend.store,
                     id,
                     &spend.entry,
@@ -8756,6 +9722,8 @@ mod redrive_tests {
             &mut reservation,
             &transition,
             "transfer",
+            None,
+            || Ok(()),
             || {
                 // Nothing is dispatched before the record is on the file.
                 let durable =
@@ -8889,6 +9857,8 @@ mod redrive_tests {
                 &mut spend.reservation,
                 &transition,
                 "transfer",
+                None,
+                || Ok(()),
                 || async {
                     dispatched.store(true, Ordering::SeqCst);
                     Err(match outcome {
@@ -9013,6 +9983,18 @@ mod redrive_tests {
                 );
                 let saved = store.pending_redrives(id).expect("the records");
                 assert_eq!(saved.len(), 1, "{spend_path:?}");
+                assert_eq!(
+                    saved[0].spend_context.map(|context| context.planned_fee),
+                    match spend_path {
+                        SpendPath::Shared => Some(
+                            ShieldedFeeKind::Base
+                                .compute(SPEND_MIN_ACTIONS, sdk_handle.version())
+                                .expect("a fee")
+                        ),
+                        SpendPath::IdentityCreate => None,
+                    },
+                    "{spend_path:?}: the record keeps the context its spend was checked against"
+                );
                 assert_eq!(
                     saved[0].st_bytes,
                     transition.serialize_to_bytes().expect("serializes"),
@@ -9562,6 +10544,427 @@ mod redrive_tests {
             ShieldedActivityStatus::Failed
         );
     }
+
+    // ── A saved spend is re-broadcast only while its captured context holds ──
+
+    /// A mock SDK pinned to v13, and a handle to it.
+    fn pinned_v13_sdk() -> (dash_sdk::Sdk, Arc<dash_sdk::Sdk>) {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(13).expect("v13"))
+            .build()
+            .expect("mock sdk");
+        let handle = Arc::new(sdk.clone());
+        (sdk, handle)
+    }
+
+    /// The context of a one-note transfer priced and built at `version`, whose fee is the
+    /// fee at `version` plus `fee_drift`.
+    fn transfer_context(version: u32, network: Option<u32>, fee_drift: u64) -> SpendContext {
+        SpendContext {
+            operation_version: version,
+            network_version: network,
+            fee_kind: ShieldedFeeKind::Base,
+            planned_fee: ShieldedFeeKind::Base
+                .compute(
+                    SPEND_MIN_ACTIONS,
+                    PlatformVersion::get(version).expect("a version"),
+                )
+                .expect("a fee")
+                + fee_drift,
+        }
+    }
+
+    fn saved_transfer(
+        attempts: u32,
+        spend_context: Option<SpendContext>,
+    ) -> (StateTransition, PendingRedrive) {
+        let transition = SpendPath::Shared.transition();
+        let record = PendingRedrive {
+            activity_id: [0x7D; 32],
+            anchor: SPEND_ANCHOR,
+            nullifiers: vec![spend_note().nullifier],
+            st_bytes: transition.serialize_to_bytes().expect("serializes"),
+            attempts,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            spend_context,
+            anchor_height: Some(SPEND_ANCHOR_HEIGHT),
+        };
+        (transition, record)
+    }
+
+    /// The recovery pass re-broadcasts a saved spend only while the context it was priced and
+    /// built in still holds: the SDK builds at the captured version, the network it verified
+    /// runs that version, and the fee at it is the planned one. Otherwise (the network moved
+    /// to another version, the SDK's version differs from the captured one, or the fee is not
+    /// the planned one) nothing is sent, the attempt is not claimed and the record stays with
+    /// its notes, as a spend that was claimed before stays as it was. A record with no
+    /// context is re-broadcast as ever.
+    #[tokio::test]
+    async fn should_not_rebroadcast_a_saved_spend_whose_captured_context_no_longer_holds() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        // The case, the saved context, the network version the SDK verified, the attempts
+        // already claimed, and whether recovery re-broadcasts.
+        #[allow(clippy::type_complexity)]
+        let cases: [(&str, Option<SpendContext>, Option<u32>, u32, bool); 7] = [
+            ("holds", Some(transfer_context(13, None, 0)), None, 0, true),
+            (
+                "holds, the network verified the same version",
+                Some(transfer_context(13, Some(13), 0)),
+                Some(13),
+                0,
+                true,
+            ),
+            ("no context", None, None, 0, true),
+            (
+                "the network verified another version",
+                Some(transfer_context(13, None, 0)),
+                Some(PlatformVersion::latest().protocol_version),
+                0,
+                false,
+            ),
+            (
+                "claimed before, the network verified another version",
+                Some(transfer_context(13, None, 0)),
+                Some(PlatformVersion::latest().protocol_version),
+                1,
+                false,
+            ),
+            (
+                "captured at another operation version",
+                Some(transfer_context(14, None, 0)),
+                None,
+                0,
+                false,
+            ),
+            (
+                "the fee is not the planned one",
+                Some(transfer_context(13, None, 1)),
+                None,
+                0,
+                false,
+            ),
+        ];
+        for (name, context, verified, attempts, rebroadcast) in cases {
+            let (mut sdk, handle) = pinned_v13_sdk();
+            if let Some(network) = verified {
+                handle
+                    .mock_verified_protocol_version(network)
+                    .expect("a mock SDK");
+            }
+            let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+            let id = SubwalletId::new([0x5E; 32], 0);
+            let (transition, record) = saved_transfer(attempts, context);
+            store.write().await.arm_redrive(id, record).expect("armed");
+            let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+            redrive_pending_spends(&handle, &store, id, &recorded, &CancellationToken::new()).await;
+
+            let request = transition
+                .broadcast_request_for_state_transition()
+                .expect("serializes");
+            let sent = sdk.mock().request_count(&request).await;
+            let left = store.read().await.pending_redrives(id).expect("records");
+            assert_eq!(left.len(), 1, "{name}: the record stays");
+            if rebroadcast {
+                assert!(sent > 0, "{name}: re-broadcast");
+                assert_eq!(left[0].attempts, attempts + 1, "{name}");
+            } else {
+                assert_eq!(sent, 0, "{name}: nothing is sent");
+                assert_eq!(left[0].attempts, attempts, "{name}: no attempt is claimed");
+            }
+        }
+    }
+
+    /// The network version another task verifies while the recovery pass waits for the claim
+    /// lock of a saved spend is not broadcast around: the context is checked again once the
+    /// claim is held, right before the broadcast, so the saved bytes are not sent under a fee
+    /// schedule the spend was not priced in.
+    #[tokio::test]
+    async fn should_not_rebroadcast_a_saved_spend_whose_context_moved_while_the_claim_waited() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        use std::task::{Context, Poll, Waker};
+
+        let (mut sdk, handle) = pinned_v13_sdk();
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x5F; 32], 0);
+        let (transition, record) = saved_transfer(0, Some(transfer_context(13, None, 0)));
+        store.write().await.arm_redrive(id, record).expect("armed");
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+        // A reader lets the pass load its records, and holds its claim (a write) back.
+        let reader = store.read().await;
+        let cancel = CancellationToken::new();
+        let mut recovery = Box::pin(redrive_pending_spends(
+            &handle, &store, id, &recorded, &cancel,
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            recovery.as_mut().poll(&mut cx).is_pending(),
+            "the pass waits for the claim lock"
+        );
+        // Another task verifies a newer protocol version meanwhile.
+        handle
+            .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+            .expect("a mock SDK");
+        drop(reader);
+        let Poll::Ready(()) = recovery.as_mut().poll(&mut cx) else {
+            panic!("the pass finishes once the claim lock is free");
+        };
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            0,
+            "nothing is sent"
+        );
+        assert_eq!(
+            store
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .len(),
+            1,
+            "the record stays"
+        );
+        assert_eq!(
+            store.read().await.pending_redrives(id).expect("records")[0].attempts,
+            0,
+            "no attempt is claimed, so the spend that saved the record can still retire it"
+        );
+    }
+
+    /// Recovery re-broadcasts a saved spend in single dispatches, as the foreground spend
+    /// does, at the SDK's configured budget: none of them is left to the SDK's own retry
+    /// loop, which no check runs inside of.
+    #[tokio::test]
+    async fn should_rebroadcast_a_saved_spend_in_single_checked_dispatches() {
+        use crate::broadcast_outcome::spend_broadcast_dispatches;
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        let (mut sdk, handle) = pinned_v13_sdk();
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x60; 32], 0);
+        let (transition, record) = saved_transfer(0, Some(transfer_context(13, None, 0)));
+        store.write().await.arm_redrive(id, record).expect("armed");
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+        redrive_pending_spends(&handle, &store, id, &recorded, &CancellationToken::new()).await;
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            spend_broadcast_dispatches(&handle, None),
+            "every failed dispatch is followed by another, up to the budget"
+        );
+        let left = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(left.len(), 1, "the record stays");
+        assert_eq!(left[0].attempts, 1, "one attempt is claimed for the pass");
+    }
+
+    /// The SDK learns a newer verified network version during recovery's first, failed
+    /// transport attempt: no second attempt is sent under the fee schedule the spend was not
+    /// priced in, whatever the SDK's retry budget. The first attempt may have been delivered,
+    /// so the record stays with its notes reserved, and its attempt stays counted.
+    #[tokio::test]
+    async fn should_not_send_another_recovery_attempt_when_the_version_is_learned_during_the_first()
+    {
+        use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        let (mut sdk, handle) = pinned_v13_sdk();
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x61; 32], 0);
+        let (transition, record) = saved_transfer(0, Some(transfer_context(13, None, 0)));
+        store.write().await.arm_redrive(id, record).expect("armed");
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+        // The mock transport logs each execution after counting it and before it answers:
+        // the first one is where the SDK learns the newer version.
+        let learner = Arc::clone(&handle);
+        let learned = std::sync::atomic::AtomicBool::new(false);
+        let _recording = RecordingGuard::install(RecordedEvents::with_hook(move |message| {
+            if message == "mock execute" && !learned.swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                learner
+                    .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+                    .expect("a mock SDK");
+            }
+        }));
+
+        redrive_pending_spends(&handle, &store, id, &recorded, &CancellationToken::new()).await;
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            1,
+            "the first attempt is the only one sent"
+        );
+        let left = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(left.len(), 1, "the record stays");
+        assert_eq!(left[0].attempts, 1, "the claimed attempt stays counted");
+    }
+
+    /// A shielded spend's dispatches check the context before each one, and a check that
+    /// refuses a later dispatch after an earlier one may have been delivered reads as an
+    /// unconfirmed spend, which keeps the notes reserved; refused before the first dispatch
+    /// it reads as a spend that never left the wallet.
+    #[tokio::test]
+    async fn should_report_a_spend_unconfirmed_when_the_context_moves_after_a_dispatch() {
+        let (_sdk, handle) = pinned_v13_sdk();
+        let transition = SpendPath::Shared.transition();
+        let moved = || PlatformWalletError::ShieldedBuildError("the context moved".to_string());
+
+        let calls = std::cell::Cell::new(0usize);
+        let failure = broadcast_shielded_spend_classified(
+            &handle,
+            &transition,
+            "transfer",
+            SpendResultWait::ExecutionProved,
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 1 {
+                    Ok(())
+                } else {
+                    Err(moved())
+                }
+            },
+        )
+        .await
+        .expect_err("the second dispatch is refused");
+        assert_eq!(calls.get(), 2, "the check runs before each dispatch");
+        assert!(!failure.never_delivered);
+        assert!(
+            matches!(
+                failure.error,
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "transfer",
+                    ..
+                }
+            ),
+            "{:?}",
+            failure.error
+        );
+
+        let failure = broadcast_shielded_spend_classified(
+            &handle,
+            &transition,
+            "transfer",
+            SpendResultWait::ExecutionProved,
+            || Err(moved()),
+        )
+        .await
+        .expect_err("the first dispatch is refused");
+        assert!(failure.never_delivered);
+        assert!(matches!(
+            failure.error,
+            PlatformWalletError::ShieldedBuildError(_)
+        ));
+    }
+
+    /// A spend whose context stopped holding right after its record was saved is refused as
+    /// never delivered, and the process exits before that settles it: the record is still in
+    /// the store a restart opens, with its context, and the redrive pass of the restarted
+    /// wallet does not broadcast it once the network it verifies runs another version.
+    #[tokio::test]
+    async fn should_not_redrive_after_a_restart_a_spend_refused_right_after_its_record_was_saved() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        use std::task::{Context, Waker};
+
+        let id = SubwalletId::new([0x74; 32], 0);
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let ReservedSpend {
+            store,
+            notes,
+            mut reservation,
+            entry,
+        } = ReservedSpend::at(&path, id, [0x7E; 32]).await;
+        let transition = SpendPath::Shared.transition();
+        let context = transfer_context(13, None, 0);
+        let moved = PlatformWalletError::ShieldedPlanChanged {
+            fresh_selection: None,
+        };
+
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut spend = Box::pin(save_spend_then_broadcast(
+            &store,
+            id,
+            &entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &notes,
+            &mut reservation,
+            &transition,
+            "transfer",
+            Some(context),
+            // The network moved after the record was saved.
+            || Err(moved),
+            || async {
+                Err::<(), SpendFailure>(
+                    PlatformWalletError::ShieldedBuildError("dispatched".to_string()).into(),
+                )
+            },
+        ));
+        let std::task::Poll::Ready(Err(failure)) = spend.as_mut().poll(&mut cx) else {
+            panic!("the spend is refused when its record is saved");
+        };
+        assert!(failure.never_delivered);
+        // The process exits before the failure settles: nothing runs, not even the
+        // reservation's drop, which would release the notes and their record.
+        drop(spend);
+        std::mem::forget(reservation);
+        drop(store);
+
+        let (mut restarted_sdk, restarted_handle) = pinned_v13_sdk();
+        restarted_handle
+            .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+            .expect("a mock SDK");
+        let restarted = Arc::new(RwLock::new(restarted_store(&path, id)));
+        assert_eq!(
+            restarted
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")[0]
+                .spend_context,
+            Some(context),
+            "the record kept its context across the restart"
+        );
+
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+        redrive_pending_spends(
+            &restarted_handle,
+            &restarted,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            restarted_sdk.mock().request_count(&request).await,
+            0,
+            "the redrive does not broadcast it"
+        );
+        let left = restarted
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records");
+        assert_eq!((left.len(), left[0].attempts), (1, 0), "kept, unclaimed");
+    }
 }
 
 #[cfg(test)]
@@ -10032,12 +11435,20 @@ mod record_activity_status_tests {
 #[cfg(test)]
 mod select_recorded_spends_tests {
     use super::*;
+    use crate::wallet::shielded::anchor_cache::FetchStamp;
     use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use crate::wallet::shielded::CachedOrchardProver;
+    use dash_sdk::dapi_grpc::platform::v0::get_shielded_anchors_request::{
+        self, GetShieldedAnchorsRequestV0,
+    };
+    use dash_sdk::dapi_grpc::platform::v0::GetShieldedAnchorsRequest;
     use dashcore::Network;
     use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     /// Unique temp path for a test tree (no `tempfile` dev-dep).
-    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+    pub(super) fn temp_tree_path(tag: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -10061,7 +11472,12 @@ mod select_recorded_spends_tests {
     /// it, and `cmx` is the note's real extracted commitment so that appending
     /// `cmx` as the leaf at `position` makes `witness(position, d).root(cmx)`
     /// reproduce the tree's anchor at depth `d`.
-    fn real_note(position: u64) -> ShieldedNote {
+    pub(super) fn real_note(position: u64) -> ShieldedNote {
+        real_note_worth(position, 100_000)
+    }
+
+    /// [`real_note`] worth `value` credits.
+    pub(super) fn real_note_worth(position: u64, value: u64) -> ShieldedNote {
         let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
             .expect("ZIP-32 derivation from a fixed seed");
         let recipient = keys.default_address;
@@ -10084,7 +11500,7 @@ mod select_recorded_spends_tests {
             })
             .expect("a canonical rseed exists");
 
-        let value = NoteValue::from_raw(100_000);
+        let value = NoteValue::from_raw(value);
         let note = Note::from_parts(recipient, value, rho, rseed)
             .into_option()
             .expect("valid note parts");
@@ -10104,7 +11520,7 @@ mod select_recorded_spends_tests {
             nullifier: [0x07; 32],
             block_height: 1,
             is_spent: false,
-            value: 100_000,
+            value: note.value().inner(),
             note_data,
         }
     }
@@ -10271,6 +11687,2207 @@ mod select_recorded_spends_tests {
             Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {}
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
+        }
+    }
+
+    /// A selected note appended after the latest checkpoint (a sync pass that
+    /// appended and stopped before its checkpoint) is the one case the next
+    /// sync resolves: `ShieldedMerkleWitnessUnavailable`, which hosts get as
+    /// retryable code 88.
+    #[test]
+    fn should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable() {
+        let path = temp_tree_path("past_checkpoint");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        let note = real_note(1);
+        store.append_commitment(&note.cmx, true).unwrap();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(message)) => {
+                assert!(message.contains("position 1"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedMerkleWitnessUnavailable, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedMerkleWitnessUnavailable, got Ok"),
+        }
+    }
+
+    /// A store that cannot produce the path of a covered note (here its shard
+    /// table is gone) is a store failure no sync repairs: `ShieldedStoreError`,
+    /// never the retryable `ShieldedMerkleWitnessUnavailable`.
+    #[test]
+    fn should_refuse_a_store_failure_at_depth_0_as_a_store_error() {
+        let path = temp_tree_path("store_failure");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = real_note(0);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TABLE commitment_tree_shards;")
+            .unwrap();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedStoreError(message)) => {
+                assert!(message.contains("position 0"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedStoreError, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedStoreError, got Ok"),
+        }
+    }
+
+    /// A selected note whose position the tree does not hold at all (notes
+    /// restored against a shorter tree, or a tree reset whose note purge
+    /// failed) is not something the next sync adds: `ShieldedStoreError`,
+    /// never the retryable `ShieldedMerkleWitnessUnavailable`. Its sibling, a
+    /// leaf the tree holds past the latest checkpoint, stays retryable
+    /// (`should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable`).
+    #[test]
+    fn should_refuse_a_note_missing_from_the_tree_as_a_store_error() {
+        let path = temp_tree_path("missing_leaf");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        let note = real_note(5);
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedStoreError(message)) => {
+                assert!(message.contains("position 5"), "{message}");
+                assert!(message.contains("not in the commitment tree"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedStoreError, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedStoreError, got Ok"),
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Recorded-anchor cache on the spend path (`select_spends_with_anchor_cache`)
+    // ---------------------------------------------------------------------
+
+    /// A wallet tree one block-boundary checkpoint deep, then left mid-block by
+    /// an index-chunk sync: the spend must select the depth-1 root. Returns the
+    /// store, the owned note, and that recorded block-boundary root.
+    fn mid_block_store(
+        tag: &str,
+    ) -> (
+        std::path::PathBuf,
+        Arc<RwLock<FileBackedShieldedStore>>,
+        ShieldedNote,
+        [u8; 32],
+    ) {
+        let path = temp_tree_path(tag);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let note = real_note(0);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let recorded_root = store.tree_anchor().unwrap();
+        store.append_commitment(&filler_cmx(0xC1), true).unwrap();
+        store.checkpoint_tree(4).unwrap();
+        (path, Arc::new(RwLock::new(store)), note, recorded_root)
+    }
+
+    /// A stand-in for the network fetch that counts how often it is called.
+    async fn counting_fetch(
+        calls: &AtomicUsize,
+        recorded: &HashSet<[u8; 32]>,
+    ) -> Result<(HashSet<[u8; 32]>, u64), PlatformWalletError> {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok((recorded.clone(), 100))
+    }
+
+    async fn spend_anchor(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        cache: &RecordedAnchorCache,
+        note: &ShieldedNote,
+        calls: &AtomicUsize,
+        platform_set: &HashSet<[u8; 32]>,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        select_spends_with_anchor_cache(store, cache, std::slice::from_ref(note), || {
+            counting_fetch(calls, platform_set)
+        })
+        .await
+        .map(|(_, anchor, height)| {
+            assert_eq!(height, 100);
+            anchor.to_bytes()
+        })
+    }
+
+    async fn tree_size(store: &Arc<RwLock<FileBackedShieldedStore>>) -> u64 {
+        store.read().await.tree_size().unwrap()
+    }
+
+    /// The measurement behind the change: three back-to-back sends cost three
+    /// anchor-set round trips without the cache (a zero TTL reproduces the
+    /// old always-fetch behavior) and one with it — and every send still
+    /// selects the same recorded anchor.
+    #[tokio::test]
+    async fn should_fetch_the_anchor_set_once_for_back_to_back_sends() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_count");
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+
+        let uncached = RecordedAnchorCache::with_ttl(Duration::ZERO);
+        let uncached_calls = AtomicUsize::new(0);
+        for _ in 0..3 {
+            let anchor = spend_anchor(&store, &uncached, &note, &uncached_calls, &platform_set)
+                .await
+                .expect("recorded checkpoint covers the note");
+            assert_eq!(anchor, recorded_root);
+        }
+
+        let cached = RecordedAnchorCache::new();
+        let cached_calls = AtomicUsize::new(0);
+        for _ in 0..3 {
+            let anchor = spend_anchor(&store, &cached, &note, &cached_calls, &platform_set)
+                .await
+                .expect("recorded checkpoint covers the note");
+            assert_eq!(
+                anchor, recorded_root,
+                "the cache never changes the selection"
+            );
+        }
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            uncached_calls.load(Ordering::SeqCst),
+            3,
+            "before: one fetch per send"
+        );
+        assert_eq!(
+            cached_calls.load(Ordering::SeqCst),
+            1,
+            "after: one fetch for all three"
+        );
+    }
+
+    /// A set already in the cache, from an earlier send or the coordinator's
+    /// release pass, takes the fetch off the send entirely.
+    #[tokio::test]
+    async fn should_not_fetch_when_a_prefetched_set_is_fresh() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_prefetched");
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new(platform_set.clone()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            100,
+        );
+
+        let calls = AtomicUsize::new(0);
+        let anchor = spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("prefetched set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(anchor, recorded_root);
+        assert_eq!(calls.load(Ordering::SeqCst), 0, "no round trip on the send");
+    }
+
+    #[tokio::test]
+    async fn should_return_the_proved_height_of_the_selected_anchor_set() {
+        let (path, store, note, root) = mid_block_store("cache_proved_height");
+        let recorded: HashSet<[u8; 32]> = [root].into_iter().collect();
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new(recorded.clone()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            99,
+        );
+        let calls = AtomicUsize::new(0);
+        for expected in [99, 100] {
+            let (_, anchor, height) = select_spends_with_anchor_cache(
+                &store,
+                &cache,
+                std::slice::from_ref(&note),
+                || counting_fetch(&calls, &recorded),
+            )
+            .await
+            .expect("recorded checkpoint covers the note");
+            assert_eq!(anchor.to_bytes(), root);
+            assert_eq!(height, expected);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(expected == 100));
+            cache.invalidate();
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A cached set that covers none of the wallet's checkpoints (e.g. served
+    /// by a node lagging behind the one the wallet synced from) is not the
+    /// last word: the send refetches, succeeds, and refreshes the cache.
+    #[tokio::test]
+    async fn should_refetch_and_refresh_when_the_cached_set_covers_no_checkpoint() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_norecorded");
+        let size = tree_size(&store).await;
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new([[0xEE; 32]].into_iter().collect()),
+            FetchStamp::now(),
+            size,
+            100,
+        );
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+
+        let calls = AtomicUsize::new(0);
+        let anchor = spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("the fresh set covers the note");
+        assert_eq!(anchor, recorded_root);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "refetched once");
+
+        let refreshed = cache
+            .get(size)
+            .expect("the fresh set replaced the stale one");
+        assert!(refreshed.0.contains(&recorded_root));
+        spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("served from the refreshed cache");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the next send reuses the refresh"
+        );
+    }
+
+    /// A set older than the TTL is never used, even when it would still
+    /// select a valid anchor.
+    #[tokio::test]
+    async fn should_refetch_once_the_cached_set_is_past_its_ttl() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_ttl");
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+        let cache = RecordedAnchorCache::with_ttl(Duration::from_secs(30));
+        let expired = FetchStamp::ago(Duration::from_secs(31));
+        cache.insert(
+            Arc::new(platform_set.clone()),
+            expired,
+            tree_size(&store).await,
+            100,
+        );
+
+        let calls = AtomicUsize::new(0);
+        spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("the fresh set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A sync that grows the tree after the set was fetched can add a
+    /// checkpoint Platform recorded later than that snapshot. The cached set
+    /// would still find the OLDER checkpoint — so it must not be used: the
+    /// send refetches and selects the newest recorded root, exactly as it
+    /// would without the cache.
+    #[tokio::test]
+    async fn should_refetch_when_a_sync_grew_the_tree_after_the_fetch() {
+        let path = temp_tree_path("cache_grown");
+        let mut inner = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let note = real_note(0);
+        inner.append_commitment(&note.cmx, true).unwrap();
+        inner.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        inner.checkpoint_tree(2).unwrap();
+        let root_block1 = inner.tree_anchor().unwrap();
+        let store = Arc::new(RwLock::new(inner));
+
+        // Prefetched while the wallet was at block 1.
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new([root_block1].into_iter().collect()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            100,
+        );
+
+        // A sync then appends block 2 and checkpoints on its boundary.
+        let root_block2 = {
+            let mut s = store.write().await;
+            s.append_commitment(&filler_cmx(0xB1), true).unwrap();
+            s.append_commitment(&filler_cmx(0xB2), true).unwrap();
+            s.checkpoint_tree(4).unwrap();
+            s.tree_anchor().unwrap()
+        };
+        let platform_set: HashSet<[u8; 32]> = [root_block1, root_block2].into_iter().collect();
+
+        let calls = AtomicUsize::new(0);
+        let anchor = spend_anchor(&store, &cache, &note, &calls, &platform_set)
+            .await
+            .expect("the fresh set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the grown tree retired the cached set"
+        );
+        assert_eq!(
+            anchor, root_block2,
+            "selects the newest recorded root, not the older one the cached set knew"
+        );
+    }
+
+    /// While a sync holds the store, the send does not queue for the lock
+    /// just to consult the cache: it fetches (overlapping the lock wait, as
+    /// before the cache existed) and leaves the cache alone, having no
+    /// pre-fetch tree size to pin a new set to.
+    #[tokio::test]
+    async fn should_fetch_without_waiting_while_the_store_is_write_locked() {
+        let (path, store, note, recorded_root) = mid_block_store("cache_contended");
+        let size = tree_size(&store).await;
+        let marker = [0xEE; 32];
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new([recorded_root, marker].into_iter().collect()),
+            FetchStamp::now(),
+            size,
+            100,
+        );
+        let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
+
+        let sync_guard = store.write().await;
+        let calls = AtomicUsize::new(0);
+        let fetch = {
+            let calls = &calls;
+            let platform_set = platform_set.clone();
+            move || {
+                // The "sync" finishes while the fetch is in flight.
+                drop(sync_guard);
+                calls.fetch_add(1, Ordering::SeqCst);
+                std::future::ready(Ok((platform_set, 100)))
+            }
+        };
+        // Bounded: waiting on the held write lock (instead of `try_read`)
+        // would deadlock here, since only the fetch releases it.
+        let anchor = tokio::time::timeout(
+            Duration::from_secs(5),
+            select_spends_with_anchor_cache(&store, &cache, std::slice::from_ref(&note), fetch),
+        )
+        .await
+        .expect("the cache check must not wait for the store lock")
+        .map(|(_, anchor, height)| {
+            assert_eq!(height, 100);
+            anchor.to_bytes()
+        })
+        .expect("the fresh set covers the note");
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(anchor, recorded_root);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "contended lock takes the fetch path"
+        );
+        assert!(
+            cache.get(size).expect("entry kept").0.contains(&marker),
+            "a fetch without a pre-fetch tree size must not replace the cached set"
+        );
+    }
+
+    /// A spend that fails after its anchor was chosen leaves no cached set
+    /// behind, so the retry selects against a fresh one. Driven through the
+    /// real `unshield` op: the cached set is used (tree size matches), and
+    /// the selected note has no witness in the tree, so the op fails at
+    /// anchor selection — before any proving or network I/O.
+    #[tokio::test]
+    async fn should_invalidate_the_cache_when_a_spend_fails() {
+        let (path, store, _, recorded_root) = mid_block_store("cache_failed_spend");
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed");
+        let wallet_id: WalletId = [0x31; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        // An unspent note at a position the tree doesn't hold: selectable,
+        // but never witnessable. Its value covers any shielded fee.
+        let mut unwitnessable = real_note(50);
+        unwitnessable.value = 1_000_000_000_000_000;
+        store
+            .write()
+            .await
+            .save_note(id, &unwitnessable)
+            .expect("save note");
+
+        let size = tree_size(&store).await;
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&sdk).expect("fresh cache binds");
+        cache.insert(
+            Arc::new([recorded_root].into_iter().collect()),
+            cache.stamp(),
+            size,
+            100,
+        );
+
+        let to = PlatformAddress::P2pkh([0x22; 20]);
+        let prover = CachedOrchardProver::new();
+        let result = unshield(
+            &sdk, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShieldedStoreError(_))),
+            "expected the anchor-selection failure, got {result:?}"
+        );
+        assert!(
+            cache.get(size).is_none(),
+            "a failed spend must drop the cached anchor set"
+        );
+    }
+
+    /// A spend on one SDK never consults a cache bound to another, so its
+    /// failure must not drop that cache's set either.
+    #[tokio::test]
+    async fn should_keep_another_sdks_cached_set_when_a_spend_fails() {
+        let (path, store, _, recorded_root) = mid_block_store("cache_other_sdk_failed_spend");
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed");
+        let wallet_id: WalletId = [0x32; 32];
+        let mut note = real_note(50);
+        note.value = 1_000_000_000_000_000;
+        store
+            .write()
+            .await
+            .save_note(SubwalletId::new(wallet_id, 0), &note)
+            .expect("save note");
+
+        let size = tree_size(&store).await;
+        let owner = Arc::new(dash_sdk::Sdk::new_mock());
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&owner).expect("fresh cache binds");
+        cache.insert(
+            Arc::new([recorded_root].into_iter().collect()),
+            cache.stamp(),
+            size,
+            100,
+        );
+
+        // The other mock SDK has no recorded-anchor expectation, so its
+        // uncached fetch fails.
+        let other = Arc::new(dash_sdk::Sdk::new_mock());
+        let to = PlatformAddress::P2pkh([0x22; 20]);
+        let prover = CachedOrchardProver::new();
+        let result = unshield(
+            &other, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_err(), "the other SDK's fetch fails");
+        let anchors_request = GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                GetShieldedAnchorsRequestV0 {
+                    prove: true,
+                    token_id: None,
+                },
+            )),
+        };
+        // A clone shares the mock's request counts.
+        let (mut owner, mut other) = ((*owner).clone(), (*other).clone());
+        assert_eq!(
+            other.mock().request_count(&anchors_request).await,
+            1,
+            "the spend reached its own fetch instead of the owner's set"
+        );
+        assert_eq!(owner.mock().request_count(&anchors_request).await, 0);
+        assert!(
+            cache.get(size).is_some(),
+            "the owner SDK's cached set is kept"
+        );
+    }
+}
+
+#[cfg(test)]
+mod spend_plan_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use dashcore::Network;
+    use dpp::shielded::compute_minimum_shielded_fee;
+    use dpp::version::PlatformVersion;
+    use grovedb_commitment_tree::ProvingKey;
+
+    /// A note worth 1 DASH, so the fee never decides how many notes an amount needs.
+    const NOTE: u64 = 100_000_000_000;
+    const WALLET_ID: WalletId = [0x71; 32];
+    const ID: SubwalletId = SubwalletId {
+        wallet_id: WALLET_ID,
+        account_index: 0,
+    };
+
+    struct UnreachableProver;
+    impl OrchardProver for UnreachableProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    fn note(position: u8, value: u64) -> ShieldedNote {
+        ShieldedNote {
+            position: position.into(),
+            cmx: [position; 32],
+            nullifier: [position; 32],
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data: vec![],
+        }
+    }
+
+    fn sdk() -> Arc<dash_sdk::Sdk> {
+        Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(PlatformVersion::latest())
+                .build()
+                .expect("a mock SDK"),
+        )
+    }
+
+    async fn store_with(notes: &[ShieldedNote]) -> Arc<RwLock<InMemoryShieldedStore>> {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        for note in notes {
+            store.write().await.save_note(ID, note).expect("a note");
+        }
+        store
+    }
+
+    async fn unspent(store: &Arc<RwLock<InMemoryShieldedStore>>) -> usize {
+        store
+            .read()
+            .await
+            .get_unspent_notes(ID)
+            .expect("notes")
+            .len()
+    }
+
+    async fn plan(store: &Arc<RwLock<InMemoryShieldedStore>>, amount: u64) -> ShieldedSpendPlan {
+        plan_spend(
+            &sdk(),
+            store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Exact(amount),
+        )
+        .await
+        .expect("plans")
+    }
+
+    /// Planning an amount that needs five notes prices five actions and reserves nothing.
+    #[tokio::test]
+    async fn should_plan_five_notes_at_their_fee_without_reserving_them() {
+        let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+
+        let plan = plan(&store, 4 * NOTE + 1).await;
+
+        assert_eq!(plan.note_count(), 5);
+        assert_eq!(
+            plan.fee,
+            compute_minimum_shielded_fee(5, PlatformVersion::latest()).expect("fee")
+        );
+        assert_eq!(unspent(&store).await, 6, "a plan reserves nothing");
+    }
+
+    /// A spend whose notes did not move since the plan reserves exactly the planned notes.
+    #[tokio::test]
+    async fn should_reserve_the_planned_notes_when_nothing_moved() {
+        let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+        let amount = 4 * NOTE + 1;
+        let plan = plan(&store, amount).await;
+
+        let (selected, total_input, fee, reservation) = reserve_unspent_notes(
+            &sdk(),
+            &store,
+            ID,
+            amount,
+            ShieldedSpendKind::Transfer,
+            Some(&plan.digest),
+            PlatformVersion::latest(),
+        )
+        .await
+        .expect("the plan holds");
+
+        let mut nullifiers: Vec<[u8; 32]> = selected.iter().map(|n| n.nullifier).collect();
+        nullifiers.sort_unstable();
+        assert_eq!(
+            (nullifiers, total_input, fee),
+            (plan.nullifiers.clone(), plan.total_input, plan.fee)
+        );
+        assert_eq!(unspent(&store).await, 1, "the planned notes are reserved");
+        reservation.cancel().await;
+    }
+
+    /// A spend reserves nothing for a transition its protocol version does not activate: an
+    /// identity top-up from the pool is refused at 13 and reserves its notes at 14.
+    #[tokio::test]
+    async fn should_refuse_a_spend_of_a_transition_not_active_at_its_version_and_reserve_nothing() {
+        let store = store_with(&[note(0, NOTE)]).await;
+        let reserve_at = |version| {
+            let store = store.clone();
+            async move {
+                reserve_unspent_notes(
+                    &sdk(),
+                    &store,
+                    ID,
+                    NOTE / 2,
+                    ShieldedSpendKind::IdentityTopUp,
+                    None,
+                    PlatformVersion::get(version).expect("a version"),
+                )
+                .await
+            }
+        };
+
+        let refused = reserve_at(13).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::ShieldedBuildError(_))),
+            "an identity top-up is not active at protocol 13, got {:?}",
+            refused.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(unspent(&store).await, 1, "nothing reserved at 13");
+
+        let (_, _, _, reservation) = reserve_at(14).await.expect("active at protocol 14");
+        assert_eq!(unspent(&store).await, 0, "the note is reserved at 14");
+        reservation.cancel().await;
+    }
+
+    /// A note added or spent after the plan moves the selection: the spend is refused and
+    /// no note is left reserved.
+    #[tokio::test]
+    async fn should_refuse_a_plan_whose_notes_moved_and_reserve_nothing() {
+        let amount = 4 * NOTE + 1;
+        for change in ["added", "spent"] {
+            let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+            let plan = plan(&store, amount).await;
+            match change {
+                "added" => store
+                    .write()
+                    .await
+                    .save_note(ID, &note(9, 10 * NOTE))
+                    .expect("a note"),
+                _ => {
+                    store
+                        .write()
+                        .await
+                        .mark_spent(ID, &plan.nullifiers[0])
+                        .expect("spent");
+                }
+            }
+            let before = unspent(&store).await;
+
+            let refused = reserve_unspent_notes(
+                &sdk(),
+                &store,
+                ID,
+                amount,
+                ShieldedSpendKind::Transfer,
+                Some(&plan.digest),
+                PlatformVersion::latest(),
+            )
+            .await;
+
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::ShieldedPlanChanged { .. })
+                ),
+                "a note {change} after the plan must refuse it, got {:?}",
+                refused.map(|(selected, ..)| selected.len())
+            );
+            assert_eq!(unspent(&store).await, before, "nothing reserved ({change})");
+        }
+    }
+
+    /// The spend itself runs the check before it builds anything: a moved plan is refused
+    /// with its notes left spendable, and a plan that holds goes on to build (here refused
+    /// later by the mock's anchor fetch, never by the plan check).
+    #[tokio::test]
+    async fn should_run_a_transfer_against_its_plan_or_refuse_it_unbuilt() {
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0).expect("keys");
+        let store = store_with(&(0..3).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+        let amount = NOTE;
+        let plan = plan(&store, amount).await;
+        let transfer = |expected: [u8; 32]| {
+            let (store, keys) = (Arc::clone(&store), &keys);
+            async move {
+                transfer_with_plan(
+                    &sdk(),
+                    &store,
+                    &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                    None,
+                    WALLET_ID,
+                    keys,
+                    0,
+                    &keys.default_address,
+                    amount,
+                    [0; 36],
+                    &UnreachableProver,
+                    Some(&expected),
+                )
+                .await
+            }
+        };
+
+        let held = transfer(plan.digest).await;
+        assert!(
+            matches!(held, Err(PlatformWalletError::Sdk(_))),
+            "an unchanged plan must reach the mocked anchor fetch, got {held:?}"
+        );
+
+        store
+            .write()
+            .await
+            .save_note(ID, &note(9, 10 * NOTE))
+            .expect("a note");
+        let moved = transfer(plan.digest).await;
+        assert!(
+            matches!(moved, Err(PlatformWalletError::ShieldedPlanChanged { .. })),
+            "got {moved:?}"
+        );
+        assert_eq!(unspent(&store).await, 4, "nothing reserved");
+    }
+
+    /// The spend selects and checks its plan at the protocol version it captured once: a plan
+    /// made at a version whose fee differs from the newest one holds while the network still
+    /// applies that version. Once the SDK reports another version, the plan-checked
+    /// reservation is a changed plan with no fresh selection, refused under the store lock
+    /// before any note is reserved, never a selection quoted at the captured version.
+    #[tokio::test]
+    async fn should_check_the_plan_at_the_spends_captured_protocol_version() {
+        let captured = PlatformVersion::get(13).expect("v13");
+        let notes: Vec<ShieldedNote> = (0..6).map(|i| note(i, NOTE)).collect();
+        let amount = 4 * NOTE + 1;
+        assert_ne!(
+            compute_minimum_shielded_fee(5, captured).expect("fee"),
+            compute_minimum_shielded_fee(5, sdk().version()).expect("fee"),
+            "the two versions price the spend differently"
+        );
+        let store = store_with(&notes).await;
+        let plan = super::super::note_selection::plan_spend(
+            &notes,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Exact(amount),
+            captured,
+        )
+        .expect("plans");
+
+        let moved = reserve_unspent_notes(
+            &sdk(),
+            &store,
+            ID,
+            amount,
+            ShieldedSpendKind::Transfer,
+            Some(&plan.digest),
+            captured,
+        )
+        .await;
+        assert!(
+            matches!(
+                moved,
+                Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None
+                })
+            ),
+            "the SDK moved past the captured version, got {:?}",
+            moved.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(unspent(&store).await, 6, "nothing reserved");
+
+        let pinned = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(captured)
+                .build()
+                .expect("a mock SDK"),
+        );
+        let (_, _, fee, reservation) = reserve_unspent_notes(
+            &pinned,
+            &store,
+            ID,
+            amount,
+            ShieldedSpendKind::Transfer,
+            Some(&plan.digest),
+            captured,
+        )
+        .await
+        .expect("the plan holds at the captured version");
+
+        assert_eq!(fee, plan.fee);
+        reservation.cancel().await;
+    }
+
+    /// A plan commits to the protocol version it was priced at: a spend at another version
+    /// refuses it as a changed plan, with nothing reserved, even when the two versions price
+    /// the same notes at the same fee (an identity top-up from 14 to the newest).
+    #[tokio::test]
+    async fn should_refuse_a_plan_made_at_another_protocol_version_even_at_an_equal_fee() {
+        let kind = ShieldedSpendKind::IdentityTopUp;
+        let planned_at = PlatformVersion::get(14).expect("v14");
+        let spent_at = PlatformVersion::latest();
+        assert_ne!(planned_at.protocol_version, spent_at.protocol_version);
+        let notes: Vec<ShieldedNote> = (0..3).map(|i| note(i, NOTE)).collect();
+        let store = store_with(&notes).await;
+        let plan = super::super::note_selection::plan_spend(
+            &notes,
+            kind,
+            ShieldedSpendAmount::Exact(NOTE),
+            planned_at,
+        )
+        .expect("plans");
+        let at_spend = super::super::note_selection::plan_spend(
+            &notes,
+            kind,
+            ShieldedSpendAmount::Exact(NOTE),
+            spent_at,
+        )
+        .expect("plans");
+        assert_eq!(
+            (at_spend.fee, &at_spend.nullifiers),
+            (plan.fee, &plan.nullifiers),
+            "the same notes at the same fee"
+        );
+
+        let refused =
+            reserve_unspent_notes(&sdk(), &store, ID, NOTE, kind, Some(&plan.digest), spent_at)
+                .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedPlanChanged { .. })
+            ),
+            "got {:?}",
+            refused.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(unspent(&store).await, 3, "nothing reserved");
+    }
+
+    /// A pinned SDK that verifies a newer, supported network version while the spend waits
+    /// for the store, as the plan's notes also move, quotes no replacement selection: the
+    /// selection it would quote is priced at the pinned version, which a new plan on the same
+    /// SDK refuses. The version is checked under the store lock, so the spend is a changed plan
+    /// with no fresh selection, and nothing is reserved.
+    #[tokio::test]
+    async fn should_quote_no_fresh_selection_when_notes_and_network_version_both_moved() {
+        use std::task::{Context, Poll, Waker};
+
+        let kind = ShieldedSpendKind::Transfer;
+        let network = PlatformVersion::latest().protocol_version;
+        assert_ne!(start_version(kind), network);
+        let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+        // Hold the store so that the reservation suspends at its write lock, after every
+        // check it runs before the lock.
+        let mut held = case.store.write().await;
+        let mut reserving = Box::pin(reserve_unspent_notes(
+            &case.sdk,
+            &case.store,
+            ID,
+            NOTE,
+            kind,
+            Some(&case.plan.digest),
+            PlatformVersion::get(start_version(kind)).expect("the pinned version"),
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            reserving.as_mut().poll(&mut cx).is_pending(),
+            "the reservation waits for the store"
+        );
+        // Meanwhile the planned note is replaced and another task verifies a newer version.
+        held.mark_spent(ID, &case.plan.nullifiers[0])
+            .expect("spent");
+        held.save_note(ID, &note(9, 10 * NOTE)).expect("a note");
+        case.sdk
+            .mock_verified_protocol_version(network)
+            .expect("a mock SDK");
+        drop(held);
+
+        let Poll::Ready(refused) = reserving.as_mut().poll(&mut cx) else {
+            panic!("the reservation finishes once the store is free");
+        };
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None
+                })
+            ),
+            "got {:?}",
+            refused.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(
+            case.store
+                .read()
+                .await
+                .get_unspent_notes(ID)
+                .expect("notes")
+                .len(),
+            1,
+            "nothing reserved"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
+    /// A built transition whose fee is not the planned one is refused before broadcast as a
+    /// changed plan; without a plan, as a build error. The planned fee passes.
+    #[test]
+    fn should_refuse_a_built_fee_other_than_the_planned_one() {
+        let digest = [7; 32];
+        ensure_built_fee(500, 500, 500, Some(&digest)).expect("the planned fee");
+        ensure_built_fee(500, 500, 500, None).expect("the selected fee");
+        assert!(
+            matches!(
+                ensure_built_fee(510, 500, 500, Some(&digest)),
+                Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None
+                })
+            ),
+            "a planned spend"
+        );
+        assert!(
+            matches!(
+                ensure_built_fee(510, 500, 500, None),
+                Err(PlatformWalletError::ShieldedBuildError(_))
+            ),
+            "an unplanned spend"
+        );
+        // Built and selected at the old version, the network applies the new one's fee.
+        assert!(
+            matches!(
+                ensure_built_fee(500, 500, 530, Some(&digest)),
+                Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None
+                })
+            ),
+            "a planned spend whose fee moved"
+        );
+        assert!(
+            matches!(
+                ensure_built_fee(500, 500, 530, None),
+                Err(PlatformWalletError::ShieldedBuildError(_))
+            ),
+            "an unplanned spend whose fee moved"
+        );
+    }
+
+    /// With a plan, notes another spend took or a balance that no longer covers it are a
+    /// changed plan, not a failed selection; without one the selection errors stay.
+    #[tokio::test]
+    async fn should_report_an_exhausted_selection_as_a_changed_plan() {
+        let amount = 4 * NOTE + 1;
+        for (left, unplanned) in [(0, "no unspent notes"), (2, "insufficient balance")] {
+            let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+            let plan = plan(&store, amount).await;
+            for position in left..6u8 {
+                store
+                    .write()
+                    .await
+                    .mark_spent(ID, &[position; 32])
+                    .expect("spent");
+            }
+            let reserve = |expected: Option<[u8; 32]>| {
+                let store = Arc::clone(&store);
+                async move {
+                    reserve_unspent_notes(
+                        &sdk(),
+                        &store,
+                        ID,
+                        amount,
+                        ShieldedSpendKind::Transfer,
+                        expected.as_ref(),
+                        PlatformVersion::latest(),
+                    )
+                    .await
+                    .map(|(selected, ..)| selected.len())
+                }
+            };
+
+            let planned = reserve(Some(plan.digest)).await;
+            assert!(
+                matches!(
+                    planned,
+                    Err(PlatformWalletError::ShieldedPlanChanged { .. })
+                ),
+                "{unplanned} with a plan: got {planned:?}"
+            );
+            let bare = reserve(None).await;
+            assert!(
+                matches!(
+                    bare,
+                    Err(PlatformWalletError::ShieldedNoUnspentNotes
+                        | PlatformWalletError::ShieldedInsufficientBalance { .. })
+                ),
+                "{unplanned} without a plan: got {bare:?}"
+            );
+        }
+    }
+
+    /// With a plan, notes that still cover it but no longer fit one transition (another spend
+    /// took the large note it used) are a changed plan; without one the size error stays.
+    #[tokio::test]
+    async fn should_report_a_selection_that_no_longer_fits_one_transition_as_a_changed_plan() {
+        let amount = 6 * NOTE;
+        let mut notes = vec![note(0, 10 * NOTE)];
+        notes.extend((1..=7).map(|i| note(i, NOTE)));
+        let store = store_with(&notes).await;
+        let plan = plan(&store, amount).await;
+        store.write().await.mark_spent(ID, &[0; 32]).expect("spent");
+        let reserve = |expected: Option<[u8; 32]>| {
+            let store = Arc::clone(&store);
+            async move {
+                reserve_unspent_notes(
+                    &sdk(),
+                    &store,
+                    ID,
+                    amount,
+                    ShieldedSpendKind::Transfer,
+                    expected.as_ref(),
+                    PlatformVersion::latest(),
+                )
+                .await
+                .map(|(selected, ..)| selected.len())
+            }
+        };
+
+        let planned = reserve(Some(plan.digest)).await;
+        assert!(
+            matches!(
+                planned,
+                Err(PlatformWalletError::ShieldedPlanChanged { .. })
+            ),
+            "with a plan: got {planned:?}"
+        );
+        let message = planned.unwrap_err().to_string();
+        assert!(
+            !message.contains("0 notes") && message.contains("plan the spend again"),
+            "no fresh selection is quoted as 0 notes for a fee of 0: {message}"
+        );
+        let bare = reserve(None).await;
+        assert!(
+            matches!(
+                bare,
+                Err(PlatformWalletError::ShieldedSpendTooManyNotes { needed: 7, max: 6 })
+            ),
+            "without a plan: got {bare:?}"
+        );
+    }
+
+    /// The public identity top-up runs against a plan as the other spends do: an unchanged
+    /// plan reaches the mocked anchor fetch, a moved one is refused with nothing reserved.
+    #[tokio::test]
+    async fn should_run_a_public_identity_top_up_against_its_plan() {
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0).expect("keys");
+        let store = store_with(&(0..3).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+        let amount = NOTE;
+        let plan = plan_spend(
+            &sdk(),
+            &store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::IdentityTopUp,
+            ShieldedSpendAmount::Exact(amount),
+        )
+        .await
+        .expect("plans");
+        let top_up = |expected: [u8; 32]| {
+            let (store, keys) = (Arc::clone(&store), &keys);
+            async move {
+                identity_top_up_from_pool_with_plan(
+                    &sdk(),
+                    &store,
+                    &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                    None,
+                    WALLET_ID,
+                    keys,
+                    0,
+                    Identifier::new([5; 32]),
+                    amount,
+                    &UnreachableProver,
+                    Some(&expected),
+                )
+                .await
+            }
+        };
+
+        let held = top_up(plan.digest).await;
+        assert!(
+            matches!(held, Err(PlatformWalletError::Sdk(_))),
+            "an unchanged plan must reach the mocked anchor fetch, got {held:?}"
+        );
+
+        store
+            .write()
+            .await
+            .save_note(ID, &note(9, 10 * NOTE))
+            .expect("a note");
+        let moved = top_up(plan.digest).await;
+        assert!(
+            matches!(moved, Err(PlatformWalletError::ShieldedPlanChanged { .. })),
+            "got {moved:?}"
+        );
+        assert_eq!(unspent(&store).await, 4, "nothing reserved");
+    }
+
+    /// The protocol version a `kind` spend starts at in these fixtures: 13, or 14 for an
+    /// identity top-up, which activates there ([`ensure_spend_kind_active`]).
+    fn start_version(kind: ShieldedSpendKind) -> u32 {
+        match kind {
+            ShieldedSpendKind::IdentityTopUp => 14,
+            _ => 13,
+        }
+    }
+
+    /// The fee of a `kind` plan made at its start version moves with the network's newest
+    /// version, except for an identity top-up, whose fee is the same from 14 to the newest:
+    /// the spend is refused there on the version moving alone, with the plan's own fee.
+    fn assert_fee_moved_with_version(
+        kind: ShieldedSpendKind,
+        fee_at_newest: Credits,
+        planned_fee: Credits,
+        context: &str,
+    ) {
+        match kind {
+            ShieldedSpendKind::IdentityTopUp => assert_eq!(
+                fee_at_newest, planned_fee,
+                "the fee holds from 14 ({context})"
+            ),
+            _ => assert_ne!(fee_at_newest, planned_fee, "the fee moved ({context})"),
+        }
+    }
+
+    /// A spend whose version check is the only thing in its way: one real note in a real
+    /// tree, a plan made at the kind's start version ([`start_version`]), and a mocked anchor
+    /// fetch whose answer moves the SDK to the newest version.
+    struct VersionMovesDuringAnchorFetch {
+        sdk: Arc<dash_sdk::Sdk>,
+        store: Arc<RwLock<crate::wallet::shielded::file_store::FileBackedShieldedStore>>,
+        plan: ShieldedSpendPlan,
+        path: std::path::PathBuf,
+        /// The spend's recorded-anchor cache: a zero TTL (nothing reused) unless
+        /// [`Self::with_warm_cache`] filled it.
+        anchor_cache: RecordedAnchorCache,
+        anchor: [u8; 32],
+    }
+
+    impl VersionMovesDuringAnchorFetch {
+        async fn new(kind: ShieldedSpendKind) -> Self {
+            Self::serving(kind, PlatformVersion::latest().protocol_version).await
+        }
+
+        /// The mocked answers report protocol version `served`, so one at the SDK's own
+        /// version teaches it nothing until [`Self::move_version_now`].
+        async fn serving(kind: ShieldedSpendKind, served: u32) -> Self {
+            Self::serving_with(kind, served, false).await
+        }
+
+        /// [`Self::serving`] for an SDK whose operation version is pinned to the kind's start
+        /// version
+        /// (`SdkBuilder::with_version`): it still learns the verified network version from
+        /// the answers, but never moves its own.
+        async fn serving_pinned(kind: ShieldedSpendKind, served: u32) -> Self {
+            Self::serving_with(kind, served, true).await
+        }
+
+        async fn serving_with(kind: ShieldedSpendKind, served: u32, pinned: bool) -> Self {
+            use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+            use dash_sdk::query_types::{NoParamQuery, ShieldedAnchors};
+
+            let path = select_recorded_spends_tests::temp_tree_path("version_moves");
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("a store");
+            let owned = select_recorded_spends_tests::real_note_worth(0, 10 * NOTE);
+            store.append_commitment(&owned.cmx, true).expect("a leaf");
+            store.checkpoint_tree(1).expect("a checkpoint");
+            let anchor = store.tree_anchor().expect("an anchor");
+            store.save_note(ID, &owned).expect("a note");
+            let store = Arc::new(RwLock::new(store));
+
+            let start = PlatformVersion::get(start_version(kind)).expect("the start version");
+            let builder = dash_sdk::SdkBuilder::new_mock();
+            let mut sdk = if pinned {
+                builder.with_version(start)
+            } else {
+                builder.with_initial_version(start)
+            }
+            .build()
+            .expect("a mock SDK");
+            assert_eq!(
+                sdk.protocol_version_number(),
+                start.protocol_version,
+                "the spend starts at its start version"
+            );
+            sdk.mock().set_response_protocol_version(served);
+            sdk.mock()
+                .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![anchor])))
+                .await
+                .expect("the anchor answer");
+            let sdk = Arc::new(sdk);
+            let plan = plan_spend(
+                &sdk,
+                &store,
+                WALLET_ID,
+                0,
+                kind,
+                ShieldedSpendAmount::Exact(NOTE),
+            )
+            .await
+            .expect("plans");
+            Self {
+                sdk,
+                store,
+                plan,
+                path,
+                anchor_cache: RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                anchor,
+            }
+        }
+
+        /// A cache that already holds the recorded set with the note's anchor, fetched at the
+        /// start version, as an earlier spend or the reservation-release pass leaves it.
+        async fn with_warm_cache(mut self) -> Self {
+            let size = self.store.read().await.tree_size().expect("a tree size");
+            let anchor_cache = RecordedAnchorCache::new();
+            let bound = anchor_cache
+                .for_sdk(&self.sdk)
+                .expect("a fresh cache binds");
+            bound.insert(
+                Arc::new([self.anchor].into_iter().collect()),
+                bound.stamp(),
+                size,
+                1,
+            );
+            assert!(bound.get(size).is_some(), "the cache serves the set");
+            self.anchor_cache = anchor_cache;
+            self
+        }
+
+        async fn run(
+            &self,
+            kind: ShieldedSpendKind,
+            expected_plan: Option<&[u8; 32]>,
+        ) -> Result<(), PlatformWalletError> {
+            self.run_with(kind, expected_plan, &UnreachableProver).await
+        }
+
+        /// The SDK learns the newest protocol version from the next answer it verifies, as
+        /// a verified query of another task would teach it.
+        fn move_version_now(sdk: &Arc<dash_sdk::Sdk>) {
+            use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+            use dash_sdk::query_types::ShieldedAnchors;
+
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    sdk.as_ref()
+                        .clone()
+                        .mock()
+                        .set_response_protocol_version(PlatformVersion::latest().protocol_version);
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("a runtime")
+                        .block_on(ShieldedAnchors::fetch_current_with_metadata(sdk))
+                        .expect("an answer");
+                });
+            });
+            assert_eq!(
+                sdk.protocol_version_number(),
+                PlatformVersion::latest().protocol_version,
+                "the SDK learned the newest version"
+            );
+        }
+
+        async fn run_with<P: OrchardProver>(
+            &self,
+            kind: ShieldedSpendKind,
+            expected_plan: Option<&[u8; 32]>,
+            prover: &P,
+        ) -> Result<(), PlatformWalletError> {
+            let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0).expect("keys");
+            let (sdk, store) = (&self.sdk, &self.store);
+            match kind {
+                ShieldedSpendKind::Transfer => {
+                    transfer_with_plan(
+                        sdk,
+                        store,
+                        &self.anchor_cache,
+                        None,
+                        WALLET_ID,
+                        &keys,
+                        0,
+                        &keys.default_address,
+                        NOTE,
+                        [0; 36],
+                        prover,
+                        expected_plan,
+                    )
+                    .await
+                }
+                ShieldedSpendKind::Unshield => {
+                    unshield_with_plan(
+                        sdk,
+                        store,
+                        &self.anchor_cache,
+                        None,
+                        WALLET_ID,
+                        &keys,
+                        0,
+                        &PlatformAddress::P2pkh([9; 20]),
+                        NOTE,
+                        prover,
+                        expected_plan,
+                    )
+                    .await
+                }
+                ShieldedSpendKind::Withdrawal { core_fee_per_byte } => {
+                    withdraw_with_plan(
+                        sdk,
+                        store,
+                        &self.anchor_cache,
+                        None,
+                        WALLET_ID,
+                        &keys,
+                        0,
+                        &dashcore::Address::dummy(Network::Testnet, 1),
+                        NOTE,
+                        core_fee_per_byte,
+                        prover,
+                        expected_plan,
+                    )
+                    .await
+                }
+                ShieldedSpendKind::IdentityTopUp => identity_top_up_from_pool_with_plan(
+                    sdk,
+                    store,
+                    &self.anchor_cache,
+                    None,
+                    WALLET_ID,
+                    &keys,
+                    0,
+                    Identifier::new([5; 32]),
+                    NOTE,
+                    prover,
+                    expected_plan,
+                )
+                .await
+                .map(|_| ()),
+            }
+        }
+    }
+
+    /// The network's protocol version advances while the spend fetches the recorded anchors
+    /// (the SDK learns it from that answer): every spend kind refuses before it builds, saves
+    /// activity or broadcasts, as a changed plan priced at the new version when it had a plan
+    /// and as a build error when it had none, and leaves its note unreserved.
+    #[tokio::test]
+    async fn should_refuse_a_spend_when_the_protocol_version_moved_during_the_anchor_fetch() {
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal {
+                core_fee_per_byte: 1,
+            },
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            for planned in [true, false] {
+                let case = VersionMovesDuringAnchorFetch::new(kind).await;
+                let refused = case.run(kind, planned.then_some(&case.plan.digest)).await;
+
+                assert_eq!(
+                    case.sdk.protocol_version_number(),
+                    PlatformVersion::latest().protocol_version,
+                    "the anchor fetch moved the version ({kind:?})"
+                );
+                let fresh = plan_spend(
+                    &case.sdk,
+                    &case.store,
+                    WALLET_ID,
+                    0,
+                    kind,
+                    ShieldedSpendAmount::Exact(NOTE),
+                )
+                .await
+                .expect("plans at the new version");
+                assert_fee_moved_with_version(kind, fresh.fee, case.plan.fee, &format!("{kind:?}"));
+                match (planned, &refused) {
+                    (true, Err(PlatformWalletError::ShieldedPlanChanged { fresh_selection })) => {
+                        assert_eq!(
+                            *fresh_selection, None,
+                            "a moved version quotes no selection it did not make ({kind:?})"
+                        )
+                    }
+                    (false, Err(PlatformWalletError::ShieldedBuildError(message))) => {
+                        assert!(
+                            message.contains(&start_version(kind).to_string())
+                                && message.contains(
+                                    &PlatformVersion::latest().protocol_version.to_string()
+                                ),
+                            "the build error names both versions: {message}"
+                        )
+                    }
+                    _ => panic!("{kind:?} planned={planned}: got {refused:?}"),
+                }
+                let guard = case.store.read().await;
+                assert_eq!(
+                    guard.get_unspent_notes(ID).expect("notes").len(),
+                    1,
+                    "the note is released ({kind:?})"
+                );
+                assert!(
+                    guard.get_activity_ids(ID).expect("activity").is_empty(),
+                    "no activity row ({kind:?})"
+                );
+                drop(guard);
+                let _ = std::fs::remove_file(&case.path);
+            }
+        }
+    }
+
+    /// A plan-checked spend never builds from a cached recorded-anchor set: with a warm cache
+    /// from the start version and a node that already serves the newest one, every spend kind
+    /// fetches the set, learns the new version from that answer and is refused as a changed
+    /// plan before anything is proved (the prover here panics), with its note released and no
+    /// activity row. A cache hit would have let it build at the plan's old fee.
+    #[tokio::test]
+    async fn should_fetch_the_anchor_set_for_a_plan_checked_spend_despite_a_warm_cache() {
+        use dash_sdk::dapi_grpc::platform::v0::get_shielded_anchors_request::{
+            self, GetShieldedAnchorsRequestV0,
+        };
+        use dash_sdk::dapi_grpc::platform::v0::GetShieldedAnchorsRequest;
+
+        let anchors_request = GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                GetShieldedAnchorsRequestV0 {
+                    prove: true,
+                    token_id: None,
+                },
+            )),
+        };
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal {
+                core_fee_per_byte: 1,
+            },
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            let case = VersionMovesDuringAnchorFetch::new(kind)
+                .await
+                .with_warm_cache()
+                .await;
+            let refused = case.run(kind, Some(&case.plan.digest)).await;
+
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::ShieldedPlanChanged {
+                        fresh_selection: None
+                    })
+                ),
+                "{kind:?}: got {refused:?}"
+            );
+            assert_eq!(
+                (*case.sdk)
+                    .clone()
+                    .mock()
+                    .request_count(&anchors_request)
+                    .await,
+                1,
+                "the spend fetched the recorded set ({kind:?})"
+            );
+            assert_eq!(
+                case.sdk.protocol_version_number(),
+                PlatformVersion::latest().protocol_version,
+                "the fetch taught the SDK the network's version ({kind:?})"
+            );
+            let guard = case.store.read().await;
+            assert_eq!(
+                guard.get_unspent_notes(ID).expect("notes").len(),
+                1,
+                "the note is released ({kind:?})"
+            );
+            assert!(
+                guard.get_activity_ids(ID).expect("activity").is_empty(),
+                "no activity row ({kind:?})"
+            );
+            drop(guard);
+            let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// When, after the spend checked the version at the anchor, the SDK learns the newer one.
+    #[derive(Clone, Copy, Debug)]
+    enum LearnsVersion {
+        /// While the proof is made, as a verified query of another task answers meanwhile.
+        WhileProving,
+        /// While the spend waits for the store to record its activity row.
+        WhileRecordingActivity,
+        /// While the proof is made, a pinned SDK verifies an answer of the newest network
+        /// version: its own version never moves, only the verified network version does.
+        VerifiedNetworkWhileProving,
+    }
+
+    /// The real prover, which first does what `when` asks of the world.
+    struct VersionMovingProver {
+        when: LearnsVersion,
+        sdk: Arc<dash_sdk::Sdk>,
+        store: Arc<RwLock<crate::wallet::shielded::file_store::FileBackedShieldedStore>>,
+        held: std::sync::Mutex<
+            Option<
+                tokio::sync::OwnedRwLockWriteGuard<
+                    crate::wallet::shielded::file_store::FileBackedShieldedStore,
+                >,
+            >,
+        >,
+        key: &'static crate::wallet::shielded::prover::CachedOrchardProver,
+    }
+
+    impl OrchardProver for VersionMovingProver {
+        fn proving_key(&self) -> &ProvingKey {
+            match self.when {
+                LearnsVersion::WhileProving => {
+                    VersionMovesDuringAnchorFetch::move_version_now(&self.sdk)
+                }
+                LearnsVersion::VerifiedNetworkWhileProving => self
+                    .sdk
+                    .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+                    .expect("a mock SDK"),
+                // The store stays locked from here, so the spend parks at the write that
+                // records its activity row.
+                LearnsVersion::WhileRecordingActivity => {
+                    *self.held.lock().expect("the lock") = Some(
+                        self.store
+                            .clone()
+                            .try_write_owned()
+                            .expect("nobody holds the store while proving"),
+                    );
+                }
+            }
+            OrchardProver::proving_key(&self.key)
+        }
+    }
+
+    /// The version check at the anchor passed, and the SDK learns the newer version later,
+    /// while the spend is proved or while its activity row is recorded: every spend kind is
+    /// refused as a changed plan priced at the new version, nothing is broadcast, and no
+    /// note stays reserved, no activity row pending and no recovery record saved.
+    #[tokio::test]
+    async fn should_refuse_a_spend_when_the_protocol_version_moved_after_the_anchor_check() {
+        let key: &'static crate::wallet::shielded::prover::CachedOrchardProver =
+            Box::leak(Box::default());
+        for when in [
+            LearnsVersion::WhileProving,
+            LearnsVersion::WhileRecordingActivity,
+        ] {
+            for kind in [
+                ShieldedSpendKind::Transfer,
+                ShieldedSpendKind::Unshield,
+                ShieldedSpendKind::Withdrawal {
+                    core_fee_per_byte: 1,
+                },
+                ShieldedSpendKind::IdentityTopUp,
+            ] {
+                let case = VersionMovesDuringAnchorFetch::serving(kind, start_version(kind)).await;
+                let prover = VersionMovingProver {
+                    when,
+                    sdk: case.sdk.clone(),
+                    store: case.store.clone(),
+                    held: std::sync::Mutex::new(None),
+                    key,
+                };
+                let mut spend = Box::pin(case.run_with(kind, Some(&case.plan.digest), &prover));
+                let refused = match when {
+                    LearnsVersion::WhileProving | LearnsVersion::VerifiedNetworkWhileProving => {
+                        spend.await
+                    }
+                    LearnsVersion::WhileRecordingActivity => {
+                        // Poll until the spend parks on the held store lock.
+                        loop {
+                            let polled = std::future::poll_fn(|cx| {
+                                std::task::Poll::Ready(spend.as_mut().poll(cx))
+                            })
+                            .await;
+                            if let std::task::Poll::Ready(done) = polled {
+                                panic!("{kind:?} was not parked on the store: {done:?}");
+                            }
+                            if prover.held.lock().expect("the lock").is_some() {
+                                break;
+                            }
+                            tokio::task::yield_now().await;
+                        }
+                        VersionMovesDuringAnchorFetch::move_version_now(&case.sdk);
+                        drop(prover.held.lock().expect("the lock").take());
+                        spend.await
+                    }
+                };
+
+                assert!(
+                    matches!(
+                        refused,
+                        Err(PlatformWalletError::ShieldedPlanChanged { .. })
+                    ),
+                    "{when:?} {kind:?} is refused as a changed plan, got {refused:?}"
+                );
+                let fresh = plan_spend(
+                    &case.sdk,
+                    &case.store,
+                    WALLET_ID,
+                    0,
+                    kind,
+                    ShieldedSpendAmount::Exact(NOTE),
+                )
+                .await
+                .expect("plans at the new version");
+                assert_fee_moved_with_version(
+                    kind,
+                    fresh.fee,
+                    case.plan.fee,
+                    &format!("{when:?} {kind:?}"),
+                );
+                match &refused {
+                    Err(PlatformWalletError::ShieldedPlanChanged { fresh_selection }) => {
+                        assert_eq!(
+                            *fresh_selection, None,
+                            "a moved version quotes no selection it did not make \
+                             ({when:?} {kind:?})"
+                        )
+                    }
+                    other => panic!("{when:?} {kind:?}: got {other:?}"),
+                }
+                let guard = case.store.read().await;
+                assert_eq!(
+                    guard.get_unspent_notes(ID).expect("notes").len(),
+                    1,
+                    "the note is released ({when:?} {kind:?})"
+                );
+                assert!(
+                    guard
+                        .get_activity(ID, 0, 10)
+                        .expect("activity")
+                        .iter()
+                        .all(|row| row.status != ShieldedActivityStatus::Pending),
+                    "no activity row reads in flight ({when:?} {kind:?})"
+                );
+                assert!(
+                    guard.pending_redrives(ID).expect("records").is_empty(),
+                    "no recovery record stays ({when:?} {kind:?})"
+                );
+                drop(guard);
+                let _ = std::fs::remove_file(&case.path);
+            }
+        }
+    }
+
+    /// What a pinned SDK's spend leaves behind when it is refused as a changed plan priced
+    /// at the newest network version: the note released, no activity row, no recovery record.
+    async fn assert_pinned_spend_refused(
+        case: &VersionMovesDuringAnchorFetch,
+        kind: ShieldedSpendKind,
+        refused: Result<(), PlatformWalletError>,
+    ) {
+        let network = PlatformVersion::latest().protocol_version;
+        let info = case.sdk.protocol_version_info();
+        assert_eq!(info.verified_version, Some(network), "{kind:?}");
+        assert_eq!(
+            case.sdk.protocol_version_number(),
+            start_version(kind),
+            "the pin held ({kind:?})"
+        );
+        let at_network = kind
+            .fee_kind()
+            .compute(SPEND_MIN_ACTIONS, PlatformVersion::latest())
+            .expect("the fee at the network version");
+        assert_fee_moved_with_version(kind, at_network, case.plan.fee, &format!("{kind:?}"));
+        match refused {
+            Err(PlatformWalletError::ShieldedPlanChanged { fresh_selection }) => assert_eq!(
+                fresh_selection, None,
+                "a moved version quotes no selection it did not make ({kind:?})"
+            ),
+            other => panic!("{kind:?}: got {other:?}"),
+        }
+        let guard = case.store.read().await;
+        assert_eq!(
+            guard.get_unspent_notes(ID).expect("notes").len(),
+            1,
+            "the note is released ({kind:?})"
+        );
+        assert!(
+            guard
+                .get_activity(ID, 0, 10)
+                .expect("activity")
+                .iter()
+                .all(|row| row.status != ShieldedActivityStatus::Pending),
+            "no activity row reads in flight ({kind:?})"
+        );
+        assert!(
+            guard.pending_redrives(ID).expect("records").is_empty(),
+            "no recovery record ({kind:?})"
+        );
+    }
+
+    const EVERY_SPEND_KIND: [ShieldedSpendKind; 4] = [
+        ShieldedSpendKind::Transfer,
+        ShieldedSpendKind::Unshield,
+        ShieldedSpendKind::Withdrawal {
+            core_fee_per_byte: 1,
+        },
+        ShieldedSpendKind::IdentityTopUp,
+    ];
+
+    /// The SDK is pinned to the kind's start version and has verified an answer of the newest
+    /// network version: its operation version stays put, so only the verified network version shows the plan was
+    /// priced at a version the network no longer applies. Every spend kind is refused before
+    /// it builds.
+    #[tokio::test]
+    async fn should_refuse_a_pinned_sdk_spend_whose_verified_network_version_differs() {
+        for kind in EVERY_SPEND_KIND {
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+            // The plan was made before the SDK verified anything newer.
+            case.sdk
+                .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+                .expect("a mock SDK");
+
+            let refused = case.run(kind, Some(&case.plan.digest)).await;
+
+            assert_pinned_spend_refused(&case, kind, refused).await;
+            let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// The same, learned after the check at the anchor passed: while the spend is proved.
+    #[tokio::test]
+    async fn should_refuse_a_pinned_sdk_spend_when_the_network_version_is_verified_while_proving() {
+        let key: &'static crate::wallet::shielded::prover::CachedOrchardProver =
+            Box::leak(Box::default());
+        for kind in EVERY_SPEND_KIND {
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+            let prover = VersionMovingProver {
+                when: LearnsVersion::VerifiedNetworkWhileProving,
+                sdk: case.sdk.clone(),
+                store: case.store.clone(),
+                held: std::sync::Mutex::new(None),
+                key,
+            };
+
+            let refused = case.run_with(kind, Some(&case.plan.digest), &prover).await;
+
+            assert_pinned_spend_refused(&case, kind, refused).await;
+            let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// A pinned SDK that already verified a different network version plans nothing: the fee
+    /// would be priced at a version the network does not apply, and the pin is not overridden.
+    #[tokio::test]
+    async fn should_refuse_to_plan_with_a_pinned_sdk_whose_verified_network_version_differs() {
+        let network = PlatformVersion::latest().protocol_version;
+        let case =
+            VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13).await;
+        case.sdk
+            .mock_verified_protocol_version(network)
+            .expect("a mock SDK");
+
+        let planned = plan_spend(
+            &case.sdk,
+            &case.store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Exact(NOTE),
+        )
+        .await;
+
+        assert!(
+            matches!(&planned, Err(PlatformWalletError::ShieldedBuildError(message))
+                if message.contains("13") && message.contains(&network.to_string())),
+            "got {planned:?}"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
+    /// A network on a protocol version this SDK has no tables for plans nothing, and says so
+    /// with its own error rather than a build error, so a host can ask for an app update.
+    #[tokio::test]
+    async fn should_refuse_to_plan_when_the_verified_network_version_is_unsupported() {
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        let case =
+            VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13).await;
+        case.sdk
+            .mock_verified_protocol_version(unsupported)
+            .expect("a mock SDK");
+
+        let planned = plan_spend(
+            &case.sdk,
+            &case.store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Exact(NOTE),
+        )
+        .await;
+
+        assert!(
+            matches!(
+                &planned,
+                Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                    network,
+                    latest_supported,
+                }) if *network == unsupported
+                    && *latest_supported == PlatformVersion::latest().protocol_version
+            ),
+            "got {planned:?}"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
+    /// The network version another task verifies while the plan's store read is suspended is
+    /// not planned around: the plan would price a fee at the pinned version that the network
+    /// does not apply, which the host would display and confirm but could never use.
+    #[tokio::test]
+    async fn should_refuse_to_plan_when_the_network_version_is_verified_during_the_store_read() {
+        use std::task::{Context, Poll, Waker};
+
+        let network = PlatformVersion::latest().protocol_version;
+        let case =
+            VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13).await;
+        // Hold the store so that the planner suspends at its read.
+        let held = case.store.write().await;
+        let mut planning = Box::pin(plan_spend(
+            &case.sdk,
+            &case.store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Exact(NOTE),
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            planning.as_mut().poll(&mut cx).is_pending(),
+            "planning waits for the store"
+        );
+        // Another task verifies a newer protocol version meanwhile.
+        case.sdk
+            .mock_verified_protocol_version(network)
+            .expect("a mock SDK");
+        drop(held);
+
+        let Poll::Ready(planned) = planning.as_mut().poll(&mut cx) else {
+            panic!("planning finishes once the store is free");
+        };
+        assert!(
+            matches!(&planned, Err(PlatformWalletError::ShieldedBuildError(message))
+                if message.contains("13") && message.contains(&network.to_string())),
+            "got {planned:?}"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
+    /// The network runs a protocol version this SDK has no tables for: the spend cannot be
+    /// priced at it, so it is refused with its own error, planned or not.
+    #[tokio::test]
+    async fn should_refuse_a_spend_when_the_verified_network_version_is_unsupported() {
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        for planned in [true, false] {
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13)
+                    .await;
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+
+            let refused = case
+                .run(
+                    ShieldedSpendKind::Unshield,
+                    planned.then_some(&case.plan.digest),
+                )
+                .await;
+
+            assert!(
+                matches!(
+                    &refused,
+                    Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                        network,
+                        latest_supported,
+                    }) if *network == unsupported
+                        && *latest_supported == PlatformVersion::latest().protocol_version
+                ),
+                "planned={planned}: got {refused:?}"
+            );
+            assert_eq!(
+                case.store
+                    .read()
+                    .await
+                    .get_unspent_notes(ID)
+                    .expect("notes")
+                    .len(),
+                1,
+                "the note is released"
+            );
+            let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// A network version this SDK has no tables for, verified before the spend starts, refuses
+    /// every spend kind, planned or not, before it takes the store lock to reserve notes, so
+    /// before it reserves any note or fetches an anchor: the spend finishes while the test
+    /// holds the store.
+    #[tokio::test]
+    async fn should_refuse_every_spend_before_reserving_when_the_verified_network_version_is_unsupported(
+    ) {
+        use std::task::{Context, Poll, Waker};
+
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        for kind in EVERY_SPEND_KIND {
+            for planned in [true, false] {
+                let case =
+                    VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+                case.sdk
+                    .mock_verified_protocol_version(unsupported)
+                    .expect("a mock SDK");
+                // Hold the store: a spend that tries to reserve a note waits here.
+                let held = case.store.read().await;
+
+                let mut spend = Box::pin(case.run(kind, planned.then_some(&case.plan.digest)));
+                let Poll::Ready(refused) =
+                    spend.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+                else {
+                    panic!("{kind:?} planned={planned} waited for the store to reserve notes");
+                };
+
+                assert!(
+                    matches!(
+                        &refused,
+                        Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                            network,
+                            latest_supported,
+                        }) if *network == unsupported
+                            && *latest_supported == PlatformVersion::latest().protocol_version
+                    ),
+                    "{kind:?} planned={planned}: got {refused:?}"
+                );
+                assert_eq!(
+                    held.get_unspent_notes(ID).expect("notes").len(),
+                    1,
+                    "nothing reserved ({kind:?} planned={planned})"
+                );
+                drop(spend);
+                drop(held);
+                let _ = std::fs::remove_file(&case.path);
+            }
+        }
+    }
+
+    /// A network version this SDK has no tables for, verified by another task while a spend
+    /// waits for the store lock to reserve its notes, refuses every spend kind, planned or not,
+    /// once the lock is held: nothing is selected at the old tables or reserved, and the host
+    /// gets the app-update signal without an anchor request.
+    #[tokio::test]
+    async fn should_refuse_every_spend_when_the_network_version_turns_unsupported_while_it_waits_for_the_store(
+    ) {
+        use std::task::{Context, Poll, Waker};
+
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        for kind in EVERY_SPEND_KIND {
+            for planned in [true, false] {
+                let case =
+                    VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+                // Hold the store: the spend passes its early gate and waits for the lock.
+                let held = case.store.read().await;
+                let mut spend = Box::pin(case.run(kind, planned.then_some(&case.plan.digest)));
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(
+                    spend.as_mut().poll(&mut cx).is_pending(),
+                    "{kind:?} planned={planned} waits for the store"
+                );
+                case.sdk
+                    .mock_verified_protocol_version(unsupported)
+                    .expect("a mock SDK");
+                drop(held);
+
+                let Poll::Ready(refused) = spend.as_mut().poll(&mut cx) else {
+                    panic!("{kind:?} planned={planned} went on to the anchor fetch");
+                };
+                assert!(
+                    matches!(
+                        &refused,
+                        Err(PlatformWalletError::NetworkProtocolVersionUnsupported { network, .. })
+                            if *network == unsupported
+                    ),
+                    "{kind:?} planned={planned}: got {refused:?}"
+                );
+                drop(spend);
+                assert_eq!(
+                    case.store
+                        .read()
+                        .await
+                        .get_unspent_notes(ID)
+                        .expect("notes")
+                        .len(),
+                    1,
+                    "nothing reserved ({kind:?} planned={planned})"
+                );
+                let _ = std::fs::remove_file(&case.path);
+            }
+        }
+    }
+
+    /// A spend whose verified network version this SDK has no tables for is refused as
+    /// unsupported before any check priced at the SDK's own version: a withdrawal amount out of
+    /// range at the SDK's version would otherwise be reported for a version the network does not
+    /// run. The SDK's own protocol gate on a transition (an identity top-up the SDK's version does
+    /// not activate) runs first and keeps its own not-sent refusal.
+    #[tokio::test]
+    async fn should_refuse_an_unsupported_network_version_before_any_check_priced_at_the_sdk_version(
+    ) {
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        let is_unsupported = |result: &Result<(), PlatformWalletError>| {
+            matches!(
+                result,
+                Err(PlatformWalletError::NetworkProtocolVersionUnsupported { network, .. })
+                    if *network == unsupported
+            )
+        };
+        async fn withdraw_one_credit(
+            case: &VersionMovesDuringAnchorFetch,
+            plan: Option<&[u8; 32]>,
+        ) -> Result<(), PlatformWalletError> {
+            let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0).expect("keys");
+            withdraw_with_plan(
+                &case.sdk,
+                &case.store,
+                &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                None,
+                WALLET_ID,
+                &keys,
+                0,
+                &dashcore::Address::dummy(Network::Testnet, 1),
+                1,
+                1,
+                &UnreachableProver,
+                plan,
+            )
+            .await
+        }
+        let withdrawal = ShieldedSpendKind::Withdrawal {
+            core_fee_per_byte: 1,
+        };
+
+        for planned in [true, false] {
+            // A one-credit withdrawal is out of range at the SDK's version...
+            let case = VersionMovesDuringAnchorFetch::serving_pinned(
+                withdrawal,
+                start_version(withdrawal),
+            )
+            .await;
+            let digest = planned.then_some(case.plan.digest);
+            let out_of_range = withdraw_one_credit(&case, digest.as_ref()).await;
+            assert!(
+                matches!(
+                    out_of_range,
+                    Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. })
+                ),
+                "planned={planned}: got {out_of_range:?}"
+            );
+            // ...but with an unsupported verified network version it is refused as that.
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+            let refused = withdraw_one_credit(&case, digest.as_ref()).await;
+            assert!(
+                is_unsupported(&refused),
+                "planned={planned}: got {refused:?}"
+            );
+            let _ = std::fs::remove_file(&case.path);
+
+            // An identity top-up is not active at 13, the SDK's pinned version: the SDK's own
+            // protocol gate refuses it first, before anything is reserved, with or without an
+            // unsupported verified network version.
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Transfer, 13)
+                    .await;
+            let digest = planned.then_some(case.plan.digest);
+            let is_not_active = |result: &Result<(), PlatformWalletError>| {
+                matches!(
+                    result,
+                    Err(PlatformWalletError::Sdk(
+                        dash_sdk::Error::ProtocolVersionNotActive { .. }
+                    ))
+                )
+            };
+            let inactive = case
+                .run(ShieldedSpendKind::IdentityTopUp, digest.as_ref())
+                .await;
+            assert!(
+                is_not_active(&inactive),
+                "planned={planned}: got {inactive:?}"
+            );
+            assert_eq!(
+                case.store
+                    .read()
+                    .await
+                    .get_unspent_notes(ID)
+                    .expect("notes")
+                    .len(),
+                1,
+                "nothing reserved (planned={planned})"
+            );
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+            let refused = case
+                .run(ShieldedSpendKind::IdentityTopUp, digest.as_ref())
+                .await;
+            assert!(
+                is_not_active(&refused),
+                "planned={planned}: got {refused:?}"
+            );
+            assert_eq!(
+                case.store
+                    .read()
+                    .await
+                    .get_unspent_notes(ID)
+                    .expect("notes")
+                    .len(),
+                1,
+                "nothing reserved (planned={planned})"
+            );
+            let _ = std::fs::remove_file(&case.path);
+
+            // A top-up the SDK's gate lets through (active at the SDK's version) is still
+            // refused as unsupported once the verified network version has no tables here.
+            let case = VersionMovesDuringAnchorFetch::serving_pinned(
+                ShieldedSpendKind::IdentityTopUp,
+                start_version(ShieldedSpendKind::IdentityTopUp),
+            )
+            .await;
+            let digest = planned.then_some(case.plan.digest);
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+            let refused = case
+                .run(ShieldedSpendKind::IdentityTopUp, digest.as_ref())
+                .await;
+            assert!(
+                is_unsupported(&refused),
+                "planned={planned}: got {refused:?}"
+            );
+            let _ = std::fs::remove_file(&case.path);
         }
     }
 }
@@ -10675,6 +14292,8 @@ mod token_shielded_transfer_tests {
             &mut reservation,
             &placeholder_transfer(),
             TOKEN_SHIELDED_TRANSFER_OPERATION,
+            None,
+            || Ok(()),
             move || std::future::ready(outcome),
         )
         .await;

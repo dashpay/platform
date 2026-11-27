@@ -39,7 +39,19 @@ mod dpns_tests {
             // DPNS contract's node is billed fewer bytes to reach (-287_760). The decision
             // proposals contract adds a third at protocol 15, which reshapes it back to as
             // many bytes as with the app-connect contract alone (+287_760, 95_920 a create).
-            6_049_360,
+            // The token market contract adds a fourth at protocol 16, which reshapes it so the
+            // DPNS node is billed fewer bytes to reach (-150_000).
+            5_899_360,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract.
+    /// Pinned so v15 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_dpns_contract_references_with_no_contested_unique_index_protocol_version_15() {
+        run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
+            15, 6_049_360,
         )
         .await;
     }

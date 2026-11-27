@@ -12,10 +12,13 @@ export default function renderServiceTemplatesFactory(renderTemplate) {
    *
    * @typedef {renderServiceTemplates}
    * @param {Config} config
+   * @param {Object} [scope] - which service files to render, all by default
+   * @param {string[]} [scope.skipDirectories] - top-level directories of the
+   *  templates whose files are not rendered
    *
    * @return {Object<string,string>}
    */
-  function renderServiceTemplates(config) {
+  function renderServiceTemplates(config, { skipDirectories = [] } = {}) {
     // Prevent node_key.json from containing the literal string "null".
     ensureTenderdashNodeKey(config);
 
@@ -31,6 +34,10 @@ export default function renderServiceTemplatesFactory(renderTemplate) {
       const configPath = templatePath
         .substring(TEMPLATES_DIR.length + 1)
         .replace('.dot', '');
+
+      if (skipDirectories.includes(configPath.split('/')[0])) {
+        continue;
+      }
 
       configFiles[configPath] = renderTemplate(templatePath, config.options);
     }

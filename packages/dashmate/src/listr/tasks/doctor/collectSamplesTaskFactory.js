@@ -3,15 +3,15 @@ import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
 import si from 'systeminformation';
-import obfuscateConfig from '../../../config/obfuscateConfig.js';
+import obfuscateConfig, { REDACTED_VALUE } from '../../../config/obfuscateConfig.js';
 import createSecretScrubber from '../../../doctor/createSecretScrubber.js';
 import getSampleFreeTextFields from '../../../doctor/getSampleFreeTextFields.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
-import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
-import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
+import probeGatewayCertificate from '../../../ssl/probeGatewayCertificate.js';
 import providers from '../../../status/providers.js';
+import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
 import { getOptionValue, isOption } from '../../../util/commandLineOption.js';
 import maskOperatorIdentity, { getOperatorIdentity } from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
@@ -50,7 +50,9 @@ async function fetchTextOrError(url) {
  * @param {Object} data - mutated in place
  * @param {function(string): string} scrub - masks the config's secrets
  * @param {string[]|null} [freeTextFields] - the only fields to rewrite, for
- *   a sample whose other fields are facts doctor decides on
+ *   a sample whose other fields are facts doctor decides on. Matched by the
+ *   name of the field holding each value, which is all the samples given one
+ *   here need: the SSL check's free text is its `data`, rewritten whole.
  */
 function obfuscateOperatorName(data, scrub, freeTextFields = null) {
   const identity = getOperatorIdentity();
@@ -72,8 +74,6 @@ function obfuscateOperatorName(data, scrub, freeTextFields = null) {
 function hideOperatorNameIn(text, scrub) {
   return maskOperatorIdentity(typeof text === 'string' ? scrub(text) : text, getOperatorIdentity());
 }
-
-const REDACTED_VALUE = '<redacted>';
 
 /**
  * @param {*} entry - a `NAME=value` string
@@ -214,6 +214,18 @@ function omitContainerCommand(inspect) {
     holder[field] = REDACTED_VALUE;
   }
 
+  // What the health check printed goes with its command: a probe can print a
+  // value the image brings. Its status, times and exit code stay.
+  const healthLog = inspect?.State?.Health?.Log;
+
+  if (Array.isArray(healthLog)) {
+    for (const entry of healthLog) {
+      if (entry !== null && typeof entry === 'object' && 'Output' in entry) {
+        entry.Output = REDACTED_VALUE;
+      }
+    }
+  }
+
   return values;
 }
 
@@ -263,6 +275,18 @@ export default function collectSamplesTaskFactory(
           task: async (ctx) => {
             ctx.samples.setDashmateVersion(DASHMATE_VERSION);
             ctx.samples.setDashmateConfig(obfuscateConfig(config));
+
+            // Tenderdash takes its ID from the node key, which the sampled
+            // config has redacted. The ID itself is public: Tenderdash
+            // announces it to every peer. The schema requires the node object
+            // but not the key in it, so the key is read off the object.
+            const nodeKey = config.get('platform.enable')
+              ? config.get('platform.drive.tenderdash.node').key
+              : null;
+
+            if (typeof nodeKey === 'string') {
+              ctx.samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', deriveTenderdashNodeId(nodeKey));
+            }
 
             return new Listr([
               {
@@ -332,6 +356,10 @@ export default function collectSamplesTaskFactory(
                         config,
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
+
+                      // The contact address is left out, as it is from the
+                      // config copy, which says whether it is set
+                      delete data?.email;
 
                       obfuscateOperatorName(data, scrub);
 
@@ -428,7 +456,11 @@ export default function collectSamplesTaskFactory(
                   // hands to whoever is helping them, so the path stays - it is
                   // what makes the problem actionable - and the name in it does
                   // not.
-                  obfuscateOperatorName(installed, scrub);
+                  obfuscateOperatorName(
+                    installed,
+                    scrub,
+                    getSampleFreeTextFields('gateway', 'installedCertificate'),
+                  );
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },
@@ -453,7 +485,7 @@ export default function collectSamplesTaskFactory(
                     state: renewal.state,
                     path: renewal.path,
                     error: renewal.error,
-                    ...renewal.record?.toObject(),
+                    ...renewal.record?.toDiagnosticObject(),
                   };
 
                   // Same treatment as the certificate above: the path is what
@@ -478,36 +510,16 @@ export default function collectSamplesTaskFactory(
                   && config.get('platform.gateway.ssl.provider') !== 'self-signed',
                 title: 'Gateway served certificate',
                 task: async () => {
-                  const listenerHost = config.get('platform.gateway.listeners.dapiAndDrive.host');
-                  const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
-
-                  const result = await probeServedCertificate({
-                    host: listenerHost === '0.0.0.0' ? '127.0.0.1' : listenerHost,
-                    port,
-                    externalIp: config.get('externalIp'),
-                  });
-
-                  result.port = port;
-
-                  if (result.state === PROBE_STATE.SERVED) {
-                    // Read beside the probe rather than at analysis time: renewal replaces the
-                    // file and signals the gateway moments apart, and the rest of the sample
-                    // collection takes long enough that the two would routinely be read from
-                    // either side of a renewal and reported as a mismatch.
-                    const onDisk = readCertificateBundle(path.join(
-                      homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl'),
-                      'bundle.crt',
-                    ));
-
-                    result.onDisk = onDisk && {
-                      fingerprint256: onDisk.fingerprint256,
-                      validTo: onDisk.validTo.toUTCString(),
-                    };
-
-                    result.matchesOnDisk = onDisk
-                      ? onDisk.fingerprint256 === result.certificate.fingerprint256
-                      : null;
-                  }
+                  // The bundle is read beside the probe rather than at analysis time: the rest
+                  // of the sample collection takes long enough that the two would routinely be
+                  // read from either side of a renewal and reported as a mismatch.
+                  const result = await probeGatewayCertificate(config, homeDir.joinPath(
+                    config.getName(),
+                    'platform',
+                    'gateway',
+                    'ssl',
+                    'bundle.crt',
+                  ));
 
                   ctx.samples.setServiceInfo('gateway', 'servedCertificate', result);
                 },
@@ -588,8 +600,8 @@ export default function collectSamplesTaskFactory(
               quorums,
               getBlockchainInfo,
               getPeerInfo,
-              masternodeStatus,
               masternodeSyncStatus,
+              masternodeStatus,
             ] = (await Promise.allSettled(coreCalls))
               .map((e) => e.value?.result || e.reason);
 

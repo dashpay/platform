@@ -97,20 +97,6 @@ pub enum WalletStorageError {
         source: std::io::Error,
     },
 
-    /// A database ancestor is writable without the sticky bit or is owned by
-    /// neither the current user nor root, allowing replacement despite `0600`.
-    ///
-    /// Names the offending ancestor rather than the database's own parent: the
-    /// walk runs to `/`, and a nine-component path leaves the user nothing to
-    /// act on otherwise.
-    #[error("{}", crate::parent_permissions::insecure_ancestor_message("database", .ancestor, .reason))]
-    InsecureParentDir {
-        /// The ancestor that was refused, not the database's parent.
-        ancestor: PathBuf,
-        /// Which of the two conditions fired; they need different remediations.
-        reason: crate::parent_permissions::InsecureAncestor,
-    },
-
     /// `delete_wallet` (or another wallet-id-keyed operation) was
     /// called with an id that has no matching `wallets` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
@@ -424,6 +410,38 @@ pub enum WalletStorageError {
         blob_height: Option<u32>,
     },
 
+    /// An incoming transaction record reuses a stored txid with a body whose
+    /// txid-committed content differs (witness-only differences are not a
+    /// conflict); neither copy is trusted to replace the other.
+    #[error(
+        "transaction {txid} in wallet {} arrived with a body whose txid differs from the stored one",
+        hex::encode(wallet_id)
+    )]
+    TransactionBodyConflict {
+        wallet_id: [u8; 32],
+        txid: dashcore::Txid,
+    },
+
+    /// The `wallets.network` label is not one this build knows, so stored
+    /// scripts cannot be turned back into addresses.
+    #[error(
+        "wallet {} has unknown network label {label:?}",
+        hex::encode(wallet_id)
+    )]
+    UnknownWalletNetwork { wallet_id: [u8; 32], label: String },
+
+    /// A transaction's net amount (owned outputs minus owned inputs) does not
+    /// fit the `i64` the record stores.
+    #[error(
+        "net amount {value} of transaction {txid} in wallet {} does not fit i64",
+        hex::encode(wallet_id)
+    )]
+    NetAmountOverflow {
+        wallet_id: [u8; 32],
+        txid: dashcore::Txid,
+        value: i128,
+    },
+
     /// A blob exceeded the decode allocation cap (default 16 MiB).
     /// Separate from [`Self::BlobDecode`] so operators can distinguish an
     /// oversize blob from a structural decode failure.
@@ -721,7 +739,6 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
-            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
@@ -761,6 +778,9 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
+            | Self::TransactionBodyConflict { .. }
+            | Self::UnknownWalletNetwork { .. }
+            | Self::NetAmountOverflow { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
@@ -806,6 +826,11 @@ impl WalletStorageError {
             // Typed re-mapping of an FK violation — same class as the raw
             // `ConstraintViolation` above, so it reports the same kind.
             Self::IdentityKeyWalletMismatch { .. } => PersistenceErrorKind::Constraint,
+            // History invariants checked in Rust on the write path: the incoming
+            // record contradicts stored history, so the data is wrong, not the engine.
+            Self::TransactionBodyConflict { .. } | Self::NetAmountOverflow { .. } => {
+                PersistenceErrorKind::Constraint
+            }
             // Refinery surfaces FK / constraint problems through rusqlite;
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
@@ -829,7 +854,6 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
-            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
@@ -866,6 +890,7 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
+            | Self::UnknownWalletNetwork { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
@@ -908,7 +933,6 @@ impl WalletStorageError {
             Self::SchemaVersionUnsupported { .. } => "schema_version_unsupported",
             Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
-            Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::WalletNotFound { .. } => "wallet_not_found",
             Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",
@@ -948,6 +972,9 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::AssetLockStatusMismatch { .. } => "asset_lock_status_mismatch",
             Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
+            Self::TransactionBodyConflict { .. } => "transaction_body_conflict",
+            Self::UnknownWalletNetwork { .. } => "unknown_wallet_network",
+            Self::NetAmountOverflow { .. } => "net_amount_overflow",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
             Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",

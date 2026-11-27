@@ -120,13 +120,19 @@ export default class DockerCompose {
    *
    * @param {Config} config
    * @param {Object} [options]
-   * @param {string[]} [options.profiles] - Filter by profiles
+   * @param {string[]} [options.profiles] - Filter by profiles, or with
+   *  serviceNames the profiles to enable
+   * @param {string[]} [options.serviceNames] - Check these services only
    * @return {Promise<boolean>}
    */
   async isNodeRunning(config, options = { profiles: [] }) {
     await this.throwErrorIfNotInstalled();
 
-    let serviceList = this.#getServiceList(config, options);
+    if (options.serviceNames) {
+      return this.#isAnyServiceRunning(config, options.serviceNames, options.profiles);
+    }
+
+    let serviceList = this.#getServiceList(config);
 
     if (options.profiles?.length > 0) {
       serviceList = serviceList.filter((service) => (
@@ -134,14 +140,35 @@ export default class DockerCompose {
       ));
     }
 
-    const filterServiceNames = serviceList.map((service) => service.name);
+    // The config's own profiles make up the model, so every service it
+    // enables is in the listing. The filter's profiles are not enabled: a
+    // selection without Core makes the project invalid when a selected
+    // service depends on Core.
+    return this.#isAnyServiceRunning(config, serviceList.map((service) => service.name));
+  }
 
-    const serviceContainers = await this.getContainersList(config, {
-      filterServiceNames,
-    });
+  /**
+   * List the project's running containers and pick the named services here
+   *
+   * `docker compose ps <names>` fails before Compose 2.15 when a named service
+   * has no container, and that read as "not running". Without names, older
+   * Compose versions leave out the containers of services whose profile is not
+   * enabled, so the profiles to enable come with the names.
+   *
+   * @param {Config} config
+   * @param {string[]} serviceNames
+   * @param {string[]} [profiles]
+   * @return {Promise<boolean>}
+   */
+  async #isAnyServiceRunning(config, serviceNames, profiles = []) {
+    if (serviceNames.length === 0) {
+      return false;
+    }
 
-    return serviceContainers
-      .find((container) => container.State === 'running') !== undefined;
+    const containers = await this.getContainersList(config, { profiles });
+
+    return containers.some(({ Service: service, State: state }) => state === 'running'
+      && serviceNames.includes(service));
   }
 
   /**
@@ -407,6 +434,7 @@ export default class DockerCompose {
    * @param {Object} [options={}] optional
    * @param {string|string[]} [options.filterServiceNames] - Filter by service name
    * @param {boolean} [options.all=false] - Return stopped containers as well
+   * @param {string[]} [options.profiles] - Profiles to enable
    * @return {Promise<object[]>}
    */
   async getContainersList(
@@ -414,6 +442,7 @@ export default class DockerCompose {
     {
       filterServiceNames = undefined,
       all = false,
+      profiles = [],
     } = {},
   ) {
     const commandOptions = ['--format', 'json'];
@@ -428,7 +457,7 @@ export default class DockerCompose {
 
     try {
       const { data: { json } } = await dockerCompose.ps({
-        ...this.#createOptions(config),
+        ...this.#createOptions(config, { profiles }),
         commandOptions,
       });
 
@@ -443,23 +472,139 @@ export default class DockerCompose {
   }
 
   /**
-   * Get list of Docker volumes
+   * A named volume of the given services, and the labels Docker gives such a
+   * volume when Compose creates it
+   *
+   * @typedef {Object} VolumeCandidate
+   * @property {string} name - the volume's Docker name
+   * @property {string} project - the Compose project that creates it
+   * @property {string[]} keys - the Compose keys the given services mount it
+   *  under: Docker labels a volume with the key Compose created it for, and
+   *  one created for another key was made for something else
+   */
+
+  /**
+   * Get the named volumes that only the given services use
+   *
+   * Docker knows a volume by its name, and several keys of the Compose files
+   * can give the same one, so each check is on that name. The project's whole
+   * model is read, every profile enabled by Compose's wildcard: given service
+   * names, Compose describes only them and what they depend on, and it leaves
+   * out a service whose profile is not enabled, with the keys only that
+   * service mounts. Either way the services that mount the same volume would
+   * go unseen. dashmate's own list of profiles misses one that only an
+   * override declares, and Compose cannot list them while a service the
+   * config enables depends on one it does not.
+   *
+   * A volume is left out when any key that names it is external, since the
+   * operator manages it, and when a service that is not removed with the
+   * given ones mounts it under any key, Core included, since removing it
+   * would take that service's data.
+   *
+   * Whether Docker has a candidate and whose it is are left to
+   * isVolumeOwned, asked just before the volume is removed.
    *
    * @param {Config} config
-   * @param {Object} [options]
-   * @param {string[]} [options.profiles] - Filter by profiles
-   * @return {Promise<string[]>}
+   * @param {Object} options
+   * @param {string[]} options.serviceNames - the services whose volumes are
+   *  looked up
+   * @param {string[]} [options.removedServiceNames] - every service removed
+   *  with them, the given ones included
+   * @return {Promise<VolumeCandidate[]>}
    */
-  async getVolumeNames(config, options = {}) {
+  async getVolumeCandidates(config, {
+    serviceNames,
+    removedServiceNames = serviceNames,
+  }) {
+    if (serviceNames.length === 0) {
+      return [];
+    }
+
+    await this.throwErrorIfNotInstalled();
+
+    let project;
     try {
-      const { data: { volumes } } = await dockerCompose.configVolumes({
-        ...this.#createOptions(config, options),
+      const { out } = await dockerCompose.execCompose('config', [], {
+        ...this.#createOptions(config, { profiles: ['*'] }),
+        commandOptions: ['--format', 'json'],
       });
 
-      return volumes;
+      project = JSON.parse(out);
     } catch (e) {
       throw new DockerComposeError(e);
     }
+
+    const { services = {}, volumes = {} } = project;
+    const projectName = project.name ?? this.#generateEnvs(config).COMPOSE_PROJECT_NAME;
+
+    // Without the service its volumes are unknown, and skipping it would
+    // leave them in place unnoticed.
+    serviceNames.forEach((serviceName) => {
+      if (!services[serviceName]) {
+        throw new Error(`Docker Compose did not describe service '${serviceName}' in 'docker compose config'`);
+      }
+    });
+
+    const getDockerName = (key) => volumes[key]?.name ?? `${projectName}_${key}`;
+
+    const getMountedKeys = (service) => (service.volumes ?? [])
+      .filter((mount) => mount.type === 'volume' && mount.source)
+      .map((mount) => mount.source);
+
+    // Docker name to every key of the model that names it
+    const keysByName = new Map();
+    new Set([...Object.keys(volumes), ...Object.values(services).flatMap(getMountedKeys)])
+      .forEach((key) => {
+        const name = getDockerName(key);
+
+        keysByName.set(name, (keysByName.get(name) ?? new Set()).add(key));
+      });
+
+    const namesMountedElsewhere = new Set(Object.entries(services)
+      .filter(([serviceName]) => !removedServiceNames.includes(serviceName))
+      .flatMap(([, service]) => getMountedKeys(service))
+      .map(getDockerName));
+
+    const mountedKeys = Array.from(new Set(serviceNames
+      .flatMap((serviceName) => getMountedKeys(services[serviceName]))));
+
+    const names = new Set(mountedKeys.map(getDockerName));
+
+    return Array.from(names)
+      .filter((name) => !namesMountedElsewhere.has(name))
+      .filter((name) => !Array.from(keysByName.get(name)).some((key) => volumes[key]?.external))
+      .map((name) => ({
+        name,
+        project: projectName,
+        keys: mountedKeys.filter((key) => getDockerName(key) === name),
+      }));
+  }
+
+  /**
+   * Whether Docker has the volume and labels it as created by its project for
+   * one of its keys
+   *
+   * A mounted volume is not necessarily the project's own: an override can
+   * mount one that another project created under the same explicit name.
+   *
+   * @param {VolumeCandidate} candidate
+   * @return {Promise<boolean>}
+   */
+  async isVolumeOwned({ name, project, keys }) {
+    let labels;
+    try {
+      ({ Labels: labels } = await this.#docker.getVolume(name).inspect());
+    } catch (e) {
+      // Never created, so nothing to remove
+      if (e.statusCode === 404) {
+        return false;
+      }
+
+      throw e;
+    }
+
+    return labels?.['com.docker.compose.project'] === project
+      && keys.includes(labels?.['com.docker.compose.volume']);
   }
 
   /**

@@ -3,10 +3,12 @@
 //! Validator-verified proof. Production batches remain capped at one.
 
 use super::token_shielded_pool_tests::{
-    assert_tokens_conserved, build_shield_bundle, build_spend_bundle, enable_shielded_pool,
-    insert_token_pool_anchor, nullifier_is_spent, platform_with_latest_version, pool_balance,
-    pool_notes_count, process, spendable_note, SHIELD_AMOUNT,
+    assert_tokens_conserved, assert_tokens_conserved_at_protocol_version, build_shield_bundle,
+    build_spend_bundle, enable_shielded_pool, insert_token_pool_anchor, nullifier_is_spent,
+    platform_with_latest_version, pool_balance, pool_notes_count, process,
+    process_at_protocol_version, spendable_note, SHIELD_AMOUNT,
 };
+use crate::test::helpers::setup::TestPlatformBuilder;
 use super::*;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::processor::traits::identity_balance::StateTransitionIdentityBalanceValidationV0;
@@ -67,9 +69,11 @@ struct FundedPool {
 }
 
 impl FundedPool {
-    async fn sponsored_card(shielded: bool) -> Self {
-        let version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+    async fn sponsored_card(shielded: bool, version: &PlatformVersion) -> Self {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
         let (identity, signer, key) = setup_identity(&mut platform, 70_501, dash_to_credits!(1.0));
         let (sponsor, _, _) = setup_identity(&mut platform, 70_507, dash_to_credits!(1.0));
         let contract_id = DataContract::generate_data_contract_id_v0(sponsor.id(), 1);
@@ -744,7 +748,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "7775176ede9a6676c614f43f4adf2fd35ff6a09b7c80fea554fe8b45d607d062"
+        "0d32615dcce391c379ff87ffe632cbe8e389956effde3b68bb8cc6819401d589"
     );
     assert_eq!(
         pool.platform
@@ -1783,9 +1787,33 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
 
 #[tokio::test]
 async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution() {
+    // PROTOCOL_VERSION_16: the token market contract joins the genesis contracts tree, which
+    // changes the actual processing fee.
+    run_real_single_payment_sponsor_at_protocol_version(
+        PlatformVersion::latest().protocol_version,
+        3_870_440,
+        92_739_560,
+    )
+    .await;
+}
+
+/// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract. Pinned so
+/// v15 chain history stays bit-for-bit reproducible.
+#[tokio::test]
+async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution_protocol_version_15(
+) {
+    run_real_single_payment_sponsor_at_protocol_version(15, 3_916_360, 92_785_480).await;
+}
+
+async fn run_real_single_payment_sponsor_at_protocol_version(
+    protocol_version: u32,
+    actual_processing_transparent: u64,
+    actual_processing_shielded: u64,
+) {
+    let version =
+        PlatformVersion::get(protocol_version).expect("expected a known protocol version");
     for shielded in [false, true] {
-        let pool = FundedPool::sponsored_card(shielded).await;
-        let version = PlatformVersion::latest();
+        let pool = FundedPool::sponsored_card(shielded, version).await;
         let mut rng = StdRng::seed_from_u64(70_508);
         let card_type = pool.contract.document_type_for_name("card").unwrap();
         let (document, entropy) = super::document_shielded_token_payment_tests::random_card(
@@ -1897,7 +1925,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             .unwrap()
             .unwrap();
         let before = pool_notes_count(&pool.platform, pool.token_id);
-        let result = process(&pool.platform, &transition);
+        let result = process_at_protocol_version(&pool.platform, &transition, version);
         println!(
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
@@ -1906,9 +1934,19 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_785_480)
+                (
+                    171_126_000,
+                    213_389_040,
+                    155_142_000,
+                    actual_processing_shielded,
+                )
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_916_360)
+                (
+                    138_024_000,
+                    117_713_120,
+                    126_468_000,
+                    actual_processing_transparent,
+                )
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -1961,7 +1999,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             assert_eq!(pool_notes_count(&pool.platform, pool.token_id), before);
             assert_eq!(pool_balance(&pool.platform, pool.token_id), 15);
         }
-        assert_tokens_conserved(&pool.platform);
+        assert_tokens_conserved_at_protocol_version(&pool.platform, version);
     }
 }
 
@@ -2202,39 +2240,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "7dd1f295a9a9b60092f07461255c4674f2304b1cf0acb1db035435123b41a322",
+                "6f079f15653c3ce2c060638558199882ab353be971c11dff202f6d1df0a3ab91",
             ),
             "valid-payment" => (
                 "c45968b193c120f67d1e9ff916dec97d4399b2fe6d2d3633d03dc80c50418a3a",
-                "50f443124d8d86b7524bcf3a2d588fa97800e6b85e327547018cd8cd7ae68c2a",
+                "7b9460a2ebc4c106283b81343342c278b52e297d659a305341d4835bc46f7cfd",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "d119b9aa19edbca8f3bc46253dd5f3af3f476619142552ce991f9ae7f028f7c8",
+                "11a9cfcb0d3a875989ee38850fff27d81c25b291a5e1f987320261a4db0f1532",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "5ec7ac3c9957e775e95c2e0e46473122aba5910b8de02ceb5232ade827f4ea48",
+                "a56e5d0bc9130717950924fcdfbec2f6bf86f7d7f17889af3cb3ba15d1d41029",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "e52acc36821db4fd55baec552b3b65bab1b17c224913a1d8ce3f2c6b73952eb4",
+                "4279909c02a058aaee818adfcbeb1395ba5adb54b3ee3bf88fb097064ad4544d",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "9e3b9fef174a39160a4ee6e510fd8387b2b87795464c06c2447fbe3aca268d1a",
+                "1c4fd8a9e9a73b2065e0b5e0ca50c9d6731aa366a213c7e008218c921882a6bc",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "08b4d9c6a4e32d802839d2fef0d80b7b55fa8dab8a2ecda9169a08b31bfaf162",
+                "33b3eeab935208cbc0298a8a85383b2086ecfc801f460daf802305c9716748ab",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "53d73f296715a8acff75090dee6b4300ff2d0fea40dad6ecd6c351044cc764b9",
+                "0e15d1cbff1f45da08fe0134187cfbd8a3a5c7cc05ba7f74ce43edd92f1ca807",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "0edfa92c12118ddd7fb6d6159d77311f3e23781bbeec6d5e67c2075903e8ed43",
+                "65f79ba0d3a1932a94e7faf6749bea8b43bf4f9066c0a16ee0db6ee57386b860",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

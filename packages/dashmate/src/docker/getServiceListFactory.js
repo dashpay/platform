@@ -15,9 +15,12 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
    *
    * @typedef {function} getServiceList
    * @param {Config} config
+   * @param {Object} [options]
+   * @param {boolean} [options.allProfiles=false] - Also list the services of
+   *  profiles the config does not enable
    * @return {Object[]}
    */
-  function getServiceList(config) {
+  function getServiceList(config, { allProfiles = false } = {}) {
     const envs = generateEnvs(config);
 
     const composeFiles = envs.COMPOSE_FILE.split(':').map((filenameOrPath) => {
@@ -64,6 +67,10 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
           profiles: serviceProfiles ?? [],
         });
       });
+
+    if (allProfiles) {
+      return services;
+    }
 
     return services.filter((service) => service.profiles.length === 0
       || service.profiles.some((serviceProfile) => profiles.includes(serviceProfile)));

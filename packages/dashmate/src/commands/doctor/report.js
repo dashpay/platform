@@ -53,13 +53,17 @@ The command collects diagnostic information and creates an archive, with the nod
   Masked: secrets in the current node configuration (private keys, passwords,
   API keys, build arguments, command-line option values, credentials in URLs),
   the values of container environment variables, your home directory, and your
-  user name in logs, paths, the node description and contact addresses. The
-  commands containers run, health checks included, are left out. Copies of
-  those config secrets in logs and other collected data are masked when they
-  are 8 characters or longer.
+  user name in logs and paths. The commands containers run, what their health
+  checks print, and the node description and the Let's Encrypt contact address
+  in the config copy are left out; a log can still quote the contact address.
+  Copies of those config secrets in logs, RPC responses, messages and paths are
+  masked when they are 8 characters or longer. The values doctor decides on,
+  such as certificate status codes, dates and fingerprints, are kept as they
+  are.
 
-  Logs can still contain other sensitive text, such as earlier passwords or short
-  values, so review the archive before you share it. The rest is diagnostic data
+  The archive can still contain other sensitive text, such as earlier passwords,
+  short values, or a secret spelled like one of those kept values, so review it
+  before you share it. The rest is diagnostic data
   about your node, including its addresses, host details, certificate settings
   and logs, and is shared with whoever you send the archive to.
 
@@ -87,10 +91,10 @@ The command collects diagnostic information and creates an archive, with the nod
           task: async (ctx, task) => {
             const archivePath = process.cwd();
 
-            await archiveSamples(ctx.samples, archivePath, config);
+            const archiveFilePath = await archiveSamples(ctx.samples, archivePath, config);
 
             // eslint-disable-next-line no-param-reassign
-            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.samples.date.toISOString()}.tar.gz}`;
+            task.output = chalk`Saved to {bold.cyanBright ${archiveFilePath}}`;
           },
           options: {
             persistentOutput: true,
@@ -100,6 +104,9 @@ The command collects diagnostic information and creates an archive, with the nod
       {
         renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
+          // Wrapped rather than cut at the terminal's width: what the report
+          // says includes paths the operator has to act on
+          formatOutput: 'wrap',
           clearOutput: false,
           showTimer: isVerbose,
           removeEmptyLines: false,

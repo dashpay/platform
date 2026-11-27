@@ -380,8 +380,9 @@ class IdentityUpdates internal constructor(
      * [walletHandle]: port of Swift's `ManagedPlatformWallet.refreshIdentity(identityId:)`,
      * bridging `platform_wallet_refresh_identity`. Keys added or raised on another client
      * are taken in, and a node behind the wallet's copy cannot roll it back. Changed key rows
-     * reach Room through the persister; as for every refresh, a failed store is logged by
-     * Rust, not thrown, so success means the wallet's copy is current.
+     * reach Room through the persister. A failed store is thrown and leaves the wallet's
+     * copy as it was, so a retry still includes those keys: success means the wallet's copy
+     * is current and the rows were stored.
      */
     suspend fun refreshIdentity(walletHandle: Long, identityId: ByteArray) {
         val id = identityId.copyOf()

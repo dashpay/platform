@@ -106,7 +106,6 @@ pub struct IdentitySyncConfigSnapshot {
 pub struct CoreWalletStateSnapshot {
     pub synced_height: u32,
     pub last_processed_height: u32,
-    pub monitor_revision: u64,
 }
 
 /// Snapshot of the identity-wallet scan state for a single wallet,
@@ -142,7 +141,7 @@ pub struct PlatformAddressProviderStateSnapshot {
 
 // `WalletInfoMetadataSnapshot` and `wallet_info_metadata_blocking`
 // were removed: the diagnostic explorer's "PlatformWalletInfo Metadata"
-// section duplicated `CoreWalletStateSnapshot` (heights/revision) and
+// section duplicated `CoreWalletStateSnapshot` (heights) and
 // surfaced fields with no active populator (total_transactions is
 // event-driven; first_loaded_at isn't stamped on this path; name /
 // description are wallet-row labels, not part of the in-memory diag
@@ -175,7 +174,6 @@ pub struct TrackedAssetLockSnapshot {
 pub struct AccountMetadataSnapshot {
     pub total_transactions: u64,
     pub total_utxos: u64,
-    pub monitor_revision: u64,
 }
 
 /// Snapshot of one address-pool slot for the per-account drill-down.
@@ -802,11 +800,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         // "used" counts only funded addresses; a `Reserved`
                         // address is handed out but not yet used.
                         let pool_used = pool
-                            .addresses
+                            .addresses()
                             .values()
                             .filter(|info| matches!(info.state, AddressState::Used))
                             .count() as u32;
-                        let pool_total = pool.addresses.len() as u32;
+                        let pool_total = pool.addresses().len() as u32;
                         (used + pool_used, total + pool_total)
                     });
                 AccountBalanceRow {
@@ -888,27 +886,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     // -----------------------------------------------------------------
 
     /// Snapshot of the core wallet's SPV bookkeeping for a single
-    /// wallet. `monitor_revision` is the max across every account on
-    /// the wallet — the max picks up the most recent address-set
-    /// mutation the bloom-filter rebuilder cares about.
+    /// wallet.
     pub fn core_wallet_state_blocking(
         &self,
         wallet_id: &WalletId,
     ) -> Option<CoreWalletStateSnapshot> {
         let wm = self.wallet_manager.blocking_read();
         let info = wm.get_wallet_info(wallet_id)?;
-        let monitor_revision = info
-            .core_wallet
-            .accounts
-            .all_accounts()
-            .iter()
-            .map(|a| a.monitor_revision())
-            .max()
-            .unwrap_or(0);
         Some(CoreWalletStateSnapshot {
             synced_height: info.core_wallet.metadata.synced_height,
             last_processed_height: info.core_wallet.metadata.last_processed_height,
-            monitor_revision,
         })
     }
 
@@ -1139,7 +1126,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // 0 in production builds.
             total_transactions: account.transactions().len() as u64,
             total_utxos: funds.map(|a| a.utxos.len() as u64).unwrap_or(0),
-            monitor_revision: account.monitor_revision(),
         })
     }
 
@@ -1319,10 +1305,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<ProviderMasternodeTxs> {
+        use crate::wallet::provider_key_at_index::PROVIDER_KEY_WINDOW;
         use key_wallet::managed_account::address_pool::PublicKeyType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        // Default provider-key pre-derivation / scan window.
-        const PROVIDER_KEY_WINDOW: u32 = 20;
 
         // Scope the wallet-manager read lock so it's released before we
         // acquire the SPV client / engine locks for the DML snapshot — the
@@ -1375,7 +1360,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     acct.managed_account_type()
                         .address_pools()
                         .iter()
-                        .filter_map(|p| p.highest_generated)
+                        .filter_map(|p| p.highest_generated())
                         .max()
                 })
                 .map(|h| h.saturating_add(1))
@@ -1393,7 +1378,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 std::collections::HashMap::new();
             if let Some(acct) = info.core_wallet.accounts.provider_platform_keys.as_ref() {
                 for pool in acct.managed_account_type().address_pools() {
-                    for entry in pool.addresses.values() {
+                    for entry in pool.addresses().values() {
                         if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
                             if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
                                 let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32))
@@ -1437,15 +1422,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     false,
                 ) {
                     Ok(key) => {
-                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
-                            operator_index.insert(bytes, index);
-                        }
-                        if let Some(legacy) = key
-                            .legacy_public_key_bytes
-                            .as_deref()
-                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
-                        {
-                            operator_index.insert(legacy, index);
+                        if let Some((basic, legacy)) = key.operator_key_forms() {
+                            operator_index.insert(basic, index);
+                            if let Some(legacy) = legacy {
+                                operator_index.insert(legacy, index);
+                            }
                         }
                     }
                     // First failure ⇒ no operator account (or unavailable) ⇒ stop.
@@ -1529,30 +1510,30 @@ fn asset_lock_funding_type_to_u8(
 }
 
 fn pool_snapshot(pool: &AddressPool) -> AccountAddressPoolSnapshot {
-    let pool_type: u8 = match pool.pool_type {
+    let pool_type: u8 = match pool.pool_type() {
         AddressPoolType::External => 0,
         AddressPoolType::Internal => 1,
         AddressPoolType::Absent => 2,
         AddressPoolType::AbsentHardened => 3,
     };
-    let last_used_index: i64 = pool.highest_used.map(|i| i as i64).unwrap_or(-1);
-    let addresses = pool.addresses.values().map(addr_info_snapshot).collect();
+    let last_used_index: i64 = pool.highest_used().map(|i| i as i64).unwrap_or(-1);
+    let addresses = pool.addresses().values().map(addr_info_snapshot).collect();
     AccountAddressPoolSnapshot {
         pool_type,
-        gap_limit: pool.gap_limit,
+        gap_limit: pool.gap_limit(),
         last_used_index,
         addresses,
     }
 }
 
 fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
-    // The address pool stores `script_pubkey` directly. P2PKH is the
+    // The pool derives P2PKH addresses. P2PKH is the
     // dominant shape here, so pull the 20-byte HASH160 out via
     // `p2pkh_public_key_hash_bytes`. Non-P2PKH script types simply
     // surface zeroed bytes — the diagnostic surface stays a flat
     // `[u8; 20]` either way.
     let mut pubkey_hash = [0u8; 20];
-    if let Some(bytes) = info.script_pubkey.p2pkh_public_key_hash_bytes() {
+    if let Some(bytes) = info.address.script_pubkey().p2pkh_public_key_hash_bytes() {
         if bytes.len() == 20 {
             pubkey_hash.copy_from_slice(bytes);
         }
@@ -1938,9 +1919,10 @@ mod computed_balance_tests {
                 network: key_wallet::Network::Testnet,
                 account_xpub: contact_xpub,
                 is_watch_only: true,
-            });
+            })
+            .expect("managed contact account");
             let contact_address = managed
-                .next_address_with_info(Some(&contact_xpub), true)
+                .next_address_with_info(Some(&contact_xpub))
                 .expect("contact address")
                 .address;
             wallet
@@ -2190,6 +2172,8 @@ pub(crate) mod txo_inventory_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };

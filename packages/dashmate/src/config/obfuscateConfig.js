@@ -29,6 +29,10 @@ const VALUE_KIND = {
   PLAIN: 'plain',
   // Hidden whole
   SECRET: 'secret',
+  // Free text the operator writes, which nothing reads as a value: left out
+  // whole, keeping only whether it was set, since it can quote a secret or a
+  // link in any form
+  FREE_TEXT: 'freeText',
   // An argument for a service's own command line, where an option can carry a
   // key or a password as `-name=value`: the value is hidden, the name kept.
   // Core reads values only after `=` and refuses a bare argument, so one
@@ -48,9 +52,15 @@ function classifyValue(field, parentField, grandparentField) {
     return VALUE_KIND.SECRET;
   }
 
-  // Build arguments and command arguments are recognised where the schema
-  // puts them. Other things can carry the same names - a Drive logger can be
-  // named anything - and their values are ones the config has to keep.
+  // Free text, build arguments and command arguments are recognised where
+  // the schema puts them. Other things can carry the same names - a Drive
+  // logger or a field of a JSON access log template can be named anything -
+  // and their values are ones the config has to keep.
+  if ((field === 'description' && parentField === undefined)
+    || (field === 'email' && parentField === 'letsencrypt' && grandparentField === 'providerConfigs')) {
+    return VALUE_KIND.FREE_TEXT;
+  }
+
   if (parentField === 'buildArgs' && grandparentField === 'build') {
     return NON_SECRET_BUILD_ARGS.includes(field) ? VALUE_KIND.PLAIN : VALUE_KIND.SECRET;
   }
@@ -80,10 +90,9 @@ function forEachStringValue(object, callback, parentField = undefined, grandpare
 }
 
 /**
- * Config fields whose values are free text an operator writes, and nothing
- * reads as a value
+ * What the report carries in place of a value it leaves out
  */
-const FREE_TEXT_FIELD_NAMES = ['description', 'email'];
+export const REDACTED_VALUE = '<redacted>';
 
 /**
  * @param {string} value
@@ -285,14 +294,21 @@ export function getConfigSecretValues(config) {
  * @param {Config} config
  * @return {Config}
  */
-export default function obfuscateConfig(
-  config,
-) {
+export default function obfuscateConfig(config) {
   const identity = getOperatorIdentity();
 
   const clonedOptions = lodash.cloneDeep(config.getOptions());
 
   forEachStringValue(clonedOptions, (object, field, kind) => {
+    if (kind === VALUE_KIND.FREE_TEXT) {
+      if (object[field] !== '') {
+        // eslint-disable-next-line no-param-reassign
+        object[field] = REDACTED_VALUE;
+      }
+
+      return;
+    }
+
     let value = object[field];
 
     if (kind === VALUE_KIND.SECRET) {
@@ -309,15 +325,13 @@ export default function obfuscateConfig(
     // the samples, except that a home directory is written `/~`: the schema
     // requires log paths to be absolute, and doctor validates this copy when
     // it reads a report back. The account name is masked where it can name
-    // the operator - in paths and in free text - but not in values the
-    // config is made of, which it can be spelled like: an account named
-    // `info` or `production` would otherwise change a log level or the
-    // environment, or make the copy invalid.
-    const namesOperator = isLocalPath(value) || FREE_TEXT_FIELD_NAMES.includes(field);
-
+    // the operator - in paths - but not in values the config is made of,
+    // which it can be spelled like: an account named `info` or `production`
+    // would otherwise change a log level or the environment, or make the
+    // copy invalid.
     value = maskOperatorIdentity(
       value,
-      namesOperator ? identity : { ...identity, username: null },
+      isLocalPath(value) ? identity : { ...identity, username: null },
       { homeReplacement: '/~' },
     );
 

@@ -45,7 +45,7 @@ pub(crate) fn platform_payment_account_candidate_addresses(
     merge_platform_payment_candidate_addresses(
         account
             .addresses
-            .addresses
+            .addresses()
             .values()
             .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok()),
         account.address_balances.keys().copied(),
@@ -370,7 +370,7 @@ impl PlatformAddressWallet {
                     if account.key_class != 0 {
                         continue;
                     }
-                    for (&index, addr_info) in &account.addresses.addresses {
+                    for (&index, addr_info) in account.addresses.addresses() {
                         if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
                             out.entry(p2pkh).or_insert((account.account, index));
                         }
@@ -708,7 +708,7 @@ impl PlatformAddressWallet {
 
         let address = managed_account
             .addresses
-            .next_unused(&key_source, true)
+            .next_unused(&key_source)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
 
         PlatformAddress::try_from(address).map_err(|e| {

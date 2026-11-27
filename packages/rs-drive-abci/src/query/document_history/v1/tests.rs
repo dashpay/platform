@@ -1972,6 +1972,7 @@ fn should_surface_oversized_merged_transfer_proof_as_unusable_verified_result_wh
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(signed),
                 ),
                 metadata: Some(metadata.clone()),
+                state_before_block: None,
             },
         )),
     };
@@ -2002,6 +2003,7 @@ fn should_surface_oversized_merged_transfer_proof_as_unusable_verified_result_wh
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(bad_sig),
                 ),
                 metadata: Some(metadata),
+                state_before_block: None,
             },
         )),
     };

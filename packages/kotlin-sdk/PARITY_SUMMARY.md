@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **54**
+Capabilities tracked: **58**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 33 | 18 | 2 | 1 |
-| Swift | Example app | 6 | 37 | 2 | 9 |
-| Kotlin | SDK | 29 | 22 | 2 | 1 |
-| Kotlin | Example app | 7 | 35 | 2 | 10 |
+| Swift | SDK | 37 | 18 | 2 | 1 |
+| Swift | Example app | 6 | 37 | 5 | 10 |
+| Kotlin | SDK | 31 | 22 | 4 | 1 |
+| Kotlin | Example app | 7 | 35 | 5 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 20 | 32 |
-| Kotlin | 9 | 18 | 27 |
+| Swift | 2 | 20 | 36 |
+| Kotlin | 9 | 18 | 31 |
 
 ## Capability status
 
@@ -31,6 +31,7 @@ Capabilities tracked: **54**
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
 | `dashpay.invitations` | supported / partial / required | supported / partial / required |
+| `dashpay.invitation_claim_status_for_identity` | supported / not-applicable / not_applicable | unsupported / not-applicable / not_applicable |
 | `core.provider_restore` | supported / partial / required | partial / partial / required |
 | `dashpay.deferred_contact_crypto` | partial / partial / required | partial / partial / required |
 | `dashpay.private_contact_requests` | partial / partial / required | partial / partial / required |
@@ -43,6 +44,7 @@ Capabilities tracked: **54**
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
 | `identity.platform_address_auto_funding` | partial / partial / not_applicable | partial / partial / not_applicable |
+| `identity.external_top_up_from_addresses` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.identity_balance_sync` | supported / partial / not_applicable | supported / partial / not_applicable |
@@ -59,6 +61,7 @@ Capabilities tracked: **54**
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `shielded.core_wallet_drain` | supported / partial / tested | supported / partial / tested |
+| `shielded.spend_plan` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `contracts.moderation_reads` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.fee_claim` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
@@ -78,6 +81,7 @@ Capabilities tracked: **54**
 | `shielded.token_unshield` | partial / partial / required | partial / partial / required |
 | `dashpay.profile_payment_addresses` | partial / partial / not_applicable | partial / partial / tested |
 | `dashpay.shielded_tips` | supported / partial / required | supported / partial / required |
+| `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

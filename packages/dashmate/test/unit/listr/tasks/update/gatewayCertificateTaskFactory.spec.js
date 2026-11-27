@@ -939,6 +939,23 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(errors[0].message).to.contain('installed, but the gateway could not be signalled');
       expect(errors[0].message).to.contain('dashmate restart --config base --platform');
     });
+
+    it('should name a restart of the whole node when the quorum list is enabled', async function it() {
+      config.set('platform.quorumList.enabled', true);
+      dockerCompose.execCommand.rejects(new Error('docker daemon is unreachable'));
+
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid() : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(errors[0].message).to.match(/dashmate restart --config base$/m)
+        .and.not.contain('--platform');
+    });
   });
 
   describe('the bypass suppresses enforcement, never the check', () => {

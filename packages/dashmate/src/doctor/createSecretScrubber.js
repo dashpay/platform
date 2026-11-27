@@ -13,6 +13,15 @@ import maskOperatorIdentity, { getOperatorIdentity } from '../util/maskOperatorI
  */
 const MIN_SCRUBBED_SECRET_LENGTH = 8;
 
+const PERCENT_ESCAPE = /%[0-9A-Fa-f]{2}/g;
+
+/**
+ * A percent-escape, also as it is written once its `%` is escaped again
+ * (`%2f` as `%252f`): a URL in a query value is encoded once more, its own
+ * escapes included
+ */
+const NESTED_PERCENT_ESCAPE = /%(?:25)*[0-9A-Fa-f]{2}/g;
+
 /**
  * @param {string} text
  * @param {string[]} needles
@@ -103,7 +112,18 @@ export default function createSecretScrubber(config, extraValues = []) {
       // with a quote or a backslash in it escaped
       .flatMap((value) => [value, JSON.stringify(value).slice(1, -1)])
       // Masking the name can leave too little of a secret to search for
-      .filter((value) => value.length >= MIN_SCRUBBED_SECRET_LENGTH),
+      .filter((value) => value.length >= MIN_SCRUBBED_SECRET_LENGTH)
+      // A percent-escape stands for the same character whatever the case of
+      // its hex digits, and text can quote a value escaped either way. The
+      // escapes of a URL nested in a query value can change case with the
+      // outer URL's or stay as they are.
+      .flatMap((value) => [
+        value,
+        ...[PERCENT_ESCAPE, NESTED_PERCENT_ESCAPE].flatMap((escapes) => [
+          value.replace(escapes, (escape) => escape.toUpperCase()),
+          value.replace(escapes, (escape) => escape.toLowerCase()),
+        ]),
+      ]),
   )];
 
   return (text) => maskRanges(text, findRanges(text, needles));

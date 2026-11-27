@@ -3012,18 +3012,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // Rust again. The same rule as the reference store's upsert valve,
         // which holds only never-materialised placeholders; here those are
         // the tombstones the drain below resolves. The one exception is a
-        // linked spender with context at or above InstantSend-locked:
-        // confirmed evidence on record is never displaced by a re-delivery
-        // (the pending-input resolve and the spend emit own that link).
+        // settled spender: confirmed evidence on record is never displaced
+        // by a re-delivery (the pending-input resolve and the spend emit
+        // own that link). A spender is settled when its context is at or
+        // above InstantSend-locked, or when it funds an asset lock that is
+        // InstantSend-locked or later. The second case is needed because
+        // SPV often never sees an asset-lock transaction (it usually has no
+        // output of ours), so its row can stay at mempool context while
+        // the lock's own status says the inputs are gone. This is the same
+        // signal the restore guard uses (#4336) and mirrors the Kotlin
+        // handler's `hasSettledSpender`. With no linked spender there is
+        // no txid to check, so the row clears.
         // The engine's verdict on this very output, if it did NOT credit
         // it (see `roundUtxoCreditVerdicts`). Any verdict vetoes the
         // recovery clear below: the wallet is not handing this coin back
         // as unspent — its record merely still names the output as ours.
         let creditVerdict = roundUtxoCreditVerdicts[outpoint]
         if creditVerdict == nil, redelivered, record.isSpent {
-            let settledSpender = record.spendingTransaction.map {
-                $0.context >= TransactionContextType.instantSend.rawValue
-            } ?? false
+            let settledSpender: Bool
+            if let spender = record.spendingTransaction {
+                if spender.context >= TransactionContextType.instantSend.rawValue {
+                    settledSpender = true
+                } else {
+                    do {
+                        settledSpender = try fundsFinalizedAssetLock(txid: spender.txid)
+                    } catch {
+                        // Fail closed: an unreadable lock table must not
+                        // resurrect a coin a finalized lock may have spent.
+                        // This round writer has no error channel, so the
+                        // row stays spent and a later re-delivery retries.
+                        NSLog(
+                            "[persistor-upsert:swift] PersistentAssetLock lookup failed; keeping re-delivered TXO spent: %@",
+                            String(describing: error)
+                        )
+                        settledSpender = true
+                    }
+                }
+            } else {
+                settledSpender = false
+            }
             if !settledSpender {
                 record.isSpent = false
                 record.supersededByTxid = nil
@@ -3385,6 +3412,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+                | PlatformWalletPersistenceCapabilities.outpointLocks
         )
     }
 
@@ -3436,6 +3464,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             loadPrivateContactScanStateWalletsCallback
         extensionCallbacks.on_load_private_contact_scan_state_wallets_free_fn =
             loadPrivateContactScanStateWalletsFreeCallback
+        // Locked outpoints (masternode collateral, and outpoints locked by
+        // hand) persist through their own rows and come back per wallet on
+        // load; a lock needs no coin behind it, so it has no place on the
+        // frozen changeset struct's TXO rows.
+        extensionCallbacks.on_persist_wallet_changeset_outpoint_locks_fn =
+            persistWalletChangesetOutpointLocksCallback
+        extensionCallbacks.on_load_wallet_locked_outpoints_fn = loadWalletLockedOutpointsCallback
+        extensionCallbacks.on_load_wallet_locked_outpoints_free_fn =
+            loadWalletLockedOutpointsFreeCallback
         return extensionCallbacks
     }
 
@@ -5456,6 +5493,84 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    // MARK: - Locked outpoints (additive persistence extension)
+
+    /// One entry of a round's outpoint lock changes.
+    struct OutpointLockChange: Equatable {
+        /// 36 bytes, as `PersistentTxo.outpoint`.
+        let outpoint: Data
+        /// `true`: store the lock. `false`: delete it.
+        let locked: Bool
+    }
+
+    /// Apply a round's outpoint lock changes: a row for each lock, no row
+    /// for each unlock. A lock needs no coin behind it, so it never touches
+    /// `PersistentTxo`. Throws to fail the round: a lock dropped here would
+    /// hand a masternode collateral back to coin selection after the next
+    /// restart.
+    ///
+    /// Gated on the wallet's row like the round's other core callbacks (a
+    /// stale callback after the wallet's deletion has nothing to write to,
+    /// and that is not a failure), and stored under this handler's network,
+    /// else the wallet row's. With neither known the write refuses, like the
+    /// private contact request scan state, rather than file the lock under a
+    /// guessed network or report a lock stored that is not: a lock made by
+    /// hand cannot be made again from a registration on the next load.
+    func persistWalletChangesetOutpointLocks(walletId: Data, locks: [OutpointLockChange]) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation("Outpoint locks require a changeset")
+            }
+            let wallet: PersistentWallet
+            switch roundWalletLookup(walletId: walletId, callback: "wallet_changeset_outpoint_locks") {
+            case .failed:
+                throw PlatformWalletError.walletOperation("Could not read the wallet of the outpoint locks")
+            case .absent: return
+            case .found(let row): wallet = row
+            }
+            guard let networkRaw = (self.network ?? wallet.network)?.rawValue else {
+                throw PlatformWalletError.walletOperation("No network to store the outpoint locks under")
+            }
+            var stored: [Data: PersistentLockedOutpoint] = [:]
+            for row in try backgroundContext.fetch(FetchDescriptor<PersistentLockedOutpoint>(
+                predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId })) {
+                stored[row.outpoint] = row
+            }
+            for change in locks {
+                if !change.locked {
+                    if let row = stored.removeValue(forKey: change.outpoint) {
+                        backgroundContext.delete(row)
+                    }
+                } else if stored[change.outpoint] == nil {
+                    let row = PersistentLockedOutpoint(
+                        networkRaw: networkRaw, walletId: walletId, outpoint: change.outpoint)
+                    backgroundContext.insert(row)
+                    stored[change.outpoint] = row
+                }
+            }
+            // endChangeset performs the atomic save with the round's core rows.
+        }
+    }
+
+    /// Every outpoint stored as locked for `walletId`, as 36-byte keys.
+    /// Throws when the store cannot be read, so the load fails rather than
+    /// restoring the wallet with its collateral spendable. With no network
+    /// known the wallet's locks are read under every stored network rather
+    /// than a guessed one.
+    func loadWalletLockedOutpoints(walletId: Data) throws -> [Data] {
+        try onQueue {
+            let rows: [PersistentLockedOutpoint]
+            if let networkRaw = (self.network ?? walletNetwork(walletId: walletId))?.rawValue {
+                rows = try backgroundContext.fetch(FetchDescriptor<PersistentLockedOutpoint>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            } else {
+                rows = try backgroundContext.fetch(FetchDescriptor<PersistentLockedOutpoint>(
+                    predicate: #Predicate { $0.walletId == walletId }))
+            }
+            return rows.map(\.outpoint)
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -6021,21 +6136,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Upsert a batch of decrypted shielded notes by `nullifier`.
     /// Re-saves with the same nullifier overwrite the existing
-    /// row in place — Orchard nullifiers are globally unique.
-    func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) {
-        onQueue {
+    /// row in place — Orchard nullifiers are globally unique —
+    /// except that a re-save never clears `isSpent` (see
+    /// `ShieldedChangeSet::notes_saved`): a sync pass can deliver a
+    /// note unspent after a concurrent send's round marked it spent.
+    /// The existing-row read is what keeps that flag, so a read that
+    /// fails throws and fails the round rather than inserting the
+    /// incoming copy over a row it couldn't see.
+    func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) throws {
+        try onQueue {
             for snap in snapshots {
                 let nf = snap.nullifier
                 let predicate = #Predicate<PersistentShieldedNote> { $0.nullifier == nf }
                 var descriptor = FetchDescriptor<PersistentShieldedNote>(predicate: predicate)
                 descriptor.fetchLimit = 1
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                     existing.walletId = snap.walletId
                     existing.accountIndex = snap.accountIndex
                     existing.position = snap.position
                     existing.cmx = snap.cmx
                     existing.blockHeight = snap.blockHeight
-                    existing.isSpent = snap.isSpent
+                    existing.isSpent = existing.isSpent || snap.isSpent
                     existing.value = snap.value
                     existing.noteData = snap.noteData
                     existing.lastUpdated = Date()
@@ -7030,6 +7151,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
+                // Outpoint locks carry the same explicit network key.
+                let locks: FetchDescriptor<PersistentLockedOutpoint>
+                if let raw = metadataNetwork?.rawValue {
+                    locks = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    locks = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                for row in try backgroundContext.fetch(locks)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
 
                 if let walletRow = walletRow {
                     // Wallet → identities is `.nullify`; this delete
@@ -7436,6 +7570,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             txids.insert(txid)
         }
         return txids
+    }
+
+    /// Whether the wire-order `txid` funds a persisted asset lock whose
+    /// status is `InstantSendLocked` or beyond. The single-txid form of
+    /// `finalizedAssetLockFundingTxids()`: same status threshold, same
+    /// wallet-agnostic scope, and the match is confirmed through the same
+    /// `assetLockFundingTxid` decoder. The prefix only narrows the fetch;
+    /// it relies on `PersistentAssetLock.encodeOutPoint`, the sole writer
+    /// of `outPointHex`, emitting lowercase display-order hex.
+    ///
+    /// Throws on a fetch failure; the caller decides how to fail closed.
+    private func fundsFinalizedAssetLock(txid: Data) throws -> Bool {
+        let finalized = Self.assetLockStatusInstantSendLocked
+        let prefix = txid.reversed().map { String(format: "%02x", $0) }.joined() + ":"
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate {
+                $0.statusRaw >= finalized && $0.outPointHex.starts(with: prefix)
+            }
+        )
+        return try modelFetcher.fetch(descriptor, in: backgroundContext).contains {
+            Self.assetLockFundingTxid(outPointHex: $0.outPointHex) == txid
+        }
     }
 
     /// Returns `(nil, 0)` if nothing is restorable.
@@ -11267,8 +11423,12 @@ private func persistShieldedNotesCallback(
             ))
         }
     }
-    handler.persistShieldedNotes(walletId: walletId, snapshots: snapshots)
-    return 0
+    do {
+        try handler.persistShieldedNotes(walletId: walletId, snapshots: snapshots)
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 private func persistShieldedNullifiersSpentCallback(
@@ -12616,4 +12776,71 @@ private func loadIdentityBalanceBlockTimeCallback(
         }
         return 0
     } catch { return -1 }
+}
+
+/// C shim for `on_persist_wallet_changeset_outpoint_locks_fn`. Copies every
+/// entry before calling the handler, so Rust can drop its array on return.
+/// A non-zero return fails the round.
+private func persistWalletChangesetOutpointLocksCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    locks: UnsafePointer<OutpointLockFFI>?, locksCount: UInt
+) -> Int32 {
+    guard let context, let walletId else { return -1 }
+    guard locksCount == 0 || locks != nil else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let changes = UnsafeBufferPointer(start: locks, count: Int(locksCount)).map {
+        PlatformWalletPersistenceHandler.OutpointLockChange(
+            outpoint: PersistentTxo.makeOutpoint(txid: hashData($0.outpoint.txid), vout: $0.outpoint.vout),
+            locked: $0.locked)
+    }
+    do {
+        try handler.persistWalletChangesetOutpointLocks(
+            walletId: Data(bytes: walletId, count: 32), locks: changes)
+        return 0
+    } catch { return -1 }
+}
+
+/// C shim for `on_load_wallet_locked_outpoints_fn`. Hands Rust one array of
+/// flat rows, released by the free shim below; no lock crosses as a null
+/// array with a zero count. A stored key that is not 36 bytes names no
+/// outpoint: the load fails, as for an unreadable store, rather than
+/// handing back the rest without it.
+private func loadWalletLockedOutpointsCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outOutpoints: UnsafeMutablePointer<UnsafePointer<OutPointFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outOutpoints, let outCount else { return -1 }
+    outOutpoints.pointee = nil
+    outCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let keys: [Data]
+    do {
+        keys = try handler.loadWalletLockedOutpoints(walletId: Data(bytes: walletId, count: 32))
+    } catch { return -1 }
+    guard keys.allSatisfy({ $0.count == 36 }) else { return -1 }
+    guard !keys.isEmpty else { return 0 }
+    let buffer = UnsafeMutablePointer<OutPointFFI>.allocate(capacity: keys.count)
+    for (index, key) in keys.enumerated() {
+        var entry = OutPointFFI()
+        Swift.withUnsafeMutableBytes(of: &entry.txid) { _ = key.prefix(32).copyBytes(to: $0) }
+        var vout: UInt32 = 0
+        Swift.withUnsafeMutableBytes(of: &vout) { _ = key.suffix(4).copyBytes(to: $0) }
+        entry.vout = UInt32(littleEndian: vout)
+        (buffer + index).initialize(to: entry)
+    }
+    outOutpoints.pointee = UnsafePointer(buffer)
+    outCount.pointee = UInt(keys.count)
+    return 0
+}
+
+/// C shim for `on_load_wallet_locked_outpoints_free_fn`: the rows are flat,
+/// so releasing the array is all there is to it.
+private func loadWalletLockedOutpointsFreeCallback(
+    context: UnsafeMutableRawPointer?, outpoints: UnsafePointer<OutPointFFI>?, count: UInt
+) {
+    guard let outpoints else { return }
+    let buffer = UnsafeMutablePointer(mutating: outpoints)
+    buffer.deinitialize(count: Int(count))
+    buffer.deallocate()
 }

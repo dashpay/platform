@@ -511,6 +511,22 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain('dashmate restart --config base --platform');
   });
 
+  it('should load it by restarting the whole node when the quorum list is enabled', () => {
+    config.set('platform.quorumList.enabled', true);
+
+    const output = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE,
+          message: 'A switch was interrupted before it finished',
+        }],
+      }),
+    });
+
+    expect(output).to.contain('dashmate restart --config base\n')
+      .and.not.contain('restart --config base --platform');
+  });
+
   // lego installed this certificate and only the saved provider still
   // disagrees, so the certificate itself is sound. Opening with the flat claim
   // that it is not valid sends an operator hunting a problem that is not there.

@@ -25,7 +25,7 @@ use dashcore::{Block, BlockHash, Txid};
 /// the first says the chain has nothing at that height, the second says
 /// nothing at all. Only the first may be treated as evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum HeaderLookup {
+pub enum HeaderLookup {
     /// The store holds this header at that height.
     Found(BlockHash),
     /// The store is readable and holds no header at that height.

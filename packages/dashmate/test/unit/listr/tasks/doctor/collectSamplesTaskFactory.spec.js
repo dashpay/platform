@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -9,6 +10,8 @@ import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigF
 import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
+import analyseCoreFactory from '../../../../../src/doctor/analyse/analyseCoreFactory.js';
+import analyseGatewayCertificateFactory from '../../../../../src/doctor/analyse/analyseGatewayCertificateFactory.js';
 import analyseServiceContainersFactory from '../../../../../src/doctor/analyse/analyseServiceContainersFactory.js';
 import archiveSamples from '../../../../../src/doctor/archiveSamples.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
@@ -17,13 +20,31 @@ import unarchiveSamplesFactory from '../../../../../src/doctor/unarchiveSamplesF
 import { getOperatorIdentity } from '../../../../../src/util/maskOperatorIdentity.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
+import generateCsr from '../../../../../src/ssl/zerossl/generateCsr.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import validateLetsEncryptCertificateFactory from '../../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
 import RenewalRecord from '../../../../../src/ssl/renewalRecord/RenewalRecord.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import { PACKAGE_ROOT_DIR } from '../../../../../src/constants.js';
+import deriveTenderdashNodeId from '../../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../../../src/tenderdash/generateTenderdashNodeKey.js';
 
 const EXTERNAL_IP = '198.51.100.7';
+
+/**
+ * Read a Core RPC response captured from a real Dash Core node
+ *
+ * @param {string} name
+ * @return {Object}
+ */
+function readCoreRpcFixture(name) {
+  return JSON.parse(fs.readFileSync(
+    path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc/24.0.3', name),
+    'utf8',
+  ));
+}
 
 /**
  * Format a date the way the ZeroSSL API reports certificate dates
@@ -76,7 +97,7 @@ describe('collectSamplesTaskFactory', () => {
     await tasks.run({ samples });
   }
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     originalUser = process.env.USER;
     homeDir = HomeDir.createTemp();
 
@@ -93,10 +114,16 @@ describe('collectSamplesTaskFactory', () => {
     const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
 
     fs.mkdirSync(sslDir, { recursive: true });
-    fs.writeFileSync(path.join(sslDir, 'csr.pem'), 'csr', 'utf8');
     // Dashmate writes the key accessible to its owner only, and doctor reports
-    // one that is not - so the fixture has to be what a healthy node has
-    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', {
+    // one that is not - so the fixture has to be what a healthy node has: an
+    // RSA key and the certificate request renewal sends for it
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    fs.writeFileSync(path.join(sslDir, 'csr.pem'), await generateCsr({ publicKey, privateKey }, EXTERNAL_IP), 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'private.key'), privateKey, {
       encoding: 'utf8',
       mode: 0o600,
     });
@@ -180,6 +207,31 @@ describe('collectSamplesTaskFactory', () => {
 
     expect(sslProblem).to.exist();
     expect(sslProblem.getSeverity()).to.equal(SEVERITY.HIGH);
+  });
+
+  // Renewal is due, so the sample carries the request renewal would send.
+  it('should not put a private key held in the certificate request in the archive', async () => {
+    const csrFilePath = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'csr.pem');
+    const privateKey = fs.readFileSync(
+      homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'private.key'),
+      'utf8',
+    );
+    fs.appendFileSync(csrFilePath, privateKey);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-270)),
+      expires: toZeroSslDate(daysFromNow(-180)),
+    }));
+
+    await collectSamples();
+
+    const sample = samples.getServiceInfo('gateway', 'ssl');
+
+    expect(sample.error).to.equal(ZEROSSL_ERRORS.CSR_FILE_IS_NOT_PRESENT);
+    expect(JSON.stringify(sample)).to.not.include('PRIVATE KEY');
   });
 
   it('should not report a problem for a valid ZeroSSL certificate', async () => {
@@ -391,6 +443,98 @@ describe('collectSamplesTaskFactory', () => {
     await collectSamples();
 
     expect(samples.getServiceInfo('gateway', 'metrics')).to.equal('metrics_sample 1');
+  });
+
+  describe('Core status', () => {
+    let masternodeStatus;
+    let mnsyncStatus;
+
+    beforeEach(() => {
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+
+      masternodeStatus = readCoreRpcFixture('masternode-status-evonode.json');
+      mnsyncStatus = readCoreRpcFixture('mnsync-status.json');
+
+      config.set('core.masternode.enable', true);
+
+      rpcClient.masternode.withArgs('status').resolves({ result: masternodeStatus });
+      rpcClient.mnsync.withArgs('status').resolves({ result: mnsyncStatus });
+    });
+
+    // The Core analysers judge PoSe state from one response and sync progress
+    // from the other, so each must be stored under the name it is read by.
+    it('should store each RPC response under its own sample', async () => {
+      await collectSamples();
+
+      expect(samples.getServiceInfo('core', 'masternodeStatus')).to.deep.equal(masternodeStatus);
+      expect(samples.getServiceInfo('core', 'masternodeSyncStatus')).to.deep.equal(mnsyncStatus);
+    });
+
+    it('should report a PoSe-banned masternode', async () => {
+      masternodeStatus.state = 'POSE_BANNED';
+
+      await collectSamples();
+
+      const problems = analyseCoreFactory()(samples);
+
+      expect(problems.map((problem) => problem.getDescription())).to.include(
+        'The masternode has been banned due to failing Proof-of-Service checks.',
+      );
+    });
+
+    it('should report an evonode whose Tenderdash node ID is not the registered one', async () => {
+      config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+
+      await collectSamples();
+
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // Tenderdash takes its ID from the key, not from the saved ID, and
+    // `config set` can change the key alone
+    it('should report an evonode whose node key is not the registered one, even when its saved node ID is', async () => {
+      config.set('platform.drive.tenderdash.node.key', generateTenderdashNodeKey());
+      config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
+
+      await collectSamples();
+
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // The schema requires neither the key nor the ID, and a masternode is
+    // never given a generated key, so a config can hold only the saved ID
+    it('should diagnose an evonode whose config has a saved node ID but no key', async () => {
+      config.set('platform.drive.tenderdash.node', { id: 'f'.repeat(40) });
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.be.undefined();
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
+    // The key is redacted from the report, so the ID it gives is collected
+    // instead. The ID is public: Tenderdash announces it to every peer.
+    it('should collect the node ID derived from the node key', async () => {
+      const nodeKey = generateTenderdashNodeKey();
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey'))
+        .to.equal(deriveTenderdashNodeId(nodeKey));
+    });
   });
 
   describe('gateway TLS private key permissions', () => {
@@ -711,6 +855,43 @@ describe('collectSamplesTaskFactory', () => {
       });
     });
 
+    // A health check prints whatever its probe prints, which can be a value
+    // the image brings and the config does not know. No analyser reads it, so
+    // it goes with the probe command; what says how the check went stays.
+    it('should leave health check output out of the archive and keep its results', async () => {
+      const secret = 'probeOutputSecret7Qx';
+      const healthLog = {
+        Start: '2026-11-26T10:00:00.000000000Z',
+        End: '2026-11-26T10:00:01.000000000Z',
+        ExitCode: 1,
+        Output: `curl: (22) auth as probe:${secret} refused\n`,
+      };
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: { Image: 'example/service:test', Env: [] },
+        State: {
+          Status: 'running',
+          Restarting: false,
+          ExitCode: 0,
+          Health: { Status: 'unhealthy', FailingStreak: 3, Log: [healthLog] },
+        },
+      });
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain(secret);
+
+      const { Health: health } = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getServiceInfo(SERVICE.name, 'dockerInspect').State;
+
+      expect(health).to.deep.equal({
+        Status: 'unhealthy',
+        FailingStreak: 3,
+        Log: [{ ...healthLog, Output: '<redacted>' }],
+      });
+    });
+
     it('should collect a container whose command has more arguments than a call can take', async () => {
       const command = Array.from({ length: 200_000 }, (_, index) => `-o${index}=v${index}`);
 
@@ -817,6 +998,372 @@ describe('collectSamplesTaskFactory', () => {
         expect(record.isFailed()).to.be.true();
         expect(record.appliesTo({ provider: 'letsencrypt' })).to.be.true();
         expect(sample.detail).to.equal(`challenge failed with ${'*'.repeat('letsencrypt'.length)} in the way`);
+      });
+    });
+
+    /**
+     * @param {Object} sinon
+     * @param {Object} overrides
+     * @param {Function} [overrides.validateLetsEncryptCertificate]
+     * @param {Function} [overrides.checkGatewayCertificate]
+     */
+    function useCollector(sinon, {
+      validateLetsEncryptCertificate = sinon.stub().resolves({}),
+      checkGatewayCertificate = checkGatewayCertificateFactory(homeDir),
+      tenderdashRequest = sinon.stub().resolves({}),
+    }) {
+      collectSamplesTask = collectSamplesTaskFactory(
+        dockerCompose,
+        sinon.stub().returns(rpcClient),
+        sinon.stub().resolves('127.0.0.1'),
+        sinon.stub().returns({ request: tenderdashRequest }),
+        getServiceList,
+        sinon.stub().resolves({}),
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+        validateLetsEncryptCertificate,
+        checkGatewayCertificate,
+        new RenewalRecordRepository(homeDir),
+      );
+    }
+
+    // Doctor decides on the masternode's state and on whether the node ID
+    // registered for it is the one Tenderdash has, live and when it reads a
+    // report back. A secret spelled like the state, or like part of the ID,
+    // must not change either verdict; the rest of Core's answer is still
+    // scrubbed.
+    [
+      ['with only a saved node ID', () => ({ id: deriveTenderdashNodeId(generateTenderdashNodeKey()) })],
+      ['with a node key', () => {
+        const key = generateTenderdashNodeKey();
+
+        return { id: deriveTenderdashNodeId(key), key };
+      }],
+    ].forEach(([name, makeNode]) => {
+      it(`should keep the masternode state and node IDs when a secret is spelled like them, ${name}`, async function it() {
+        const node = makeNode();
+        const masternodeStatus = readCoreRpcFixture('masternode-status-evonode.json');
+
+        masternodeStatus.state = 'POSE_BANNED';
+        masternodeStatus.status = 'Banned, see POSE_BANNED';
+        masternodeStatus.dmnState.platformNodeID = node.id;
+
+        config.set('core.masternode.enable', true);
+        config.set('platform.drive.tenderdash.node', node);
+        config.set('core.rpc.users.dapi.password', 'POSE_BANNED');
+        config.set('core.rpc.users.tenderdash.password', node.id.slice(4, 16));
+
+        rpcClient.masternode.withArgs('status').resolves({ result: masternodeStatus });
+
+        const tenderdashRequest = this.sinon.stub().resolves({});
+        tenderdashRequest.withArgs('status').resolves({ result: { node_info: { id: node.id } } });
+
+        useCollector(this.sinon, { tenderdashRequest });
+
+        const archivePath = await collectAndArchive();
+        const restored = await unarchiveSamplesFactory(
+          () => [SERVICE, { name: 'core' }, { name: 'drive_tenderdash' }],
+        )(archivePath);
+
+        [samples, restored].forEach((collected) => {
+          const where = collected === samples ? 'live' : 'from the archive';
+          const configProblems = analyseConfig(collected).map((problem) => problem.getDescription());
+
+          expect(analyseCoreFactory()(collected).map((problem) => problem.getDescription()), where)
+            .to.include('The masternode has been banned due to failing Proof-of-Service checks.');
+          expect(configProblems, where)
+            .to.not.include('Platform Node ID doesn\'t match the one found in the ProReg transaction');
+          expect(configProblems, where).to.not.include(
+            'Tenderdash is running with a node ID other than the one found in the ProReg transaction',
+          );
+        });
+
+        expect(restored.getServiceInfo('core', 'masternodeStatus').status)
+          .to.equal(`Banned, see ${'*'.repeat('POSE_BANNED'.length)}`);
+      });
+    });
+
+    // Doctor chooses the problem to report by the SSL check's error code, live
+    // and when it reads a report back, so a secret spelled like the code must
+    // not change it. What comes with the code is display text, and is still
+    // scrubbed.
+    it('should keep the SSL error code when a secret is spelled like it', async function it() {
+      const code = 'CERTIFICATE_IP_MISMATCH';
+      const masked = '*'.repeat(code.length);
+
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      config.set('core.rpc.users.dapi.password', code);
+
+      useCollector(this.sinon, {
+        validateLetsEncryptCertificate: this.sinon.stub().resolves({
+          error: code,
+          data: { externalIp: EXTERNAL_IP, legoCertPath: `/srv/lego/${code}/cert.crt` },
+        }),
+      });
+
+      const archivePath = await collectAndArchive();
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        const ssl = collected.getServiceInfo('gateway', 'ssl');
+
+        expect(ssl.error).to.equal(code);
+        expect(ssl.data.legoCertPath).to.equal(`/srv/lego/${masked}/cert.crt`);
+        expect(analyseConfig(collected).map((problem) => problem.getDescription()))
+          .to.include(`Let's Encrypt certificate does not match external IP ${EXTERNAL_IP}.`);
+      });
+    });
+
+    // Doctor decides on the installed certificate's status, reason codes,
+    // dates and fingerprint. Its messages are display text with paths in
+    // them, and are still scrubbed.
+    it('should keep the facts of the installed certificate when a secret is spelled like one', async function it() {
+      const validFrom = new Date('2026-11-01T00:00:00Z');
+      const validTo = new Date('2026-12-01T00:00:00Z');
+      const fingerprint256 = 'AB:CD:EF:01:23:45:67:89';
+
+      config.set('core.rpc.users.dapi.password', 'CHECKS_PASSED');
+      config.set('core.rpc.users.tenderdash.password', 'PROVIDER_MISMATCH');
+      config.set('core.rpc.users.quorum_list.password', fingerprint256);
+
+      useCollector(this.sinon, {
+        checkGatewayCertificate: () => ({
+          status: 'CHECKS_PASSED',
+          reasons: [],
+          warnings: [{
+            code: 'PROVIDER_MISMATCH',
+            message: 'Issued by letsencrypt, see /srv/PROVIDER_MISMATCH/notes',
+          }],
+          skipped: ['IDENTITY'],
+          provider: 'zerossl',
+          installed: { validFrom, validTo, fingerprint256 },
+          expiresInDays: 5,
+        }),
+      });
+
+      const archivePath = await collectAndArchive();
+      const restored = (await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'installedCertificate');
+
+      [samples.getServiceInfo('gateway', 'installedCertificate'), restored].forEach((installed) => {
+        expect(installed).to.deep.equal({
+          status: 'CHECKS_PASSED',
+          reasons: [],
+          warnings: [{
+            code: 'PROVIDER_MISMATCH',
+            message: `Issued by letsencrypt, see /srv/${'*'.repeat('PROVIDER_MISMATCH'.length)}/notes`,
+          }],
+          skipped: ['IDENTITY'],
+          provider: 'zerossl',
+          expiresInDays: 5,
+          validTo: validTo.toUTCString(),
+          validFrom: validFrom.toUTCString(),
+          fingerprint256,
+        });
+      });
+    });
+
+    // A certificate not issued for this node's address cannot be reinstalled,
+    // so the reason code decides whether the repair forces a new one
+    it('should keep a reason code that decides the repair when a secret is spelled like it', async function it() {
+      config.set('core.rpc.users.dapi.password', 'IP_MISMATCH');
+
+      useCollector(this.sinon, {
+        checkGatewayCertificate: () => ({
+          status: 'INVALID',
+          reasons: [{ code: 'IP_MISMATCH', message: "The installed certificate is not issued for this node's address" }],
+          warnings: [],
+          skipped: [],
+          provider: 'zerossl',
+          installed: {
+            validFrom: new Date('2026-11-01T00:00:00Z'),
+            validTo: new Date('2026-12-01T00:00:00Z'),
+            fingerprint256: 'AB:CD:EF:01:23:45:67:89',
+          },
+          expiresInDays: 5,
+        }),
+      });
+
+      const archivePath = await collectAndArchive();
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        const repairs = analyseGatewayCertificateFactory()(collected)
+          .filter((problem) => problem.getDescription().includes('not issued for this node'))
+          .map((problem) => problem.getSolution());
+
+        expect(repairs).to.have.lengthOf(1);
+        expect(repairs[0]).to.contain('--force');
+      });
+    });
+
+    // Doctor only advises loading the saved certificate when the one it
+    // judged on disk is the one the gateway probe read, by fingerprint
+    it('should keep the fingerprints doctor compares when a secret is part of one', async () => {
+      const { cert, key } = createCertificateForTest({
+        ip: EXTERNAL_IP, days: 30, serialNumber: '7A1B2C3D4E5F',
+      });
+      const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), cert, 'utf8');
+      fs.writeFileSync(path.join(sslDir, 'private.key'), key, 'utf8');
+
+      const server = tls.createServer({ cert, key }, (socket) => socket.end());
+      const liveSockets = [];
+      server.on('secureConnection', (socket) => liveSockets.push(socket));
+
+      await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+
+      config.set('platform.gateway.listeners.dapiAndDrive.port', server.address().port);
+
+      const { fingerprint256, serialNumber } = new crypto.X509Certificate(cert);
+
+      config.set('core.rpc.users.dapi.password', fingerprint256.slice(0, 23));
+      // Nothing decides on the serial number, so it is scrubbed like the
+      // rest of what the gateway presents
+      config.set('core.rpc.users.tenderdash.password', serialNumber);
+
+      let archivePath;
+
+      try {
+        archivePath = await collectAndArchive();
+      } finally {
+        liveSockets.forEach((socket) => socket.destroy());
+        await new Promise((resolve) => { server.close(resolve); });
+      }
+
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        const served = collected.getServiceInfo('gateway', 'servedCertificate');
+
+        expect(collected.getServiceInfo('gateway', 'installedCertificate').fingerprint256)
+          .to.equal(fingerprint256);
+        expect(served.certificate.fingerprint256).to.equal(fingerprint256);
+        expect(served.onDisk.fingerprint256).to.equal(fingerprint256);
+      });
+
+      expect(samples.getServiceInfo('gateway', 'servedCertificate').certificate.serialNumber)
+        .to.equal(serialNumber);
+      expect(restored.getServiceInfo('gateway', 'servedCertificate').certificate.serialNumber)
+        .to.equal('*'.repeat(serialNumber.length));
+    });
+
+    // The provider and the code of a renewal record are kept as they are,
+    // because doctor decides on them. The file can be edited by hand, though,
+    // so a value dashmate does not know is any text at all, and the report
+    // carries a label in its place. The record on disk is still read as it is.
+    it('should label a renewal provider and code it does not know as unknown', async () => {
+      const handWritten = 'handWrittenValue7Qx';
+
+      config.set('core.rpc.users.dapi.password', handWritten);
+
+      const repository = new RenewalRecordRepository(homeDir);
+
+      repository.write(config.getName(), RenewalRecord.fromObject({
+        provider: `${handWritten}-provider`,
+        outcome: 'failed',
+        code: `${handWritten}-code`,
+        detail: 'challenge failed',
+        attemptedAt: new Date().toISOString(),
+      }));
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain(handWritten);
+
+      const live = samples.getServiceInfo('gateway', 'certificateRenewal');
+      const restored = (await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath))
+        .getServiceInfo('gateway', 'certificateRenewal');
+
+      [live, restored].forEach((sample) => {
+        expect(sample.provider).to.equal('unknown');
+        expect(sample.code).to.equal('UNKNOWN');
+        expect(RenewalRecord.fromObject(sample).isFailed()).to.be.true();
+      });
+
+      const onDisk = repository.read(config.getName()).record;
+
+      expect(onDisk.getProvider()).to.equal(`${handWritten}-provider`);
+      expect(onDisk.getCode()).to.equal(`${handWritten}-code`);
+    });
+
+    // Nothing doctor analyses reads the free text an operator writes in the
+    // config, and that text can quote secrets and links in any form, such as
+    // a build argument's URL in full with a token in its query. The report
+    // carries only whether it was set.
+    const buildUrl = "https://builder:buildPassword7Qx@builds.example.com/team's/drive.tar?sig=signedQueryToken7Qx&expires=99";
+
+    [
+      [
+        'an authenticated URL with an apostrophe in its path, copied from a build argument',
+        `drive built from ${buildUrl} for testing`,
+        { PRIVATE_BUILD_URL: buildUrl },
+        ['buildPassword7Qx', 'signedQueryToken7Qx', "team's/drive.tar", 'builds.example.com'],
+      ],
+      [
+        'a URL with credentials and a query token',
+        'mirror https://mirrorUser:mirrorPassword7Qx@mirror.example.net/private/core.tar?token=mirrorQueryToken7Qx for builds',
+        null,
+        ['mirrorUser', 'mirrorPassword7Qx', 'mirrorQueryToken7Qx', 'mirror.example.net/private/core.tar'],
+      ],
+      [
+        'a plain sentence',
+        'rack 7 in Frankfurt, run by the Quokka team',
+        null,
+        ['rack 7 in Frankfurt', 'Quokka team'],
+      ],
+    ].forEach(([kind, description, buildArgs, fragments]) => {
+      it(`should leave the description out of the archive when it holds ${kind}`, async () => {
+        if (buildArgs) {
+          config.set('platform.drive.abci.docker.build.buildArgs', buildArgs);
+        }
+
+        config.set('description', description);
+
+        const archivePath = await collectAndArchive();
+
+        const archived = readArchivedBytes(archivePath);
+
+        [description, ...fragments].forEach((fragment) => expect(archived).to.not.contain(fragment));
+
+        const restoredConfig = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+          .getDashmateConfig();
+
+        [samples.getDashmateConfig(), restoredConfig].forEach((collectedConfig) => {
+          expect(collectedConfig.get('description')).to.equal('<redacted>');
+        });
+      });
+    });
+
+    // The Let's Encrypt check reports the contact address with the rest of
+    // what it looked at, so it is left out there too. The config copy says
+    // whether it is set, and its marker stays as it is even when a secret is
+    // spelled like it.
+    it('should leave the contact address out of the archive', async function it() {
+      const email = 'quokka.ops+frankfurt@example.org';
+
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
+      config.set('core.rpc.users.dapi.password', 'redacted');
+
+      useCollector(this.sinon, {
+        validateLetsEncryptCertificate: validateLetsEncryptCertificateFactory(homeDir),
+      });
+
+      const archivePath = await collectAndArchive();
+
+      const archived = readArchivedBytes(archivePath);
+
+      expect(archived).to.not.contain('quokka.ops');
+      expect(archived).to.not.contain('frankfurt@example.org');
+
+      const restored = await unarchiveSamplesFactory(() => [SERVICE, { name: 'gateway' }])(archivePath);
+
+      [samples, restored].forEach((collected) => {
+        expect(collected.getDashmateConfig().get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+          .to.equal('<redacted>');
+        expect(collected.getServiceInfo('gateway', 'ssl').data).to.not.have.property('email');
       });
     });
 
