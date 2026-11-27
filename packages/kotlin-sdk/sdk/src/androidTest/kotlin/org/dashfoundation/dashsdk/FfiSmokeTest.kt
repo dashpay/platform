@@ -717,6 +717,7 @@ class FfiSmokeTest {
     @Test
     fun shieldedStateWipeCapabilityNeedsTheOverrideAndTheDeclaration() {
         NativeLoader.ensureLoaded()
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
         val bit = NativePersistenceBridge.CAPABILITY_SHIELDED_STATE_WIPE
         fun effective(bridge: NativePersistenceBridge): Boolean =
             WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit

@@ -2563,12 +2563,14 @@ mod remove_versus_recreate_tests {
             let manager_for_hook = Arc::clone(&manager);
             let recreated_slot = Arc::clone(&recreated);
             // One-shot: the re-registration must not recurse into a later
-            // removal, and no other test in this binary may see the hook.
+            // removal. Only this test's wallet fires it: another test's
+            // removal running meanwhile passes through.
             let fired = AtomicBool::new(false);
+            let target = wallet_id;
             *REMOVE_WALLET_MIDPOINT_HOOK
                 .lock()
                 .expect("midpoint hook mutex") = Some(Box::new(move |id| {
-                let already_fired = fired.swap(true, Ordering::SeqCst);
+                let already_fired = *id != target || fired.swap(true, Ordering::SeqCst);
                 let manager = Arc::clone(&manager_for_hook);
                 let recreated_slot = Arc::clone(&recreated_slot);
                 let id = *id;

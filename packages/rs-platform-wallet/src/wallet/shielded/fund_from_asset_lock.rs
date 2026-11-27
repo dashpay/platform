@@ -430,6 +430,11 @@ impl PlatformWallet {
                             .into(),
                     ));
                 }
+                // A Clear drops the registration but not the handle's keys: no
+                // sync pass would scan the account the drain pays into.
+                if !coordinator.is_wallet_registered(self.wallet_id()).await {
+                    return Err(PlatformWalletError::ShieldedNotBound);
+                }
                 platform_version = self.sdk.version();
                 pool_fee_credits =
                     Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;

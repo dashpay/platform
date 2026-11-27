@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, Weak};
 use std::time::Duration;
 
 use dashcore::Network;
@@ -64,8 +64,9 @@ struct BoundaryHost {
     /// Parks the next load until released.
     load_gate: Mutex<Option<mpsc::Receiver<()>>>,
     /// Set by the test once the manager is configured, so a wipe can tell
-    /// whether Clear holds the admission exclusively.
-    coordinator: Mutex<Option<Arc<NetworkShieldedCoordinator>>>,
+    /// whether Clear holds the admission exclusively. Weak: the coordinator
+    /// holds this host through a bound wallet's persister.
+    coordinator: Mutex<Option<Weak<NetworkShieldedCoordinator>>>,
     on_wipe: Mutex<Option<WipeHook>>,
 }
 
@@ -191,7 +192,13 @@ impl PlatformWalletPersistence for BoundaryHost {
     fn wipe_shielded_state(&self, _network: Network) -> Result<(), PersistenceError> {
         self.event("wipe");
         self.wipes.fetch_add(1, Ordering::SeqCst);
-        if let Some(coordinator) = self.coordinator.lock().unwrap().as_ref() {
+        if let Some(coordinator) = self
+            .coordinator
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(Weak::upgrade)
+        {
             if !coordinator.admission_is_closed() {
                 self.wiped_exclusively.store(false, Ordering::SeqCst);
             }
@@ -228,7 +235,7 @@ async fn configured(
         .shielded_coordinator()
         .await
         .expect("the manager's coordinator");
-    *host.coordinator.lock().unwrap() = Some(Arc::clone(&coordinator));
+    *host.coordinator.lock().unwrap() = Some(Arc::downgrade(&coordinator));
     host.clear_events();
     (manager, wallet, coordinator)
 }
@@ -353,6 +360,34 @@ async fn assert_native_state_cleared(coordinator: &NetworkShieldedCoordinator, i
     assert!(coordinator.registered_subwallets().await.is_empty());
 }
 
+/// Once the manager is shut down and dropped, nothing keeps its coordinator,
+/// and so its shielded store, alive, though a wallet handle kept past it
+/// still holds the manager's coordinator slot.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_release_the_coordinator_when_the_manager_is_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let released = Arc::downgrade(&coordinator);
+    drop(coordinator);
+
+    let _ = manager.shutdown().await;
+    drop(manager);
+
+    assert!(
+        released.upgrade().is_none(),
+        "the coordinator outlives its manager"
+    );
+    assert!(
+        matches!(
+            wallet.shielded_balances().await,
+            Err(PlatformWalletError::ShieldedStoreError(_))
+        ),
+        "a wallet kept past its manager reads as unconfigured"
+    );
+}
+
 /// A Clear requested while a seed bind is parked in its viewing-key write is
 /// refused; the Clear that follows the bind resets it and wipes the row it
 /// wrote, so nothing of the bind outlives the Clear.
@@ -394,7 +429,14 @@ async fn should_restore_nothing_that_survives_from_a_snapshot_read_before_clear(
     let host = BoundaryHost::new();
     let (manager, wallet, coordinator) = configured(&host, &dir).await;
     let id = SubwalletId::new(wallet.wallet_id(), 0);
+    // The host keeps the wallet's viewing key and rows from an earlier
+    // session, and the coordinator has no registration, so the rebind below
+    // restores both rows.
     wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let viewing_keys = host.viewing_keys.lock().unwrap().clone();
+    manager.clear_shielded().await.unwrap();
+    host.wipes.store(0, Ordering::SeqCst);
+    *host.viewing_keys.lock().unwrap() = viewing_keys;
     *host.subwallets.lock().unwrap() = pre_clear_rows(wallet.wallet_id());
     host.clear_events();
 
@@ -408,6 +450,15 @@ async fn should_restore_nothing_that_survives_from_a_snapshot_read_before_clear(
 
     release.send(()).unwrap();
     assert!(rebind.await.unwrap().expect("the rebind finishes first"));
+    {
+        let store = coordinator.store().read().await;
+        assert_eq!(
+            store.get_all_notes(id).unwrap().len(),
+            1,
+            "the rebind restored the host's note"
+        );
+        assert_eq!(store.last_synced_note_index(id).unwrap(), 900_000);
+    }
     manager.clear_shielded().await.expect("then Clear runs");
 
     assert_eq!(host.events(), vec!["load", "load", "wipe", "wiped"]);

@@ -7293,6 +7293,47 @@ mod tests {
         std::sync::Mutex<Option<Box<dyn FnMut() + Send>>>,
     );
 
+    /// A host that wipes as [`WipeCountingPersistence`] does and notes, at
+    /// each wipe, how many of `rounds`' rounds had landed by then.
+    struct WipeAfterRounds {
+        rounds: Arc<RoundRecordingPersistence>,
+        wiped_at: std::sync::Mutex<Vec<usize>>,
+    }
+
+    impl WipeAfterRounds {
+        fn wipe_count(&self) -> usize {
+            self.wiped_at.lock().unwrap().len()
+        }
+    }
+
+    impl PlatformWalletPersistence for WipeAfterRounds {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(Default::default())
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            crate::changeset::PersistenceCapabilities::SHIELDED_STATE_WIPE
+        }
+
+        fn wipe_shielded_state(&self, _network: dashcore::Network) -> Result<(), PersistenceError> {
+            let landed = self.rounds.0.lock().unwrap().len();
+            self.wiped_at.lock().unwrap().push(landed);
+            Ok(())
+        }
+    }
+
     impl PlatformWalletPersistence for RoundRecordingPersistence {
         fn store(
             &self,
@@ -8016,18 +8057,18 @@ mod tests {
             .expect("timed out waiting for the spend's host round")
             .expect("the spend's round reaches the host");
 
-        // Clear wipes the host's rows before it returns; `wiped_at` is how
-        // many rounds had landed by the wipe.
-        let host = WipeCountingPersistence::default();
+        // Clear wipes the host's rows before it returns; the host notes how
+        // many rounds had landed when its wipe ran.
+        let host = WipeAfterRounds {
+            rounds: Arc::clone(&recorder),
+            wiped_at: std::sync::Mutex::new(Vec::new()),
+        };
         let clear = coordinator.clear(&host);
         tokio::pin!(clear);
-        let wiped_at = match tokio::time::timeout(Duration::from_millis(200), clear.as_mut()).await
-        {
+        match tokio::time::timeout(Duration::from_millis(200), clear.as_mut()).await {
             Ok(cleared) => {
                 cleared.unwrap();
-                let wiped_at = recorder.0.lock().unwrap().len();
                 release_tx.send(()).unwrap();
-                wiped_at
             }
             Err(_) => {
                 // Clear is still waiting, with the round held up in the host:
@@ -8040,10 +8081,10 @@ mod tests {
                 );
                 release_tx.send(()).unwrap();
                 clear.await.unwrap();
-                recorder.0.lock().unwrap().len()
             }
-        };
+        }
         assert_eq!(host.wipe_count(), 1);
+        let wiped_at = host.wiped_at.lock().unwrap()[0];
         spend.join().expect("spend thread").unwrap();
 
         {

@@ -2200,6 +2200,10 @@ impl PlatformWallet {
         kind: super::shielded::note_selection::ShieldedSpendKind,
         amount: super::shielded::note_selection::ShieldedSpendAmount,
     ) -> Result<super::shielded::note_selection::ShieldedSpendPlan, PlatformWalletError> {
+        // Admitted as a balance read is: refused while a Clear's host wipe is
+        // pending, as the store it would plan against is already reset.
+        let coordinator = self.shielded_coordinator().await?;
+        let _admission = coordinator.admit().await?;
         let bound = self
             .shielded_keys
             .read()
@@ -2212,7 +2216,6 @@ impl PlatformWallet {
                 "shielded account {account} not bound"
             )));
         }
-        let coordinator = self.shielded_coordinator().await?;
         super::shielded::operations::plan_spend(
             &self.sdk,
             coordinator.store(),

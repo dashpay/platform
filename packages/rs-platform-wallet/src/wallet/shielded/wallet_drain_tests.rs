@@ -31,6 +31,7 @@ use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::asset_lock::{
     AssetLockFunding, AssetLockOperationContext, AssetLockOperationState,
 };
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::PlatformWallet;
 
 use super::keys::AccountViewingKeys;
@@ -240,7 +241,7 @@ async fn signed_wallet_fixture(
     TestDirectory,
     WalletSigner,
 ) {
-    let (wallet, persistence, signer) = unconfigured_wallet_fixture(lock, keys).await;
+    let (wallet, persistence, signer) = unconfigured_wallet_fixture(lock, keys.clone()).await;
     let dir =
         TestDirectory(std::env::temp_dir().join(format!("wallet_drain_{}", rand::random::<u64>())));
     std::fs::create_dir_all(&dir.0).unwrap();
@@ -255,6 +256,16 @@ async fn signed_wallet_fixture(
     wallet
         .attach_shielded_coordinator_for_test(&coordinator)
         .await;
+    if !keys.is_empty() {
+        coordinator
+            .register_wallet(
+                wallet.wallet_id(),
+                keys,
+                WalletPersister::new(wallet.wallet_id(), persistence.clone()),
+            )
+            .await
+            .unwrap();
+    }
     (wallet, persistence, coordinator, dir, signer)
 }
 
@@ -987,6 +998,54 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     let snapshot = operation.snapshot();
     assert_eq!(snapshot.state, AssetLockOperationState::NotSent);
     assert!(snapshot.out_point.is_none());
+}
+
+/// A Clear drops the wallet's registration but leaves the handle its keys: a
+/// fresh drain afterwards is refused before any Core funding, as no sync pass
+/// would scan the account it pays into.
+#[tokio::test]
+async fn should_refuse_a_fresh_wallet_drain_after_a_clear_dropped_the_registration() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, _persistence, coordinator, _dir, signer) =
+        signed_wallet_fixture(&lock, keys).await;
+    coordinator
+        .clear(&crate::test_support::WipeCountingPersistence::default())
+        .await
+        .expect("clear");
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
+    let tracked_before = wallet.asset_locks.list_tracked_locks().await.len();
+    let seen = Mutex::new(Vec::new());
+    let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+    let result = wallet
+        .shielded_fund_from_asset_lock(
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: Arc::new(AssetLockOperationContext::new([0x5c; 16])),
+            },
+            vec![(recipient, None)],
+            &signer,
+            prover,
+            None,
+            0,
+            None,
+            None,
+            Some(&observer),
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedNotBound)),
+        "{result:?}"
+    );
+    assert!(seen.into_inner().unwrap().is_empty(), "no lock built");
+    assert_eq!(
+        wallet.asset_locks.list_tracked_locks().await.len(),
+        tracked_before
+    );
 }
 
 /// A generic outpoint resume that names a different recipient than the row

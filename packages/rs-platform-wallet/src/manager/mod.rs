@@ -1673,6 +1673,16 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
         // The balance emitter exits at its next await once cancelled.
         #[cfg(feature = "shielded")]
         self.shielded_balance_emitter_cancel.cancel();
+        // Every wallet holds this slot, and a wallet can outlive its manager
+        // (a host's handle, or the event handlers that reach it through the
+        // wallet map). Emptying the slot releases the coordinator and its
+        // store with the manager, and refuses a later shielded operation on
+        // such a wallet as unconfigured. A slot locked at this moment (an
+        // operation still resolving it) is left as it is.
+        #[cfg(feature = "shielded")]
+        if let Ok(mut slot) = self.shielded_coordinator.try_write() {
+            *slot = None;
+        }
     }
 }
 
