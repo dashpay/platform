@@ -1,5 +1,5 @@
 use crate::identity::contract_bounds::ContractBounds;
-use crate::identity::IdentityPublicKey;
+use crate::identity::{IdentityPublicKey, KeyType};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -82,6 +82,12 @@ impl IdentityPublicKeyInCreation {
     pub fn first_in_version_1_format(keys: &[Self]) -> Option<&Self> {
         keys.iter()
             .find(|key| matches!(key, IdentityPublicKeyInCreation::V1(_)))
+    }
+
+    /// The first of `keys` of `key_type`, if any. A transition carrying an ML_DSA_65 key is
+    /// active from protocol version 16: a binary from before cannot decode the key type.
+    pub fn first_of_key_type(keys: &[Self], key_type: KeyType) -> Option<&Self> {
+        keys.iter().find(|key| key.key_type() == key_type)
     }
 
     /// The first of `keys` that carries a budget or an expiry, if any. An identity created from

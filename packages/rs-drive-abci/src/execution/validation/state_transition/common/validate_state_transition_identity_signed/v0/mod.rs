@@ -38,6 +38,10 @@ lazy_static! {
         keys.insert(KeyType::ECDSA_SECP256K1);
         keys.insert(KeyType::BLS12_381);
         keys.insert(KeyType::ECDSA_HASH160);
+        // In place: an ML_DSA_65 key signs from protocol version 16. No identity holds one
+        // before it, as a transition registering one is not active there, so the protocol
+        // versions before it never look this entry up. Generations 1 and 2 run this check.
+        keys.insert(KeyType::ML_DSA_65);
         keys
     };
 }

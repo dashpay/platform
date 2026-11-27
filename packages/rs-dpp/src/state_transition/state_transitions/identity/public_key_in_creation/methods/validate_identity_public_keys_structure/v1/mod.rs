@@ -8,6 +8,7 @@ use crate::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
 };
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::util::ml_dsa_65;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{ProtocolError, PublicKeyValidationError};
 use platform_version::version::PlatformVersion;
@@ -29,6 +30,11 @@ impl IdentityPublicKeyInCreation {
     /// itself, so it must be 20 bytes; data of any other size has no hash to register. The data
     /// of an ECDSA_SECP256K1 or BLS12_381 key is left to its proof of possession, which refuses
     /// data that is not a public key (an uncompressed 65-byte ECDSA_SECP256K1 key is valid).
+    ///
+    /// The data of an ML_DSA_65 key must be the 1,952 bytes of an encoded public key: every
+    /// string of that size is a public key and no other is. The key type exists from protocol
+    /// version 16; a transition carrying one is not active before it, so the versions before it
+    /// that select this generation never see one here.
     #[inline(always)]
     pub(super) fn validate_identity_public_keys_structure_v1(
         identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
@@ -78,24 +84,27 @@ impl IdentityPublicKeyInCreation {
         // refuses never succeeded, and one refused for an earlier rule keeps its error.
         let validation_errors: Vec<ConsensusError> = identity_public_keys_with_witness
             .iter()
-            .filter(|identity_public_key| match identity_public_key.key_type() {
-                KeyType::ECDSA_HASH160
-                | KeyType::BIP13_SCRIPT_HASH
-                | KeyType::EDDSA_25519_HASH160 => {
-                    identity_public_key.data().len() != HASH_KEY_DATA_SIZE
-                }
-                KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => false,
-            })
-            .map(|identity_public_key| {
-                InvalidIdentityPublicKeyDataError::new(
-                    identity_public_key.id(),
-                    PublicKeyValidationError::new(format!(
-                        "{} key data must be {HASH_KEY_DATA_SIZE} bytes, got {}",
-                        identity_public_key.key_type(),
-                        identity_public_key.data().len()
-                    )),
-                )
-                .into()
+            .filter_map(|identity_public_key| {
+                let required_size = match identity_public_key.key_type() {
+                    KeyType::ECDSA_HASH160
+                    | KeyType::BIP13_SCRIPT_HASH
+                    | KeyType::EDDSA_25519_HASH160 => HASH_KEY_DATA_SIZE,
+                    // Unreachable before protocol version 16, where no transition carrying the
+                    // key type is active.
+                    KeyType::ML_DSA_65 => ml_dsa_65::PUBLIC_KEY_SIZE,
+                    KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => return None,
+                };
+                (identity_public_key.data().len() != required_size).then(|| {
+                    InvalidIdentityPublicKeyDataError::new(
+                        identity_public_key.id(),
+                        PublicKeyValidationError::new(format!(
+                            "{} key data must be {required_size} bytes, got {}",
+                            identity_public_key.key_type(),
+                            identity_public_key.data().len()
+                        )),
+                    )
+                    .into()
+                })
             })
             .collect();
 
@@ -354,6 +363,57 @@ mod tests {
             )
             .expect("expected validation to run");
             assert!(result.is_valid(), "{key_type}: {:?}", result.errors);
+        }
+    }
+
+    /// Every string of 1,952 bytes is an encoded ML-DSA-65 public key and no other is, so data
+    /// of another size is refused here, before any proof of possession is looked at.
+    #[test]
+    fn should_reject_ml_dsa_65_key_data_that_is_not_1952_bytes() {
+        for data_len in [0, 20, 33, 1951, 1953, 2592] {
+            let result = validate(&[key_with_data(1, KeyType::ML_DSA_65, data_len)]);
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(e)
+                    )] if e.public_key_id() == 1
+                ),
+                "{data_len} bytes: {:?}",
+                result.errors
+            );
+        }
+        let result = validate(&[key_with_data(1, KeyType::ML_DSA_65, 1952)]);
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    /// An ML_DSA_65 key is good for every purpose and security level a key of another type is.
+    #[test]
+    fn should_accept_an_ml_dsa_65_key_at_every_purpose_and_security_level_open_to_added_keys() {
+        for (purpose, security_level) in [
+            (Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            (Purpose::AUTHENTICATION, SecurityLevel::CRITICAL),
+            (Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+            (Purpose::AUTHENTICATION, SecurityLevel::MEDIUM),
+            (Purpose::TRANSFER, SecurityLevel::CRITICAL),
+        ] {
+            let key: IdentityPublicKeyInCreation = IdentityPublicKeyInCreationV0 {
+                id: 1,
+                key_type: KeyType::ML_DSA_65,
+                purpose,
+                security_level,
+                contract_bounds: None,
+                read_only: false,
+                data: BinaryData::new(vec![3; 1952]),
+                signature: BinaryData::default(),
+            }
+            .into();
+            let result = validate(&[key]);
+            assert!(
+                result.is_valid(),
+                "{purpose:?}/{security_level:?}: {:?}",
+                result.errors
+            );
         }
     }
 

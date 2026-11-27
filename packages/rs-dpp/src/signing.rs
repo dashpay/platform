@@ -4,10 +4,16 @@ use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
 use crate::util::ecdsa;
+#[cfg(any(
+    feature = "message-signature-verification",
+    feature = "message-signing"
+))]
+use crate::util::ml_dsa_65;
 #[cfg(feature = "message-signature-verification")]
 use crate::{
     consensus::signature::{
-        BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
+        BasicBLSError, BasicECDSAError, BasicMLDSAError, SignatureError,
+        SignatureShouldNotBePresentError,
     },
     validation::SimpleConsensusValidationResult,
 };
@@ -117,6 +123,17 @@ impl PlatformMessageSignable for &[u8] {
                     SimpleConsensusValidationResult::default()
                 }
             }
+            KeyType::ML_DSA_65 => {
+                if let Err(e) =
+                    ml_dsa_65::verify_data_signature(signable_data, signature, public_key_data)
+                {
+                    SimpleConsensusValidationResult::new_with_error(
+                        SignatureError::BasicMLDSAError(BasicMLDSAError::new(e.to_string())).into(),
+                    )
+                } else {
+                    SimpleConsensusValidationResult::default()
+                }
+            }
         }
     }
     #[cfg(feature = "message-signing")]
@@ -144,6 +161,83 @@ impl PlatformMessageSignable for &[u8] {
                     key_type
                 )))
             }
+
+            KeyType::ML_DSA_65 => {
+                let seed: &[u8; 32] =
+                    private_key
+                        .try_into()
+                        .map_err(|_| ProtocolError::PrivateKeySizeError {
+                            got: private_key.len() as u32,
+                        })?;
+                ml_dsa_65::sign(self, seed).map_err(|e| ProtocolError::Generic(e.to_string()))
+            }
         }
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
+mod tests {
+    use super::*;
+    use crate::bls::native_bls::NativeBlsModule;
+    use crate::consensus::ConsensusError;
+
+    /// A proof of possession by an ML_DSA_65 key is its signature over the message itself.
+    #[test]
+    fn should_verify_a_message_signed_by_an_ml_dsa_65_key_and_refuse_any_other_signature() {
+        let private_key = [5u8; 32];
+        let public_key = ml_dsa_65::public_key_from_seed(&private_key);
+        let message: &[u8] = b"the signable bytes of a transition";
+
+        let signature = message
+            .sign_by_private_key(&private_key, KeyType::ML_DSA_65, &NativeBlsModule)
+            .expect("expected to sign");
+        assert!(message
+            .verify_signature(KeyType::ML_DSA_65, &public_key, &signature)
+            .is_valid());
+
+        let other_message: &[u8] = b"the signable bytes of another transition";
+        let mut altered = signature.clone();
+        altered[100] ^= 0x01;
+        for (message, public_key, signature, label) in [
+            (
+                other_message,
+                &public_key[..],
+                &signature[..],
+                "another message",
+            ),
+            (
+                message,
+                &public_key[..],
+                &altered[..],
+                "an altered signature",
+            ),
+            (message, &public_key[..], &[][..], "no signature"),
+            (message, &public_key[..1951], &signature[..], "a short key"),
+        ] {
+            let result = message.verify_signature(KeyType::ML_DSA_65, public_key, signature);
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::BasicMLDSAError(_)
+                    )]
+                ),
+                "{label}: {:?}",
+                result.errors
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_to_sign_with_an_ml_dsa_65_private_key_that_is_not_32_bytes() {
+        let message: &[u8] = b"message";
+        assert!(matches!(
+            message.sign_by_private_key(&[5u8; 31], KeyType::ML_DSA_65, &NativeBlsModule),
+            Err(ProtocolError::PrivateKeySizeError { got: 31 })
+        ));
     }
 }

@@ -5,11 +5,11 @@ use crate::consensus::signature::PublicKeyExpiredError;
 use crate::consensus::signature::PublicKeyWithLimitsCannotSignDataContractTransitionError;
 use crate::consensus::signature::PublicKeyWithLimitsCannotUpdateKeyLimitsError;
 use crate::consensus::signature::{
-    BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
-    InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
-    MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
-    SignatureShouldNotBePresentError, UncompressedPublicKeyNotAllowedError,
-    WrongPublicKeyPurposeError,
+    BasicBLSError, BasicECDSAError, BasicMLDSAError, IdentityNotFoundError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeySecurityLevelError,
+    InvalidStateTransitionSignatureError, MissingPublicKeyError, PublicKeyIsDisabledError,
+    PublicKeySecurityLevelNotMetError, SignatureShouldNotBePresentError,
+    UncompressedPublicKeyNotAllowedError, WrongPublicKeyPurposeError,
 };
 use crate::consensus::ConsensusError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -99,6 +99,10 @@ pub enum SignatureError {
     PublicKeyWithLimitsCannotSignDataContractTransitionError(
         PublicKeyWithLimitsCannotSignDataContractTransitionError,
     ),
+
+    // An ML_DSA_65 key's proof of possession does not verify (protocol version 16).
+    #[error(transparent)]
+    BasicMLDSAError(BasicMLDSAError),
 }
 
 impl From<SignatureError> for ConsensusError {

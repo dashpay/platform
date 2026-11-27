@@ -49,7 +49,7 @@ An identity's public keys are not just random cryptographic keys -- they are str
 - **Key ID** (`KeyID`): A numeric identifier unique within the identity, used to reference the key.
 - **Purpose**: What the key is for -- authentication, encryption, decryption, transfer, voting, or owner operations.
 - **Security Level**: How sensitive operations signed by this key are -- master, critical, high, or medium.
-- **Key Type**: The cryptographic algorithm -- ECDSA_SECP256K1, BLS12_381, ECDSA_HASH160, BIP13_SCRIPT_HASH, or EDDSA_25519_HASH160.
+- **Key Type**: The cryptographic algorithm -- ECDSA_SECP256K1, BLS12_381, ECDSA_HASH160, BIP13_SCRIPT_HASH, EDDSA_25519_HASH160, or ML_DSA_65 (from protocol version 16).
 - **Data**: The actual public key bytes.
 - **Disabled At**: An optional timestamp marking when the key was disabled.
 

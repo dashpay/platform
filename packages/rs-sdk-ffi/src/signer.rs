@@ -59,8 +59,8 @@ use tokio::sync::oneshot;
 /// hash of a [`PlatformAddress`] (P2PKH).
 ///
 /// This sits outside the standard `dpp::identity::KeyType` enum range
-/// (which only uses 0–4: `ECDSA_SECP256K1`, `BLS12_381`, `ECDSA_HASH160`,
-/// `BIP13_SCRIPT_HASH`, `EDDSA_25519_HASH160`). Picking 0xFF guarantees
+/// (which only uses 0–5: `ECDSA_SECP256K1`, `BLS12_381`, `ECDSA_HASH160`,
+/// `BIP13_SCRIPT_HASH`, `EDDSA_25519_HASH160`, `ML_DSA_65`). Picking 0xFF guarantees
 /// no collision with any future `KeyType` addition while still fitting
 /// the existing `u8` slot in `SignAsyncCallback` / `CanSignCallback`,
 /// so the same C vtable can serve both `Signer<IdentityPublicKey>` and
@@ -131,6 +131,7 @@ pub struct SignerVTable {
 /// | 2    | `ECDSA_HASH160`         |
 /// | 3    | `BIP13_SCRIPT_HASH`     |
 /// | 4    | `EDDSA_25519_HASH160`   |
+/// | 5    | `ML_DSA_65`             |
 ///
 /// The two together are sufficient for an FFI signer to look up the
 /// matching private-key handle in its own store (e.g. iOS Keychain keyed

@@ -321,6 +321,7 @@ impl ErrorWithCode for SignatureError {
             Self::PublicKeyExpiredError(_) => 20016,
             Self::PublicKeyWithLimitsCannotUpdateKeyLimitsError(_) => 20017,
             Self::PublicKeyWithLimitsCannotSignDataContractTransitionError(_) => 20018,
+            Self::BasicMLDSAError(_) => 20019,
         }
     }
 }

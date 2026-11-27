@@ -21,6 +21,10 @@ dashcore-crypto = { workspace = true, optional = true }
 blst = { version = "0.3.17", default-features = false, optional = true }
 zeroize = { version = "1.9.0", optional = true }
 ed25519-dalek = { version = "=2.2.0", features = ["rand_core"], optional = true }
+# Consensus-critical exact pin: from protocol version 16 this crate decides which ML_DSA_65
+# signatures verify, and derives the key pair of a seed; see the pinned vectors in
+# src/util/ml_dsa_65.rs.
+ml-dsa = { version = "=0.1.2", default-features = false, features = ["zeroize"] }
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
 base64 = "0.22.1"

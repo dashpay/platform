@@ -131,12 +131,21 @@ The `KeyType` enum determines the cryptographic algorithm and key size:
 | `ECDSA_HASH160` | 2 | 20 bytes | No | RIPEMD160(SHA256) of an ECDSA public key. Core address type. |
 | `BIP13_SCRIPT_HASH` | 3 | 20 bytes | No | Script hash. Core address type. |
 | `EDDSA_25519_HASH160` | 4 | 20 bytes | No | RIPEMD160(SHA256) of an Ed25519 public key. |
+| `ML_DSA_65` | 5 | 1,952 bytes | Yes | ML-DSA-65 (FIPS 204), secure against a quantum computer. From protocol version 16. |
+
+An `ML_DSA_65` key trades size for security against a quantum computer: its public key is
+1,952 bytes and each of its signatures is 3,309 bytes, against 33 and 65 bytes for
+`ECDSA_SECP256K1`. Its private key is the 32 byte seed the key pair is expanded from, and a
+signature is over the signable bytes themselves with the empty context string, in the
+deterministic variant of the scheme. A transition that registers one is not active before
+protocol version 16. An identity is only protected against a quantum computer once every key
+that can change its keys or move its funds is an `ML_DSA_65` key, the master key included.
 
 ### Unique vs Non-Unique Keys
 
 This distinction is critical for understanding how keys are stored and enforced:
 
-- **Unique key types** (ECDSA_SECP256K1, BLS12_381): The full public key is stored, and
+- **Unique key types** (ECDSA_SECP256K1, BLS12_381, ML_DSA_65): The full public key is stored, and
   Platform enforces that no two identities can register the same public key. This is
   checked in both the unique and non-unique hash tables during insertion. If identity A
   registers an ECDSA key, identity B cannot register the same key bytes.
@@ -309,6 +318,7 @@ All key types are hashed to 20 bytes for storage in the hash tables:
 
 - **ECDSA_SECP256K1** (33 bytes): `RIPEMD160(SHA256(pubkey))`
 - **BLS12_381** (48 bytes): `RIPEMD160(SHA256(pubkey))`
+- **ML_DSA_65** (1,952 bytes): `RIPEMD160(SHA256(pubkey))`
 - **ECDSA_HASH160** (20 bytes): stored as-is (already a hash)
 - **BIP13_SCRIPT_HASH** (20 bytes): stored as-is
 - **EDDSA_25519_HASH160** (20 bytes): stored as-is

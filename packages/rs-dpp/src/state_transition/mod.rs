@@ -19,7 +19,9 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
-use platform_version::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::feature_initial_protocol_versions::{
+    ML_DSA_65_KEY_INITIAL_PROTOCOL_VERSION, YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION,
+};
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -39,6 +41,8 @@ use crate::util::ecdsa;
 #[cfg(feature = "state-transition-signing")]
 use crate::util::hash::ripemd160_sha256;
 use crate::util::hash::{hash_double_to_vec, hash_single};
+#[cfg(feature = "state-transition-validation")]
+use crate::util::ml_dsa_65;
 
 pub mod proof_result;
 mod serialization;
@@ -1102,14 +1106,21 @@ pub struct StateTransitionSigningOptions {
     pub allow_signing_with_any_purpose: bool,
 }
 
-/// The active range of a transition carrying `keys`: from protocol version 14 when one of them
-/// is bound to a contract group or is a version 1 key (the format that can carry a budget or an
-/// expiry), `otherwise` when none is.
+/// The active range of a transition carrying `keys`: from protocol version 16 when one of them
+/// is an ML_DSA_65 key, from protocol version 14 when one of them is bound to a contract group
+/// or is a version 1 key (the format that can carry a budget or an expiry), `otherwise` when
+/// none is.
+///
+/// Binaries from before protocol version 16 cannot decode the ML_DSA_65 key type, so an earlier
+/// version must reject the transition without charging as they do. This is also what keeps the
+/// key type out of every identity before 16: a transition is the only way a key gets there.
 fn active_version_range_for_keys_in_creation(
     keys: &[IdentityPublicKeyInCreation],
     otherwise: RangeInclusive<ProtocolVersion>,
 ) -> RangeInclusive<ProtocolVersion> {
-    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
+    if IdentityPublicKeyInCreation::first_of_key_type(keys, KeyType::ML_DSA_65).is_some() {
+        ML_DSA_65_KEY_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+    } else if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
         || IdentityPublicKeyInCreation::first_in_version_1_format(keys).is_some()
     {
         14..=LATEST_VERSION
@@ -1136,6 +1147,16 @@ fn active_version_range_for_contract(
         DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
         DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
     }
+}
+
+/// The private key of an ML_DSA_65 key: the 32 byte seed its key pair is expanded from.
+#[cfg(feature = "state-transition-signing")]
+fn ml_dsa_65_seed(private_key: &[u8]) -> Result<&[u8; 32], ProtocolError> {
+    private_key
+        .try_into()
+        .map_err(|_| ProtocolError::PrivateKeySizeError {
+            got: private_key.len() as u32,
+        })
 }
 
 /// The active range of a format no state transition may carry: it contains no protocol
@@ -1257,8 +1278,9 @@ impl StateTransition {
                 }
             }
             // A key bound to a contract group, and a version 1 key, exist from protocol version
-            // 14, so a transition carrying one is inactive before that: an earlier version
-            // rejects it without charging, exactly as a binary that cannot decode it does.
+            // 14, and an ML_DSA_65 key from 16, so a transition carrying one is inactive before
+            // that: an earlier version rejects it without charging, exactly as a binary that
+            // cannot decode it does.
             StateTransition::IdentityCreate(st) => {
                 active_version_range_for_keys_in_creation(st.public_keys(), ALL_VERSIONS)
             }
@@ -2179,6 +2201,18 @@ impl StateTransition {
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type(), bls)
             }
+            KeyType::ML_DSA_65 => {
+                let seed = ml_dsa_65_seed(private_key)?;
+
+                if ml_dsa_65::public_key_from_seed(seed).as_slice()
+                    != identity_public_key.data().as_slice()
+                {
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data().to_vec()),
+                    ));
+                }
+                self.sign_by_private_key(private_key, identity_public_key.key_type(), bls)
+            }
 
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
@@ -2223,6 +2257,18 @@ impl StateTransition {
                         needed: self.required_number_of_private_keys(),
                         using: 1,
                         msg: "failed to set ECDSA signature",
+                    });
+                };
+            }
+
+            KeyType::ML_DSA_65 => {
+                let signature = ml_dsa_65::sign(&data, ml_dsa_65_seed(private_key)?)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                if !self.set_signature(signature.into()) {
+                    return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                        needed: self.required_number_of_private_keys(),
+                        using: 1,
+                        msg: "failed to set ML-DSA-65 signature",
                     });
                 };
             }
@@ -2456,6 +2502,34 @@ impl StateTransition {
         ecdsa::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
             // TODO: it shouldn't respond with consensus error
 
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(e.to_string()),
+                ),
+            ))
+        })
+    }
+
+    #[cfg(feature = "state-transition-validation")]
+    /// Verifies an ML-DSA-65 signature over the signable bytes with the public key
+    fn verify_ml_dsa_65_signature_by_public_key(
+        &self,
+        public_key: &[u8],
+    ) -> Result<(), ProtocolError> {
+        let Some(signature) = self.signature() else {
+            return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                needed: self.required_number_of_private_keys(),
+                using: 1,
+                msg: "This state transition type should a single signature",
+            });
+        };
+        if signature.is_empty() {
+            return Err(ProtocolError::StateTransitionIsNotSignedError(
+                StateTransitionIsNotSignedError::new(self.clone()),
+            ));
+        }
+        let data = self.signable_bytes()?;
+        ml_dsa_65::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
             ProtocolError::from(ConsensusError::SignatureError(
                 SignatureError::InvalidStateTransitionSignatureError(
                     InvalidStateTransitionSignatureError::new(e.to_string()),
@@ -3362,6 +3436,76 @@ mod tests {
         }
     }
 
+    // An ML_DSA_65 key signs the signable bytes themselves, and only its own signature over them
+    // verifies. The private key is the 32 byte seed the key pair is expanded from.
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_sign_with_an_ml_dsa_65_key_and_verify_only_its_signature() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [1; 32];
+        let key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 11,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            key_type: KeyType::ML_DSA_65,
+            data: ml_dsa_65::public_key_from_seed(&private_key).into(),
+            ..Default::default()
+        }
+        .into();
+
+        let mut signed = sample_transfer_st();
+        signed
+            .sign(&key, &private_key, &bls)
+            .expect("the key signs the transfer");
+        assert_eq!(
+            signed.signature().expect("a signed transfer").len(),
+            ml_dsa_65::SIGNATURE_SIZE
+        );
+        assert_eq!(signed.signature_public_key_id(), Some(11));
+
+        let platform_version = PlatformVersion::latest();
+        signed
+            .verify_identity_signed_signature(&key, &bls, platform_version)
+            .expect("a signature by the key verifies");
+
+        // The same transfer signed by another ML_DSA_65 key, a signature of the right size that
+        // is not well formed, and a signature of the size an ECDSA key makes
+        let mut by_another_key = signed.clone();
+        by_another_key
+            .sign_by_private_key(&[8; 32], KeyType::ML_DSA_65, &bls)
+            .expect("another key signs the transfer");
+        let mut not_well_formed = signed.clone();
+        not_well_formed.set_signature(BinaryData::new(vec![0xff; ml_dsa_65::SIGNATURE_SIZE]));
+        let mut of_ecdsa_size = signed.clone();
+        of_ecdsa_size.set_signature(BinaryData::new(vec![1; 65]));
+
+        for (transition, label) in [
+            (by_another_key, "signed by another key"),
+            (not_well_formed, "not well formed"),
+            (of_ecdsa_size, "of the size of an ECDSA signature"),
+        ] {
+            let error = transition
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect_err(label);
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_)
+                ))),
+                "{label}: {error:?}"
+            );
+        }
+
+        // A private key that is not the key's own is refused before anything is signed.
+        let mut unsigned = sample_transfer_st();
+        assert!(matches!(
+            unsigned.sign(&key, &[8; 32], &bls),
+            Err(ProtocolError::InvalidSignaturePublicKeyError(_))
+        ));
+    }
+
     // An ECDSA_SECP256K1 signature whose S is in the upper half of the curve order is refused at
     // every protocol version, as every released Platform refuses it. Its low-S twin, the
     // signature the key made, verifies.
@@ -4034,6 +4178,56 @@ mod tests {
             signature_public_key_id: 0,
             signature: BinaryData::new(vec![0xFF; 65]),
         }))
+    }
+
+    #[test]
+    fn should_only_admit_an_ml_dsa_65_public_key_in_creation_from_protocol_version_16() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+
+        // A key and a proof of possession of the sizes the scheme gives them, so that decoding
+        // shows both fit the limits untrusted bytes are read under.
+        let ml_dsa_65_key: IdentityPublicKeyInCreation = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ML_DSA_65,
+            data: BinaryData::new(vec![2; 1952]),
+            signature: BinaryData::new(vec![3; 3309]),
+            ..Default::default()
+        }
+        .into();
+
+        let transition = sample_identity_update_st_adding(ml_dsa_65_key.clone());
+        assert_eq!(transition.active_version_range(), 16..=LATEST_VERSION);
+
+        // The key type decides the range whatever the transition carrying the key allows.
+        for otherwise in [ALL_VERSIONS, 11..=LATEST_VERSION, 12..=LATEST_VERSION] {
+            assert_eq!(
+                active_version_range_for_keys_in_creation(
+                    std::slice::from_ref(&ml_dsa_65_key),
+                    otherwise
+                ),
+                16..=LATEST_VERSION
+            );
+        }
+
+        // Protocol version 15 refuses it while decoding, the way a binary that does not know
+        // the key type does; protocol version 16 decodes it.
+        let bytes = transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let version_15 = PlatformVersion::get(15).expect("expected protocol version 15");
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_15),
+            Err(ProtocolError::StateTransitionError(
+                StateTransitionIsNotActiveError { .. }
+            ))
+        ));
+        let version_16 = PlatformVersion::get(16).expect("expected protocol version 16");
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_16)
+                .expect("expected protocol version 16 to decode an ML_DSA_65 key"),
+            transition
+        );
     }
 
     #[test]

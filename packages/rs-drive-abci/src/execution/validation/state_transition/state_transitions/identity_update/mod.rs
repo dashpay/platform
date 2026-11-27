@@ -3771,6 +3771,463 @@ mod tests {
         }
     }
 
+    mod ml_dsa_65_keys {
+        use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID};
+        use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+        use dpp::util::ml_dsa_65;
+        use simple_signer::signer::SimpleSigner;
+        use std::collections::BTreeMap;
+
+        const ADDED_KEY_ID: KeyID = 1;
+        /// The private key of an ML_DSA_65 key is the 32 byte seed its key pair is expanded
+        /// from.
+        const MASTER_KEY_SEED: [u8; 32] = [0x4d; 32];
+        const ADDED_KEY_SEED: [u8; 32] = [0x65; 32];
+
+        /// An identity with a master key alone, and the signer holding that key.
+        struct Owner {
+            identity: Identity,
+            master_key: IdentityPublicKey,
+            signer: SimpleSigner,
+        }
+
+        fn new_platform(platform_version: &PlatformVersion) -> TempPlatform<MockCoreRPCLike> {
+            TestPlatformBuilder::new()
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        /// Adds to the platform an identity at revision 0 whose only key is a master key of
+        /// `master_key_type`, ECDSA_SECP256K1 or ML_DSA_65.
+        fn owner(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            master_key_type: KeyType,
+            platform_version: &PlatformVersion,
+        ) -> Owner {
+            let mut rng = StdRng::seed_from_u64(1952);
+            let mut signer = SimpleSigner::default();
+            let master_key: IdentityPublicKey = if master_key_type == KeyType::ML_DSA_65 {
+                let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    contract_bounds: None,
+                    key_type: KeyType::ML_DSA_65,
+                    read_only: false,
+                    data: ml_dsa_65::public_key_from_seed(&MASTER_KEY_SEED).into(),
+                    disabled_at: None,
+                }
+                .into();
+                signer.add_identity_public_key(master_key.clone(), MASTER_KEY_SEED);
+                master_key
+            } else {
+                let (master_key, master_private_key) =
+                    IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                        0,
+                        &mut rng,
+                        platform_version,
+                    )
+                    .expect("expected to get key pair");
+                signer.add_identity_public_key(master_key.clone(), master_private_key);
+                master_key
+            };
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(master_key.id(), master_key.clone())]),
+                balance: dash_to_credits!(0.1),
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+            Owner {
+                identity,
+                master_key,
+                signer,
+            }
+        }
+
+        /// An identity update at revision 1 and nonce 1 adding a high level authentication key
+        /// of `key_type` with `key_data`, whose proof of possession is what `prove` makes of the
+        /// signable bytes, then signed by the owner's master key.
+        async fn update(
+            owner: &Owner,
+            key_type: KeyType,
+            key_data: Vec<u8>,
+            prove: impl FnOnce(&[u8]) -> Vec<u8>,
+        ) -> StateTransition {
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: owner.identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                    id: ADDED_KEY_ID,
+                    key_type,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    read_only: false,
+                    data: key_data.into(),
+                    signature: Default::default(),
+                }
+                .into()],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: owner.master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(update_v0)) =
+                &mut transition
+            else {
+                panic!("expected an identity update v0 transition");
+            };
+            update_v0.add_public_keys[0].set_signature(prove(&signable_bytes).into());
+
+            transition.set_signature(
+                owner
+                    .signer
+                    .sign(&owner.master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            transition
+        }
+
+        /// An identity update adding an ML_DSA_65 key whose proof of possession is made with
+        /// `proving_seed`; the key's own seed is `ADDED_KEY_SEED`.
+        async fn update_adding_an_ml_dsa_65_key(
+            owner: &Owner,
+            proving_seed: [u8; 32],
+        ) -> StateTransition {
+            update(
+                owner,
+                KeyType::ML_DSA_65,
+                ml_dsa_65::public_key_from_seed(&ADDED_KEY_SEED),
+                |signable_bytes| {
+                    ml_dsa_65::sign(signable_bytes, &proving_seed).expect("expected to sign")
+                },
+            )
+            .await
+        }
+
+        /// An identity update adding an ECDSA_SECP256K1 key with its proof of possession.
+        async fn update_adding_an_ecdsa_key(owner: &Owner) -> StateTransition {
+            let key_pair = Keypair::new(&mut SecpStdRng::seed_from_u64(65));
+            update(
+                owner,
+                ECDSA_SECP256K1,
+                key_pair.public_key().serialize().to_vec(),
+                |signable_bytes| {
+                    signer::sign(signable_bytes, &key_pair.secret_key().to_secret_bytes())
+                        .expect("expected to sign")
+                        .to_vec()
+                },
+            )
+            .await
+        }
+
+        fn check_tx(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> Vec<ConsensusError> {
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            platform
+                .check_tx(
+                    &transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize"),
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to check tx")
+                .errors
+        }
+
+        fn process_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            processing_result.execution_results()[0].clone()
+        }
+
+        fn stored_identity(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            owner: &Owner,
+            platform_version: &PlatformVersion,
+        ) -> Identity {
+            platform
+                .drive
+                .fetch_full_identity(owner.identity.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch the identity")
+                .expect("expected the identity to exist")
+        }
+
+        /// An identity adds an ML_DSA_65 key the way it adds any key that signs: the update
+        /// carries the 1,952 byte public key and the key's own signature over the update, its
+        /// proof of possession. The key is stored whole, and like an ECDSA_SECP256K1 or a
+        /// BLS12_381 key it belongs to one identity, which is found by the key's hash.
+        #[tokio::test]
+        async fn should_add_an_ml_dsa_65_key_with_its_proof_of_possession() {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version);
+            let owner = owner(&platform, ECDSA_SECP256K1, platform_version);
+            let transition = update_adding_an_ml_dsa_65_key(&owner, ADDED_KEY_SEED).await;
+
+            let errors = check_tx(&platform, &transition, platform_version);
+            assert!(errors.is_empty(), "{errors:?}");
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let identity = stored_identity(&platform, &owner, platform_version);
+            assert_eq!(identity.revision(), 1);
+            let added_key = identity
+                .public_keys()
+                .get(&ADDED_KEY_ID)
+                .expect("expected the added key to be stored");
+            assert_eq!(added_key.key_type(), KeyType::ML_DSA_65);
+            assert_eq!(
+                added_key.data().as_slice(),
+                ml_dsa_65::public_key_from_seed(&ADDED_KEY_SEED).as_slice()
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_id_by_unique_public_key_hash(
+                        added_key
+                            .public_key_hash()
+                            .expect("expected the key's hash"),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to look the key hash up"),
+                Some(owner.identity.id().to_buffer())
+            );
+        }
+
+        /// An identity whose master key is an ML_DSA_65 key signs its transitions with it: the
+        /// signature is 3,309 bytes over the transition's signable bytes.
+        #[tokio::test]
+        async fn should_accept_an_identity_update_signed_by_an_ml_dsa_65_master_key() {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version);
+            let owner = owner(&platform, KeyType::ML_DSA_65, platform_version);
+            let transition = update_adding_an_ecdsa_key(&owner).await;
+            assert_eq!(
+                transition.signature().expect("expected a signature").len(),
+                ml_dsa_65::SIGNATURE_SIZE
+            );
+
+            let errors = check_tx(&platform, &transition, platform_version);
+            assert!(errors.is_empty(), "{errors:?}");
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            let identity = stored_identity(&platform, &owner, platform_version);
+            assert_eq!(identity.revision(), 1);
+            assert!(identity.public_keys().contains_key(&ADDED_KEY_ID));
+        }
+
+        /// A transition whose ML_DSA_65 signature does not verify is refused like one with a bad
+        /// signature of any other type: by check_tx, and unpaid by a block, which leaves the
+        /// identity as it was.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_whose_ml_dsa_65_signature_does_not_verify()
+        {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version);
+            let owner = owner(&platform, KeyType::ML_DSA_65, platform_version);
+            let identity_before = stored_identity(&platform, &owner, platform_version);
+
+            let mut transition = update_adding_an_ecdsa_key(&owner).await;
+            let mut signature = transition
+                .signature()
+                .expect("expected a signature")
+                .to_vec();
+            signature[100] ^= 0x01;
+            transition.set_signature(signature.into());
+
+            let errors = check_tx(&platform, &transition, platform_version);
+            assert_matches!(
+                errors.as_slice(),
+                [ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_)
+                )],
+                "{errors:?}"
+            );
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    )
+                )
+            );
+            assert_eq!(
+                stored_identity(&platform, &owner, platform_version),
+                identity_before
+            );
+        }
+
+        /// The proof of possession of an added ML_DSA_65 key must be that key's signature. One
+        /// made by another key is refused by check_tx, and unpaid by a block, as a failed proof
+        /// of possession of any key is from protocol version 15.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_ml_dsa_65_key_whose_proof_of_possession_does_not_verify() {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version);
+            let owner = owner(&platform, ECDSA_SECP256K1, platform_version);
+            let identity_before = stored_identity(&platform, &owner, platform_version);
+            let transition = update_adding_an_ml_dsa_65_key(&owner, [0x66; 32]).await;
+
+            let errors = check_tx(&platform, &transition, platform_version);
+            assert_matches!(
+                errors.as_slice(),
+                [ConsensusError::SignatureError(
+                    SignatureError::BasicMLDSAError(_)
+                )],
+                "{errors:?}"
+            );
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(SignatureError::BasicMLDSAError(_))
+                )
+            );
+            assert_eq!(
+                stored_identity(&platform, &owner, platform_version),
+                identity_before
+            );
+        }
+
+        /// An ML_DSA_65 public key is 1,952 bytes. Key data of any other size fails basic
+        /// structure validation, before any signature is checked.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_ml_dsa_65_key_whose_data_is_not_1952_bytes() {
+            let platform_version = PlatformVersion::latest();
+            for data_len in [33, 1951, 1953] {
+                let platform = new_platform(platform_version);
+                let owner = owner(&platform, ECDSA_SECP256K1, platform_version);
+                let transition = update(
+                    &owner,
+                    KeyType::ML_DSA_65,
+                    vec![0x5a; data_len],
+                    |signable_bytes| {
+                        ml_dsa_65::sign(signable_bytes, &ADDED_KEY_SEED).expect("expected to sign")
+                    },
+                )
+                .await;
+
+                let errors = check_tx(&platform, &transition, platform_version);
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(error)
+                    )] if error.public_key_id() == ADDED_KEY_ID,
+                    "{data_len} bytes: {errors:?}"
+                );
+                assert_matches!(
+                    process_block(&platform, &transition, platform_version),
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::InvalidIdentityPublicKeyDataError(
+                            _
+                        ))
+                    ),
+                    "{data_len} bytes"
+                );
+            }
+        }
+
+        /// The key type exists from protocol version 16. Before it an identity update adding an
+        /// ML_DSA_65 key is not active: check_tx refuses it and a block refuses it unpaid, as
+        /// software that cannot decode the key type does, and the identity is left as it was.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_ml_dsa_65_key_before_protocol_version_16() {
+            let platform_version = PlatformVersion::get(15).expect("expected protocol version 15");
+            let platform = new_platform(platform_version);
+            let owner = owner(&platform, ECDSA_SECP256K1, platform_version);
+            let identity_before = stored_identity(&platform, &owner, platform_version);
+            let transition = update_adding_an_ml_dsa_65_key(&owner, ADDED_KEY_SEED).await;
+
+            let errors = check_tx(&platform, &transition, platform_version);
+            assert_matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::StateTransitionNotActiveError(_)
+                )],
+                "{errors:?}"
+            );
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::StateTransitionNotActiveError(_)
+                ))
+            );
+            assert_eq!(
+                stored_identity(&platform, &owner, platform_version),
+                identity_before
+            );
+        }
+    }
+
     mod proofs_of_possession_of_added_keys {
         use super::*;
         use crate::execution::check_tx::CheckTxLevel;

@@ -15,6 +15,7 @@ use dpp::secp256k1::rand::SeedableRng;
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
+use dpp::util::ml_dsa_65;
 use dpp::{ed25519_dalek, ProtocolError};
 use rand::RngCore;
 use std::collections::BTreeMap;
@@ -156,6 +157,9 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
                 })?;
                 Ok(pk.sign(data).to_vec().into())
             }
+            KeyType::ML_DSA_65 => ml_dsa_65::sign(data, private_key)
+                .map(Into::into)
+                .map_err(|e| ProtocolError::Generic(e.to_string())),
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
@@ -194,6 +198,12 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
             }
             KeyType::BLS12_381 => {
                 // BLS keys are not supported for address witnesses
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key.key_type()),
+                ))
+            }
+            KeyType::ML_DSA_65 => {
+                // ML-DSA-65 keys are not supported for address witnesses
                 Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key.key_type()),
                 ))

@@ -2719,12 +2719,14 @@ mod tests {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::fee::Credits;
         use dpp::identity::contract_bounds::ContractBounds;
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::{
+            IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+        };
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::{
             AssetLockProof, InstantAssetLockProof,
         };
-        use dpp::identity::KeyType::ECDSA_HASH160;
+        use dpp::identity::KeyType::{ECDSA_HASH160, ML_DSA_65};
         use dpp::identity::{Purpose, SecurityLevel};
         use dpp::platform_value::Bytes36;
         use dpp::prelude::UserFeeIncrease;
@@ -2852,6 +2854,9 @@ mod tests {
             WithAHashKeyOfSize(usize),
             /// The valid keys, except that the critical key is bound to this contract
             WithAKeyBoundToContract(Identifier),
+            /// The valid keys, except that the master key and the critical key are ML_DSA_65
+            /// keys
+            MlDsa65,
         }
 
         /// How an identity create proves its asset lock.
@@ -2921,17 +2926,41 @@ mod tests {
                         platform_version,
                     )
                 }
+                Keys::MlDsa65 => IdentityPublicKey::random_key_with_known_attributes(
+                    0,
+                    &mut StdRng::seed_from_u64(58),
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::MASTER,
+                    ML_DSA_65,
+                    None,
+                    platform_version,
+                ),
             }
             .expect("expected to get key pair");
             signer.add_identity_public_key(first_key.clone(), first_private_key);
 
-            let (mut second_key, second_private_key) =
-                IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            let (mut second_key, second_private_key) = match keys {
+                Keys::Valid
+                | Keys::WithoutAMasterKey
+                | Keys::WithAHashKeyOfSize(_)
+                | Keys::WithAKeyBoundToContract(_) => {
+                    IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                        1,
+                        Some(999),
+                        platform_version,
+                    )
+                }
+                Keys::MlDsa65 => IdentityPublicKey::random_key_with_known_attributes(
                     1,
-                    Some(999),
+                    &mut StdRng::seed_from_u64(999),
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::CRITICAL,
+                    ML_DSA_65,
+                    None,
                     platform_version,
-                )
-                .expect("expected to get key pair");
+                ),
+            }
+            .expect("expected to get key pair");
             if let Keys::WithAKeyBoundToContract(contract_id) = keys {
                 let IdentityPublicKey::V0(second_key_v0) = &mut second_key else {
                     panic!("expected a version 0 key");
@@ -3576,6 +3605,90 @@ mod tests {
                     "{size} bytes"
                 );
             }
+        }
+
+        /// An identity create whose master key and critical key are ML_DSA_65 keys carries two
+        /// keys of 1,952 bytes and two proofs of possession of 3,309 bytes. It fits a state
+        /// transition, check_tx admits it, and a block creates the identity with both keys.
+        #[tokio::test]
+        async fn should_create_an_identity_with_ml_dsa_65_keys() {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let registration = registration(Keys::MlDsa65, platform_version).await;
+
+            assert_eq!(
+                check_tx(
+                    &platform,
+                    &registration.transition,
+                    CheckTxLevel::FirstTimeCheck
+                ),
+                vec![]
+            );
+            let created = process_block(&platform, &[&registration.transition]);
+            assert_matches!(
+                created.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "{created:?}"
+            );
+
+            let identity = platform
+                .drive
+                .fetch_full_identity(
+                    registration.identity_id.into_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the identity")
+                .expect("expected the identity to exist");
+            for key_id in [0, 1] {
+                let key = identity
+                    .public_keys()
+                    .get(&key_id)
+                    .expect("expected the key to be stored");
+                assert_eq!(key.key_type(), ML_DSA_65);
+                assert_eq!(key.data().len(), 1952);
+            }
+        }
+
+        /// Before protocol version 16 the key type does not exist: check_tx refuses the same
+        /// identity create as not active, and a block refuses it without spending the asset
+        /// lock, as software that cannot decode the key type does.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_create_with_ml_dsa_65_keys_before_protocol_version_16(
+        ) {
+            let platform_version = PlatformVersion::get(15).expect("expected protocol version 15");
+            let platform = new_platform(platform_version.protocol_version);
+            let registration = registration(Keys::MlDsa65, platform_version).await;
+
+            let errors = check_tx(
+                &platform,
+                &registration.transition,
+                CheckTxLevel::FirstTimeCheck,
+            );
+            assert_matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::StateTransitionNotActiveError(_)
+                )],
+                "{errors:?}"
+            );
+
+            let refused = process_block(&platform, &[&registration.transition]);
+            assert_matches!(
+                refused.as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                )],
+                "{refused:?}"
+            );
+            assert_eq!(
+                asset_lock_info(&platform, &registration, platform_version),
+                StoredAssetLockInfo::NotPresent
+            );
+            assert_eq!(
+                identity_balance(&platform, &registration, platform_version),
+                None
+            );
         }
 
         /// Protocol version 13 does not check the size of a hash key's data, so such a key fails

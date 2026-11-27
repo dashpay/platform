@@ -59,3 +59,7 @@ pub const DASHPAY_CONTACT_REQUEST_SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION: Pro
 /// store paying from the credit shielded pool, is not active before it, as software that
 /// predates it cannot decode one.
 pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// ML_DSA_65 identity keys (key type 5, the ML-DSA-65 signature scheme of FIPS 204) exist from
+/// protocol version 16: a transition that registers one is not active before it, as software
+/// that predates the key type cannot decode one, so no identity holds such a key earlier.
+pub const ML_DSA_65_KEY_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 16;

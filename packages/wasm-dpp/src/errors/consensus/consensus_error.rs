@@ -152,7 +152,7 @@ use dpp::consensus::basic::identity::{
     InvalidIdentityPublicKeyBudgetError,
 };
 use dpp::consensus::signature::{
-    PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
+    BasicMLDSAError, PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
     PublicKeyWithLimitsCannotSignDataContractTransitionError,
     PublicKeyWithLimitsCannotUpdateKeyLimitsError,
 };
@@ -1536,6 +1536,7 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
             generic_consensus_error!(PublicKeyWithLimitsCannotSignDataContractTransitionError, e)
                 .into()
         }
+        SignatureError::BasicMLDSAError(e) => generic_consensus_error!(BasicMLDSAError, e).into(),
     }
 }
 
