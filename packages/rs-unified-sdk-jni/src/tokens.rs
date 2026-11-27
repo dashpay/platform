@@ -991,9 +991,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenCla
 }
 
 /// Update the token configuration. `changeItemTag` selects the change
-/// variant (0 = MaxSupply — the only tag wired by the FFI in this release);
-/// `changeItemPayloadJson` is the per-tag JSON payload (e.g. for MaxSupply
-/// `{"newMaxSupply":"<u64>"}` or `{"newMaxSupply":null}` to remove the cap).
+/// variant and `changeItemPayloadJson` carries its payload:
+/// - `0` (MaxSupply): `{"newMaxSupply":"<u64>"}` or `{"newMaxSupply":null}` to remove the cap.
+/// - `1` (MarketplaceTradeMode): `{"tradeMode":"Tradeable"}` or `{"tradeMode":"NotTradeable"}`.
+///
 /// Returns the outcome JSON of `platform_wallet_token_update_config_and_refresh`
 /// (pending, applied with the refreshed contract, or applied but not
 /// refreshed), or null after throwing. Named apart from the void

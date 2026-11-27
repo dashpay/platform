@@ -165,7 +165,21 @@ struct TokenUpdateMaxSupplyActionView: View {
     /// under. Otherwise nil (single-signer config update).
     /// Mirrors the resolver pattern used by Burn / Pause / SetPrice.
     private var inferredGroupPosition: Int? {
-        TokenConfigChangeGroup.proposalPosition(rule: token.maxSupplyChangeRules, token: token)
+        guard let rule = token.maxSupplyChangeRules else { return nil }
+        let authorized = rule.authorizedToMakeChange
+
+        if authorized == AuthorizedActionTakers.mainGroup.rawValue {
+            guard let main = token.mainControlGroupPosition,
+                  UInt16(exactly: main) != nil
+            else { return nil }
+            return main
+        }
+        if authorized.hasPrefix("Group:"),
+           let pos = Int(authorized.dropFirst("Group:".count)),
+           UInt16(exactly: pos) != nil {
+            return pos
+        }
+        return nil
     }
 
     // MARK: - Submit

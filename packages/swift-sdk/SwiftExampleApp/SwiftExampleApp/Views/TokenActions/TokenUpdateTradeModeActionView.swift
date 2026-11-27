@@ -11,9 +11,11 @@ import SwiftDashSDK
 /// transferable, and the network at protocol version 16 or later); this form
 /// does not check either and shows Platform's refusal as it arrives.
 ///
-/// Group-capable, like the max supply form: when
-/// `token.tradeModeChangeRules` names `MainGroup` or `Group:<position>`, the
-/// submission is sent as a group-action proposal.
+/// Single-signer only: the update is sent without group information. Whether
+/// the signing identity alone may make the change is Platform's decision too,
+/// so on a token whose trade mode rule is held by a group the update is
+/// refused. Proposing and co-signing a configuration update as a group is not
+/// wired in this app yet.
 struct TokenUpdateTradeModeActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -60,21 +62,11 @@ struct TokenUpdateTradeModeActionView: View {
                     .font(.subheadline)
             }
 
-            if let groupPosition = inferredGroupPosition {
-                Section("Group action") {
-                    Label(
-                        "This config change requires a group action.",
-                        systemImage: "person.3.fill"
-                    )
-                    .font(.subheadline)
-                    LabeledContent("Group position", value: "\(groupPosition)")
-                    Text(
-                        "Submitting will propose a new group action. Other group members "
-                        + "must sign before it broadcasts."
-                    )
+            Section {
+                Text("This form sends a single-signer update. If a group controls this token's trade mode, Platform refuses it: group proposals for configuration changes are not supported in this app yet.")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                }
+                    .accessibilityIdentifier("tokenTradeMode.singleSignerNote")
             }
 
             Section("New trade mode") {
@@ -136,10 +128,6 @@ struct TokenUpdateTradeModeActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
-    private var inferredGroupPosition: Int? {
-        TokenConfigChangeGroup.proposalPosition(rule: token.tradeModeChangeRules, token: token)
-    }
-
     // MARK: - Submit
 
     private func submit() {
@@ -150,17 +138,6 @@ struct TokenUpdateTradeModeActionView: View {
         guard let position = UInt16(exactly: token.position) else {
             submitError = .init(message: "Invalid token position.")
             return
-        }
-
-        let groupAction: GroupActionMode
-        if let rawGroupPosition = inferredGroupPosition {
-            guard let groupPosition = UInt16(exactly: rawGroupPosition) else {
-                submitError = .init(message: "Group position is out of range.")
-                return
-            }
-            groupAction = .propose(position: groupPosition)
-        } else {
-            groupAction = .none
         }
 
         isSubmitting = true
@@ -182,7 +159,6 @@ struct TokenUpdateTradeModeActionView: View {
                     tokenPosition: position,
                     change: change,
                     publicNote: publicNoteOrNil,
-                    groupAction: groupAction,
                     signer: signer
                 )
                 await MainActor.run {
@@ -190,7 +166,7 @@ struct TokenUpdateTradeModeActionView: View {
                     self.isSubmitting = false
                     // Rust says whether the update took effect and hands back
                     // the contract it produced; storing that shows the new
-                    // mode. A pending group action changes nothing yet.
+                    // mode.
                     if let reason = ContractDownloader.storeConfigUpdateOutcome(
                         outcome,
                         contractId: contractId,
@@ -214,30 +190,5 @@ struct TokenUpdateTradeModeActionView: View {
                 }
             }
         }
-    }
-}
-
-/// Which group a token configuration change is proposed under.
-enum TokenConfigChangeGroup {
-    /// If `rule` (the change rule of the item being changed) is gated on a
-    /// group, the group position to propose under; otherwise nil (a
-    /// single-signer config update). Mirrors the resolver pattern used by
-    /// Burn / Pause / SetPrice.
-    static func proposalPosition(rule: ChangeControlRules?, token: PersistentToken) -> Int? {
-        guard let rule else { return nil }
-        let authorized = rule.authorizedToMakeChange
-
-        if authorized == AuthorizedActionTakers.mainGroup.rawValue {
-            guard let main = token.mainControlGroupPosition,
-                  UInt16(exactly: main) != nil
-            else { return nil }
-            return main
-        }
-        if authorized.hasPrefix("Group:"),
-           let pos = Int(authorized.dropFirst("Group:".count)),
-           UInt16(exactly: pos) != nil {
-            return pos
-        }
-        return nil
     }
 }

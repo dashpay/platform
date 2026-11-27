@@ -2393,7 +2393,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "TokenConfigChange.marketplaceTradeMode renders change item tag 1 and its payload for ManagedPlatformWallet.tokenUpdateConfig, and the Update Trade Mode form (TokenUpdateTradeModeActionView) submits it and stores the contract the update produced. Platform alone decides whether the token may take the mode (dpp's TokenConfiguration::validate_trade_mode: transferable, and protocol version 16 or later); its refusal reaches the form as a consensus rejection. Not yet run against a network at protocol version 16."
+          "reason": "TokenConfigChange.marketplaceTradeMode renders change item tag 1 and its payload for ManagedPlatformWallet.tokenUpdateConfig, and the Update Trade Mode form (TokenUpdateTradeModeActionView) submits it and stores the contract the update produced. Platform alone decides whether the token may take the mode (dpp's TokenConfiguration::validate_trade_mode: transferable, and protocol version 16 or later); its refusal reaches the form as a consensus rejection. The form is single-signer only: it sends no group information, so a trade mode held by a group cannot be changed from the app yet. Not yet run against a network at protocol version 16."
         },
         "kotlin": {
           "sdk": "unsupported",

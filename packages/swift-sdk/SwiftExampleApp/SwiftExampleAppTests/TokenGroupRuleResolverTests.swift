@@ -41,15 +41,4 @@ final class TokenGroupRuleResolverTests: XCTestCase {
 
         XCTAssertEqual(TokenGroupRuleResolver.relevantGroupPositions(for: token), [4])
     }
-
-    /// The Update Trade Mode form proposes under this rule, so a token whose
-    /// only group-gated rule is the trade mode one must still be queried.
-    func testTradeModeRuleContributesItsGroupPosition() {
-        let token = makeToken()
-        token.tradeModeChangeRules = ChangeControlRules(
-            authorizedToMakeChange: AuthorizedActionTakers.group(9)
-        )
-
-        XCTAssertEqual(TokenGroupRuleResolver.relevantGroupPositions(for: token), [9])
-    }
 }
