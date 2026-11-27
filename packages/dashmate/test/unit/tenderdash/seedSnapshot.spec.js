@@ -62,6 +62,16 @@ describe('quorum-server Tenderdash seeds', () => {
     expect(random.callCount).to.equal(24);
   });
 
+  it('should carry existing fingerprints forward and add only the previous full set', () => {
+    const existingFilteredHash = seedSetHash(previous.seeds, 'e'.repeat(40));
+    previous.previousSeedSetHashes.push(existingFilteredHash);
+    const snapshot = generateSnapshot(response, 'mainnet', previous, NOW);
+
+    expect(snapshot.previousSeedSetHashes).to.have.members([
+      ...previous.previousSeedSetHashes, seedSetHash(previous.seeds),
+    ]);
+  });
+
   it('should use an alternate registered endpoint when peers share a primary host', () => {
     response.data = response.data.slice(0, 5).map((node, index) => ({
       ...node,

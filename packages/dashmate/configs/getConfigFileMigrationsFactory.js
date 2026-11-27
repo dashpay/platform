@@ -2024,6 +2024,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      // Re-render bootstrap peers even for configurations with current stock seeds.
+      '5.1.1': (configFile) => configFile,
     };
   }
 

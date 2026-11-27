@@ -1,4 +1,4 @@
-import validateTenderdashNodeKey from './validators/validateTenderdashNodeKey.js';
+import validateTenderdashNodeKey from '../../tenderdash/validateTenderdashNodeKey.js';
 import generateTenderdashNodeKey from '../../tenderdash/generateTenderdashNodeKey.js';
 
 /**

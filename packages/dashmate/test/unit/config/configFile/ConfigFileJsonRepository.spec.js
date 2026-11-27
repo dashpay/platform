@@ -2,7 +2,9 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import { expect } from 'chai';
 import lockfile from 'proper-lockfile';
+import semver from 'semver';
 import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
+import getConfigFileMigrationsFactory from '../../../../configs/getConfigFileMigrationsFactory.js';
 import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
 import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
 import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
@@ -14,6 +16,8 @@ import getConfigFormatVersion from '../../../../src/config/configFile/getConfigF
 import migrateConfigFileFactory from '../../../../src/config/configFile/migrateConfigFileFactory.js';
 
 const CURRENT_FORMAT_VERSION = '4.1.0';
+const packageJson = new URL('../../../../package.json', import.meta.url);
+const { version: packageVersion } = JSON.parse(fs.readFileSync(packageJson, 'utf8'));
 
 describe('ConfigFileJsonRepository', () => {
   let homeDir;
@@ -47,6 +51,17 @@ describe('ConfigFileJsonRepository', () => {
     return json;
   }
 
+  function createMigratingRepository() {
+    const base = getBaseConfigFactory(homeDir)();
+    const migrations = getConfigFileMigrationsFactory(homeDir, new Map([['base', base]]));
+    return new ConfigFileJsonRepository(
+      migrateConfigFileFactory(migrations),
+      homeDir,
+      createDefaults,
+      getConfigFormatVersion(migrations(), packageVersion),
+    );
+  }
+
   beforeEach(() => {
     homeDir = HomeDir.createTemp();
     configFilePath = homeDir.joinPath('config.json');
@@ -69,14 +84,19 @@ describe('ConfigFileJsonRepository', () => {
   ['mainnet', 'testnet'].forEach(network => {
     it(`should refresh ${network} stock seeds under lock without a format bump and retry a failed render`, () => {
       const originalDefaults = structuredClone(tenderdashSeeds[network]);
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
       try {
         const data = JSON.parse(seedConfigFile());
         data.configs.base.network = network;
-        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        const { tenderdash } = data.configs.base.platform.drive;
+        const self = { id: 'e'.repeat(40), host: '192.0.2.1', port: 26656 };
+        const peer = { id: 'f'.repeat(40), host: '192.0.2.2', port: 26656 };
+        tenderdash.node.id = self.id;
+        tenderdash.p2p.seeds = originalDefaults.seeds;
         const original = JSON.stringify(data);
         fs.writeFileSync(configFilePath, original);
         tenderdashSeeds[network].previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
-        tenderdashSeeds[network].seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+        tenderdashSeeds[network].seeds = [self, peer];
         const repository = new ConfigFileJsonRepository(
           identityMigration,
           homeDir,
@@ -85,14 +105,16 @@ describe('ConfigFileJsonRepository', () => {
         );
         expect(() => repository.readAndMigrate({}, ([config]) => {
           expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.equal(true);
-          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(tenderdashSeeds[network].seeds);
+          expect(config.getStored('platform.drive.tenderdash.p2p.seeds')).to.deep.equal([self, peer]);
+          expect(render(config)['platform/drive/tenderdash/config.toml'].split('\n'))
+            .to.include(`bootstrap-peers = "${peer.id}@${peer.host}:${peer.port}"`);
           throw new Error('render failed');
         })).to.throw('render failed');
         expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
         repository.readAndMigrate({}, configs => expect(configs).to.have.length(1));
         const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
         expect(saved.configFormatVersion).to.equal(CURRENT_FORMAT_VERSION);
-        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal(tenderdashSeeds[network].seeds);
+        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal([self, peer]);
         repository.readAndMigrate({}, () => { throw new Error('must not render twice'); });
       } finally {
         tenderdashSeeds[network] = originalDefaults;
@@ -320,6 +342,78 @@ describe('ConfigFileJsonRepository', () => {
   });
 
   describe('#update', () => {
+    it('should re-render 5.1.0 bootstrap peers even when the full stock list is current', () => {
+      const data = JSON.parse(seedConfigFile());
+      data.configFormatVersion = '5.1.0';
+      data.configs.base.network = 'mainnet';
+      const { seeds } = tenderdashSeeds.mainnet;
+      const { tenderdash } = data.configs.base.platform.drive;
+      tenderdash.node.id = seeds[0].id;
+      tenderdash.p2p.seeds = seeds;
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      const repository = createMigratingRepository();
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
+      let rendered;
+      const { configFile } = repository.readAndMigrate({}, ([config]) => {
+        rendered = render(config)['platform/drive/tenderdash/config.toml'];
+      });
+      const peers = seeds.slice(1).map(({ id, host, port }) => `${id}@${host}:${port}`).join(',');
+      expect(rendered?.split('\n')).to.include(`bootstrap-peers = "${peers}"`);
+      expect(semver.gte(configFile.getConfigFormatVersion(), '5.1.1')).to.equal(true);
+      const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal(seeds);
+    });
+
+    it('should render a migrated config without seeds on a forced hard reset', () => {
+      const data = JSON.parse(seedConfigFile());
+      data.configFormatVersion = '5.1.0-rc.2';
+      data.defaultConfigName = 'node1';
+      data.configs.node1 = structuredClone(data.configs.base);
+      const { tenderdash } = data.configs.node1.platform.drive;
+      tenderdash.docker.image = 'dashpay/tenderdash:2.0.0-dev.2';
+      delete tenderdash.p2p.seeds;
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      const repository = createMigratingRepository();
+      const skipValidation = ({ name, configFileData }) => name === configFileData.defaultConfigName;
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
+
+      const { configFile } = repository.readAndMigrate({ skipValidation }, (configs) => {
+        const config = configs.find(candidate => candidate.getName() === 'node1');
+        expect(config).not.to.be.undefined();
+        expect(render(config)['platform/drive/tenderdash/config.toml'].split('\n'))
+          .to.include('bootstrap-peers = ""');
+      });
+
+      const migrated = configFile.getConfig('node1');
+      expect(migrated.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0');
+      expect(migrated.getStored('platform.drive.tenderdash.p2p')).not.to.have.property('seeds');
+    });
+
+    it('should render a 5.1.0 config with a null seed entry on a forced hard reset', () => {
+      const data = JSON.parse(seedConfigFile());
+      data.configFormatVersion = '5.1.0';
+      data.defaultConfigName = 'node1';
+      data.configs.node1 = structuredClone(data.configs.base);
+      data.configs.node1.platform.drive.tenderdash.p2p.seeds = [null];
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      const repository = createMigratingRepository();
+      const skipValidation = ({ name, configFileData }) => name === configFileData.defaultConfigName;
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
+      let rendered;
+
+      const { configFile } = repository.readAndMigrate({ skipValidation }, (configs) => {
+        const config = configs.find(candidate => candidate.getName() === 'node1');
+        rendered = render(config)['platform/drive/tenderdash/config.toml'];
+      });
+
+      expect(rendered?.split('\n')).to.include('bootstrap-peers = ""');
+      expect(configFile.getConfig('node1').getStored('platform.drive.tenderdash.p2p.seeds'))
+        .to.deep.equal([null]);
+    });
+
     it('should render and save a migration while holding the lock', () => {
       seedConfigFile();
 
@@ -969,9 +1063,7 @@ describe('ConfigFileJsonRepository', () => {
           return data;
         },
       };
-      const { version } = JSON.parse(fs.readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'));
-
-      newerFormatVersion = getConfigFormatVersion(migrations, version);
+      newerFormatVersion = getConfigFormatVersion(migrations, packageVersion);
 
       newer = new ConfigFileJsonRepository(
         migrateConfigFileFactory(() => migrations),

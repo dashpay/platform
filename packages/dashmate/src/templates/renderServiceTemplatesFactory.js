@@ -1,6 +1,7 @@
 import * as glob from 'glob';
 import { TEMPLATES_DIR } from '../constants.js';
 import ensureTenderdashNodeKey from '../tenderdash/ensureTenderdashNodeKey.js';
+import filterTenderdashSeeds, { getTenderdashSeedNodeIds } from '../tenderdash/filterTenderdashSeeds.js';
 
 /**
  * @param {renderTemplate} renderTemplate
@@ -19,6 +20,12 @@ export default function renderServiceTemplatesFactory(renderTemplate) {
     // Prevent node_key.json from containing the literal string "null".
     ensureTenderdashNodeKey(config);
 
+    const { options } = config;
+    const tenderdash = options.platform?.drive?.tenderdash;
+    const [nodeId = null] = getTenderdashSeedNodeIds(tenderdash?.node);
+    const tenderdashBootstrapSeeds = filterTenderdashSeeds(tenderdash?.p2p?.seeds, nodeId);
+    const variables = { ...options, tenderdashBootstrapSeeds };
+
     const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`, {
       ignore: {
         // Ignore manual rendered templates
@@ -32,7 +39,7 @@ export default function renderServiceTemplatesFactory(renderTemplate) {
         .substring(TEMPLATES_DIR.length + 1)
         .replace('.dot', '');
 
-      configFiles[configPath] = renderTemplate(templatePath, config.options);
+      configFiles[configPath] = renderTemplate(templatePath, variables);
     }
 
     return configFiles;
