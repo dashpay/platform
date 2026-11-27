@@ -4679,6 +4679,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.contactHidden = entry.contactHidden
                     existing.contactAccountLabel = entry.contactAccountLabel
                     existing.contactAcceptedAccounts = entry.contactAcceptedAccounts
+                    existing.encryptedShieldedAddress = entry.encryptedShieldedAddress
+                    existing.contactShieldedAddress = entry.contactShieldedAddress
                     if existing.owner !== owner {
                         existing.owner = owner
                     }
@@ -4703,6 +4705,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     row.contactHidden = entry.contactHidden
                     row.contactAccountLabel = entry.contactAccountLabel
                     row.contactAcceptedAccounts = entry.contactAcceptedAccounts
+                    row.encryptedShieldedAddress = entry.encryptedShieldedAddress
+                    row.contactShieldedAddress = entry.contactShieldedAddress
                     backgroundContext.insert(row)
                 }
             }
@@ -4896,6 +4900,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// acceptances. Established rows only (replicated onto both
         /// directions); empty for pending rows.
         let contactAcceptedAccounts: [UInt32]
+        /// The request's `encryptedShieldedAddress` bytes, when it carries
+        /// one. Stored as handed over; never opened here.
+        var encryptedShieldedAddress: Data? = nil
+        /// The raw 43-byte shielded address the wallet read from the
+        /// contact's request — incoming row of an established contact only.
+        var contactShieldedAddress: Data? = nil
     }
 
     /// Owned snapshot of a `ContactRequestRemovalFFI` row. Carries
@@ -9185,6 +9195,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         (contact.encryptedPublicKey, \.encrypted_public_key, \.encrypted_public_key_len),
                         (contact.encryptedAccountLabel, \.encrypted_account_label, \.encrypted_account_label_len),
                         (contact.autoAcceptProof, \.auto_accept_proof, \.auto_accept_proof_len),
+                        (contact.encryptedShieldedAddress, \.encrypted_shielded_address, \.encrypted_shielded_address_len),
                     ]
                     for (data, ptrPath, lenPath) in payloads {
                         if let data, !data.isEmpty {
@@ -9206,6 +9217,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // contact's label, so this is null on outgoing rows.
                     if let label = contact.contactAccountLabel, !label.isEmpty {
                         row.contact_account_label = UnsafePointer(duplicateCString(label, allocation: allocation))
+                    }
+                    // Likewise the shielded address the wallet read from the
+                    // contact's request: handed back as stored, and Rust
+                    // decides on restore whether it is an address.
+                    if let address = contact.contactShieldedAddress, address.count == 43 {
+                        row.has_contact_shielded_address = true
+                        copyBytes(address, into: &row.contact_shielded_address)
                     }
 
                     // Relationship-wide (both directions carry it): feed the
@@ -11254,6 +11272,15 @@ private func persistContactsCallback(
             } else {
                 autoAcceptProof = nil
             }
+            let encryptedShieldedAddress: Data?
+            if let addressPtr = e.encrypted_shielded_address, e.encrypted_shielded_address_len > 0 {
+                encryptedShieldedAddress = Data(
+                    bytes: addressPtr,
+                    count: Int(e.encrypted_shielded_address_len)
+                )
+            } else {
+                encryptedShieldedAddress = nil
+            }
             let acceptedAccounts: [UInt32]
             if let acceptedPtr = e.accepted_accounts, e.accepted_accounts_len > 0 {
                 acceptedAccounts = Array(
@@ -11280,7 +11307,11 @@ private func persistContactsCallback(
                 contactNote: e.note.map { String(cString: $0) },
                 contactHidden: e.is_hidden,
                 contactAccountLabel: e.contact_account_label.map { String(cString: $0) },
-                contactAcceptedAccounts: acceptedAccounts
+                contactAcceptedAccounts: acceptedAccounts,
+                encryptedShieldedAddress: encryptedShieldedAddress,
+                contactShieldedAddress: e.has_contact_shielded_address
+                    ? withUnsafeBytes(of: e.contact_shielded_address) { Data($0) }
+                    : nil
             ))
         }
     }

@@ -80,6 +80,17 @@ struct ContactDetailView: View {
         pairRows.first(where: { !$0.isOutgoing })?.contactAccountLabel
     }
 
+    /// The shielded payment address the contact gave us in their contact
+    /// request (DashPay v3 `encryptedShieldedAddress`), as text. The wallet
+    /// read and checked it and stored it on the **incoming** row;
+    /// `platform-wallet` renders the bytes. Read-only.
+    private var contactShieldedAddress: String? {
+        pairRows.first(where: { !$0.isOutgoing })?.contactShieldedAddress.flatMap {
+            DashPayProfile.paymentAddressString(
+                kind: .shielded, bytes: $0, network: identity.network)
+        }
+    }
+
     private var dpnsHint: String? {
         contactMeta.dpnsHint(
             network: identity.network,
@@ -247,6 +258,23 @@ struct ContactDetailView: View {
                     Label(accountLabel, systemImage: "wallet.pass")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+            }
+
+            // The shielded address the contact gave us in their contact
+            // request — shown only; nothing pays to it from this screen yet.
+            if let shieldedAddress = contactShieldedAddress {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Their shielded address")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Label(shieldedAddress, systemImage: "lock.shield")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("contactShieldedAddress")
                 }
             }
         }

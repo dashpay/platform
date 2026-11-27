@@ -402,6 +402,29 @@ final class DashPayContactPersistenceTests: XCTestCase {
         )
         XCTAssertEqual(row.network, .testnet)
         XCTAssertEqual(row.owner.identityId, ownerId)
+        XCTAssertNil(row.encryptedShieldedAddress)
+        XCTAssertNil(row.contactShieldedAddress)
+    }
+
+    /// A contact request's `encryptedShieldedAddress` and the address the
+    /// wallet read from it are stored as handed over, and a later round
+    /// that carries neither clears them: the snapshot is authoritative.
+    func testUpsertStoresTheShieldedAddressFieldsOfAContactRequest() throws {
+        let encrypted = Data(repeating: 0x3C, count: 64)
+        let address = Data((0..<43).map { UInt8($0) })
+        var snapshot = makeSnapshot(isOutgoing: false)
+        snapshot.encryptedShieldedAddress = encrypted
+        snapshot.contactShieldedAddress = address
+        applyContacts(upserts: [snapshot])
+
+        var row = try XCTUnwrap(try fetchContactRows().first)
+        XCTAssertEqual(row.encryptedShieldedAddress, encrypted)
+        XCTAssertEqual(row.contactShieldedAddress, address)
+
+        applyContacts(upserts: [makeSnapshot(isOutgoing: false)])
+        row = try XCTUnwrap(try fetchContactRows().first)
+        XCTAssertNil(row.encryptedShieldedAddress)
+        XCTAssertNil(row.contactShieldedAddress)
     }
 
     /// G1c: `payment_channel_broken` is a property of the established
@@ -632,6 +655,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
         let encryptedKey = Data((0..<96).map { UInt8($0 ^ 0x5A) })
         let label = Data([0x01, 0x02, 0x03])
         let accepted: [UInt32] = [7, 42]
+        let encryptedShielded = [UInt8](repeating: 0x3C, count: 64)
+        let shieldedAddress = Data((0..<43).map { UInt8($0 &+ 1) })
 
         walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) in
             guard let wid = widRaw.bindMemory(to: UInt8.self).baseAddress else {
@@ -674,6 +699,16 @@ final class DashPayContactPersistenceTests: XCTestCase {
                     // empty array (not a crash).
                     incoming.accepted_accounts = nil
                     incoming.accepted_accounts_len = 0
+                    // The incoming row carries the request's encrypted
+                    // shielded address and the address the wallet read.
+                    incoming.has_contact_shielded_address = true
+                    withUnsafeMutableBytes(of: &incoming.contact_shielded_address) {
+                        $0.copyBytes(from: shieldedAddress)
+                    }
+
+                    encryptedShielded.withUnsafeBufferPointer { shieldedPtr in
+                    incoming.encrypted_shielded_address = shieldedPtr.baseAddress
+                    incoming.encrypted_shielded_address_len = UInt(encryptedShielded.count)
 
                     let rows = [outgoing, incoming]
                     rows.withUnsafeBufferPointer { rowsPtr in
@@ -687,6 +722,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
                             nil, 0
                         )
                         XCTAssertEqual(rc, 0)
+                    }
                     }
                     }
                 }
@@ -722,6 +758,16 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(
             incomingRow.contactAcceptedAccounts, [],
             "null/0 accepted-accounts pointer must map to an empty array"
+        )
+        XCTAssertEqual(incomingRow.encryptedShieldedAddress, Data(encryptedShielded))
+        XCTAssertEqual(incomingRow.contactShieldedAddress, shieldedAddress)
+        XCTAssertNil(
+            outgoingRow.encryptedShieldedAddress,
+            "null encrypted-shielded-address pointer must map to nil"
+        )
+        XCTAssertNil(
+            outgoingRow.contactShieldedAddress,
+            "a row without the flag must not store the zeroed address bytes"
         )
 
         // Ignore leg of the same callback: ignore the sender (drop the
