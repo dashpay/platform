@@ -714,4 +714,30 @@ describe('validateZeroSslCertificateFactory', () => {
       });
     });
   });
+
+  // The result is what callers report and record - doctor archives it - so the
+  // key the check called ZeroSSL with stays inside the check. Whether one is
+  // set is already the API_KEY_IS_NOT_SET verdict.
+  it('should not return the API key it called ZeroSSL with', async function it() {
+    getCertificate.resolves({
+      common_name: '1.2.3.4',
+      status: 'issued',
+      isExpiredInDays: this.sinon.stub().returns(false),
+    });
+
+    const result = await validateZeroSslCertificate(config, expirationDays);
+
+    expect(getCertificate).to.have.been.calledOnceWith('test-api-key', 'certificate-id');
+    expect(result.data).to.not.have.property('apiKey');
+    expect(JSON.stringify(result)).to.not.contain('test-api-key');
+  });
+
+  it('should not return an API key with the verdicts reached before calling ZeroSSL', async () => {
+    config.get.withArgs('externalIp').returns(null);
+
+    const result = await validateZeroSslCertificate(config, expirationDays);
+
+    expect(result.error).to.equal(ERRORS.EXTERNAL_IP_IS_NOT_SET);
+    expect(result.data).to.not.have.property('apiKey');
+  });
 });

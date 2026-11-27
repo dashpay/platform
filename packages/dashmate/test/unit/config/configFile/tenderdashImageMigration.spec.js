@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import semver from 'semver';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getLocalConfigFactory from '../../../../configs/defaults/getLocalConfigFactory.js';
 import getConfigFileMigrationsFactory from '../../../../configs/getConfigFileMigrationsFactory.js';
@@ -20,15 +21,15 @@ describe('Tenderdash image migration', () => {
   const getMigrations = getConfigFileMigrationsFactory(null, defaults);
   const migrateConfigFile = migrateConfigFileFactory(getMigrations);
 
-  it('should use the Tenderdash 2.0.0-dev.3 image for new configurations', () => {
-    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.3');
+  it('should use the Tenderdash 2.0 image for new configurations', () => {
+    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0');
   });
 
-  it('should produce config format 5.1.0-dev.2 while the package is at dev.1', () => {
-    expect(getConfigFormatVersion(getMigrations(), '5.1.0-dev.1')).to.equal('5.1.0-dev.2');
+  it('should produce a config format past the Tenderdash migration while the package is at dev.1', () => {
+    expect(semver.gte(getConfigFormatVersion(getMigrations(), '5.1.0-dev.1'), '5.1.0-dev.2')).to.be.true();
   });
 
-  for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3', '5.0.0-rc.3', '5.0.3', '5.1.0-dev.1']) {
+  for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3', '5.0.0-rc.3', '5.0.3', '5.1.0-dev.1', '5.1.0-rc.2']) {
     it(`should migrate pinned images from config format ${fromVersion}`, () => {
       const configFileData = {
         configFormatVersion: fromVersion,
@@ -44,7 +45,7 @@ describe('Tenderdash image migration', () => {
 
       for (const name of ['mainnet', 'testnet']) {
         expect(migrated.configs[name].platform.drive.tenderdash.docker.image)
-          .to.equal('dashpay/tenderdash:2.0.0-dev.3');
+          .to.equal('dashpay/tenderdash:2.0');
       }
       expect(migrated.configs.withoutPlatform).to.deep.equal({});
       expect(migrated.configs.withoutDocker).to.deep.equal({

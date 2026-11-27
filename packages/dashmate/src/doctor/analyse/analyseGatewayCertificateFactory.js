@@ -375,6 +375,13 @@ certificate for an IP address.
 ${obtain}`;
   }
 
+  // The cause is known and nothing was asked of the authority. No repair is
+  // prescribed for it, and nothing about it needs sending anywhere.
+  if (code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED) {
+    return 'Nothing was requested from the certificate authority on that attempt. Use the'
+      + ' newer dashmate for every dashmate command on this node.';
+  }
+
   // Nothing actionable was established, so asking the authority again is a
   // guess with a cost - and that is as true of a node whose certificate is
   // already broken as of one still serving. Send the evidence somewhere it can
