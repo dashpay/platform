@@ -2127,6 +2127,43 @@ async fn should_keep_a_retired_tip_account_of_a_wallet_not_bound_before_the_clea
     );
 }
 
+/// An identity account a Clear kept, whose viewing key the host no longer
+/// has, sends a persisted bind to the seed path, which binds it.
+#[tokio::test]
+async fn should_fall_back_to_the_seed_for_a_kept_identity_account_without_a_persisted_key() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("kept_identity_persisted"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    let identity = crate::shielded_identity_account_index(7).unwrap();
+    persister.serve_viewing_keys(BTreeMap::from([(
+        SubwalletId::new(wallet.wallet_id(), identity),
+        vec![2; 96],
+    )]));
+    coordinator.clear(&*persister).await.expect("clear");
+    assert_eq!(
+        coordinator.kept_identity_accounts(wallet.wallet_id()).await,
+        std::collections::BTreeSet::from([identity])
+    );
+
+    let views0 =
+        crate::wallet::shielded::OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0)
+            .expect("derive")
+            .viewing_keys();
+    persister.serve_viewing_keys(BTreeMap::from([(
+        SubwalletId::new(wallet.wallet_id(), 0),
+        views0.to_fvk_bytes().to_vec(),
+    )]));
+    let rebound = wallet
+        .bind_shielded_from_persisted(&[0])
+        .await
+        .expect("load succeeds");
+    assert!(!rebound, "the kept account has no persisted key");
+    assert!(!wallet.is_shielded_bound().await);
+}
+
 /// The read a Clear makes of the host before its wipe can fail two ways. A
 /// host that is busy for now stops the Clear with nothing reset and its rows
 /// in place, as a retry may read them: the retried Clear keeps the retired

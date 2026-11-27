@@ -634,6 +634,68 @@ fn should_keep_unloaded_a_transfer_whose_row_lost_its_note_list() {
     ));
 }
 
+/// A wallet purge whose token note delete fails keeps the guard of the
+/// wallet's damaged recovery row, though the row itself is gone: its spend may
+/// still land, so a sweep must not release the token note holds that remain.
+#[test]
+fn should_keep_a_damaged_rows_guard_until_the_wallets_token_notes_are_gone() {
+    let (mut store, path) = store_at("purge_keeps_unloaded_guard");
+    let id = SubwalletId::new(WALLET, 0);
+    let payer = keys_of(1, 0);
+    arm_spend(
+        &mut store,
+        id,
+        transfer_paying(&payer, keys_of(2, 0).default_address),
+    );
+    drop(store);
+    let connection = rusqlite::Connection::open(&path).expect("open the store file");
+    connection
+        .execute("UPDATE shielded_pending_spends SET nullifiers = x''", [])
+        .expect("empty the note list");
+    connection
+        .execute(
+            "INSERT INTO shielded_token_pool_notes \
+             (wallet_id, account_index, token_id, position, cmx, nullifier, value, \
+              note_data, block_height) \
+             VALUES (?1, 0, ?2, 0, ?3, ?4, ?5, ?6, 10)",
+            rusqlite::params![
+                WALLET.as_slice(),
+                [0x7Au8; 32].as_slice(),
+                [0x01u8; 32].as_slice(),
+                [0x0Du8; 32].as_slice(),
+                500u64.to_le_bytes().as_slice(),
+                [0u8; 115].as_slice(),
+            ],
+        )
+        .expect("token note");
+    connection
+        .execute_batch(
+            "CREATE TRIGGER keep_token_notes BEFORE DELETE ON shielded_token_pool_notes \
+             BEGIN SELECT RAISE(ABORT, 'token notes kept'); END;",
+        )
+        .expect("trigger");
+
+    let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert!(store.has_unloaded_note_spends(WALLET));
+    assert!(store.purge_wallet(WALLET).is_err());
+    assert!(store.has_unloaded_note_spends(WALLET));
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count"),
+        0,
+        "the damaged row is deleted"
+    );
+
+    connection
+        .execute_batch("DROP TRIGGER keep_token_notes;")
+        .expect("drop trigger");
+    store.purge_wallet(WALLET).expect("purge");
+    assert!(!store.has_unloaded_note_spends(WALLET));
+}
+
 /// What the user confirmed for a name is kept per wallet, across a restart
 /// and a shielded Clear, and goes with the wallet.
 #[test]

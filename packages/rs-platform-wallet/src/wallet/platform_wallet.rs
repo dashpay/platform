@@ -1486,6 +1486,7 @@ impl PlatformWallet {
                 })
                 .map(|id| id.account_index),
         );
+        accounts.extend(coordinator.kept_identity_accounts(self.wallet_id).await);
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
         for &account in &accounts {

@@ -2101,9 +2101,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         // Three steps, each committed before the next, so a later failure
         // never keeps what an earlier one deleted: the wallet's saved spends,
         // the recipients it confirmed for its tips and its kept identity
-        // accounts (the caches follow), then its token pool watches,
-        // watermarks and notes, then the pools no wallet watches any more,
-        // which are public pool state.
+        // accounts, then its token pool watches, watermarks and notes, then
+        // the pools no wallet watches any more, which are public pool state.
+        // The caches follow the token notes: until those are gone, a damaged
+        // recovery row's guard keeps a sweep from releasing their holds.
         {
             let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
             let tx = conn
@@ -2130,6 +2131,18 @@ impl ShieldedStore for FileBackedShieldedStore {
                 FileShieldedStoreError::Storage(format!("commit wallet purge: {e}"))
             })?;
         }
+        {
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let tx = conn.transaction().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("begin token pool purge: {e}"))
+            })?;
+            super::token_pool::purge_wallet(&tx, wallet_id).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
+            })?;
+            tx.commit().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("commit token pool purge: {e}"))
+            })?;
+        }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
         // SQLite is chain-wide and intentionally left intact.
@@ -2141,16 +2154,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // The wallet's recovery rows, damaged ones included, are deleted above.
         self.unloaded_note_spends.remove(&Some(wallet_id));
         self.kept_identity_accounts.remove(&wallet_id);
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
-        let tx = conn
-            .transaction()
-            .map_err(|e| FileShieldedStoreError::Storage(format!("begin token pool purge: {e}")))?;
-        super::token_pool::purge_wallet(&tx, wallet_id).map_err(|e| {
-            FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
-        })?;
-        tx.commit().map_err(|e| {
-            FileShieldedStoreError::Storage(format!("commit token pool purge: {e}"))
-        })?;
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
         super::token_pool::purge_unwatched_pools(&conn).map_err(|e| {
             FileShieldedStoreError::Storage(format!("drop unwatched token pools: {e}"))
         })
@@ -3408,8 +3412,8 @@ mod tests {
 
     /// An account purge or a Clear's purge whose token pool step fails deletes
     /// nothing: the recovery row and kept identity accounts stay on disk and in
-    /// memory. A wallet purge deletes them before its token pool step and
-    /// reports that step's failure.
+    /// memory. A wallet purge deletes them from disk before its token pool
+    /// step, reports that step's failure, and keeps them in memory.
     #[test]
     fn should_keep_every_recovery_row_when_a_purge_fails_part_way() {
         let path = temp_tree_path("purge_fails_part_way");
@@ -3437,8 +3441,11 @@ mod tests {
             assert_eq!(count_rows(&store, "shielded_tip_recipients"), 1);
 
             assert!(store.purge_wallet(id.wallet_id).is_err());
-            assert!(store.pending_redrives(id).expect("redrives").is_empty());
-            assert_eq!(store.kept_identity_accounts().get(&id.wallet_id), None);
+            assert_eq!(store.pending_redrives(id).expect("redrives").len(), 1);
+            assert_eq!(
+                store.kept_identity_accounts().get(&id.wallet_id),
+                Some(&identity_accounts)
+            );
             assert_eq!(count_rows(&store, "shielded_pending_spends"), 0);
             assert_eq!(count_rows(&store, "shielded_identity_accounts"), 0);
             assert_eq!(count_rows(&store, "shielded_tip_recipients"), 0);
