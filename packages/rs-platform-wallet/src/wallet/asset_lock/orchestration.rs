@@ -607,7 +607,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `platform_addresses_must_be_recorded` refuses an existing
     /// Platform-address lock whose row records no recipients.
     #[allow(clippy::too_many_arguments)]
-    async fn resolve_funding_checked<AS>(
+    pub(crate) async fn resolve_funding_checked<AS>(
         &self,
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,

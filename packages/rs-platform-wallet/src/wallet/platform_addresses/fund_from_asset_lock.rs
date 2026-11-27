@@ -2827,6 +2827,67 @@ mod tests {
         assert!(matches!(resolved, FundingResolution::Resolved(_)));
     }
 
+    /// The row a resume to recorded recipients claims is checked again: a row
+    /// that still records the payees at the first read, then is recreated by
+    /// an owned funding (recording none) before the claim, is refused at the
+    /// claim, and nothing is sent from it.
+    #[tokio::test]
+    async fn should_refuse_old_payees_for_a_row_recreated_after_the_first_check() {
+        let (_manager, wallet, _persister, recipients, row, signer) =
+            external_payment_with_recorded_row().await;
+        let payees = PlatformAddressRecipients::new(recipients).unwrap();
+        restart_with_failed_submit(&wallet, &chain_locked(row.clone())).await;
+        let wallet_manager = Arc::clone(wallet.wallet_manager());
+        let wallet_id = wallet.wallet_id();
+        let out_point = row.out_point;
+        // Between the first check and the claim: the row is recreated at the
+        // outpoint by an owned funding, which records no recipients.
+        let recreate = move |seen: OutPoint| {
+            assert_eq!(seen, out_point);
+            let mut wm = wallet_manager
+                .try_write()
+                .expect("no manager lock is held between the two checks");
+            wm.get_wallet_info_mut(&wallet_id)
+                .unwrap()
+                .tracked_asset_locks
+                .get_mut(&out_point)
+                .unwrap()
+                .platform_address_recipients = None;
+        };
+
+        let Err(refused) = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_checked(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                },
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                Some(AssetLockRecipient::PlatformAddresses(payees)),
+                true,
+                &signer,
+                None,
+                recreate,
+            )
+            .await
+        else {
+            panic!("the claimed row no longer records the payees");
+        };
+        assert!(
+            matches!(refused, PlatformWalletError::InvalidParameter(_)),
+            "{refused:?}"
+        );
+        let tracked = wallet.platform().asset_locks.list_tracked_locks().await;
+        let lock = tracked
+            .iter()
+            .find(|lock| lock.out_point == out_point)
+            .expect("a refused resume leaves the lock tracked");
+        assert!(!lock.status.is_consumed(), "nothing was sent");
+        assert_eq!(lock.platform_address_recipients, None);
+    }
+
     /// The recipient-less resume pays only what a lock recorded: an untracked
     /// lock, one of another funding type, a consumed one and one that
     /// records no recipients are refused before anything is submitted.
