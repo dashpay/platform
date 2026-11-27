@@ -8,6 +8,7 @@ use super::normalize_dpns_label;
 use crate::platform::documents::contest_vote_state::read_not_older_than;
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
+use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0};
 use dpp::fee::Credits;
@@ -29,6 +30,7 @@ use drive_proof_verifier::types::{
 };
 use futures::{stream, StreamExt};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 // DPNS parent domain constant
 const DPNS_PARENT_DOMAIN: &str = "dash";
@@ -194,6 +196,14 @@ impl Sdk {
         }
 
         let dpns_contract = self.fetch_current_dpns_contract().await?;
+
+        // The contenders are read with proofs the SDK verifies under the DPNS contract its
+        // context provider resolves, and a provider that was never given DPNS resolves none:
+        // give it the contract just proved, as a registration does
+        if let Some(provider) = self.context_provider() {
+            provider.register_data_contract(Arc::new(dpns_contract.clone()));
+        }
+
         let domain_document_type = dpns_contract
             .document_type_for_name(DPNS_DOMAIN_DOCUMENT_TYPE)
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
