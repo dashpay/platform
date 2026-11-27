@@ -19,8 +19,26 @@
 //! A request is its method and its parameters, and the file holds one answer for it: the
 //! first Core gave that is kept. Not kept is what is no answer to the request: an error of the
 //! connection, and Core's errors that say it is not ready (starting, not connected, loading
-//! blocks), after which the client asks again. A request the file holds an answer to is, when
-//! asked again, asked of Core again and not written again.
+//! blocks), after which the recording asks again. A request the file holds an answer to is,
+//! when asked again, asked of Core again and not written again.
+//!
+//! A node's client asks again after such an error too, but not for ever, and some of block
+//! execution goes on when it has given up (it hands Core a withdrawal transaction and notes
+//! a failure; a proposer goes on without a chain lock). What it was given then is not in the
+//! file, and a replay from the file would be given something else. So a recording does not
+//! hand such an outcome up to the client. Where Core gives no answer, the recording itself
+//! asks again, as often and with the waits the node's client has, and the client sees
+//! nothing of it when an answer comes. When Core has given none to any of the tries, the
+//! run has failed, and one of two things follows:
+//!
+//! - Outside `FinalizeBlock` the request ends in an error of the transport that says so, and
+//!   so does every later request. The client and block execution may make of that error
+//!   what they will until the ABCI request has ended, where the replay ends. No block is
+//!   committed outside `FinalizeBlock`.
+//! - `FinalizeBlock` commits the block before it ends. While it is executed, a failure of
+//!   Core's answers is therefore not given to the client at all: it ends the request at
+//!   once, before the block's transaction is committed. See [`CoreAnswers::finalizing`],
+//!   which also says when the replay can be started again on the same database.
 //!
 //! Answers are served by request and not by their order, so a replay may start at any height
 //! the recording covered. This rests on Core answering a request alike whenever it is asked.
@@ -59,9 +77,12 @@ use std::error::Error;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread::{self, ThreadId};
+use std::time::Duration;
 
 /// The HTTP status Core refuses a request with, such as a method missing from the RPC user's
 /// `rpcwhitelist`
@@ -70,8 +91,17 @@ const HTTP_FORBIDDEN: u16 = 403;
 const FORMAT: &str = "drive-abci core answers";
 const VERSION: u32 = 1;
 
+/// How often a recording asks Core a request before the run fails: as often as the node's
+/// client asks (`retry!` in `rpc/core.rs`).
+const TRIES: u32 = 4;
+
+/// The wait of a recording before it asks Core a second time. It waits twice as long before
+/// the third time and three times as long before the fourth, as the node's client does.
+const WAIT: Duration = Duration::from_secs(1);
+
 /// Errors of Core that say the node is not ready. They are not answers to the request, and
-/// the node's own client asks again after them, so a recording does not keep them.
+/// the node's own client asks again after them, so a recording does not keep them and asks
+/// again itself.
 const NOT_READY: [i32; 3] = [
     CORE_RPC_ERROR_IN_WARMUP,
     CORE_RPC_CLIENT_NOT_CONNECTED,
@@ -204,7 +234,14 @@ struct State {
     added: u64,
     /// Why this run can no longer be trusted; every later request is refused with it
     failure: Option<String>,
+    /// The thread that executes `FinalizeBlock`, while it does: a failure found on it unwinds
+    /// (`CoreAnswers::finalizing`)
+    finalizing: Option<ThreadId>,
 }
+
+/// What unwinds out of `FinalizeBlock` when Core's answers fail while it is executed. The
+/// reason is the run's failure.
+struct EndedBeforeCommit;
 
 #[derive(Debug)]
 struct Shared {
@@ -233,10 +270,16 @@ impl Shared {
     }
 
     /// Notes why the run is no longer to be trusted and gives the error for the request.
+    /// While `FinalizeBlock` is executed, on its thread, there is no error to give: the
+    /// failure unwinds to `CoreAnswers::finalizing`.
     fn fail(&self, state: &mut State, message: String) -> jsonrpc::Error {
         tracing::error!("{}", message);
         if state.failure.is_none() {
             state.failure = Some(message.clone());
+        }
+        if state.finalizing == Some(thread::current().id()) {
+            // Without the panic hook: this is no panic, and the reason is logged above
+            panic::resume_unwind(Box::new(EndedBeforeCommit));
         }
         transport_error(message)
     }
@@ -254,10 +297,8 @@ impl Shared {
         params: &str,
         response: &Response,
     ) -> Result<(), jsonrpc::Error> {
-        if let Some(error) = &response.error {
-            if NOT_READY.contains(&error.code) {
-                return Ok(());
-            }
+        if not_ready(response).is_some() {
+            return Ok(());
         }
 
         let mut state = self.lock();
@@ -517,10 +558,28 @@ impl Transport for NodeClient {
     }
 }
 
+/// Core's error that says the node is not ready, if the response is one: no answer to the
+/// request.
+fn not_ready(response: &Response) -> Option<&RpcError> {
+    response
+        .error
+        .as_ref()
+        .filter(|error| NOT_READY.contains(&error.code))
+}
+
 /// The transport of a recording replay: asks Core, and keeps what it answered.
+///
+/// What it gives the client is an answer of Core, which the file then holds, or, once the
+/// run has failed, an error that says why (while `FinalizeBlock` is executed not even that:
+/// see `Shared::fail`). Where Core gives no answer (an error of the connection, or its error
+/// for a node that is not ready) the request is asked again here, `TRIES` times in all, and
+/// not handed up for the client to ask again: when the client gives up, what asked through
+/// it may go on, and nothing in the file would say that it did so without an answer.
 struct Recording<T> {
     core: T,
     shared: Arc<Shared>,
+    /// The wait before the second try; see `WAIT`
+    wait: Duration,
 }
 
 impl<T: Transport> Transport for Recording<T> {
@@ -528,20 +587,48 @@ impl<T: Transport> Transport for Recording<T> {
         self.shared.refuse_after_failure()?;
         let method = request.method.to_owned();
         let params = params_text(request.params).to_owned();
-        let response = match self.core.send_request(request) {
-            Ok(response) => response,
-            Err(error) if is_http_forbidden(&error) => {
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            let instead = match self.core.send_request(request.clone()) {
+                Ok(response) => match not_ready(&response) {
+                    None => {
+                        self.shared.record(&method, &params, &response)?;
+                        return Ok(response);
+                    }
+                    Some(error) => format!("its error {} ({})", error.code, error.message),
+                },
+                Err(error) if is_http_forbidden(&error) => {
+                    let message = format!(
+                        "Core refused `{}` with HTTP status 403; a recording needs every method block execution asks for allowed to its RPC user, since {} holds answers and no refusals",
+                        method,
+                        self.shared.path.display()
+                    );
+                    return Err(self.shared.fail(&mut self.shared.lock(), message));
+                }
+                Err(error) => error.to_string(),
+            };
+            if tries == TRIES {
                 let message = format!(
-                    "Core refused `{}` with HTTP status 403; a recording needs every method block execution asks for allowed to its RPC user, since {} holds answers and no refusals",
+                    "Core gave no answer to `{}` {} in {} tries, the last time: {}; the recording ends here, since {} holds answers of Core and nothing else",
                     method,
+                    params,
+                    TRIES,
+                    instead,
                     self.shared.path.display()
                 );
-                return Err(self.shared.fail(&mut self.shared.lock(), message));
+                let mut state = self.shared.lock();
+                return Err(self.shared.fail(&mut state, message));
             }
-            Err(error) => return Err(error),
-        };
-        self.shared.record(&method, &params, &response)?;
-        Ok(response)
+            tracing::warn!(
+                "Core gave no answer to `{}` (try {} of {}): {}",
+                method,
+                tries,
+                TRIES,
+                instead
+            );
+            thread::sleep(self.wait * tries);
+        }
     }
 
     fn send_batch(&self, _: &[Request]) -> Result<Vec<Response>, jsonrpc::Error> {
@@ -609,7 +696,7 @@ impl CoreAnswers {
         password: String,
     ) -> Result<(Self, DefaultCoreRPC), Box<dyn Error>> {
         let core = NodeClient(Client::new(url, Auth::UserPass(username, password))?);
-        let (answers, client) = Self::recording(path, core)?;
+        let (answers, client) = Self::recording(path, core, WAIT)?;
         Ok((
             answers,
             DefaultCoreRPC::with_client(Client::from_jsonrpc(client)),
@@ -628,6 +715,7 @@ impl CoreAnswers {
     fn recording<T: Transport>(
         path: &Path,
         core: T,
+        wait: Duration,
     ) -> Result<(Self, jsonrpc::Client), Box<dyn Error>> {
         let mut file = OpenOptions::new()
             .read(true)
@@ -669,6 +757,7 @@ impl CoreAnswers {
         let client = jsonrpc::Client::with_transport(Recording {
             core,
             shared: Arc::clone(&shared),
+            wait,
         });
         Ok((CoreAnswers { shared }, client))
     }
@@ -702,16 +791,56 @@ impl CoreAnswers {
                 asked: BTreeMap::new(),
                 added: 0,
                 failure: None,
+                finalizing: None,
             }),
         })
     }
 
     /// Why this run's answers can no longer be trusted, if they cannot: a request the file
-    /// has no answer to, an answer that differs from the recorded one, or a file that cannot
-    /// be read or written. Block execution may read such an error as Core being away for a
-    /// moment, so the replay asks here after every request and stops.
+    /// has no answer to, a request Core gave a recording no answer to, an answer that
+    /// differs from the recorded one, or a file that cannot be read or written. Block
+    /// execution may read such an error as Core being away for a moment, so the replay asks
+    /// here after every request and stops.
     pub(super) fn failure(&self) -> Option<String> {
         self.shared.lock().failure.clone()
+    }
+
+    /// Executes `FinalizeBlock` through `finalize` and ends it at the first failure of
+    /// Core's answers, before the block's transaction is committed. The error is that
+    /// failure.
+    ///
+    /// Block execution reads a failed request to Core as Core being away for a moment, and
+    /// where it hands Core the block's withdrawal transactions it notes the failure and goes
+    /// on to the commit. The replay looks at its answers when a request has ended. It would
+    /// find the failure with the block committed and no line of it written: its report
+    /// could not be gone on with, and without a report a second start would pass the block
+    /// over. So while `finalize` runs, a failure found on this thread unwinds from the
+    /// request to Core it was found at, through the handler, to here. A recording has asked
+    /// Core as often as it does by then.
+    ///
+    /// The handler is not changed for this and is left in the middle of a block. After an
+    /// error the replay has to end, and execute nothing more on its platform. What still
+    /// runs is the end of the platform itself, which flushes and closes GroveDB: that writes
+    /// out what was committed before, and the block's transaction is dropped as it is. Any
+    /// other unwinding, a panic of the node's code, goes on from here untouched.
+    ///
+    /// What this keeps is that the block's transaction is not committed. For the replay to
+    /// be started again on the same database, more is needed. The database has to hold a
+    /// block that was committed before: before its first block it holds no platform state,
+    /// and a directory that was opened once is not taken for a new database again. And the
+    /// block must have written nothing outside its transaction: on mainnet below height
+    /// 32329 the node removes votes outside it, as the chain did then.
+    pub(super) fn finalizing<T>(&self, finalize: impl FnOnce() -> T) -> Result<T, String> {
+        self.shared.lock().finalizing = Some(thread::current().id());
+        let outcome = panic::catch_unwind(AssertUnwindSafe(finalize));
+        self.shared.lock().finalizing = None;
+        match outcome {
+            Ok(value) => Ok(value),
+            Err(payload) if payload.is::<EndedBeforeCommit>() => Err(self
+                .failure()
+                .unwrap_or_else(|| "a request to Core failed".to_owned())),
+            Err(payload) => panic::resume_unwind(payload),
+        }
     }
 
     pub(super) fn summary(&self) -> CoreAnswersSummary {
@@ -729,6 +858,7 @@ mod tests {
     use super::*;
     use crate::rpc::core::CoreRPCLike;
     use dpp::dashcore::BlockHash;
+    use std::any::Any;
     use std::collections::VecDeque;
     use std::fs;
     use std::str::FromStr;
@@ -820,7 +950,7 @@ mod tests {
         answers: Vec<Result<Response, jsonrpc::Error>>,
     ) -> (CoreAnswers, jsonrpc::Client, Asked) {
         let (core, asked) = scripted_core(answers);
-        let (answers, client) = CoreAnswers::recording(path, core).unwrap();
+        let (answers, client) = CoreAnswers::recording(path, core, Duration::ZERO).unwrap();
         (answers, client, asked)
     }
 
@@ -841,7 +971,7 @@ mod tests {
         let path = answers_path(&dir);
 
         let (core, asked) = scripted_core(vec![hash(HASH_100), hash(HASH_101)]);
-        let (answers, client) = CoreAnswers::recording(&path, core).unwrap();
+        let (answers, client) = CoreAnswers::recording(&path, core, Duration::ZERO).unwrap();
         let rpc = DefaultCoreRPC::with_client(Client::from_jsonrpc(client));
         assert_eq!(
             rpc.get_block_hash(100).unwrap(),
@@ -938,7 +1068,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = answers_path(&dir);
 
-        let (answers, client, _) = recording(
+        let (answers, client, asked) = recording(
             &path,
             vec![
                 rpc_error(CORE_RPC_ERROR_IN_WARMUP, "Loading block index"),
@@ -950,13 +1080,17 @@ mod tests {
                 hash(HASH_100),
             ],
         );
-        for _ in 0..3 {
-            ask(&client, 100).unwrap_err();
-            assert_eq!(answers.summary().held, 0);
-        }
+        // The recording asks again after each of them, and gives the answer
         assert_eq!(ask(&client, 100).unwrap(), HASH_100);
+        assert_eq!(asked.lock().unwrap().len(), 4);
         assert_eq!(answers.summary().held, 1);
         assert_eq!(answers.failure(), None);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!(
+                "{FORMAT_LINE}{{\"method\":\"getblockhash\",\"params\":[100],\"result\":\"{HASH_100}\"}}\n"
+            )
+        );
     }
 
     #[test]
@@ -1043,7 +1177,7 @@ mod tests {
 
         let (_, client, _) = recording(&path, vec![hash(HASH_100)]);
         let (core, _) = scripted_core(vec![]);
-        let error = refused(CoreAnswers::recording(&path, core));
+        let error = refused(CoreAnswers::recording(&path, core, Duration::ZERO));
         assert!(
             error.contains("is being recorded into by another replay"),
             "{error}"
@@ -1153,12 +1287,12 @@ mod tests {
 
         // A recording does not go on in such a file either
         let (core, _) = scripted_core(vec![]);
-        let error = refused(CoreAnswers::recording(&path, core));
+        let error = refused(CoreAnswers::recording(&path, core, Duration::ZERO));
         assert!(error.contains("line 3 of"), "{error}");
 
         fs::write(&path, "{\"format\":\"drive-abci core").unwrap();
         let (core, _) = scripted_core(vec![]);
-        let error = refused(CoreAnswers::recording(&path, core));
+        let error = refused(CoreAnswers::recording(&path, core, Duration::ZERO));
         assert!(error.contains("has no format line"), "{error}");
     }
 
@@ -1176,17 +1310,17 @@ mod tests {
     }
 
     #[test]
-    fn should_pass_on_an_error_of_the_connection_and_keep_nothing_of_it() {
+    fn should_ask_again_after_an_error_of_the_connection_and_keep_nothing_of_it() {
         let dir = tempfile::tempdir().unwrap();
         let path = answers_path(&dir);
 
-        let (answers, client, _) =
+        let (answers, client, asked) =
             recording(&path, vec![Err(jsonrpc::Error::EmptyBatch), hash(HASH_100)]);
-        ask(&client, 100).unwrap_err();
-        assert_eq!(answers.failure(), None);
-        assert_eq!(answers.summary().held, 0);
         assert_eq!(ask(&client, 100).unwrap(), HASH_100);
+        assert_eq!(asked.lock().unwrap().len(), 2);
+        assert_eq!(answers.failure(), None);
         assert_eq!(answers.summary().held, 1);
+        assert_eq!(answers.summary().added, 1);
     }
 
     #[test]
@@ -1231,13 +1365,12 @@ mod tests {
         ask(&client, 100).unwrap_err();
         assert_eq!(asked.lock().unwrap().len(), 1);
 
-        // Another HTTP status is an error of the connection, passed on with nothing kept
-        let unavailable = Err(jsonrpc::Error::Transport(Box::new(
-            HttpError::HttpErrorCode(503),
-        )));
+        // Another HTTP status is an error of the connection, after which it asks again
         let other_dir = tempfile::tempdir().unwrap();
-        let (answers, client, _) = recording(&answers_path(&other_dir), vec![unavailable]);
-        ask(&client, 100).unwrap_err();
+        let (answers, client, asked) =
+            recording(&answers_path(&other_dir), vec![away(), hash(HASH_100)]);
+        assert_eq!(ask(&client, 100).unwrap(), HASH_100);
+        assert_eq!(asked.lock().unwrap().len(), 2);
         assert_eq!(answers.failure(), None);
     }
 
@@ -1474,5 +1607,245 @@ mod tests {
         assert!(response.is_none());
         assert!(response.error.is_none());
         assert_eq!(response.jsonrpc.as_deref(), Some("2.0"));
+    }
+
+    // ---- a request Core does not answer ----
+
+    /// An error of the connection: Core did not answer.
+    fn away() -> Result<Response, jsonrpc::Error> {
+        Err(jsonrpc::Error::Transport(Box::new(
+            HttpError::HttpErrorCode(503),
+        )))
+    }
+
+    #[test]
+    fn should_keep_the_answer_core_gives_to_the_last_try() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = answers_path(&dir);
+
+        // Core is away three times and answers the fourth, the last time it is asked. The
+        // node's client is given the answer, and has seen nothing of the three
+        let (core, asked) = scripted_core(vec![away(), away(), away(), hash(HASH_100)]);
+        let (answers, client) = CoreAnswers::recording(&path, core, Duration::ZERO).unwrap();
+        let rpc = DefaultCoreRPC::with_client(Client::from_jsonrpc(client));
+        assert_eq!(
+            rpc.get_block_hash(100).unwrap(),
+            BlockHash::from_str(HASH_100).unwrap()
+        );
+        assert_eq!(asked.lock().unwrap().len(), 4);
+        assert_eq!(answers.failure(), None);
+        assert_eq!(
+            answers.summary(),
+            CoreAnswersSummary {
+                asked: BTreeMap::from([("getblockhash".to_owned(), 1)]),
+                held: 1,
+                added: 1,
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!(
+                "{FORMAT_LINE}{{\"method\":\"getblockhash\",\"params\":[100],\"result\":\"{HASH_100}\"}}\n"
+            )
+        );
+        drop(rpc);
+
+        let (_, rpc) = CoreAnswers::serve(&path).unwrap();
+        assert_eq!(
+            rpc.get_block_hash(100).unwrap(),
+            BlockHash::from_str(HASH_100).unwrap()
+        );
+    }
+
+    #[test]
+    fn should_fail_a_recording_where_core_gives_no_answer_to_any_try() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = answers_path(&dir);
+
+        // Core is away all four times, and would have answered a fifth
+        let (answers, client, asked) =
+            recording(&path, vec![away(), away(), away(), away(), hash(HASH_100)]);
+        let expected = format!(
+            "Core gave no answer to `getblockhash` [100] in 4 tries, the last time: {}; the recording ends here, since {} holds answers of Core and nothing else",
+            away().unwrap_err(),
+            path.display()
+        );
+        // What asked goes on without the answer, as the broadcast of a withdrawal does
+        let noted = ask(&client, 100).unwrap_err();
+        assert!(noted.contains(&expected), "{noted}");
+        assert_eq!(asked.lock().unwrap().len(), 4);
+        assert_eq!(answers.failure(), Some(expected.clone()));
+        assert_eq!(fs::read_to_string(&path).unwrap(), FORMAT_LINE);
+
+        // The run has failed. A second call with the same request, which Core would answer
+        // now, is not given an answer the first was not given, and no other request is
+        let again = ask(&client, 100).unwrap_err();
+        assert!(again.contains(&expected), "{again}");
+        ask(&client, 101).unwrap_err();
+        assert_eq!(asked.lock().unwrap().len(), 4);
+        assert_eq!(fs::read_to_string(&path).unwrap(), FORMAT_LINE);
+
+        // Core's error for a node that is not ready is no answer either
+        let other_dir = tempfile::tempdir().unwrap();
+        let warming_up = || rpc_error(CORE_RPC_ERROR_IN_WARMUP, "Loading block index");
+        let (answers, client, _) = recording(
+            &answers_path(&other_dir),
+            vec![warming_up(), away(), warming_up(), warming_up()],
+        );
+        ask(&client, 100).unwrap_err();
+        let failure = answers.failure().unwrap();
+        assert!(
+            failure.starts_with(&format!(
+                "Core gave no answer to `getblockhash` [100] in 4 tries, the last time: its error {} (Loading block index); ",
+                CORE_RPC_ERROR_IN_WARMUP
+            )),
+            "{failure}"
+        );
+    }
+
+    #[test]
+    fn should_wait_longer_each_time_before_it_asks_core_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let (core, _) = scripted_core(vec![away(), away(), away(), hash(HASH_100)]);
+        let wait = Duration::from_millis(20);
+        let (_, client) = CoreAnswers::recording(&answers_path(&dir), core, wait).unwrap();
+        let start = std::time::Instant::now();
+        assert_eq!(ask(&client, 100).unwrap(), HASH_100);
+        // Once, twice and three times the wait
+        assert!(start.elapsed() >= wait * 6, "{:?}", start.elapsed());
+    }
+
+    // ---- FinalizeBlock and a failure of the answers ----
+
+    /// What `FinalizeBlock` does where it hands Core a withdrawal transaction: it asks,
+    /// notes a failure, and goes on to commit the block.
+    fn finalize(client: &jsonrpc::Client, height: u32, committed: &mut bool) {
+        let _noted = ask(client, height);
+        *committed = true;
+    }
+
+    #[test]
+    fn should_end_a_finalization_before_its_commit_where_the_file_has_no_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = answers_path(&dir);
+        let (_, client, _) = recording(&path, vec![hash(HASH_100)]);
+        ask(&client, 100).unwrap();
+        drop(client);
+
+        let (answers, client) = CoreAnswers::serving(&path).unwrap();
+        let mut committed = false;
+        let failure = answers
+            .finalizing(|| finalize(&client, 101, &mut committed))
+            .unwrap_err();
+        assert_eq!(
+            failure,
+            format!(
+                "{} holds no answer of Core to `getblockhash` [101]",
+                path.display()
+            )
+        );
+        assert!(!committed);
+        assert_eq!(answers.failure(), Some(failure));
+        drop(client);
+
+        // The file is given the answer: the same finalization goes through to its commit
+        let (_, client, _) = recording(&path, vec![hash(HASH_101)]);
+        ask(&client, 101).unwrap();
+        drop(client);
+        let (answers, client) = CoreAnswers::serving(&path).unwrap();
+        let mut committed = false;
+        answers
+            .finalizing(|| finalize(&client, 101, &mut committed))
+            .unwrap();
+        assert!(committed);
+        assert_eq!(answers.failure(), None);
+
+        // Outside a finalization a failure is the request's error, which the replay looks
+        // for when the request has ended
+        let error = ask(&client, 102).unwrap_err();
+        assert!(error.contains("holds no answer of Core to"), "{error}");
+        assert!(answers.failure().is_some());
+    }
+
+    #[test]
+    fn should_end_a_finalization_of_a_recording_where_core_gives_no_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = answers_path(&dir);
+
+        // Core is away once and then answers: the finalization is given the answer and
+        // goes through to its commit
+        let (answers, client, asked) = recording(&path, vec![away(), hash(HASH_100)]);
+        let mut committed = false;
+        answers
+            .finalizing(|| finalize(&client, 100, &mut committed))
+            .unwrap();
+        assert!(committed);
+        assert_eq!(asked.lock().unwrap().len(), 2);
+        assert_eq!(answers.failure(), None);
+        // The file is the recording's while the recording is there
+        drop((answers, client));
+
+        // Core gives no answer to any try: the finalization ends there, not committed
+        let (answers, client, asked) = recording(&path, vec![away(), away(), away(), away()]);
+        let mut committed = false;
+        let failure = answers
+            .finalizing(|| finalize(&client, 101, &mut committed))
+            .unwrap_err();
+        assert!(
+            failure.starts_with("Core gave no answer to `getblockhash` [101] in 4 tries, "),
+            "{failure}"
+        );
+        assert!(!committed);
+        assert_eq!(asked.lock().unwrap().len(), 4);
+        drop((answers, client));
+
+        // An answer that differs from the recorded one ends it the same way
+        let (answers, client, _) = recording(&path, vec![hash(HASH_101)]);
+        let mut committed = false;
+        let failure = answers
+            .finalizing(|| finalize(&client, 100, &mut committed))
+            .unwrap_err();
+        assert!(failure.contains("differently from the answer"), "{failure}");
+        assert!(!committed);
+    }
+
+    #[test]
+    fn should_take_only_its_own_unwinding_for_a_failure_of_the_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = answers_path(&dir);
+        let (_, client, _) = recording(&path, vec![hash(HASH_100)]);
+        ask(&client, 100).unwrap();
+        drop(client);
+        let (answers, client) = CoreAnswers::serving(&path).unwrap();
+
+        // A panic of what is executed is not the replay's to take
+        let payload: Box<dyn Any + Send> = panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ended: Result<(), String> =
+                answers.finalizing(|| panic!("of the node's own code"));
+        }))
+        .unwrap_err();
+        assert_eq!(
+            payload.downcast_ref::<&str>(),
+            Some(&"of the node's own code")
+        );
+        assert_eq!(answers.failure(), None);
+
+        // A failure found on another thread is that thread's error, and unwinds nothing
+        let mut committed = false;
+        answers
+            .finalizing(|| {
+                let asked = thread::scope(|scope| scope.spawn(|| ask(&client, 101)).join());
+                assert!(asked.expect("the thread did not unwind").is_err());
+                committed = true;
+            })
+            .unwrap();
+        assert!(committed);
+        assert!(answers.failure().is_some());
+
+        // After a finalization a failure is an error again
+        let (answers, client) = CoreAnswers::serving(&path).unwrap();
+        answers.finalizing(|| ()).unwrap();
+        ask(&client, 101).unwrap_err();
+        assert!(answers.failure().is_some());
     }
 }

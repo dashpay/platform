@@ -20,13 +20,15 @@
 //! answer line after the request's, if nothing unreadable lies before it and it is an answer
 //! that names the thread the request's line names.
 //!
-//! `core_height`, `tx` and `proposal_sha256` come from the replay's answer to the proposal of
-//! the block, and the replay takes an answer for the block's only in one case: the request it
-//! executed directly before `FinalizeBlock` was a `ProcessProposal` of the same height, round
-//! and block hash, and it accepted the proposal. Only `info` requests, which read the state
-//! and can replace nothing of a block's execution, may lie between the two. In every other
+//! `core_height` comes from the proposal of the block, and `tx` and `proposal_sha256` from the
+//! replay's answer to it. The replay takes a proposal for the block's only in one case: the last
+//! request it executed before `FinalizeBlock`, `info` requests and votes (`ExtendVote`,
+//! `VerifyVoteExtension`) aside, was a `ProcessProposal` of the same height, round and block
+//! hash, and it accepted the proposal. Those three are passed over, whichever block a vote
+//! is for, because their handlers read and can replace nothing of a block's execution. In
+//! every other
 //! case (another request in between, another round or block, a refused proposal) the replay
-//! cannot tell that the answer it holds is of the execution that is finalized: the three
+//! cannot tell that the proposal it holds is of the execution that is finalized: the three
 //! fields are then `null` and
 //! `held_against_log` is `false`. So a report says that every block's fees were compared only
 //! where no line has a `null`, and that they were held against the log only where every line
@@ -40,7 +42,7 @@ use same_file::Handle;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
 use std::iter;
 use std::path::{Path, PathBuf};
@@ -155,6 +157,10 @@ impl ReportWriter {
     /// differ is not written. At which block the report begins is not looked at here, since
     /// the database does not say which block was its first; a report that is held against
     /// another has to begin where that one does (`ReportReader::line_for`).
+    ///
+    /// The file is locked before it is read and for as long as it is written: two replays
+    /// that wrote one report would each find it fit to add to, and then write every height
+    /// twice.
     fn open(path: &Path, database: Option<&DatabaseAt>) -> Result<Self, String> {
         let file = OpenOptions::new()
             .read(true)
@@ -162,6 +168,15 @@ impl ReportWriter {
             .create(true)
             .open(path)
             .map_err(|error| format!("cannot open report {}: {}", path.display(), error))?;
+        file.try_lock().map_err(|error| match error {
+            TryLockError::WouldBlock => format!(
+                "report {} is being written by another replay",
+                path.display()
+            ),
+            TryLockError::Error(error) => {
+                format!("cannot lock report {}: {}", path.display(), error)
+            }
+        })?;
 
         let mut last: Option<BlockRecord> = None;
         for line in records(BufReader::new(&file)) {
@@ -309,21 +324,51 @@ impl ReportReader {
         }
     }
 
-    /// Holds a line of this replay against the other run's line for the same block. The
-    /// error names each field that differs and gives both lines.
+    /// Holds a line of this replay against the other run's next line, which has to be for
+    /// the same block.
     fn hold(&mut self, height: u64, line: &str) -> Result<(), String> {
         let other_line = self.line_for(height)?;
-        if other_line == line {
-            return Ok(());
-        }
-        let mut lines: Vec<String> = differences(line, &other_line)
-            .iter()
-            .map(|difference| format!("DIFFERS height={height} {difference}"))
-            .collect();
-        lines.push(format!("DIFFERS height={height} this={line}"));
-        lines.push(format!("DIFFERS height={height} other={other_line}"));
-        Err(lines.join("\n"))
+        held_against(height, line, &other_line)
     }
+
+    /// The other run's report has to end here, where the log of this replay has no further
+    /// block: a line more is a block of the other run that this replay did not come to.
+    fn ends(&mut self) -> Result<(), String> {
+        let (line_number, whole) = match self.lines.next() {
+            Some(line) => line.map_err(|error| {
+                format!("cannot read report {}: {}", self.path.display(), error)
+            })?,
+            None => return Ok(()),
+        };
+        Err(match whole {
+            Some((_, record)) => format!(
+                "report {} goes on with height {} (line {}) where the log ends: from that height on nothing was held against it",
+                self.path.display(),
+                record.height,
+                line_number
+            ),
+            None => format!(
+                "line {} of report {} is not a whole line of a report",
+                line_number,
+                self.path.display()
+            ),
+        })
+    }
+}
+
+/// Holds a line of this replay against the other run's line for the same block. The error
+/// names each field that differs and gives both lines.
+fn held_against(height: u64, line: &str, other_line: &str) -> Result<(), String> {
+    if other_line == line {
+        return Ok(());
+    }
+    let mut lines: Vec<String> = differences(line, other_line)
+        .iter()
+        .map(|difference| format!("DIFFERS height={height} {difference}"))
+        .collect();
+    lines.push(format!("DIFFERS height={height} this={line}"));
+    lines.push(format!("DIFFERS height={height} other={other_line}"));
+    Err(lines.join("\n"))
 }
 
 /// The fields two report lines differ in, each as `field=<name> this=<value> other=<value>`.
@@ -402,8 +447,8 @@ pub(super) struct ChecksSummary {
     /// Blocks whose finalized proposal's answer was held against the log's and found equal
     pub(super) blocks_held_against_log: u64,
     /// Blocks for which the replay holds no answer of its own to take for theirs: the request
-    /// before `FinalizeBlock`, `info` requests aside, was not the accepted proposal of that
-    /// block
+    /// before `FinalizeBlock`, `info` requests and votes aside, was not the accepted proposal
+    /// of that block
     pub(super) blocks_without_proposal: u64,
     /// Blocks held against the other run's report and found equal
     pub(super) blocks_held_against_report: u64,
@@ -423,7 +468,8 @@ pub(super) struct Proposed<'a> {
     pub(super) core_height: u32,
 }
 
-/// The answer to a `ProcessProposal`, kept until the next request that is not `Info`.
+/// The answer to a `ProcessProposal`, kept until the next request that is neither `Info` nor
+/// a vote.
 #[derive(Debug)]
 struct Proposal {
     height: u64,
@@ -457,6 +503,9 @@ pub(super) struct ReplayChecks {
     other: Option<ReportReader>,
     core_answers: Option<CoreAnswers>,
     proposal: Option<Proposal>,
+    /// The other run's line for the block whose `FinalizeBlock` comes next, with the block's
+    /// height
+    other_line: Option<(u64, String)>,
     summary: ChecksSummary,
 }
 
@@ -551,8 +600,8 @@ impl ReplayChecks {
     }
 
     /// Forgets the answer kept for the block being replayed. The replay calls it before
-    /// every request that is neither `FinalizeBlock` nor `Info`: the answer to a proposal is
-    /// taken for the finalized block's only where no request was executed between the two
+    /// every request that is not `FinalizeBlock`, `Info` or a vote: the answer to a proposal
+    /// is taken for the finalized block's only where no request was executed between the two
     /// that could have replaced what the proposal's execution left for `FinalizeBlock` to
     /// commit.
     pub(super) fn request_begins(&mut self) {
@@ -581,6 +630,42 @@ impl ReplayChecks {
     pub(super) fn core_answers_failed(&self) -> Result<(), String> {
         match self.core_answers.as_ref().and_then(CoreAnswers::failure) {
             Some(failure) => Err(format!("Core's answers failed the replay: {failure}")),
+            None => Ok(()),
+        }
+    }
+
+    /// Reads what the block at `height` is held against, before its `FinalizeBlock` is
+    /// executed: the other run's line for the block. A report that has no such line (it ends
+    /// before, or its next line is not whole or is of another height) is found here and not
+    /// after the block is committed: the replay stops with the block not finalized, and its
+    /// report ends at the last block it finalized. Once the other report has the line, the
+    /// replay can be started again on a database that holds that block; when it cannot is
+    /// said at `CoreAnswers::finalizing`.
+    pub(super) fn finalization_begins(&mut self, height: u64) -> Result<(), String> {
+        if let Some(other) = &mut self.other {
+            self.other_line = Some((height, other.line_for(height)?));
+        }
+        Ok(())
+    }
+
+    /// Executes `FinalizeBlock` through `finalize` so that a failure of Core's answers ends
+    /// it before the block is committed (`CoreAnswers::finalizing`). After an error the
+    /// replay has to end.
+    pub(super) fn finalizing<T>(&self, finalize: impl FnOnce() -> T) -> Result<T, String> {
+        match &self.core_answers {
+            Some(core_answers) => core_answers
+                .finalizing(finalize)
+                .map_err(|failure| format!("Core's answers failed the replay: {failure}")),
+            None => Ok(finalize()),
+        }
+    }
+
+    /// Called where the log has no further request. A report the replay is held against has
+    /// to end there too: of one with more blocks, a replay that ended well would say that it
+    /// was held against it.
+    pub(super) fn log_ended(&mut self) -> Result<(), String> {
+        match &mut self.other {
+            Some(other) => other.ends(),
             None => Ok(()),
         }
     }
@@ -652,7 +737,7 @@ impl ReplayChecks {
         response: &ResponseFinalizeBlock,
     ) -> Result<(), String> {
         self.core_answers_failed()?;
-        // The answer kept is of the request before this one, `info` requests aside. It is the
+        // The answer kept is of the request before this one, `info` requests and votes aside. It is the
         // block's only if that request was the very proposal that is finalized, and was
         // accepted.
         let proposal = self.proposal.take().filter(|proposal| {
@@ -701,7 +786,12 @@ impl ReplayChecks {
             .map_err(|error| format!("cannot write the report line: {error}"))?;
 
         if let Some(other) = &mut self.other {
-            other.hold(record.height, &line)?;
+            // Read before the block was committed, where the replay asked for it then
+            let other_line = match self.other_line.take() {
+                Some((height, other_line)) if height == record.height => other_line,
+                _ => other.line_for(record.height)?,
+            };
+            held_against(record.height, &line, &other_line)?;
         }
         if let Some(report) = &mut self.report {
             report.write(&line)?;
@@ -852,6 +942,7 @@ mod tests {
                 &proposal_answer(&[(0, gas_used)]),
                 &logged_answer(&[(0, gas_used)]),
             )?;
+            checks.finalization_begins(height)?;
             checks.block_finalized(
                 finalized(height, &hash, 1, &APP_HASH),
                 &ResponseFinalizeBlock::default(),
@@ -1448,6 +1539,7 @@ mod tests {
         replay_blocks(&mut checks, 5..=6, 100).unwrap();
         assert_eq!(checks.summary().blocks_held_against_report, 2);
         assert_eq!(fs::read(&first).unwrap(), fs::read(&third).unwrap());
+        drop(checks);
 
         // The other report is shorter than what the earlier run wrote
         let short = dir.path().join("short.jsonl");
@@ -1712,5 +1804,172 @@ mod tests {
         .unwrap();
         assert!(record_of(&line).is_some());
         assert_eq!(record_of(&line.replacen('{', "{\"more\":1,", 1)), None);
+    }
+
+    // ---- the other report before the commit, the end of the log, two writers ----
+
+    #[test]
+    fn should_find_that_the_other_report_has_no_line_before_the_block_is_finalized() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jsonl");
+        let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
+        replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        drop(checks);
+        let lines = report_lines(&first);
+
+        // The other report ends a block before this replay does
+        let other = dir.path().join("other.jsonl");
+        fs::write(&other, lines[..2].join("\n") + "\n").unwrap();
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+        replay_blocks(&mut checks, 1..=2, 100).unwrap();
+        let error = checks.finalization_begins(3).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "report {} has no line for height 3: it ends before",
+                other.display()
+            )
+        );
+        drop(checks);
+        assert_eq!(report_lines(&report), lines[..2].to_vec());
+
+        // The replay stopped before block 3 was committed, so its database is at block 2 as
+        // its report is. Once the other report has gone on, the two go on from there
+        fs::write(&other, lines.join("\n") + "\n").unwrap();
+        let mut checks =
+            ReplayChecks::open(Some(&report), Some(&other), Some(&database(2))).unwrap();
+        replay_blocks(&mut checks, 3..=3, 100).unwrap();
+        assert_eq!(checks.summary().blocks_held_against_report, 1);
+        drop(checks);
+        assert_eq!(fs::read(&report).unwrap(), fs::read(&first).unwrap());
+
+        // A line that is not whole and a line of another height are found there too
+        for (next, expected) in [
+            ("not a line\n".to_owned(), "line 3 of report "),
+            (lines[1].clone() + "\n", "report "),
+            (lines[2].clone(), "line 3 of report "),
+        ] {
+            fs::write(&other, lines[..2].join("\n") + "\n" + &next).unwrap();
+            fs::remove_file(&report).unwrap();
+            let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+            replay_blocks(&mut checks, 1..=2, 100).unwrap();
+            let error = checks.finalization_begins(3).unwrap_err();
+            assert!(error.starts_with(expected), "{error}");
+            drop(checks);
+            assert_eq!(report_lines(&report), lines[..2].to_vec());
+        }
+    }
+
+    #[test]
+    fn should_hold_a_block_against_the_line_read_before_it_was_finalized() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jsonl");
+        let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
+        replay_blocks(&mut checks, 1..=2, 100).unwrap();
+        drop(checks);
+
+        // The line read for block 1 is the one block 1 is held against: the other report's
+        // second line is not read in its place
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&first), None).unwrap();
+        let hash = block_hash(1);
+        checks.finalization_begins(1).unwrap();
+        checks
+            .proposal_answered(
+                proposed(1, 0, &hash),
+                &proposal_answer(&[(0, 999)]),
+                &logged_answer(&[(0, 999)]),
+            )
+            .unwrap();
+        let error = checks
+            .block_finalized(
+                finalized(1, &hash, 1, &APP_HASH),
+                &ResponseFinalizeBlock::default(),
+            )
+            .unwrap_err();
+        assert!(
+            error.starts_with("DIFFERS height=1 field=tx[0] this=[0,999] other=[0,100]"),
+            "{error}"
+        );
+        assert_eq!(report_lines(&report), Vec::<String>::new());
+    }
+
+    #[test]
+    fn should_not_end_well_where_the_log_ends_before_the_other_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jsonl");
+        let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
+        replay_blocks(&mut checks, 1..=5, 100).unwrap();
+        // A replay that is held against no report ends where its log ends
+        checks.log_ended().unwrap();
+        drop(checks);
+        let lines = report_lines(&first);
+
+        // The log of this replay ends after block 3, and the other report has five blocks
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&first), None).unwrap();
+        replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        assert_eq!(
+            checks.log_ended().unwrap_err(),
+            format!(
+                "report {} goes on with height 4 (line 4) where the log ends: from that height on nothing was held against it",
+                first.display()
+            )
+        );
+        drop(checks);
+
+        // Both end at the same block
+        fs::remove_file(&report).unwrap();
+        let mut checks = ReplayChecks::open(Some(&report), Some(&first), None).unwrap();
+        replay_blocks(&mut checks, 1..=5, 100).unwrap();
+        checks.log_ended().unwrap();
+        drop(checks);
+
+        // What follows in the other report is not a whole line: it may be a block's
+        let other = dir.path().join("other.jsonl");
+        fs::write(&other, lines[..3].join("\n") + "\n" + &lines[3][..20]).unwrap();
+        fs::remove_file(&report).unwrap();
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+        replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        assert_eq!(
+            checks.log_ended().unwrap_err(),
+            format!(
+                "line 4 of report {} is not a whole line of a report",
+                other.display()
+            )
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_second_writer_of_a_report_while_the_first_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.jsonl");
+        let being_written = format!(
+            "report {} is being written by another replay",
+            report.display()
+        );
+
+        // Two replays of two new databases that were given one report: the first has not
+        // written a line yet, and the file is as fit for the second as it was for the first
+        let mut first = ReplayChecks::open(Some(&report), None, None).unwrap();
+        let error = ReplayChecks::open(Some(&report), None, None).unwrap_err();
+        assert_eq!(error, being_written);
+        // Nor after the first has written
+        replay_blocks(&mut first, 1..=2, 100).unwrap();
+        let error = ReplayChecks::open(Some(&report), None, Some(&database(2))).unwrap_err();
+        assert_eq!(error, being_written);
+        // The file can be read meanwhile, as the report another replay is held against
+        let other = dir.path().join("other.jsonl");
+        let mut second = ReplayChecks::open(Some(&other), Some(&report), None).unwrap();
+        replay_blocks(&mut second, 1..=2, 100).unwrap();
+        drop(second);
+
+        // The first replay has ended: its report is its database's to go on with
+        drop(first);
+        let mut again = ReplayChecks::open(Some(&report), None, Some(&database(2))).unwrap();
+        replay_blocks(&mut again, 3..=3, 100).unwrap();
+        drop(again);
+        assert_eq!(report_lines(&report).len(), 3);
     }
 }

@@ -9,7 +9,7 @@ use crate::abci::app::FullAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
-use crate::rpc::core::DefaultCoreRPC;
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use crate::verify;
 use cli::SkipSelector;
 use core_answers::CoreAnswers;
@@ -290,9 +290,9 @@ fn open_core_rpc(
 }
 
 /// Executes the stream's requests until it ends, the stop height is reached or the replay is
-/// cancelled.
-fn replay_requests(
-    app: &FullAbciApplication<DefaultCoreRPC>,
+/// cancelled. Where the stream ends, a report the replay is held against has to end too.
+fn replay_requests<C: CoreRPCLike>(
+    app: &FullAbciApplication<C>,
     stream: &mut LogRequestStream,
     args: &ReplayArgs,
     cancel: &CancellationToken,
@@ -305,6 +305,7 @@ fn replay_requests(
         None
     };
     let mut cancelled = false;
+    let mut log_ended = false;
     let mut validator = RequestSequenceValidator::new(stream.path().to_path_buf());
     let mut executed = 0usize;
     loop {
@@ -326,6 +327,7 @@ fn replay_requests(
         }
         advance_stream(stream, *known_height, &args.skip)?;
         let Some(item) = stream.next_item()? else {
+            log_ended = true;
             break;
         };
         validator.observe(&item)?;
@@ -341,6 +343,12 @@ fn replay_requests(
         executed += 1;
     }
     validator.finish()?;
+    if log_ended {
+        // A stop height that was reached is a bound the replay was given, and a replay that
+        // was cancelled says so below. Here the log itself has no further block, and a report
+        // the replay is held against may not have one either
+        checks.log_ended()?;
+    }
     tracing::info!(
         "replayed {} ABCI requests from log {}",
         executed,
@@ -579,6 +587,7 @@ impl RequestSequenceValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use chain_answer::{ChainProposalAnswer, LoggedAnswer, TxOutcome};
     use runner::LoadedRequest;
     use std::io::Write;
@@ -1581,6 +1590,62 @@ mod tests {
             ..args
         };
         assert!(open_core_rpc(&config, &missing).is_err());
+    }
+
+    // ---- where the log ends ----
+
+    #[test]
+    fn should_not_end_well_where_the_log_ends_and_the_other_report_goes_on() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        // A log of one request, which a replay passes over: the log then ends
+        let info = r#"Request { value: Some(Info(RequestInfo { version: "1.8.2", block_version: 14, p2p_version: 10, abci_version: "999.999.999" })) }"#;
+        let (dir, log_path) = log_of(&[request_line(info)]);
+        // Another run's report, of one block
+        let other = dir.path().join("other.jsonl");
+        fs::write(
+            &other,
+            "{\"height\":1,\"round\":0,\"core_height\":1,\"protocol_version\":1,\"app_hash\":\"26\",\"grove_root\":\"26\",\"root_is_app_hash\":true,\"tx\":[],\"held_against_log\":true,\"proposal_sha256\":\"00\",\"finalize_sha256\":\"00\"}\n",
+        )
+        .unwrap();
+        let report = dir.path().join("report.jsonl");
+
+        let replay = |stop_height: Option<u64>, database_at: Option<u64>, cancelled: bool| {
+            fs::write(&report, "").unwrap();
+            let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+            let mut stream = LogRequestStream::open(&log_path).unwrap();
+            let mut args = replay_args(&log_path);
+            args.stop_height = stop_height;
+            let cancel = CancellationToken::new();
+            if cancelled {
+                cancel.cancel();
+            }
+            let mut known_height = database_at;
+            replay_requests(
+                &app,
+                &mut stream,
+                &args,
+                &cancel,
+                &mut known_height,
+                &mut checks,
+            )
+            .map_err(|error| error.to_string())
+        };
+
+        let goes_on = format!(
+            "report {} goes on with height 1 (line 1) where the log ends: from that height on nothing was held against it",
+            other.display()
+        );
+        // The log ends, and the other report has a block this replay did not come to
+        assert_eq!(replay(None, None, false).unwrap_err(), goes_on);
+        // A stop height the replay did not reach is no bound
+        assert_eq!(replay(Some(5), None, false).unwrap_err(), goes_on);
+        // One it reached is the bound it was given
+        replay(Some(5), Some(5), false).unwrap();
+        // A replay that was cancelled ends as it did
+        replay(None, None, true).unwrap();
     }
 
     // ---- drain_skipped_entries ----

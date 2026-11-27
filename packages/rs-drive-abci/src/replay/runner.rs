@@ -134,23 +134,40 @@ pub(super) fn ensure_db_directory(path: &Path) -> Result<bool, Box<dyn Error>> {
 /// Whether GroveDB's root hash may differ from the app hash after the block at `height`.
 ///
 /// On mainnet the commit of block 32326 failed with a conflict and the chain went on with the
-/// app hash that block had computed, as `finalize_block` reproduces; `info` therefore lets the
-/// two differ below height 33000. A replay lets them differ from that block to that height,
-/// and nowhere else.
+/// app hash that block had computed. `finalize_block` reproduces that for a commit conflict at
+/// the heights 32326 to 32328 and stops the node at a failed commit anywhere else, so a replay
+/// lets the two differ after those three blocks and nowhere else. `info` lets them differ
+/// below height 33000; that is the range in which a node may be started on such a state, and
+/// not one in which a commit may fail.
+///
+/// The replay is not told whether a commit failed. At one of the three heights it therefore
+/// takes a root that differs after a commit that succeeded too, writes it in the block's line
+/// and names the height in its last lines.
 fn grove_root_may_differ_from_app_hash(config: &PlatformConfig, height: i64) -> bool {
     config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
-        && (32326..33000).contains(&height)
+        && (32326..32329).contains(&height)
 }
 
 /// Whether a request, executed after a `ProcessProposal`, may have replaced what that
 /// proposal's execution left for `FinalizeBlock` to commit. The replay takes the answer to a
 /// proposal for the finalized block's only where no such request lies between the two.
 ///
-/// Every request is taken to, but two: `FinalizeBlock` itself, and `info`, whose handler is
-/// given the platform to read and neither the transaction nor the block execution context.
+/// Every request is taken to, but `FinalizeBlock` itself and the three whose handlers only
+/// read: `info`, which is given the platform and neither the transaction nor the block
+/// execution context, and `ExtendVote` and `VerifyVoteExtension`, which answer from the
+/// withdrawal transactions `ProcessProposal` kept for the blocks it accepted, whichever block
+/// the vote is for. Tenderdash sends the two vote requests between the proposal and the
+/// finalization of every block a validator signs, and `VerifyVoteExtension` for the commit
+/// of a block a node catches up with.
 fn comes_between_proposal_and_finalization(request: &LoadedRequest) -> bool {
-    !matches!(request, LoadedRequest::Finalize(_) | LoadedRequest::Info(_))
+    !matches!(
+        request,
+        LoadedRequest::Finalize(_)
+            | LoadedRequest::Info(_)
+            | LoadedRequest::ExtendVote(_)
+            | LoadedRequest::VerifyVoteExtension(_)
+    )
 }
 
 pub(super) fn execute_request<C>(
@@ -303,12 +320,32 @@ where
                 .and_then(|block| block.data.as_ref())
                 .map_or(0, |data| data.txs.len());
 
-            let response = app.finalize_block(request).map_err(|err| {
-                logged_error(format!(
-                    "finalize_block failed for {}{}: {:?}",
-                    origin, context, err
-                ))
-            })?;
+            // What the block is held against is read before the block is committed
+            checks
+                .finalization_begins(u64::try_from(height)?)
+                .map_err(|reason| {
+                    logged_error(format!(
+                        "replay stops before finalize_block for {}{}:\n{}",
+                        origin, context, reason
+                    ))
+                })?;
+            // After an error of `finalizing` the handler was left in the middle of the block:
+            // the replay executes nothing more on this platform, and ends. The platform's own
+            // end still flushes and closes GroveDB, which commits nothing of the block
+            let response = checks
+                .finalizing(|| app.finalize_block(request))
+                .map_err(|reason| {
+                    logged_error(format!(
+                        "finalize_block was ended before the block's transaction was committed for {}{}: {}",
+                        origin, context, reason
+                    ))
+                })?
+                .map_err(|err| {
+                    logged_error(format!(
+                        "finalize_block failed for {}{}: {:?}",
+                        origin, context, err
+                    ))
+                })?;
             let actual_hash = app
                 .platform
                 .state
@@ -670,9 +707,23 @@ fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution::types::block_execution_context::v0::{
+        BlockExecutionContextV0, BlockExecutionContextV0Getters,
+    };
+    use crate::execution::types::block_execution_context::BlockExecutionContext;
+    use crate::execution::types::block_state_info::v0::{
+        BlockStateInfoV0, BlockStateInfoV0Methods,
+    };
+    use crate::execution::types::block_state_info::BlockStateInfo;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::platform_state::PlatformState;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use std::collections::BTreeMap;
     use tenderdash_abci::proto::abci::{
-        RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
+        ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
         RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
     };
     use tenderdash_abci::proto::abci::{ResponseFinalizeBlock, ResponseProcessProposal};
@@ -686,9 +737,14 @@ mod tests {
         mainnet.abci.chain_id = "evo1".to_owned();
         assert!(!grove_root_may_differ_from_app_hash(&mainnet, 1));
         assert!(!grove_root_may_differ_from_app_hash(&mainnet, 32325));
+        // The three heights at which `finalize_block` goes on after a commit conflict
         assert!(grove_root_may_differ_from_app_hash(&mainnet, 32326));
+        assert!(grove_root_may_differ_from_app_hash(&mainnet, 32327));
         assert!(grove_root_may_differ_from_app_hash(&mainnet, 32328));
-        assert!(grove_root_may_differ_from_app_hash(&mainnet, 32999));
+        // From there on a block is committed or the node stops, also below the height up to
+        // which `info` lets a node start on such a state
+        assert!(!grove_root_may_differ_from_app_hash(&mainnet, 32329));
+        assert!(!grove_root_may_differ_from_app_hash(&mainnet, 32999));
         assert!(!grove_root_may_differ_from_app_hash(&mainnet, 33000));
         assert!(!grove_root_may_differ_from_app_hash(&mainnet, 478_271));
 
@@ -735,19 +791,22 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_the_answer_to_a_proposal_over_info_requests_only() {
-        assert!(!comes_between_proposal_and_finalization(
-            &LoadedRequest::Info(RequestInfo::default())
-        ));
-        assert!(!comes_between_proposal_and_finalization(
-            &LoadedRequest::Finalize(RequestFinalizeBlock::default())
-        ));
+    fn should_keep_the_answer_to_a_proposal_over_requests_that_only_read() {
+        for request in [
+            LoadedRequest::Info(RequestInfo::default()),
+            LoadedRequest::Finalize(RequestFinalizeBlock::default()),
+            LoadedRequest::ExtendVote(RequestExtendVote::default()),
+            LoadedRequest::VerifyVoteExtension(RequestVerifyVoteExtension::default()),
+        ] {
+            assert!(
+                !comes_between_proposal_and_finalization(&request),
+                "{request:?}"
+            );
+        }
         for request in [
             LoadedRequest::InitChain(RequestInitChain::default()),
             LoadedRequest::Prepare(RequestPrepareProposal::default()),
             LoadedRequest::Process(RequestProcessProposal::default()),
-            LoadedRequest::ExtendVote(RequestExtendVote::default()),
-            LoadedRequest::VerifyVoteExtension(RequestVerifyVoteExtension::default()),
         ] {
             assert!(
                 comes_between_proposal_and_finalization(&request),
@@ -809,6 +868,184 @@ mod tests {
         let line = fs::read_to_string(&report).unwrap();
         assert!(line.contains("\"core_height\":1,"), "{line}");
         assert!(line.contains("\"tx\":[],"), "{line}");
+    }
+
+    /// What `ProcessProposal` leaves for `FinalizeBlock` of a block it accepted.
+    fn block_execution_context(
+        height: u64,
+        round: u32,
+        block_hash: [u8; 32],
+        platform: &Platform<MockCoreRPCLike>,
+    ) -> BlockExecutionContext {
+        let platform_version = PlatformVersion::latest();
+        BlockExecutionContext::V0(BlockExecutionContextV0 {
+            block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
+                height,
+                round,
+                block_time_ms: 1_000_000,
+                previous_block_time_ms: None,
+                proposer_pro_tx_hash: [0u8; 32],
+                core_chain_locked_height: 1,
+                block_hash: Some(block_hash),
+                app_hash: None,
+            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0 {
+                current_epoch_index: 0,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            }),
+            unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+            block_address_balance_changes: BTreeMap::new(),
+            block_platform_state: PlatformState::default_with_protocol_versions(
+                platform_version.protocol_version,
+                platform_version.protocol_version,
+                &platform.config,
+            )
+            .expect("a default platform state"),
+            proposer_results: None,
+        })
+    }
+
+    #[test]
+    fn should_keep_the_answer_to_a_proposal_over_the_votes_on_its_block() {
+        let block_hash = [7u8; 32];
+        let extend = || {
+            LoadedRequest::ExtendVote(RequestExtendVote {
+                hash: block_hash.to_vec(),
+                height: 5,
+                round: 0,
+            })
+        };
+        let verify = || {
+            LoadedRequest::VerifyVoteExtension(RequestVerifyVoteExtension {
+                hash: block_hash.to_vec(),
+                validator_pro_tx_hash: vec![1u8; 32],
+                height: 5,
+                round: 0,
+                vote_extensions: Vec::new(),
+            })
+        };
+        // A validator extends its own vote and verifies those of the others before the block
+        // is finalized; a node that catches up verifies the extensions of the block's commit
+        for votes in [vec![extend(), verify(), verify()], vec![verify()]] {
+            let platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc();
+            let app = FullAbciApplication::new(&platform.platform);
+            // What `ProcessProposal` leaves of a block it accepted
+            app.unsigned_withdrawal_txs_by_round
+                .write()
+                .unwrap()
+                .insert(5, 0, block_hash, Vec::new());
+            app.block_execution_context
+                .write()
+                .unwrap()
+                .replace(block_execution_context(
+                    5,
+                    0,
+                    block_hash,
+                    &platform.platform,
+                ));
+
+            let dir = tempfile::tempdir().unwrap();
+            let report = dir.path().join("report.jsonl");
+            let mut checks = ReplayChecks::open(Some(&report), None, None).unwrap();
+            checks
+                .proposal_answered(
+                    Proposed {
+                        height: 5,
+                        round: 0,
+                        block_hash: &block_hash,
+                        core_height: 1,
+                    },
+                    &ResponseProcessProposal {
+                        status: response_process_proposal::ProposalStatus::Accept as i32,
+                        tx_results: vec![ExecTxResult {
+                            code: 0,
+                            gas_used: 117,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    &LoggedAnswer::Absent,
+                )
+                .unwrap();
+            for (index, request) in votes.into_iter().enumerate() {
+                let item =
+                    ReplayItem::from_log(Path::new("/test.log"), index + 2, None, None, request);
+                execute_request(&app, item, None, &mut checks).unwrap();
+            }
+
+            // The votes left what the proposal's execution left: its context, and no
+            // transaction of their own
+            assert!(app
+                .block_execution_context
+                .read()
+                .unwrap()
+                .as_ref()
+                .expect("the context of the proposal")
+                .block_state_info()
+                .matches_current_block(5, 0, block_hash)
+                .unwrap());
+            assert!(app.transaction.read().unwrap().is_none());
+
+            checks
+                .block_finalized(
+                    Finalized {
+                        height: 5,
+                        round: 0,
+                        block_hash: &block_hash,
+                        transactions: 1,
+                        protocol_version: 1,
+                        app_hash: &[1; 32],
+                        grove_root: &[1; 32],
+                    },
+                    &ResponseFinalizeBlock::default(),
+                )
+                .unwrap();
+            let line = fs::read_to_string(&report).unwrap();
+            assert!(line.contains("\"core_height\":1,"), "{line}");
+            assert!(line.contains("\"tx\":[[0,117]],"), "{line}");
+            assert_eq!(checks.summary().blocks_without_proposal, 0);
+            assert_eq!(checks.summary().transitions, 1);
+        }
+    }
+
+    #[test]
+    fn should_stop_before_finalize_block_where_the_other_report_has_no_line_for_the_block() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other.jsonl");
+        fs::write(&other, "").unwrap();
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+
+        let finalize = ReplayItem::from_log(
+            Path::new("/test.log"),
+            9,
+            None,
+            None,
+            LoadedRequest::Finalize(RequestFinalizeBlock {
+                height: 1,
+                ..Default::default()
+            }),
+        );
+        let error = execute_request(&app, finalize, None, &mut checks)
+            .unwrap_err()
+            .to_string();
+        // The replay's own error, from before the handler is called: the handler has nothing
+        // to finalize here and would have failed with an error of its own
+        assert_eq!(
+            error,
+            format!(
+                "replay stops before finalize_block for /test.log:9 (height=1, round=0):\nreport {} has no line for height 1: it ends before",
+                other.display()
+            )
+        );
+        assert_eq!(fs::read_to_string(&report).unwrap(), "");
     }
 
     #[test]

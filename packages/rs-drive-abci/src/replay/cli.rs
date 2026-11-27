@@ -53,8 +53,10 @@ pub struct ReplayArgs {
     /// Core whose chain stands still (caught up, then `setnetworkactive false`); whether it
     /// does answer alike is checked and not assumed: a second, different answer to a recorded
     /// request (one of the errors for a node that is not ready aside) stops the replay, as
-    /// does a method Core refuses with HTTP status 403. The file may not be inside
-    /// the database directory.
+    /// does a method Core refuses with HTTP status 403. A request Core gives no answer to (an
+    /// error of the connection, or one of the errors for a node that is not ready) is asked
+    /// up to four times; the replay goes on with the first answer, and stops when none of the
+    /// four is answered. The file may not be inside the database directory.
     #[arg(
         long,
         value_name = "FILE",
@@ -73,18 +75,23 @@ pub struct ReplayArgs {
     /// and gas_used (its storage and processing fee), whether those were held against the
     /// log's answer, and a hash over each whole answer. Two replays of the same log that
     /// answered every request alike and left the same root hashes write the same bytes. The
-    /// fields taken from the answer to the block's proposal are null unless the request
-    /// replayed directly before FinalizeBlock (Info requests aside) was the accepted
-    /// ProcessProposal of that very block. A report is written from a new database on. For a database that has blocks the
+    /// fields taken from the block's proposal and from the answer to it are null unless the last request
+    /// replayed before FinalizeBlock (Info, ExtendVote and VerifyVoteExtension requests
+    /// aside) was the accepted ProcessProposal of that very block. A report is written from a
+    /// new database on. For a database that has blocks the
     /// report has to be its own: one block after the other, ending at the block the database
-    /// is at with its app hash. The file may not be inside the database directory.
+    /// is at with its app hash. The file is locked while a replay writes it, and may not be
+    /// inside the database directory.
     #[arg(long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     pub report: Option<PathBuf>,
 
     /// Hold every finalized block against the line another replay wrote for it with
     /// `--report`, on another storage engine for one, and stop at the first block that
     /// differs, naming each field that does; its line is then not written. Lines an earlier
-    /// run wrote to `--report` are held against that file first.
+    /// run wrote to `--report` are held against that file first. The other replay's line for
+    /// a block is read before the block is finalized, so a file that has none stops the
+    /// replay before that block; and where the log ends, the file has to end too, unless
+    /// `--stop-height` was reached.
     #[arg(
         long,
         value_name = "FILE",
