@@ -99,6 +99,7 @@ import VerificationServer from './listr/tasks/ssl/VerificationServer.js';
 import saveCertificateTaskFactory from './listr/tasks/ssl/saveCertificateTask.js';
 import installCertificateFilesTaskFactory from './listr/tasks/ssl/installCertificateFilesTaskFactory.js';
 import checkGatewayCertificateFactory from './ssl/checkGatewayCertificateFactory.js';
+import { waitForGatewayToServeBundle } from './ssl/probeGatewayCertificate.js';
 import gatewayCertificateTaskFactory from './listr/tasks/update/gatewayCertificateTaskFactory.js';
 
 import createZeroSSLCertificate from './ssl/zerossl/createZeroSSLCertificate.js';
@@ -241,6 +242,7 @@ export default async function createDIContainer(options = {}) {
     listCertificates: asValue(listCertificates),
     cancelCertificate: asValue(cancelCertificate),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
+    waitForGatewayToServeBundle: asValue(waitForGatewayToServeBundle),
     verificationServer: asClass(VerificationServer).singleton(),
   });
 

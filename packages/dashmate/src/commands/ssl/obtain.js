@@ -4,6 +4,7 @@ import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningErr
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import isInteractiveSession from '../../util/isInteractiveSession.js';
 import renderGatewayRestartCommand from '../../ssl/renderGatewayRestartCommand.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
 import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
@@ -44,6 +45,8 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    * @param {ConfigFileJsonRepository} configFileRepository
    * @param {ConfigFile} configFile
    * @param {DockerCompose} dockerCompose
+   * @param {HomeDir} homeDir
+   * @param {waitForGatewayToServeBundle} waitForGatewayToServeBundle
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -55,6 +58,8 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     configFileRepository,
     configFile,
     dockerCompose,
+    homeDir,
+    waitForGatewayToServeBundle,
   ) {
     const {
       verbose: isVerbose,
@@ -142,7 +147,29 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
               }
 
               listrTask.skip('Gateway is not running');
+
+              return;
             }
+
+            // The signal reloads the file the gateway has mounted, which need
+            // not be the bundle on disk: one an earlier run wrote as a new
+            // file stays mounted until the gateway restarts, and a later run
+            // that finds it installed writes nothing. So what the gateway
+            // serves decides, not what this run wrote.
+            const served = await waitForGatewayToServeBundle(
+              config,
+              homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'bundle.crt'),
+            );
+
+            if (served.matchesOnDisk === true) {
+              return;
+            }
+
+            ctx.servedGatewayCertificate = served;
+
+            listrTask.skip(served.matchesOnDisk === false
+              ? 'Not applied: the gateway still serves a different certificate'
+              : 'Signalled, but the certificate the gateway serves could not be checked');
           },
         },
       ],
@@ -181,6 +208,24 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       console.log('The certificate bundle was written as a new file, which a running gateway does'
         + ' not see.\nIf the gateway is running, restart it to serve the new certificate:\n'
         + `  ${renderGatewayRestartCommand(config)}`);
+    } else if (context.servedGatewayCertificate?.matchesOnDisk === false) {
+      // eslint-disable-next-line no-console
+      console.log('After the reload the gateway still serves a different certificate from the one'
+        + ' in bundle.crt.\nIt keeps the file it mounted when it started, and a bundle written as a'
+        + ' new file since then is not that file.\nRestart the gateway to serve the new'
+        + ` certificate:\n  ${renderGatewayRestartCommand(config)}`);
+    } else if (context.servedGatewayCertificate) {
+      // A bundle that cannot be read or parsed gives no certificate to
+      // compare, just like a missing one.
+      const { reason } = context.servedGatewayCertificate;
+      const problem = reason
+        ? `dashmate could not check which certificate it serves (${reason})`
+        : 'the certificate it serves could not be compared with bundle.crt, which dashmate'
+          + ' could not read as a certificate';
+
+      // eslint-disable-next-line no-console
+      console.log(`The gateway was signalled to load the certificate, but ${problem}.\n`
+        + `Check it with:\n  dashmate doctor ${renderConfigFlag(config.getName())}`);
     }
   }
 }
