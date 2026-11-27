@@ -1,3 +1,11 @@
+### [5.1.1](https://github.com/dashpay/platform/compare/v5.1.0...v5.1.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **dashmate:** keep a node's own ID out of its Tenderdash seeds ([#6349](https://github.com/dashpay/platform/issues/6349))
+* **release:** name the repository for changelog links ([#6348](https://github.com/dashpay/platform/issues/6348))
+
 ## [5.1.0](https://github.com/dashpay/platform/compare/v5.1.0-rc.2...v5.1.0) (2026-11-26)
 
 
