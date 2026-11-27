@@ -2432,8 +2432,24 @@ impl PlatformWallet {
     /// [`shielded_transfer_to_with_plan`](Self::shielded_transfer_to_with_plan))
     /// to run exactly that selection, or have it refused with
     /// [`PlatformWalletError::ShieldedPlanChanged`] when the notes moved.
+    ///
+    /// Planning only reads the notes: it reserves, signs and sends nothing, so
+    /// every failure is `NotSent` ([`PlatformWalletError::before_dispatch`]).
     #[cfg(feature = "shielded")]
     pub async fn shielded_plan_spend(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account: u32,
+        kind: super::shielded::note_selection::ShieldedSpendKind,
+        amount: super::shielded::note_selection::ShieldedSpendAmount,
+    ) -> Result<super::shielded::note_selection::ShieldedSpendPlan, PlatformWalletError> {
+        self.shielded_plan_spend_inner(coordinator, account, kind, amount)
+            .await
+            .map_err(PlatformWalletError::before_dispatch)
+    }
+
+    #[cfg(feature = "shielded")]
+    async fn shielded_plan_spend_inner(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         account: u32,

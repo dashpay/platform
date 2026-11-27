@@ -333,7 +333,16 @@ impl PlatformWallet {
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         // A batch no proof can carry is refused first: on every funding path (wallet balance,
         // account or wallet drain, resume) nothing is funded, reserved or awaited for it.
-        ensure_shield_batch_fits(num_actions, self.sdk.version())?;
+        // For a fresh lock that proves nothing was sent; a resumed lock may have been used
+        // by an earlier attempt, so its refusal keeps the conservative class.
+        ensure_shield_batch_fits(num_actions, self.sdk.version()).map_err(
+            |error| match &funding {
+                AssetLockFunding::FromWalletBalance { .. }
+                | AssetLockFunding::DrainWalletBalance { .. }
+                | AssetLockFunding::DrainAccountBalance { .. } => error.before_dispatch(),
+                AssetLockFunding::FromExistingAssetLock { .. } => error,
+            },
+        )?;
         // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
         // SAME flat fee consensus charges (`transform_into_action` Step 3b).
         // The initial protocol-version snapshot sizes a fresh lock and prices

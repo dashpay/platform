@@ -1636,6 +1636,13 @@ async fn should_refuse_a_batch_no_proof_can_carry_before_any_core_funding() {
 
     for funding in fundings {
         let label = format!("{funding:?}");
+        // A fresh lock proves nothing was sent; a resumed one may have been used before.
+        let expected_delivery = match &funding {
+            AssetLockFunding::FromExistingAssetLock { .. } => PaymentDelivery::MaybeSent,
+            AssetLockFunding::FromWalletBalance { .. }
+            | AssetLockFunding::DrainWalletBalance { .. }
+            | AssetLockFunding::DrainAccountBalance { .. } => PaymentDelivery::NotSent,
+        };
         let seen = Mutex::new(Vec::new());
         let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
         let error = wallet
@@ -1654,9 +1661,11 @@ async fn should_refuse_a_batch_no_proof_can_carry_before_any_core_funding() {
             .await
             .expect_err("a batch no proof can carry is refused");
         assert!(
-            matches!(&error, PlatformWalletError::ShieldedBuildError(m) if m.contains("7 actions")),
+            matches!(error.dispatched_source(), PlatformWalletError::ShieldedBuildError(m) if m.contains("7 actions")),
             "{label}: got {error:?}"
         );
+        assert_eq!(error.payment_delivery(), expected_delivery, "{label}");
+        assert!(!error.is_retryable(), "{label}");
         assert!(
             seen.into_inner().unwrap().is_empty(),
             "{label}: no lock built"
@@ -1684,4 +1693,52 @@ async fn should_refuse_a_batch_no_proof_can_carry_before_any_core_funding() {
         .shielded_wallet_drain_preview(0, dummy_outputs - 1)
         .await
         .expect("six actions fit one transition");
+}
+
+/// A spend plan only reads the notes, so a failed plan (a zero amount, an
+/// account with no bound keys) is `NotSent` and keeps its diagnostic: the
+/// caller is never told to reconcile a payment no plan could have sent.
+#[tokio::test]
+async fn should_class_a_failed_spend_plan_as_never_sent() {
+    let (lock, keys) = drain_lock_fixture();
+    let (wallet, _persistence, coordinator, _dir, _signer) =
+        signed_wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let kind = super::note_selection::ShieldedSpendKind::Transfer;
+
+    let zero = wallet
+        .shielded_plan_spend(
+            &coordinator,
+            0,
+            kind,
+            super::note_selection::ShieldedSpendAmount::Exact(0),
+        )
+        .await
+        .expect_err("a zero amount is refused");
+    assert!(
+        matches!(
+            zero.dispatched_source(),
+            PlatformWalletError::ShieldedBuildError(_)
+        ),
+        "{zero:?}"
+    );
+    assert_eq!(zero.payment_delivery(), PaymentDelivery::NotSent);
+
+    let unbound = wallet
+        .shielded_plan_spend(
+            &coordinator,
+            9,
+            kind,
+            super::note_selection::ShieldedSpendAmount::Exact(1),
+        )
+        .await
+        .expect_err("an unbound account is refused");
+    assert!(
+        matches!(
+            unbound.dispatched_source(),
+            PlatformWalletError::ShieldedKeyDerivation(_)
+        ),
+        "{unbound:?}"
+    );
+    assert_eq!(unbound.payment_delivery(), PaymentDelivery::NotSent);
 }
