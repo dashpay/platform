@@ -5,11 +5,13 @@ import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdas
 import getDefaultSeedUpdates from '../../../src/tenderdash/getDefaultSeedUpdates.js';
 import seedSetHash from '../../../src/tenderdash/seedSetHash.js';
 
-// From the published Dashmate 5.1.0-rc.1 snapshot (fd256502065).
-const rc1Seeds = JSON.parse(fs.readFileSync(
-  new URL('../../fixtures/tenderdash/5.1.0-rc.1-seeds.json', import.meta.url),
+// From the published Dashmate snapshots at fd25650206 and 3dce832c4b.
+const readReleaseSeeds = version => JSON.parse(fs.readFileSync(
+  new URL(`../../fixtures/tenderdash/${version}-seeds.json`, import.meta.url),
   'utf8',
 ));
+const rc1Seeds = readReleaseSeeds('5.1.0-rc.1');
+const finalSeeds = readReleaseSeeds('5.1.0');
 const oldSeeds = [
   { id: 'a'.repeat(40), host: '8.1.1.1', port: 26656 },
   { id: 'b'.repeat(40), host: '8.1.1.2', port: 26656 },
@@ -119,6 +121,16 @@ describe('getDefaultSeedUpdates', () => {
       })).to.deep.equal([['repaired', current]]);
     });
 
+    it(`should refresh ${network} 5.1.0 stock seeds with only self removed across rotations`, function refreshFinalSeeds() {
+      const [finalSelf, ...finalWithoutSelf] = finalSeeds[network]
+        .map(([id, host, port]) => ({ id, host, port }));
+      const repaired = config(finalWithoutSelf, { network, node: { id: finalSelf.id } });
+      expect(getDefaultSeedUpdates({ repaired })).to.deep.equal([['repaired', current]]);
+
+      this.sinon.stub(tenderdashSeeds[network], 'seeds').value(seeds);
+      expect(getDefaultSeedUpdates({ repaired })).to.deep.equal([['repaired', seeds]]);
+    });
+
     it(`should preserve other partial ${network} 5.1.0-rc.1 lists`, () => {
       expect(getDefaultSeedUpdates({
         removedOther: config(seeds.filter(seed => seed !== removedOther), {
@@ -128,6 +140,23 @@ describe('getDefaultSeedUpdates', () => {
       })).to.deep.equal([]);
     });
   }
+
+  it('should refresh the full 5.0.3 mainnet list and preserve it with self removed', () => {
+    // From v5.0.3's getMainnetConfigFactory.js.
+    const seeds = [
+      ['069639dfceec5f7c86257e6e9c46407c16ad1eab', '34.211.174.194'],
+      ['d46e2445642b2f94158ac3c2a6d90b88b83705b8', '3.76.148.150'],
+      ['b08a650ecfac178939f21c0c12801eccaf18a5ea', '3.0.60.103'],
+      ['4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f', '152.42.151.147'],
+      ['fdc2239c1e0e62f3a192823d6e068d012620a2d1', 'seed-1.pshenmic.dev'],
+    ].map(([id, host]) => ({ id, host, port: 26656 }));
+    const [{ id }, ...withoutSelf] = seeds;
+
+    expect(getDefaultSeedUpdates({
+      full: config(seeds),
+      partial: config(withoutSelf, { node: { id } }),
+    })).to.deep.equal([['full', tenderdashSeeds.mainnet.seeds]]);
+  });
 
   it('should preserve custom, partial, empty, absent, and other-network lists', () => {
     expect(getDefaultSeedUpdates({

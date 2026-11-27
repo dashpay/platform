@@ -58,9 +58,15 @@ tests need no live server.
 
 ## Existing installations
 
-Generation retains fingerprints of previous stock seed sets. On load, Dashmate
-restores the full current defaults if the stored list matches a historical
-stock set or a known stock set with only the node's own entry omitted. The
+Generation adds the previous full stock set's fingerprint and carries existing
+fingerprints forward. On load, Dashmate restores the full current defaults if
+the stored list matches a historical stock set. For stock lists with only the
+local node's own entry omitted, the stored fingerprints cover only 5.1.0-rc.1,
+5.1.0-rc.2, and 5.1.0. They let Dashmate recover lists from those releases after
+the node's entry was removed to work around the seed refresh bug
+([#6307](https://github.com/dashpay/platform/issues/6307)).
+
+Dashmate also checks the current defaults for an omitted local entry. The
 omitted entry must match the saved node ID or the ID derived from its key.
 Custom lists and other partial lists remain unchanged. Keep this history so
 upgrades can skip releases.

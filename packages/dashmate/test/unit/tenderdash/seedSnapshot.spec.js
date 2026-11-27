@@ -1,6 +1,4 @@
 import crypto from 'crypto';
-import tenderdashSeeds from '../../../configs/defaults/tenderdashSeeds.js';
-import getDefaultSeedUpdates from '../../../src/tenderdash/getDefaultSeedUpdates.js';
 import {
   generateSnapshot, fetchSnapshot, checkSnapshot, QUORUM_URLS,
 } from '../../../src/tenderdash/seedSnapshot.js';
@@ -64,29 +62,14 @@ describe('quorum-server Tenderdash seeds', () => {
     expect(random.callCount).to.equal(24);
   });
 
-  it('should restore full stock seeds only for the owner of a filtered historical list', () => {
-    response.data = response.data.slice(0, 5);
-    const first = generateSnapshot(response, 'mainnet', previous, NOW);
-    const [self, ...seeds] = first.seeds;
-    response.data[0].platformP2PPort += 1;
-    response.data[1].platformP2PPort += 1;
-    const second = generateSnapshot(response, 'mainnet', first, NOW);
-    const latest = generateSnapshot(response, 'mainnet', second, NOW);
+  it('should carry existing fingerprints forward and add only the previous full set', () => {
+    const existingFilteredHash = seedSetHash(previous.seeds, 'e'.repeat(40));
+    previous.previousSeedSetHashes.push(existingFilteredHash);
+    const snapshot = generateSnapshot(response, 'mainnet', previous, NOW);
 
-    const config = id => ({
-      network: 'mainnet', platform: { drive: { tenderdash: { node: { id }, p2p: { seeds } } } },
-    });
-    const original = tenderdashSeeds.mainnet;
-    tenderdashSeeds.mainnet = latest;
-    try {
-      expect(getDefaultSeedUpdates({
-        owner: config(self.id),
-        other: config(seeds[0].id),
-        unset: config(null),
-      })).to.deep.equal([['owner', latest.seeds]]);
-    } finally {
-      tenderdashSeeds.mainnet = original;
-    }
+    expect(snapshot.previousSeedSetHashes).to.have.members([
+      ...previous.previousSeedSetHashes, seedSetHash(previous.seeds),
+    ]);
   });
 
   it('should use an alternate registered endpoint when peers share a primary host', () => {
