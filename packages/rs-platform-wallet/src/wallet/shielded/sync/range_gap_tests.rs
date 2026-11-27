@@ -17,7 +17,7 @@ use drive_proof_verifier::types::ShieldedEncryptedNote;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use super::{sync_notes_from_stream, NoteScan};
+use super::{sync_notes_from_stream, NoteSyncOutcome, StoreEpoch};
 use crate::wallet::shielded::cancelled_scan_tests::{note_to, opaque_note};
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -97,9 +97,10 @@ async fn scan(
     store: &Store,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
     batches: Vec<ShieldedChunkBatch>,
-) -> NoteScan {
+) -> NoteSyncOutcome {
     sync_notes_from_stream(
         store,
+        &StoreEpoch::default().watch(),
         subwallets,
         None,
         &CancellationToken::new(),
@@ -176,8 +177,11 @@ fn whole(views: &AccountViewingKeys, pool: &[ShieldedEncryptedNote]) -> Vec<Shie
 
 /// A pass that stopped at a gap says so, and hands back no result: no note,
 /// spent mark, watermark or covered height leaves it.
-fn assert_stopped_at_gap(scan: &NoteScan, case: &str) {
-    assert!(matches!(scan, NoteScan::StoppedAtGap), "{case}: {scan:?}");
+fn assert_stopped_at_gap(scan: &NoteSyncOutcome, case: &str) {
+    assert!(
+        matches!(scan, NoteSyncOutcome::StoppedAtGap),
+        "{case}: {scan:?}"
+    );
 }
 
 /// A pass that meets the gap keeps the two commitments it read and publishes

@@ -187,6 +187,87 @@ pub struct PendingRedrive {
     /// automatic retries and permit separately authorized new payments.
     /// This is never a proof of failure and is always false for note spends.
     pub identity_user_abandoned: bool,
+    /// What the spend was priced and built for, checked again before any recovery
+    /// broadcast of [`Self::st_bytes`]: see [`SpendContext`]. `None` for a record saved
+    /// without one (by a build before contexts were kept, or a spend with no fee model of
+    /// its own to check), which recovery re-broadcasts as it always did.
+    pub spend_context: Option<SpendContext>,
+}
+
+/// The protocol context a note-consuming spend was selected, confirmed and built in, saved
+/// with its recovery record so that no recovery path, in this process or after a restart,
+/// broadcasts the saved transition once the network applies something else than it was
+/// priced for: the fee a transition carries is metered at the protocol version the network
+/// runs when it executes, so a transition built for one version pays out differently at
+/// another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpendContext {
+    /// The protocol version the spend was priced and built at: the SDK's operation version.
+    pub operation_version: u32,
+    /// The network protocol version the SDK had verified when the record was saved, if any.
+    pub network_version: Option<u32>,
+    /// The fee model the spend's fee follows.
+    pub fee_kind: super::note_selection::ShieldedFeeKind,
+    /// The fee the spend was selected, confirmed and built for.
+    pub planned_fee: u64,
+}
+
+impl SpendContext {
+    /// The version of [`Self::to_bytes`]'s layout, its first byte. A reader refuses any other.
+    const FORMAT: u8 = 1;
+    const LEN: usize = 1 + 4 + 4 + 1 + 4 + 8;
+
+    /// The bytes the file store keeps it as: the format byte, then the operation version,
+    /// the network version (0 when unknown), the fee model's tag and parameter and the
+    /// planned fee, little-endian. `None` for a fee model with no layout (a private
+    /// document create or a token pool spend, which have no such context).
+    pub(super) fn to_bytes(self) -> Option<[u8; Self::LEN]> {
+        use super::note_selection::ShieldedFeeKind as Kind;
+        let (tag, parameter) = match self.fee_kind {
+            Kind::Base => (0u8, 0u32),
+            Kind::Unshield => (1, 0),
+            Kind::Withdrawal => (2, 0),
+            Kind::IdentityCreate { num_keys } => (3, u32::try_from(num_keys).ok()?),
+            Kind::IdentityTopUp => (4, 0),
+            Kind::PrivateDocumentCreate { .. }
+            | Kind::TokenPurchase
+            | Kind::TokenPoolSpend { .. } => return None,
+        };
+        let mut bytes = [0u8; Self::LEN];
+        bytes[0] = Self::FORMAT;
+        bytes[1..5].copy_from_slice(&self.operation_version.to_le_bytes());
+        bytes[5..9].copy_from_slice(&self.network_version.unwrap_or(0).to_le_bytes());
+        bytes[9] = tag;
+        bytes[10..14].copy_from_slice(&parameter.to_le_bytes());
+        bytes[14..].copy_from_slice(&self.planned_fee.to_le_bytes());
+        Some(bytes)
+    }
+
+    /// The context [`Self::to_bytes`] wrote, or `None` for other bytes.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        use super::note_selection::ShieldedFeeKind as Kind;
+        if bytes.len() != Self::LEN || bytes[0] != Self::FORMAT {
+            return None;
+        }
+        let parameter = u32::from_le_bytes(bytes[10..14].try_into().ok()?);
+        let fee_kind = match bytes[9] {
+            0 => Kind::Base,
+            1 => Kind::Unshield,
+            2 => Kind::Withdrawal,
+            3 => Kind::IdentityCreate {
+                num_keys: usize::try_from(parameter).ok()?,
+            },
+            4 => Kind::IdentityTopUp,
+            _ => return None,
+        };
+        let network_version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+        Some(Self {
+            operation_version: u32::from_le_bytes(bytes[1..5].try_into().ok()?),
+            network_version: (network_version != 0).then_some(network_version),
+            fee_kind,
+            planned_fee: u64::from_le_bytes(bytes[14..].try_into().ok()?),
+        })
+    }
 }
 
 /// The DashPay private contact request a saved spend pays for: which identity
@@ -502,6 +583,30 @@ pub trait ShieldedStore: Send + Sync + 'static {
 
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
+
+    /// Whether `id` holds a note with `nullifier` that is already marked
+    /// spent. The default scans [`Self::get_all_notes`]; stores with a
+    /// nullifier index should answer from it.
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .iter()
+            .any(|note| note.nullifier == *nullifier && note.is_spent))
+    }
+
+    /// `id`'s note with `nullifier`, if the store holds one. The default
+    /// scans [`Self::get_all_notes`]; stores with a nullifier index
+    /// should answer from it.
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .into_iter()
+            .find(|note| note.nullifier == *nullifier))
+    }
 
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
     /// if a matching unspent note was found.
@@ -1031,6 +1136,11 @@ pub(super) struct SubwalletState {
     /// (mark_spent / clear_pending) drops the whole record — a
     /// transition lands or dies atomically for all its nullifiers.
     pub redrives: BTreeMap<[u8; 32], PendingRedrive>,
+    /// Records whose saved spend context did not read back, by activity id, with the
+    /// nullifiers they carry. Their reservations are held like an armed record's, but they
+    /// are never armed: no recovery pass can see them, so none re-broadcasts them. They go
+    /// as an armed record does, when any of their nullifiers resolves.
+    pub quarantined_redrives: BTreeMap<[u8; 32], Vec<[u8; 32]>>,
     /// Notes this subwallet SENT, recovered via OVK during the scan.
     /// Append-only send history in recording order.
     pub outgoing_notes: Vec<ShieldedOutgoingNote>,
@@ -1049,10 +1159,15 @@ impl SubwalletState {
     /// Re-saving a note with a known nullifier overwrites the
     /// existing entry instead of appending a duplicate — Orchard
     /// nullifiers are globally unique, so a re-scan of the same
-    /// chunk shouldn't double-count.
+    /// chunk shouldn't double-count. A re-save never clears
+    /// `is_spent`: a spend is final, and a stale copy saved after it
+    /// must not offer the note again.
     pub(super) fn save_note(&mut self, note: &ShieldedNote) {
         if let Some(&existing_idx) = self.nullifier_index.get(&note.nullifier) {
-            self.notes[existing_idx] = note.clone();
+            let existing = &mut self.notes[existing_idx];
+            let was_spent = existing.is_spent;
+            *existing = note.clone();
+            existing.is_spent |= was_spent;
             return;
         }
         let idx = self.notes.len();
@@ -1080,6 +1195,18 @@ impl SubwalletState {
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
         self.notes.clone()
+    }
+
+    pub(super) fn note(&self, nullifier: &[u8; 32]) -> Option<&ShieldedNote> {
+        self.nullifier_index
+            .get(nullifier)
+            .map(|&idx| &self.notes[idx])
+    }
+
+    pub(super) fn is_spent(&self, nullifier: &[u8; 32]) -> bool {
+        self.nullifier_index
+            .get(nullifier)
+            .is_some_and(|&idx| self.notes[idx].is_spent)
     }
 
     pub(super) fn mark_spent(&mut self, nullifier: &[u8; 32]) -> MarkSpentOutcome {
@@ -1121,6 +1248,14 @@ impl SubwalletState {
         for id in &dropped {
             self.redrives.remove(id);
         }
+        let mut dropped = dropped;
+        self.quarantined_redrives.retain(|id, nullifiers| {
+            let hit = nullifiers.contains(nullifier);
+            if hit {
+                dropped.push(*id);
+            }
+            !hit
+        });
         dropped
     }
 
@@ -1254,6 +1389,22 @@ impl SubwalletState {
             self.drop_redrives_containing(nullifier);
         }
         removed
+    }
+
+    /// Hold the reservation of a record whose spend context is unreadable, without arming
+    /// it: its notes stay out of selection and the balance, and it is never re-broadcast.
+    pub(super) fn quarantine_redrive(&mut self, redrive: &PendingRedrive) {
+        for n in &redrive.nullifiers {
+            self.mark_pending(n);
+            self.set_pending_spend(
+                n,
+                redrive.anchor,
+                redrive.activity_id,
+                redrive.anchor_height,
+            );
+        }
+        self.quarantined_redrives
+            .insert(redrive.activity_id, redrive.nullifiers.clone());
     }
 
     /// Arm (or overwrite by activity id) a re-drivable record.
@@ -1422,6 +1573,25 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(SubwalletState::all_notes)
             .unwrap_or_default())
+    }
+
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .is_some_and(|state| state.is_spent(nullifier)))
+    }
+
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note(nullifier))
+            .cloned())
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -1899,6 +2069,35 @@ mod tests {
     }
 
     #[test]
+    fn should_report_spent_state_by_nullifier() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        store.save_note(id, &note_with_nullifier([1; 32])).unwrap();
+        assert!(!store.is_note_spent(id, &[1; 32]).unwrap());
+        store.mark_pending(id, &[1; 32]).unwrap();
+        assert!(
+            !store.is_note_spent(id, &[1; 32]).unwrap(),
+            "a reservation is not a spend"
+        );
+        store.mark_spent(id, &[1; 32]).unwrap();
+        assert!(store.is_note_spent(id, &[1; 32]).unwrap());
+        assert!(!store.is_note_spent(id, &[2; 32]).unwrap());
+        assert!(!store.is_note_spent(test_id(1), &[1; 32]).unwrap());
+    }
+
+    #[test]
+    fn should_keep_a_note_spent_when_a_stale_copy_is_re_saved() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let stale = note_with_nullifier([1; 32]);
+        store.save_note(id, &stale).unwrap();
+        store.mark_spent(id, &[1; 32]).unwrap();
+        store.save_note(id, &stale).unwrap();
+        assert!(store.is_note_spent(id, &[1; 32]).unwrap());
+        assert!(store.get_unspent_notes(id).unwrap().is_empty());
+    }
+
+    #[test]
     fn should_reject_overflowing_in_memory_spendable_balance() {
         let mut store = InMemoryShieldedStore::new();
         let id = test_id(0);
@@ -2081,6 +2280,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
 
@@ -2478,6 +2678,7 @@ mod tests {
             attempts: 7,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let note_spend = PendingRedrive {
@@ -2488,6 +2689,7 @@ mod tests {
             attempts: 1,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();

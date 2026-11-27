@@ -2,7 +2,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
-import { PRESET_LOCAL } from '../../constants.js';
+import { PLATFORM_ONLY_RENDER_SCOPE, PRESET_LOCAL } from '../../constants.js';
 
 export default class GroupResetCommand extends GroupBaseCommand {
   // Reconfigures the node: changes configuration repeatedly while doing long,
@@ -20,6 +20,12 @@ export default class GroupResetCommand extends GroupBaseCommand {
     return ({ options, configFileData }) => (
       options?.group === (group ?? configFileData.defaultGroupName)
     );
+  }
+
+  // A Platform-only reset changes no Core option, so Core's service files are
+  // left as they are rather than written again after Platform is gone.
+  static getRenderScope({ platform } = {}) {
+    return platform ? PLATFORM_ONLY_RENDER_SCOPE : undefined;
   }
 
   static description = 'Reset group nodes';
@@ -66,16 +72,26 @@ export default class GroupResetCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
+    let resetPlans;
+
     const tasks = new Listr(
       [
         {
+          // Members are reset one after another, so a member that cannot be
+          // reset would otherwise be found only after the others were.
+          title: 'Check the reset can be done',
+          task: async (ctx) => {
+            resetPlans = await Promise.all(
+              configGroup.map((config) => resetNodeTask.prepare(config, ctx)),
+            );
+          },
+        },
+        {
           title: `Reset ${groupName} nodes`,
-          task: (ctx) => {
-            ctx.removeConfig = ctx.isHardReset && groupName === PRESET_LOCAL;
-
-            const resetTasks = configGroup.map((config) => ({
+          task: () => {
+            const resetTasks = configGroup.map((config, index) => ({
               title: `Reset ${config.getName()} node`,
-              task: () => resetNodeTask(config),
+              task: () => resetNodeTask(config, resetPlans[index]),
             }));
 
             return new Listr(resetTasks);
@@ -97,6 +113,9 @@ export default class GroupResetCommand extends GroupBaseCommand {
         renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
           showTimer: isVerbose,
+          // Errors explain what to do next on several lines; truncating them
+          // to the terminal width would cut the commands off.
+          formatOutput: 'wrap',
           clearOutput: false,
           collapse: false,
           showSubtasks: true,
@@ -110,6 +129,7 @@ export default class GroupResetCommand extends GroupBaseCommand {
         isForce,
         isPlatformOnlyReset,
         isVerbose,
+        removeConfig: isHardReset && groupName === PRESET_LOCAL,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

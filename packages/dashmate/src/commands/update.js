@@ -56,6 +56,8 @@ export default class UpdateCommand extends ConfigBaseCommand {
    * @param {checkGatewayCertificate} checkGatewayCertificate
    * @param {gatewayCertificateTask} gatewayCertificateTask
    * @param {DockerCompose} dockerCompose
+   * @param {RenewalRecordRepository} renewalRecordRepository
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -68,6 +70,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
     gatewayCertificateTask,
     dockerCompose,
     renewalRecordRepository,
+    assertPlatformCanStart,
   ) {
     const {
       format,
@@ -77,10 +80,27 @@ export default class UpdateCommand extends ConfigBaseCommand {
     const skipCertificateCheck = flags['skip-certificate-check'] === true
       || isEnvironmentFlagSet(process.env.DASHMATE_SKIP_CERTIFICATE_CHECK);
 
-    const interactive = isInteractiveSession({ flags });
-
     const isGated = config.get('platform.enable') === true
       && GATED_NETWORKS.includes(config.get('network'));
+
+    const interactive = isInteractiveSession({ flags });
+
+    // A node whose Platform part is not set up (after `reset --platform
+    // --hard`) is set up before it is updated, and setup obtains the
+    // certificate. The certificate check is skipped until then: its remedies
+    // (an obtain, `ssl obtain`) would configure TLS behind setup's back, and
+    // setup would then refuse to run.
+    const platformSetupError = await assertPlatformCanStart.findPendingSetup(config);
+
+    if (platformSetupError !== null) {
+      const heading = platformSetupError.canStart
+        ? `Platform setup of ${config.getName()} did not finish`
+        : `Platform of ${config.getName()} cannot run yet`;
+
+      process.stderr.write(`${heading}: ${platformSetupError.problem ?? platformSetupError.message}.\n`
+        + `${platformSetupError.remedy ?? ''}\n`
+        + `${isGated ? 'The gateway certificate check is skipped until then.\n' : ''}\n`);
+    }
 
     const reportUnresolved = (verdict, obtainAttemptFailed = false) => reportUnresolved_({
       config,
@@ -153,7 +173,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
       [
         {
           title: 'Gateway certificate',
-          enabled: () => isGated,
+          enabled: () => isGated && platformSetupError === null,
           task: gatewayCertificateTask(config, { interactive, skipCertificateCheck }),
         },
         {

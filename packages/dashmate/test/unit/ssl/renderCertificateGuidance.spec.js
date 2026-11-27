@@ -511,6 +511,22 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain('dashmate restart --config base --platform');
   });
 
+  it('should load it by restarting the whole node when the quorum list is enabled', () => {
+    config.set('platform.quorumList.enabled', true);
+
+    const output = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE,
+          message: 'A switch was interrupted before it finished',
+        }],
+      }),
+    });
+
+    expect(output).to.contain('dashmate restart --config base\n')
+      .and.not.contain('restart --config base --platform');
+  });
+
   // lego installed this certificate and only the saved provider still
   // disagrees, so the certificate itself is sound. Opening with the flat claim
   // that it is not valid sends an operator hunting a problem that is not there.
@@ -636,6 +652,42 @@ describe('renderCertificateGuidance', () => {
 
       expect(output).to.not.contain('ssl obtain');
       expect(output).to.contain('may already have been issued');
+    });
+
+    // The helper refused before it asked for anything, so neither "it would not
+    // succeed" nor "one may already have been issued" is true of it.
+    it('should explain an outdated helper refusal without claiming a request was made or would fail', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'HELPER_OUTDATED' }),
+      });
+
+      expect(output).to.contain('so none was requested');
+      // A local check, not a report to send anywhere.
+      expect(output).to.match(/^ {6}dashmate doctor --config/m);
+      expect(output).to.not.contain('doctor report');
+      // The last attempt, described as past: a later start can run a helper
+      // that matches the config.
+      expect(output).to.contain('last attempt');
+      expect(output).to.not.contain('refuses the next renewal');
+      expect(output).to.not.contain('would not succeed');
+      expect(output).to.not.contain('may already have been issued');
+      expect(output).to.not.contain('ssl obtain');
+      expect(output).to.not.contain('dashmate restart');
+    });
+
+    it('should keep the uncertain-issuance message when an outdated helper refusal carries one', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'HELPER_OUTDATED', issuance: 'uncertain' }),
+      });
+
+      expect(output).to.contain('may already have been issued');
+      expect(output).to.not.contain('so none was requested');
     });
 
     it('should withhold the obtain command for a cause that established nothing', () => {

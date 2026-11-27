@@ -53,6 +53,7 @@ describe('Update command', () => {
     updateNode,
     checkGatewayCertificate = () => passingVerdict(),
     gatewayCertificateTask = () => async () => {},
+    findPendingSetup = () => null,
   } = {}) {
     return new UpdateCommand().runWithDependencies(
       {},
@@ -70,6 +71,7 @@ describe('Update command', () => {
       gatewayCertificateTask,
       dockerCompose,
       new RenewalRecordRepository(homeDir),
+      Object.assign(() => {}, { findPendingSetup }),
     );
   }
 
@@ -464,6 +466,61 @@ describe('Update command', () => {
       });
 
       expect(observed.interactive).to.be.false();
+    });
+  });
+
+  describe('a masternode whose Platform part is not set up', () => {
+    // Obtaining a certificate now, or following the check's own remedy
+    // (`ssl obtain`), would record a provider and enable TLS behind setup's
+    // back, and Platform setup would then refuse to run.
+    it('should say what to run first and skip the certificate check', async function it() {
+      const runCheck = this.sinon.stub();
+      const refusal = new Error('Cannot start Platform of mainnet: no key.\n  dashmate setup --platform --config mainnet');
+      refusal.problem = 'this masternode has no Platform node key';
+      refusal.remedy = 'Set it up with:\n  dashmate setup --platform --config mainnet';
+
+      await runUpdate({
+        findPendingSetup: () => refusal,
+        checkGatewayCertificate: () => invalidVerdict(),
+        gatewayCertificateTask: () => runCheck,
+      });
+
+      expect(stderr).to.contain('this masternode has no Platform node key')
+        .and.contain('dashmate setup --platform --config mainnet')
+        .and.contain('certificate check is skipped');
+      expect(stderr).to.not.contain('ssl obtain');
+      expect(runCheck).to.not.have.been.called();
+      expect(mockDocker.pull).to.have.been.called();
+    });
+
+    // An interrupted ZeroSSL setup that installed its certificate can start:
+    // only renewal waits for the setup to finish.
+    it('should not say Platform cannot run when only its setup is unfinished', async function it() {
+      const runCheck = this.sinon.stub();
+      const pending = new Error('Platform setup did not finish');
+      pending.problem = 'the gateway serves the installed certificate, but nothing renews it until the setup is finished';
+      pending.remedy = 'To finish the setup:\n  dashmate ssl obtain --config testnet';
+      pending.canStart = true;
+
+      await runUpdate({
+        findPendingSetup: () => pending,
+        gatewayCertificateTask: () => runCheck,
+      });
+
+      expect(stderr).to.contain('Platform setup of')
+        .and.contain('did not finish: the gateway serves the installed certificate')
+        .and.contain('dashmate ssl obtain --config testnet');
+      expect(stderr).to.not.contain('cannot run yet');
+      expect(runCheck).to.not.have.been.called();
+    });
+
+    it('should check the certificate as usual once Platform is set up', async function it() {
+      const runCheck = this.sinon.stub();
+
+      await runUpdate({ gatewayCertificateTask: () => runCheck });
+
+      expect(stderr).to.not.contain('setup --platform');
+      expect(runCheck).to.have.been.calledOnce();
     });
   });
 

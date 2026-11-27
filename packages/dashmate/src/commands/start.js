@@ -3,6 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
+import printUnwrapped from '../oclif/errors/printUnwrapped.js';
 
 export default class StartCommand extends ConfigBaseCommand {
   static description = 'Start node';
@@ -25,6 +26,7 @@ export default class StartCommand extends ConfigBaseCommand {
    * @param {startNodeTask} startNodeTask
    * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
    * @param {Config} config
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -39,7 +41,14 @@ export default class StartCommand extends ConfigBaseCommand {
     startNodeTask,
     waitForNodeToBeReadyTask,
     config,
+    assertPlatformCanStart,
   ) {
+    try {
+      await assertPlatformCanStart(config);
+    } catch (e) {
+      throw printUnwrapped(e);
+    }
+
     const tasks = new Listr(
       [
         {

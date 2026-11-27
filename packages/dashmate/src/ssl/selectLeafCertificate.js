@@ -52,6 +52,26 @@ function exportSubjectPublicKeyInfo(publicKey) {
 }
 
 /**
+ * Why the gateway cannot load a private key, if it cannot
+ *
+ * @param {string} privateKeyPem
+ * @return {string|null} the reason, or null when it can
+ */
+export function findPrivateKeyProblem(privateKeyPem) {
+  if (ENCRYPTED_KEY.test(privateKeyPem)) {
+    return 'it is protected by a passphrase, and the gateway has no way to be given one';
+  }
+
+  try {
+    crypto.createPrivateKey(privateKeyPem);
+  } catch (e) {
+    return e.message;
+  }
+
+  return null;
+}
+
+/**
  * Find the certificate in a bundle that belongs to a private key.
  *
  * The leaf is the block whose public key material is the key's own. Comparing
@@ -69,14 +89,14 @@ function exportSubjectPublicKeyInfo(publicKey) {
  *
  * @param {string} bundlePem
  * @param {string} privateKeyPem
- * @return {{leaf: crypto.X509Certificate}|{error: string, detail: string}}
+ * @return {{leaf: crypto.X509Certificate, certificates: crypto.X509Certificate[]}
+ *   |{error: string, detail: string}} certificates are every block, in order
  */
 export default function selectLeafCertificate(bundlePem, privateKeyPem) {
-  if (ENCRYPTED_KEY.test(privateKeyPem)) {
-    return {
-      error: LEAF_SELECTION_ERRORS.KEY_UNUSABLE,
-      detail: 'it is protected by a passphrase, and the gateway has no way to be given one',
-    };
+  const keyProblem = findPrivateKeyProblem(privateKeyPem);
+
+  if (keyProblem !== null) {
+    return { error: LEAF_SELECTION_ERRORS.KEY_UNUSABLE, detail: keyProblem };
   }
 
   let subjectPublicKeyInfo;
@@ -142,5 +162,5 @@ export default function selectLeafCertificate(bundlePem, privateKeyPem) {
     };
   }
 
-  return { leaf: certificates[0] };
+  return { leaf: certificates[0], certificates };
 }

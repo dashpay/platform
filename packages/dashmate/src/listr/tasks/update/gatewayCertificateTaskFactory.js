@@ -2,8 +2,10 @@ import { SSL_PROVIDERS } from '../../../constants.js';
 import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunningError.js';
 import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
 import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
-import deriveRenewalGuidance, { SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import { RENEWAL_FAILURE_CODES } from '../../../ssl/renewal-failure.js';
 import renderObtainCommand from '../../../ssl/renderObtainCommand.js';
+import renderGatewayRestartCommand from '../../../ssl/renderGatewayRestartCommand.js';
 import { RENEWAL_RECORD_STATES } from '../../../ssl/renewalRecord/RenewalRecordRepository.js';
 import {
   CERTIFICATE_REASONS,
@@ -240,7 +242,7 @@ export default function gatewayCertificateTaskFactory(
         throw new Error(`The certificate is installed, but the gateway could not be signalled`
           + ` to load it: ${e.message}\n`
           + 'The node keeps serving the certificate it had until it is loaded:\n'
-          + `    dashmate restart ${renderConfigFlag(config.getName())} --platform`);
+          + `    ${renderGatewayRestartCommand(config)}`);
       }
     }
   }
@@ -346,7 +348,18 @@ export default function gatewayCertificateTaskFactory(
         const guidance = renewalGuidanceFor(config, verdict);
         const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
 
-        const withheld = `\n\n    Do not obtain one yet - a certificate may already have been issued.
+        // This cause is recorded only for a refusal made before an issuance was
+        // created, so unless an earlier attempt left one outstanding, nothing
+        // may have been issued.
+        const isHelperRefusalOnly = guidance.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED
+          && guidance.issuanceStatus === ISSUANCE_STATUS.NONE;
+        const withheld = isHelperRefusalOnly
+          ? `\n\n    Do not obtain one yet - on its last attempt the dashmate helper ran an older
+    dashmate than the one that had saved the configuration, and it refused to
+    save over it before it asked for a certificate, so none was requested.
+    Use the newer dashmate for every dashmate command on this node, and check
+    here: dashmate doctor ${cfg}`
+          : `\n\n    Do not obtain one yet - a certificate may already have been issued.
     Send a report instead: dashmate doctor report ${cfg}`;
 
         const warn = () => {

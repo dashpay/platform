@@ -664,6 +664,27 @@ extension PersistentIdentity {
             throw error
         }
     }
+
+    /// Deletes the identity `identityId` from `context`, children first as
+    /// `deleteChildrenFirst(_:in:)` does, when the store has a row for it.
+    /// Returns whether there was one.
+    ///
+    /// A failed read throws, so it is never taken as "no row": a caller that
+    /// deletes the identity's Keychain items once its row is gone must not go
+    /// on when the row could not be looked up.
+    @discardableResult
+    public static func deleteChildrenFirst(
+        identityId: Data,
+        in context: ModelContext
+    ) throws -> Bool {
+        let target = identityId
+        let descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == target }
+        )
+        guard let row = try context.fetch(descriptor).first else { return false }
+        try deleteChildrenFirst(row, in: context)
+        return true
+    }
 }
 
 // Kept out of the model's class body: the schema freezer reads only stored

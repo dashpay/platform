@@ -11,7 +11,9 @@ import {
   issueCertificate,
   issueChain,
   issueEd25519Certificate,
+  issueCertificateWithUnreadableExpiry,
 } from '../../../src/test/certificateFixtures.js';
+import { writeDiagnostics } from '../../../src/ssl/certificateReporting.js';
 
 const EXTERNAL_IP = '1.2.3.4';
 
@@ -380,6 +382,32 @@ describe('checkGatewayCertificateFactory', () => {
       const verdict = checkGatewayCertificate(config);
       expect(verdict.status).to.equal(CERTIFICATE_STATUS.WARN);
       expect(codes(verdict.warnings)).to.deep.equal([CERTIFICATE_REASONS.EXPIRING_SOON]);
+    });
+
+    // An invalid Date compares as neither before nor after now, so it would
+    // pass both window checks, and `update --format json` would then fail
+    // formatting it instead of reporting the certificate.
+    it('should block on a leaf whose expiry cannot be read, and report it as JSON', function it() {
+      const { intermediate } = issueChain({ ip: EXTERNAL_IP });
+      const leaf = issueCertificateWithUnreadableExpiry(intermediate, { ip: EXTERNAL_IP });
+      install(leaf.pem + intermediate.pem, leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.deep.equal([CERTIFICATE_REASONS.BUNDLE_UNREADABLE]);
+      expect(verdict.reasons[0].message).to.include('validity dates cannot be read');
+
+      let written = '';
+      this.sinon.stub(process.stderr, 'write').callsFake((chunk) => {
+        written += chunk;
+
+        return true;
+      });
+
+      writeDiagnostics(verdict, config);
+
+      expect(JSON.parse(written)).to.include({ status: CERTIFICATE_STATUS.INVALID, expiresAt: null });
     });
   });
 

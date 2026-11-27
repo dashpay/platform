@@ -132,6 +132,7 @@ fn record_of(
     actions: &[SerializedAction],
 ) -> PendingRedrive {
     PendingRedrive {
+        spend_context: None,
         activity_id: [activity; 32],
         anchor: [0; 32],
         nullifiers: actions.iter().map(|action| action.nullifier).collect(),
@@ -945,7 +946,7 @@ async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
     let account = shielded_identity_account_index(2).unwrap();
     assert!(!coordinator.clear_in_progress());
 
-    // A scan holds the store.
+    // A writer (a sync's commit, a spend) holds the store.
     let scan = coordinator.store().write().await;
     let busy = wallet
         .shielded_identity_balance_now(&coordinator, &id)

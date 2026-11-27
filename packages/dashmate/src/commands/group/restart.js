@@ -2,6 +2,7 @@ import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
+import printUnwrapped from '../../oclif/errors/printUnwrapped.js';
 
 export default class GroupRestartCommand extends GroupBaseCommand {
   static description = 'Restart group nodes';
@@ -22,6 +23,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
    * @param {stopNodeTask} stopNodeTask
    * @param {startGroupNodesTask} startGroupNodesTask
    * @param {Config[]} configGroup
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -34,7 +36,19 @@ export default class GroupRestartCommand extends GroupBaseCommand {
     stopNodeTask,
     startGroupNodesTask,
     configGroup,
+    assertPlatformCanStart,
   ) {
+    // Every member before any is stopped: a restart that cannot start again
+    // would leave the group down.
+    try {
+      await configGroup.reduce(
+        (checked, config) => checked.then(() => assertPlatformCanStart(config)),
+        Promise.resolve(),
+      );
+    } catch (e) {
+      throw printUnwrapped(e);
+    }
+
     const groupName = configGroup[0].get('group');
 
     const tasks = new Listr(

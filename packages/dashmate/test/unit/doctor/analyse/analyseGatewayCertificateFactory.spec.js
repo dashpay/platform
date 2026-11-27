@@ -173,6 +173,37 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problems[0].getSolution()).to.include('dashmate restart --config base --platform');
   });
 
+  // stop --platform stops Core too when the quorum list is enabled, without
+  // the DKG check a masternode gets before Core stops, and starting Platform
+  // alone then fails.
+  it('should name a restart of the whole node when the quorum list is enabled', () => {
+    config.set('platform.quorumList.enabled', true);
+    installedIsUsable('CC:DD');
+
+    const problems = analyse(served({
+      certificate: { fingerprint256: 'AA:BB', validTo: validTo(-2) },
+      matchesOnDisk: false,
+      onDisk: { fingerprint256: 'CC:DD', validTo: validTo(30) },
+    }));
+
+    expect(problems).to.have.lengthOf(1);
+    expect(stripAnsi(problems[0].getSolution())).to.match(/dashmate restart --config base$/m)
+      .and.not.include('--platform');
+  });
+
+  it('should not call a restart of the whole node a restart of Platform', () => {
+    config.set('platform.quorumList.enabled', true);
+
+    const [problem] = analyse(served({
+      chainVerified: false,
+      chainError: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    }));
+
+    const solution = stripAnsi(problem.getSolution());
+    expect(solution).to.match(/dashmate restart --config base$/m);
+    expect(solution).to.not.include('restart Platform');
+  });
+
   it('should warn before the outage when a renewed certificate has not been picked up', () => {
     // Renewed means the disk copy outlives the served one and was judged
     // sound; together that is what makes a restart the right advice here.
@@ -1226,6 +1257,34 @@ describe('analyseGatewayCertificateFactory', () => {
 
       expect(renewal.getSolution()).to.contain('tries again by itself');
       expect(renewal.getSolution()).to.not.contain('may not be running');
+    });
+
+    // The helper knows why it stopped, and doctor says so. It prescribes no
+    // repair: obtaining by hand does not stop the next refusal, and a restart
+    // reloads the gateway from certificate files nothing here has checked.
+    ['a working', 'an expired'].forEach((state) => {
+      it(`should name an outdated helper without prescribing a repair for ${state} certificate`, () => {
+        installedValid(state === 'a working' ? {} : {
+          status: 'INVALID',
+          validTo: validTo(-1),
+          reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
+        });
+        renewalFailed({ code: 'HELPER_OUTDATED', detail: null });
+
+        const problems = analyse(served());
+        const text = problems.map((p) => `${p.getDescription()}\n${p.getSolution()}`).join('\n');
+
+        // What happened on the last attempt, not a claim about the helper now:
+        // a later start can run a helper that matches the config.
+        expect(text).to.contain('ran an older dashmate than the one that had saved the configuration');
+        expect(text).to.contain('newer dashmate');
+        expect(text).to.not.contain('ssl obtain');
+        expect(text).to.not.contain('dashmate restart');
+        expect(text).to.not.contain('could not work out why');
+        // Nothing for this cause is worth sending anywhere.
+        expect(text).to.not.contain('doctor report');
+        expect(text).to.not.contain('Dash support');
+      });
     });
 
     it('should not ask the authority again when it never established a cause', () => {

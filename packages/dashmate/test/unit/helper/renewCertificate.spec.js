@@ -3,6 +3,16 @@ import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import renewCertificate from '../../../src/helper/renewCertificate.js';
+import classifyRenewalFailure, {
+  describeRenewalFailure,
+  REMEDY_CLASS,
+  RENEWAL_FAILURE_CODES,
+} from '../../../src/ssl/renewal-failure.js';
+import { recordRenewalFailure } from '../../../src/helper/record-renewal-outcome.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from '../../../src/ssl/renewalGuidance.js';
+import renderCertificateGuidance from '../../../src/ssl/renderCertificateGuidance.js';
+import { CERTIFICATE_REASONS, CERTIFICATE_STATUS } from '../../../src/ssl/checkGatewayCertificateFactory.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import obtainLetsEncryptCertificateTaskFactory from '../../../src/listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import obtainZeroSSLCertificateTaskFactory from '../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
@@ -49,6 +59,48 @@ describe('renewCertificate', () => {
     homeDir.remove();
   });
 
+  /**
+   * What doctor and update are handed after a failed renewal: the record the
+   * helper writes for it, the guidance derived from that record, and the
+   * repair text rendered from that guidance for an expired certificate.
+   *
+   * @param {Error} error - what renewCertificate threw
+   * @return {{guidance: Object, text: string}}
+   */
+  const guidanceAfter = (error) => {
+    const renewalRecordRepository = new RenewalRecordRepository(homeDir);
+
+    recordRenewalFailure({
+      renewalRecordRepository, homeDir, configName, provider: 'zerossl', error,
+    });
+
+    const guidance = deriveRenewalGuidance({
+      record: renewalRecordRepository.read(configName).record,
+      isCertificateUsable: false,
+    });
+
+    const text = renderCertificateGuidance({
+      config: repository.read().getConfig(configName),
+      verdict: {
+        status: CERTIFICATE_STATUS.INVALID,
+        reasons: [{
+          code: CERTIFICATE_REASONS.EXPIRED,
+          message: 'The installed certificate expired on 2026-05-01 - 111 days ago',
+        }],
+        warnings: [],
+        skipped: [],
+        provider: 'zerossl',
+        installed: null,
+        expiresInDays: -111,
+      },
+      isNodeRunning: true,
+      pull: { ok: true, failed: 0, total: 7 },
+      renewal: guidance,
+    });
+
+    return { guidance, text };
+  };
+
   it('should preserve an unrelated update made after helper startup', async function it() {
     repository.update((configFile) => {
       configFile.getConfig(configName).set('description', 'updated after helper startup');
@@ -87,6 +139,7 @@ describe('renewCertificate', () => {
     expect(result).to.deep.equal({
       config: renewedConfig,
       renewed: true,
+      isGatewayRestartRequired: false,
     });
     expect(persisted.get('description')).to.equal('updated after helper startup');
     expect(persisted.get('platform.gateway.ssl.providerConfigs.zerossl.id'))
@@ -94,6 +147,29 @@ describe('renewCertificate', () => {
     expect(obtainCertificateTask).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(renewedConfig);
     expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+  });
+
+  // A signal cannot load a bundle that replaced the one the gateway mounted,
+  // and the job that signals the gateway has to know.
+  it('should report that the gateway needs a restart when the obtain replaced the bundle', async function it() {
+    const obtainCertificateTask = this.sinon.stub().callsFake((config) => ({
+      run: async (ctx) => {
+        config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'renewed-certificate-id-0000000000');
+        ctx.isGatewayRestartRequired = true;
+      },
+    }));
+
+    const result = await renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: repository,
+      writeConfigTemplates: (config) => config.markAsSaved(),
+    });
+
+    expect(result.renewed).to.be.true();
+    expect(result.isGatewayRestartRequired).to.be.true();
   });
 
   it('should keep renewed state saved when service-file rendering fails', async function it() {
@@ -233,6 +309,114 @@ describe('renewCertificate', () => {
     expect(persisted.get('platform.gateway.ssl.enabled')).to.be.true();
     expect(writeConfigTemplates).to.not.have.been.called();
     expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+  });
+
+  // The helper image is pinned to the CLI that started it, so after a manual
+  // CLI upgrade it keeps running the older build against a config the newer
+  // one migrated. Renewing there would save its state under the newer stamp
+  // and render every service file from its own templates.
+  it('should refuse to renew from an older helper before asking for a certificate', async function it() {
+    const data = JSON.parse(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8'));
+    data.configFormatVersion = '4.2.0';
+    const migrated = JSON.stringify(data);
+    fs.writeFileSync(homeDir.joinPath('config.json'), migrated);
+
+    const olderHelperRepository = new ConfigFileJsonRepository(
+      (raw) => raw,
+      homeDir,
+      () => null,
+      '4.1.0',
+    );
+    const obtainCertificateTask = this.sinon.stub();
+    const writeConfigTemplates = this.sinon.stub();
+
+    const refusal = await renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: olderHelperRepository,
+      writeConfigTemplates,
+    }).then(() => null, (e) => e);
+
+    expect(refusal).to.be.an('error').with.property('message').that.matches(/updated by a newer dashmate/);
+    // Recorded with its cause, so doctor can name it, and with a remedy that
+    // prescribes nothing: a safe repair for an outdated helper does not exist
+    // yet, and anything that restarts the node reloads the gateway from
+    // unchecked files on disk.
+    const { code } = classifyRenewalFailure(refusal, { provider: 'zerossl' });
+
+    expect(code).to.equal(RENEWAL_FAILURE_CODES.HELPER_OUTDATED);
+    expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.SUPPORT);
+
+    expect(obtainCertificateTask).to.not.have.been.called();
+    expect(writeConfigTemplates).to.not.have.been.called();
+    expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(migrated);
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+
+    // Nothing was asked of the authority, and the guidance says exactly that.
+    const { guidance, text } = guidanceAfter(refusal);
+
+    expect(guidance.issuanceStatus).to.equal(ISSUANCE_STATUS.NONE);
+    expect(guidance.safeAction).to.equal(SAFE_ACTION.DO_NOT_OBTAIN);
+    expect(text).to.contain('so none was requested');
+    expect(text).to.not.contain('may already have been issued');
+    expect(text).to.not.contain('ssl obtain');
+  });
+
+  // The lease can be lost while a certificate is being issued, and a newer
+  // dashmate can then take the lock and save. The helper's next save is
+  // refused, but only after it has asked for a certificate - so the refusal
+  // must not be reported as one that requested nothing, and the request must
+  // stay withheld as for any issuance dashmate could not see the end of.
+  it('should not say nothing was requested when a save after the certificate was created is refused', async function it() {
+    const olderHelperRepository = new ConfigFileJsonRepository(
+      (raw) => raw,
+      homeDir,
+      () => null,
+      '4.1.0',
+    );
+
+    let savedByNewer;
+    const obtainCertificateTask = this.sinon.stub().callsFake((config, { onCertificateCreated }) => ({
+      run: this.sinon.stub().callsFake(async () => {
+        config.set(
+          'platform.gateway.ssl.providerConfigs.zerossl.id',
+          'created-certificate-id-0000000000',
+        );
+
+        // A newer dashmate saves while this lease is lost.
+        const data = JSON.parse(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8'));
+        data.configFormatVersion = '4.2.0';
+        savedByNewer = JSON.stringify(data);
+        fs.writeFileSync(homeDir.joinPath('config.json'), savedByNewer);
+
+        onCertificateCreated();
+      }),
+    }));
+    const writeConfigTemplates = this.sinon.stub();
+
+    const refusal = await renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: olderHelperRepository,
+      writeConfigTemplates,
+    }).then(() => null, (e) => e);
+
+    expect(refusal).to.be.an('error').with.property('message').that.matches(/updated by a newer dashmate/);
+    expect(obtainCertificateTask).to.have.been.calledOnce();
+    expect(writeConfigTemplates).to.not.have.been.called();
+    expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(savedByNewer);
+
+    const { guidance, text } = guidanceAfter(refusal);
+
+    expect(text).to.not.contain('none was requested');
+    expect(text).to.contain('may already have been issued');
+    expect(text).to.not.contain('ssl obtain');
+    expect(guidance.issuanceStatus).to.equal(ISSUANCE_STATUS.UNCERTAIN);
+    expect(guidance.safeAction).to.equal(SAFE_ACTION.DO_NOT_OBTAIN);
   });
 
   // The helper renews inside a container with no terminal, and its event loop
