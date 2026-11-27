@@ -103,10 +103,17 @@ final class RegistrationCoordinator: ObservableObject {
     /// returns — so during the lock-broadcast-to-identity-write
     /// window, the same slot was visible in both Pending and
     /// Resumable surfaces and could be double-tapped.
+    ///
+    /// `resuming` names the asset lock `body` resumes, `nil` for a fresh
+    /// registration. A failed slot restarts only as its payment class
+    /// allows (`PaymentFailure.permitsRestart`): any registration after a
+    /// failure that releases the slot (any `.notSent`), a resume only of the
+    /// lock a held failure names, nothing after one that may have left.
     func startRegistration(
         walletId: Data,
         identityIndex: UInt32,
         fundingKind: IdentityRegistrationController.FundingKind = .assetLock,
+        resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> Data
     ) -> IdentityRegistrationController {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
@@ -120,13 +127,18 @@ final class RegistrationCoordinator: ObservableObject {
                 // duplicate registration against an identity that's probably
                 // already live on chain.
                 return existing
+            case .failed where !existing.phase.permitsSubmit(resuming: resuming):
+                // The failure's class forbids this operation (the payment may
+                // have left, or it holds a lock this call does not resume):
+                // keep the failed state on screen instead of paying again.
+                return existing
             case .idle, .failed:
                 // Legitimate restart paths: a brand-new idle
                 // controller (shouldn't happen via the standard
-                // entry but safe to allow), or a user-initiated
-                // retry after a failure.
+                // entry but safe to allow), a retry the failure's class
+                // allows, or the resume of the lock it holds.
                 existing.enterPreparingKeys()
-                existing.submit(body: body)
+                existing.submit(resuming: resuming, body: body)
                 scheduleRetentionSweep(key: key, controller: existing)
                 return existing
             }
@@ -138,7 +150,7 @@ final class RegistrationCoordinator: ObservableObject {
         )
         controllers[key] = controller
         controller.enterPreparingKeys()
-        controller.submit(body: body)
+        controller.submit(resuming: resuming, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return controller
     }
@@ -146,10 +158,40 @@ final class RegistrationCoordinator: ObservableObject {
     /// Manually drop a controller from the map. Used by the UI's
     /// "Dismiss" action on a `.failed` row (failures stay
     /// indefinitely until acknowledged so the user can read the
-    /// error).
-    func dismiss(walletId: Data, identityIndex: UInt32) {
+    /// error) and its "Done" after a completion.
+    ///
+    /// A failed slot is dropped only when its failure releases it
+    /// (`PaymentFailure.holdsSlot`, any `.notSent`): `startRegistration`
+    /// gates a restart only on a slot it still holds, so dropping a failure
+    /// that may have left, holds a lock, or has no class would let a fresh
+    /// registration pay again on the same index. Such a slot stays until its
+    /// lock is resumed, the user releases it after reconciling (`release`),
+    /// or the app restarts. Returns whether the controller was dropped.
+    @discardableResult
+    func dismiss(walletId: Data, identityIndex: UInt32) -> Bool {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
+        if let controller = controllers[key], case .failed(let failure) = controller.phase,
+           failure.holdsSlot {
+            return false
+        }
         controllers.removeValue(forKey: key)
+        return true
+    }
+
+    /// The exit of a hold `dismiss` refuses, once the user reconciled the
+    /// original payment from the history: drops a `.failed` controller only
+    /// when its failure holds the slot without a held lock
+    /// (`PaymentFailure.releasableAfterReconciliation`). A held lock is
+    /// resumed instead. Returns whether the controller was dropped.
+    @discardableResult
+    func release(walletId: Data, identityIndex: UInt32) -> Bool {
+        let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
+        guard let controller = controllers[key], case .failed(let failure) = controller.phase,
+              failure.releasableAfterReconciliation else {
+            return false
+        }
+        controllers.removeValue(forKey: key)
+        return true
     }
 
     // MARK: - Retention sweep
@@ -187,7 +229,8 @@ final class RegistrationCoordinator: ObservableObject {
                     }
                 case .failed, .unconfirmed:
                     // Keep indefinitely; the user dismisses manually via the
-                    // "Dismiss" action (for `.unconfirmed`, only after the
+                    // "Dismiss" action (for `.failed`, only a failure that
+                    // releases its slot; for `.unconfirmed`, only after the
                     // identity row appears via sync). Return so the poll loop
                     // doesn't spin.
                     return

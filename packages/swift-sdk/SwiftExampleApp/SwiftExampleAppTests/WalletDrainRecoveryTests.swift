@@ -175,7 +175,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     private let outpoint = WalletDrainOutpoint(txidWire: Data(repeating: 0x11, count: 32), vout: 1)
 
-    private let idlePhases: [ShieldedFundFromAssetLockController.Phase?] = [nil, .idle, .completed, .failed("x")]
+    private let idlePhases: [ShieldedFundFromAssetLockController.Phase?] = [nil, .idle, .completed, .failed(PaymentFailure(payment: nil, detail: "x"))]
 
     func testShouldShowInProgressWhileTheControllerIsInFlight() {
         XCTAssertEqual(
@@ -895,7 +895,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
     func testShouldFailOnStepOneWhenAFailedAttemptHasNoLock() {
         XCTAssertEqual(
             Progress.currentStep(
-                phase: .failed("refused"),
+                phase: .failed(PaymentFailure(payment: nil, detail: "refused")),
                 lockStatusRaw: nil,
                 secondsSinceLockUpdate: 0,
                 isResumingExistingLock: false
@@ -903,16 +903,16 @@ final class WalletDrainRecoveryTests: XCTestCase {
             1
         )
         XCTAssertEqual(
-            steps(.failed("refused"), lockStatusRaw: nil),
+            steps(.failed(PaymentFailure(payment: nil, detail: "refused")), lockStatusRaw: nil),
             [.failed, .pending, .pending, .pending, .pending]
         )
     }
 
     func testShouldFailOnTheStepTheLockReached() {
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 0), [.failed, .pending, .pending, .pending, .pending])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 1, seconds: 10), [.done, .done, .failed, .pending, .pending])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 2), [.done, .done, .done, .notAsserted, .failed])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 3), [.done, .done, .done, .done, .failed])
+        XCTAssertEqual(steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 0), [.failed, .pending, .pending, .pending, .pending])
+        XCTAssertEqual(steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 1, seconds: 10), [.done, .done, .failed, .pending, .pending])
+        XCTAssertEqual(steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 2), [.done, .done, .done, .notAsserted, .failed])
+        XCTAssertEqual(steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 3), [.done, .done, .done, .done, .failed])
     }
 
     /// Once the attempt has stopped the clock must not move its failure:
@@ -922,7 +922,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         for seconds: TimeInterval in [0, 1, 2, 10, 299, 300, 400, 86_400] {
             XCTAssertEqual(
                 Progress.currentStep(
-                    phase: .failed("x"),
+                    phase: .failed(PaymentFailure(payment: nil, detail: "x")),
                     lockStatusRaw: 1,
                     secondsSinceLockUpdate: seconds,
                     isResumingExistingLock: false
@@ -931,7 +931,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
                 "seconds \(seconds)"
             )
             XCTAssertEqual(
-                steps(.failed("x"), lockStatusRaw: 1, seconds: seconds),
+                steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 1, seconds: seconds),
                 [.done, .done, .failed, .pending, .pending],
                 "seconds \(seconds)"
             )
@@ -1002,7 +1002,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
             )
         }
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3)[3], .done)
-        for phase: ShieldedFundFromAssetLockController.Phase in [.inFlight, .failed("x"), .completed] {
+        for phase: ShieldedFundFromAssetLockController.Phase in [.inFlight, .failed(PaymentFailure(payment: nil, detail: "x")), .completed] {
             XCTAssertEqual(steps(phase, lockStatusRaw: 2)[3], .notAsserted, "phase \(phase)")
         }
     }
@@ -1030,7 +1030,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
             [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .active]
         )
         XCTAssertEqual(
-            steps(.failed("x"), lockStatusRaw: 5),
+            steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 5),
             [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .failed]
         )
         XCTAssertEqual(
@@ -1053,7 +1053,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         )
         XCTAssertEqual(
             Progress.currentStep(
-                phase: .failed("x"),
+                phase: .failed(PaymentFailure(payment: nil, detail: "x")),
                 lockStatusRaw: 6,
                 secondsSinceLockUpdate: 0,
                 isResumingExistingLock: false
@@ -1062,7 +1062,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         )
         let passed: [Progress.StepState] = [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .done]
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 6), passed)
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 6), passed)
+        XCTAssertEqual(steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 6), passed)
         XCTAssertEqual(steps(.completed, lockStatusRaw: 6), passed)
     }
 
@@ -1107,7 +1107,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
             [.done, .active, .pending, .pending, .pending]
         )
         XCTAssertEqual(
-            steps(.failed("x"), lockStatusRaw: 0, isResume: true),
+            steps(.failed(PaymentFailure(payment: nil, detail: "x")), lockStatusRaw: 0, isResume: true),
             [.done, .failed, .pending, .pending, .pending]
         )
         XCTAssertEqual(Progress.stepTitle(1, isResumingExistingLock: true, lockStatusRaw: 0), "Asset lock built")
@@ -1224,7 +1224,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         let consumed = WalletDrainCoordinator.resumeError(
             for: PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
         )
-        guard case PlatformWalletError.assetLockAlreadyConsumed(let detail)? = consumed as? PlatformWalletError else {
+        guard case PlatformWalletError.assetLockAlreadyConsumed(let detail, _)? = consumed as? PlatformWalletError else {
             return XCTFail("expected the original error, got \(consumed)")
         }
         XCTAssertEqual(detail, "deadbeef:0")

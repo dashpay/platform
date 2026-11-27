@@ -181,7 +181,7 @@ extension SDK {
                     keys: outPtr,
                     count: outCount
                 )
-            } catch PlatformWalletError.deserialization(let message) {
+            } catch PlatformWalletError.deserialization(let message, _) {
                 // The one error decoding throws: a discriminant this SDK
                 // does not know. `.serializationError` is the matching case
                 // of the method's one error type; the message is kept.

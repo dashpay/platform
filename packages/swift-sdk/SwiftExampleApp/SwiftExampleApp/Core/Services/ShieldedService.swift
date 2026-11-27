@@ -1008,7 +1008,7 @@ class ShieldedService: ObservableObject {
     ) throws(ClearLocalStateFailure) {
         do {
             try resetRustState()
-        } catch PlatformWalletError.shieldedOperationInProgress(_) {
+        } catch PlatformWalletError.shieldedOperationInProgress(_, _) {
             throw ClearLocalStateFailure.refusedDuringShieldedOperation
         } catch {
             afterResetAttempt()

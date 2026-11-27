@@ -342,7 +342,7 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         file: StaticString = #filePath, line: UInt = #line
     ) {
         XCTAssertThrowsError(try manager.deleteWallet(walletId: Self.walletId), file: file, line: line) { error in
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("\(what): expected an in-flight refusal, got \(error)", file: file, line: line)
             }
             XCTAssertTrue(
@@ -358,7 +358,7 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         file: StaticString = #filePath, line: UInt = #line
     ) {
         XCTAssertThrowsError(try manager.deleteWallet(walletId: Self.walletId), file: file, line: line) { error in
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("\(what): expected the persistence-handler refusal, got \(error)", file: file, line: line)
             }
             XCTAssertTrue(

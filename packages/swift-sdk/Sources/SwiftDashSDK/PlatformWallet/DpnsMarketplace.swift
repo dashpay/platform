@@ -1075,7 +1075,8 @@ extension ManagedPlatformWallet {
     ) throws -> DpnsMarketplaceName {
         guard let ptr else {
             throw PlatformWalletError.walletOperation(
-                "\(operation) reported success but returned no confirmed name state"
+                "\(operation) reported success but returned no confirmed name state",
+                payment: .maybeSent
             )
         }
         defer { dpns_marketplace_name_free(ptr) }

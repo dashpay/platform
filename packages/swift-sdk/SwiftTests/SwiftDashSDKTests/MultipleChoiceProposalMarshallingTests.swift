@@ -50,7 +50,7 @@ final class MultipleChoiceProposalMarshallingTests: XCTestCase {
     ) {
         var bodyRan = false
         XCTAssertThrowsError(try body(&bodyRan), file: file, line: line) { error in
-            guard case PlatformWalletError.invalidParameter(let message) = error else {
+            guard case PlatformWalletError.invalidParameter(let message, _) = error else {
                 return XCTFail("expected PlatformWalletError.invalidParameter, got \(error)", file: file, line: line)
             }
             XCTAssertTrue(message.hasPrefix("\(field) "), message, file: file, line: line)

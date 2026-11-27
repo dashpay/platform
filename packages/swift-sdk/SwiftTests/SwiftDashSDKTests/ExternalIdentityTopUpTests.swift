@@ -34,7 +34,7 @@ final class ExternalIdentityTopUpTests: XCTestCase {
                 identityId: identityId, inputs: inputs, addressSigner: try signer()
             )
             XCTFail("expected invalidParameter", file: file, line: line)
-        } catch PlatformWalletError.invalidParameter(let message) {
+        } catch PlatformWalletError.invalidParameter(let message, _) {
             XCTAssertTrue(message.contains(expected), "got \(message)", file: file, line: line)
         } catch {
             XCTFail("expected invalidParameter, got \(error)", file: file, line: line)

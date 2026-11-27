@@ -1,3 +1,4 @@
+import SwiftDashSDK
 import XCTest
 @testable import SwiftExampleApp
 
@@ -12,7 +13,13 @@ import XCTest
 final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
 
     private struct TimedOut: Error {}
-    private struct Refused: Error {}
+    /// A refusal Rust classed as nothing sent and retryable: the failure
+    /// releases its slot, so a retry or another operation may start and a
+    /// stale sheet's Dismiss drops it.
+    private static func refused() -> Error {
+        PlatformWalletError.walletOperation(
+            "refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true))
+    }
 
     /// A funding body held open until the test opens it.
     @MainActor
@@ -98,7 +105,7 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
             walletId: walletId,
             recipientRaw43: recipient,
             operationId: "shield:retried",
-            body: { throw Refused() }
+            body: { throw Self.refused() }
         ) else {
             return XCTFail("the first attempt did not start")
         }
@@ -143,7 +150,7 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
             operationId: "drain:op",
             body: {
                 await gate.hold()
-                throw Refused()
+                throw Self.refused()
             }
         ) else {
             gate.open()
@@ -202,7 +209,7 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
             walletId: walletId,
             recipientRaw43: recipient,
             operationId: "shield:a",
-            body: { throw Refused() }
+            body: { throw Self.refused() }
         ) else {
             return XCTFail("operation A did not start")
         }

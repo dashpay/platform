@@ -187,7 +187,7 @@ final class ConnectKeyDerivationTests: XCTestCase {
                 subFeature: .sessionAuthentication, identityId: identityId, leaf: leaf,
                 network: .testnet, storage: empty)
         ) { error in
-            guard case PlatformWalletError.walletOperation(let message) = error else {
+            guard case PlatformWalletError.walletOperation(let message, _) = error else {
                 return XCTFail("expected walletOperation, got \(error)")
             }
             XCTAssertTrue(message.contains("no mnemonic stored"), message)

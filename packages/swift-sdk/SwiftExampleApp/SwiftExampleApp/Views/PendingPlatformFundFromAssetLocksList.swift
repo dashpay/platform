@@ -252,6 +252,7 @@ private extension AddressFundFromAssetLockController {
 struct PendingPlatformFundFromAssetLockRow: View {
     @ObservedObject var controller: AddressFundFromAssetLockController
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @State private var confirmingRelease = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -288,8 +289,10 @@ struct PendingPlatformFundFromAssetLockRow: View {
             // this row renders inside a VStack card on the wallet
             // detail screen. Without an inline button the user had
             // no way to clear a failed funding short of an app
-            // restart.
-            if case .failed = controller.phase {
+            // restart. Only a failure that releases its slot
+            // (`PaymentFailure.holdsSlot`) offers it; the coordinator
+            // refuses any other.
+            if case .failed(let failure) = controller.phase, !failure.holdsSlot {
                 Button {
                     walletManager.addressFundFromAssetLockCoordinator.dismiss(
                         walletId: controller.walletId,
@@ -302,6 +305,32 @@ struct PendingPlatformFundFromAssetLockRow: View {
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Dismiss failed funding")
+            }
+            // A hold without a lock to resume
+            // (`PaymentFailure.releasableAfterReconciliation`) is released
+            // only once the user confirmed the original payment in the history.
+            if case .failed(let failure) = controller.phase, failure.releasableAfterReconciliation {
+                Button {
+                    confirmingRelease = true
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Payment checked in history — release")
+            }
+        }
+        .confirmationDialog(
+            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+            isPresented: $confirmingRelease,
+            titleVisibility: .visible
+        ) {
+            Button("Release", role: .destructive) {
+                walletManager.addressFundFromAssetLockCoordinator.release(
+                    walletId: controller.walletId,
+                    platformAccountIndex: controller.platformAccountIndex,
+                    recipientHash: controller.recipientHash
+                )
             }
         }
     }

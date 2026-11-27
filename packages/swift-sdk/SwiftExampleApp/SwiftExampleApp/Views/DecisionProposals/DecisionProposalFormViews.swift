@@ -267,7 +267,7 @@ struct CreateDecisionProposalView: View {
                 let proposalIdBase58 = proposalId.toBase58String()
                 createdProposalId = proposalIdBase58
                 onCreated(proposalIdBase58)
-            } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail) {
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail, _) {
                 // The create may have landed; the wallet does not retry it.
                 // Hold the form so the fund is not paid a second time.
                 unconfirmedMessage = detail

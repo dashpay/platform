@@ -336,7 +336,7 @@ func withDescriptionDocumentFFI<R>(
             try withDecisionProposalCString(
                 document.documentType,
                 field: "descriptionDocument.documentType",
-                invalid: PlatformWalletError.invalidParameter
+                invalid: { PlatformWalletError.invalidParameter($0) }
             ) { documentTypePtr in
                 let ffi = DescriptionDocumentFFI(
                     id: idBp.baseAddress,
@@ -356,11 +356,11 @@ extension MultipleChoiceProposalParams {
     /// `PlatformWalletError.invalidParameter` before `body` runs.
     func withFFI<R>(_ body: (UnsafePointer<MultipleChoiceProposalParamsFFI>) throws -> R) throws -> R {
         try withDecisionProposalCString(
-            title, field: "title", invalid: PlatformWalletError.invalidParameter
+            title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
         ) { titlePtr in
             try withDescriptionDocumentFFI(descriptionDocument) { documentPtr in
                 try withDecisionProposalCString(
-                    url, field: "url", invalid: PlatformWalletError.invalidParameter
+                    url, field: "url", invalid: { PlatformWalletError.invalidParameter($0) }
                 ) { urlPtr in
                     let ffi = MultipleChoiceProposalParamsFFI(
                         title: titlePtr,
@@ -398,11 +398,11 @@ extension MultipleChoiceProposalEdit {
         let documentChange = self.descriptionDocument.ffiParts
         let urlChange = self.url.ffiParts
         return try withDecisionProposalCString(
-            title, field: "title", invalid: PlatformWalletError.invalidParameter
+            title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
         ) { titlePtr in
             try withDescriptionDocumentFFI(documentChange.value) { documentPtr in
                 try withDecisionProposalCString(
-                    urlChange.value, field: "url", invalid: PlatformWalletError.invalidParameter
+                    urlChange.value, field: "url", invalid: { PlatformWalletError.invalidParameter($0) }
                 ) { urlPtr in
                     let ffi = MultipleChoiceProposalEditFFI(
                         title: titlePtr,
@@ -424,10 +424,10 @@ extension ProposalChoiceParams {
     /// `PlatformWalletError.invalidParameter` before `body` runs.
     func withFFI<R>(_ body: (UnsafePointer<ChoiceParamsFFI>) throws -> R) throws -> R {
         try withDecisionProposalCString(
-            title, field: "title", invalid: PlatformWalletError.invalidParameter
+            title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
         ) { titlePtr in
             try withDecisionProposalCString(
-                description, field: "description", invalid: PlatformWalletError.invalidParameter
+                description, field: "description", invalid: { PlatformWalletError.invalidParameter($0) }
             ) { descriptionPtr in
                 let ffi = ChoiceParamsFFI(title: titlePtr, description: descriptionPtr)
                 return try withUnsafePointer(to: ffi) { try body($0) }

@@ -623,8 +623,10 @@ private struct DpnsMarketplaceActionSheet: View {
                     onConfirmed(state)
                 }
             } catch {
+                let failure = DpnsMarketplaceUI.tradeFailure(error)
                 await MainActor.run {
-                    alert = .init(title: "\(title) failed", message: DpnsMarketplaceUI.error(error))
+                    alert = failure.map { DpnsMarketplaceAlert(title: "\(title): \($0.title)", message: $0.message) }
+                        ?? DpnsMarketplaceAlert(title: title, message: error.localizedDescription)
                     isSubmitting = false
                 }
             }
@@ -749,26 +751,38 @@ enum DpnsMarketplaceUI {
         }
     }
 
+    /// A failed trade (list, delist, transfer, purchase): what happened to
+    /// the payment and the action its class allows (`PaymentFailure`),
+    /// followed by what the case says about the listing. `nil` when no
+    /// payment was attempted (`PaymentFailure.ofPayment`): the error shows as
+    /// its own message.
+    static func tradeFailure(_ error: Error) -> PaymentFailure? {
+        guard PaymentFailure.ofPayment(error) != nil else { return nil }
+        return PaymentFailure(payment: PaymentFailure.paymentClass(of: error), detail: self.error(error))
+    }
+
+    /// What the error says about the listing. Says nothing about whether
+    /// anything was purchased or may be tried again: for a trade that is the
+    /// payment class's, shown through `tradeFailure`.
     static func error(_ error: Error) -> String {
         guard let walletError = error as? PlatformWalletError else {
             return error.localizedDescription
         }
         switch walletError {
         case .notForSale:
-            return "This name is no longer listed for sale. Refresh before trying again."
-        case .priceChanged(_, let expected, let actual):
-            return "The listing changed from \(price(expected)) to \(price(actual)). "
-                + "Nothing was purchased; review the new price and confirm again."
-        case .insufficientIdentityCredits(_, let required, let available):
+            return "This name is not listed for sale."
+        case .priceChanged(_, let expected, let actual, _):
+            return "The listing changed from \(price(expected)) to \(price(actual))."
+        case .insufficientIdentityCredits(_, let required, let available, _):
             return "This identity has \(price(available)), but \(price(required)) is required "
                 + "including the fee reserve."
-        case .contestedNameNotTradable(let label, let endsAtMs):
+        case .contestedNameNotTradable(let label, let endsAtMs, _):
             if endsAtMs == 0 {
                 return "\(label).dash is in an active contest and cannot be traded until it resolves."
             }
             return "\(label).dash is in an active contest until \(date(endsAtMs)) and cannot be traded yet."
         case .signingKeyUnavailable:
-            return "The identity signing key is unavailable. Unlock or repair this wallet's keys, then retry."
+            return "The identity signing key is unavailable. Unlock or repair this wallet's keys."
         default:
             return walletError.localizedDescription
         }

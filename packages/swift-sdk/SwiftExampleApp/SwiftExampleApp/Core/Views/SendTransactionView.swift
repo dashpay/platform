@@ -985,7 +985,8 @@ struct SendTransactionView: View {
 
 // MARK: - Subviews
 
-/// The send screen's four result alerts, in the order `body` used to
+/// The send screen's four result alerts (error, success, submitted, and the
+/// failure presented by Rust's payment class), in the order `body` used to
 /// apply them. `onDone` is the screen's `dismiss`, passed in so the
 /// alerts close the sheet exactly as before.
 private struct SendResultAlerts: ViewModifier {
@@ -1015,11 +1016,19 @@ private struct SendResultAlerts: ViewModifier {
                     Text(msg)
                 }
             }
-            .alert("Not Confirmed Yet", isPresented: .constant(viewModel.unconfirmedMessage != nil)) {
-                Button("Done") { onDone() }
+            .alert(
+                viewModel.paymentFailure?.title ?? "",
+                isPresented: .constant(viewModel.paymentFailure != nil)
+            ) {
+                // A failure that holds its slot closes the form (it may
+                // have left the wallet, or holds a lock); a `.notSent` one
+                // leaves it open for a corrected request.
+                Button("OK") {
+                    if viewModel.acknowledgePaymentFailure() { onDone() }
+                }
             } message: {
-                if let msg = viewModel.unconfirmedMessage {
-                    Text(msg)
+                if let failure = viewModel.paymentFailure {
+                    Text(failure.message)
                 }
             }
     }

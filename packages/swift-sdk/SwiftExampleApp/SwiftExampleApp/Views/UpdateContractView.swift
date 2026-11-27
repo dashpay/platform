@@ -587,7 +587,7 @@ struct UpdateContractView: View {
                     identifier: "updateContract.success"
                 )
             }
-        } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail) {
+        } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail, _) {
             // The update may have executed, or may still. It is not retried,
             // and no other update is offered from this screen. The review
             // proved the contract was at least at its current version, so

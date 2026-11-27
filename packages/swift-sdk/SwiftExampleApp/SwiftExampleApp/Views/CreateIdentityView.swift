@@ -406,7 +406,7 @@ struct CreateIdentityView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Could not create identity"),
+                    title: Text(err.title),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -453,13 +453,13 @@ struct CreateIdentityView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Registration failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
@@ -1250,6 +1250,9 @@ struct CreateIdentityView: View {
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
+            // Names the lock this body resumes, so a slot whose failure
+            // holds that lock may restart through it (and only it).
+            resuming: .resuming(txid: txidRaw, vout: vout),
             body: {
                 let (identityId, _) = try await managedWallet.resumeIdentityWithAssetLock(
                     outPointTxid: txidRaw,
@@ -1408,10 +1411,13 @@ struct CreateIdentityView: View {
                     self.isCreating = false
                 }
             } catch {
+                // A failed registration reads by Rust's payment class; an
+                // error no payment raised (saving the created identity)
+                // shows as its own message.
+                let failure = PaymentFailure.ofPayment(error)
                 await MainActor.run {
-                    self.submitError = .init(
-                        message: error.localizedDescription
-                    )
+                    self.submitError = failure.map { SubmitError(title: $0.title, message: $0.message) }
+                        ?? SubmitError(message: error.localizedDescription)
                     self.isCreating = false
                 }
             }
@@ -1543,8 +1549,8 @@ struct CreateIdentityView: View {
                     // anyway and is purged by the coordinator's
                     // ~30 s post-completion retention.
                     return
-                case .failed(let message):
-                    self.submitError = .init(message: message)
+                case .failed(let failure):
+                    self.submitError = .init(title: failure.title, message: failure.message)
                     self.isCreating = false
                     // Same rationale as `.completed`: keep the
                     // controller so the destination can render
@@ -2336,5 +2342,8 @@ private struct FundingAccountOption: Identifiable {
 /// time the error changes.
 private struct SubmitError: Identifiable {
     let id = UUID()
+    /// The failed payment's title (`PaymentFailure.title`), or the generic
+    /// one for an error no payment raised.
+    var title = "Could not create identity"
     let message: String
 }

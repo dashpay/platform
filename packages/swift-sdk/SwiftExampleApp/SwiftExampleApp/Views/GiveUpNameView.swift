@@ -403,11 +403,11 @@ enum GiveUpNameUI {
 
     static func loadFailure(_ error: Error) -> LoadFailure {
         switch error as? PlatformWalletError {
-        case .protocolVersionNotActive(let message)?:
+        case .protocolVersionNotActive(let message, _)?:
             return .notAvailable(message)
-        case .sdkPinnedBelowProtocolVersion(let message)?:
+        case .sdkPinnedBelowProtocolVersion(let message, _)?:
             return .sdkPinned(message)
-        case .transactionBroadcastUnconfirmed(let message)?:
+        case .transactionBroadcastUnconfirmed(let message, _)?:
             return .unconfirmed(message)
         default:
             return .failed(DpnsMarketplaceUI.error(error))
@@ -416,7 +416,7 @@ enum GiveUpNameUI {
 
     static func submitFailure(_ error: Error) -> SubmitFailure {
         switch error as? PlatformWalletError {
-        case .transactionBroadcastUnconfirmed(let message)?:
+        case .transactionBroadcastUnconfirmed(let message, _)?:
             return .unconfirmed(message)
         case .protocolVersionNotActive?:
             return .failed("Not available on this network yet. " + notAvailableExplanation)

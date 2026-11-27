@@ -6,15 +6,18 @@ import DashSDKFFI
 /// `accepted` means Dash Core accepted the transaction into its mempool or
 /// already knows it; it does not mean the transaction is mined or
 /// InstantSend-locked. `unknown` must not be retried automatically because the
-/// Core response may have been lost after acceptance.
+/// Core response may have been lost after acceptance. The `payment` of
+/// `rejected` and `unknown` is Rust's class of the result (`nil` when Rust
+/// gave none), for a screen to hold or release a form by, and for an error
+/// made from the outcome to carry; it is never derived here.
 public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
     case accepted(txid: String)
-    case rejected(txid: String, reason: String)
-    case unknown(txid: String, reason: String)
+    case rejected(txid: String, reason: String, payment: PlatformPaymentClass? = nil)
+    case unknown(txid: String, reason: String, payment: PlatformPaymentClass? = nil)
 
     public var txid: String {
         switch self {
-        case .accepted(let txid), .rejected(let txid, _), .unknown(let txid, _):
+        case .accepted(let txid), .rejected(let txid, _, _), .unknown(let txid, _, _):
             return txid
         }
     }
@@ -22,15 +25,16 @@ public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
     init(
         resultCode: PlatformWalletResultCode,
         txid: String,
-        reason: String
+        reason: String,
+        payment: PlatformPaymentClass? = nil
     ) throws {
         switch resultCode {
         case .success:
             self = .accepted(txid: txid)
         case .errorTransactionBroadcastRejected:
-            self = .rejected(txid: txid, reason: reason)
+            self = .rejected(txid: txid, reason: reason, payment: payment)
         case .errorTransactionBroadcastUnconfirmed:
-            self = .unknown(txid: txid, reason: reason)
+            self = .unknown(txid: txid, reason: reason, payment: payment)
         default:
             throw PlatformWalletError.unknown(
                 "Cannot create Core broadcast outcome from \(resultCode)"
@@ -312,32 +316,21 @@ public class ManagedCoreWallet {
     public func broadcastTransactionWithOutcome(
         _ tx: FinalizedCoreTransaction
     ) throws -> CoreTransactionBroadcastOutcome {
-        let transactionHandle = try tx.takeForBroadcast()
-        var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction(
-            handle,
-            transactionHandle,
-            &txidPtr
-        ))
-
-        defer {
-            if let txidPtr {
-                core_wallet_free_address(txidPtr)
-            }
-        }
-
+        let (result, txid) = try broadcastSignedTransaction(tx)
         switch result.code {
         case .success, .errorTransactionBroadcastRejected,
              .errorTransactionBroadcastUnconfirmed:
-            guard let txidPtr else {
+            guard let txid else {
                 throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)"
+                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)",
+                    payment: result.paymentClass ?? .maybeSent
                 )
             }
             return try CoreTransactionBroadcastOutcome(
                 resultCode: result.code,
-                txid: String(cString: txidPtr),
-                reason: result.message ?? "<no detail from Rust>"
+                txid: txid,
+                reason: result.message ?? "<no detail from Rust>",
+                payment: result.paymentClass
             )
 
         default:
@@ -348,17 +341,47 @@ public class ManagedCoreWallet {
         }
     }
 
-    /// Compatibility wrapper preserving the former throwing API.
+    /// Compatibility wrapper preserving the former throwing API. A rejected
+    /// or unconfirmed broadcast throws the error the native result builds,
+    /// with Rust's payment class on it.
     @available(*, deprecated, message: "Use broadcastTransactionWithOutcome(_:) and handle accepted/rejected/unknown")
     public func broadcastTransaction(_ tx: FinalizedCoreTransaction) throws -> String {
-        switch try broadcastTransactionWithOutcome(tx) {
-        case .accepted(let txid):
-            return txid
-        case .rejected(_, let reason):
-            throw PlatformWalletError.transactionBroadcastRejected(reason)
-        case .unknown(_, let reason):
-            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+        let (result, txid) = try broadcastSignedTransaction(tx)
+        return try Self.broadcastTxid(result: result, txid: txid)
+    }
+
+    /// The txid of a successful broadcast, or the error its native result
+    /// builds (`throwIfError()`, which keeps the result's code, message and
+    /// payment class).
+    static func broadcastTxid(result: PlatformWalletResult, txid: String?) throws -> String {
+        try result.throwIfError()
+        guard let txid else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)",
+                payment: .maybeSent
+            )
         }
+        return txid
+    }
+
+    /// Consume `tx` and broadcast it: the owning native result and a copy of
+    /// the txid it wrote (freed here), for both public broadcast APIs.
+    private func broadcastSignedTransaction(
+        _ tx: FinalizedCoreTransaction
+    ) throws -> (result: PlatformWalletResult, txid: String?) {
+        let transactionHandle = try tx.takeForBroadcast()
+        var txidPtr: UnsafeMutablePointer<CChar>? = nil
+        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction(
+            handle,
+            transactionHandle,
+            &txidPtr
+        ))
+        defer {
+            if let txidPtr {
+                core_wallet_free_address(txidPtr)
+            }
+        }
+        return (result, txidPtr.map { String(cString: $0) })
     }
 
     /// Broadcast the deferred (BIP70/BIP270) payment behind `token` and return
@@ -381,7 +404,8 @@ public class ManagedCoreWallet {
         try core_wallet_signed_payment_broadcast(handle, token, &txidPtr).check()
         guard let ptr = txidPtr else {
             throw PlatformWalletError.nullPointer(
-                "core_wallet_signed_payment_broadcast returned a NULL txid pointer"
+                "core_wallet_signed_payment_broadcast returned a NULL txid pointer",
+                payment: .maybeSent
             )
         }
         defer { core_wallet_free_address(ptr) }

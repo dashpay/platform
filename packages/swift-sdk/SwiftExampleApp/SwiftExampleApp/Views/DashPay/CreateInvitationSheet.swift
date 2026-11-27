@@ -253,7 +253,10 @@ struct CreateInvitationSheet: View {
             qrImage = Self.makeQRCode(from: uri)
             inviteURI = uri
         } catch {
-            errorMessage = error.localizedDescription
+            // By Rust's payment class; a held lock here is the invitation's
+            // voucher, which the user reclaims rather than resumes.
+            errorMessage = PaymentFailure.ofPayment(error, invitationVoucher: true)?.message
+                ?? error.localizedDescription
         }
     }
 

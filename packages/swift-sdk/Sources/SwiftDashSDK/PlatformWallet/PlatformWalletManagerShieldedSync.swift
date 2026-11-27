@@ -20,10 +20,22 @@ import DashSDKFFI
 /// `identityId` is the 32-byte derived id the FFI filled into
 /// `outIdentityId` on this specific result code (valid, deterministic
 /// in the spent notes). `message` is the Rust-supplied diagnostic.
+/// `payment` is Rust's class of the failure, read from the result like
+/// `PlatformWalletError.payment` (`.maybeSent` for this outcome); `nil` when
+/// the result carried none.
 public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
     public let identityId: Data
     public let message: String
+    public let payment: PlatformPaymentClass?
     public var errorDescription: String? { message }
+
+    /// Whether the identity create may have left the wallet, as Rust
+    /// classified it; see `payment`.
+    public var delivery: PlatformPaymentDelivery? { payment?.delivery }
+
+    /// Whether the wallet allows running the create again, as Rust decided
+    /// it; `false` when unclassified.
+    public var isRetryable: Bool { payment?.isRetryable ?? false }
 }
 
 /// Per-wallet outcome from a completed shielded sync pass.
@@ -798,6 +810,8 @@ extension PlatformWalletManager {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
         guard !hasAdmittedNativeOp else {
+            // Raised here, before Rust is asked: no payment class and no
+            // retry decision, which only Rust gives (`payment` is nil).
             throw PlatformWalletError.shieldedOperationInProgress(
                 "an async native operation is in flight; clearShielded rejected")
         }
@@ -2944,7 +2958,8 @@ extension PlatformWalletManager {
                 let identityId = withUnsafeBytes(of: outIdentityId) { Data($0) }
                 throw ShieldedIdentityCreateUnconfirmedError(
                     identityId: identityId,
-                    message: wrapped.message ?? "shielded identity-create broadcast unconfirmed"
+                    message: wrapped.message ?? "shielded identity-create broadcast unconfirmed",
+                    payment: wrapped.paymentClass
                 )
             default:
                 throw PlatformWalletError(result: wrapped)

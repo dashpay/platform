@@ -260,11 +260,18 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
 
     // MARK: - Error routing
 
+    /// Rust's classes for the outcomes this suite routes.
+    private let maybeSent = PlatformPaymentClass.maybeSent
+    private let notSentFinal = PlatformPaymentClass(delivery: .notSent, isRetryable: false)
+
     func test_unconfirmedErrors_mayHaveGoneThrough() {
-        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.shieldedSpendUnconfirmed("x")))
-        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.transactionBroadcastUnconfirmed("x")))
+        // Read from Rust's class, never from the case.
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.shieldedSpendUnconfirmed("x", payment: maybeSent)))
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(
+            .transactionBroadcastUnconfirmed("x", payment: maybeSent)))
         // A pending earlier debit means nothing was sent: not "may have gone through".
-        XCTAssertFalse(SendViewModel.mayHaveGoneThrough(.shieldedIdentityDebitPending("x")))
+        XCTAssertFalse(SendViewModel.mayHaveGoneThrough(
+            .shieldedIdentityDebitPending("x", payment: notSentFinal)))
     }
 
     // MARK: - Ok path of the identity shield
@@ -272,12 +279,12 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
     func test_identityShieldOkPath_isSubmittedNotSuccess() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         vm.successMessage = "stale"
-        vm.unconfirmedMessage = "stale"
+        vm.paymentFailure = PaymentFailure(payment: maybeSent, detail: "stale")
         vm.error = "stale"
         vm.applyIdentityShieldSubmitted()
         XCTAssertEqual(vm.submittedMessage, SendViewModel.identityShieldSubmittedMessage)
         XCTAssertNil(vm.successMessage)
-        XCTAssertNil(vm.unconfirmedMessage)
+        XCTAssertNil(vm.paymentFailure)
         XCTAssertNil(vm.error)
     }
 
@@ -291,15 +298,29 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         vm.applySendFailure(PlatformWalletError.walletOperation("x"), flow: .identityToShielded)
         XCTAssertNil(vm.submittedMessage)
         XCTAssertNotNil(vm.error)
+
+        // A classed failure clears it too.
+        vm.applyIdentityShieldSubmitted()
+        vm.applySendFailure(
+            PlatformWalletError.shieldedSpendUnconfirmed("x", payment: maybeSent),
+            flow: .identityToShielded
+        )
+        XCTAssertNil(vm.submittedMessage)
+        XCTAssertNotNil(vm.paymentFailure)
     }
 
     func test_unconfirmedIdentityShield_setsUnconfirmedNotSuccess() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         vm.applySendFailure(
-            PlatformWalletError.shieldedSpendUnconfirmed("x"),
+            PlatformWalletError.shieldedSpendUnconfirmed("not proved", payment: maybeSent),
             flow: .identityToShielded
         )
-        XCTAssertEqual(vm.unconfirmedMessage, SendViewModel.identityShieldMayHaveGoneThroughMessage)
+        // May have gone through: never a success, never a retry, and the
+        // form stays refused.
+        XCTAssertEqual(vm.paymentFailure?.title, "May have gone through")
+        XCTAssertEqual(vm.paymentFailure?.holdsSlot, true)
+        XCTAssertTrue(vm.paymentFailure?.message.contains("do not send it again") == true)
+        XCTAssertTrue(vm.paymentFailure?.message.contains("not proved") == true)
         XCTAssertNil(vm.successMessage)
         XCTAssertNil(vm.error)
     }
@@ -307,10 +328,12 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
     func test_unconfirmedOtherShieldedSend_setsUnconfirmedNotSuccess() {
         let vm = makeViewModel(recipient: orchardAddress)
         vm.applySendFailure(
-            PlatformWalletError.transactionBroadcastUnconfirmed("x"),
+            PlatformWalletError.transactionBroadcastUnconfirmed("x", payment: maybeSent),
             flow: .shieldedToShielded
         )
-        XCTAssertTrue(vm.unconfirmedMessage?.contains("Do not retry") == true)
+        XCTAssertEqual(vm.paymentFailure?.title, "May have gone through")
+        XCTAssertEqual(vm.paymentFailure?.holdsSlot, true)
+        XCTAssertTrue(vm.paymentFailure?.message.contains("do not send it again") == true)
         XCTAssertNil(vm.successMessage)
         XCTAssertNil(vm.error)
     }
@@ -318,11 +341,15 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
     func test_identityDebitPending_isAnErrorNotUnconfirmed() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         vm.applySendFailure(
-            PlatformWalletError.shieldedIdentityDebitPending("x"),
+            PlatformWalletError.shieldedIdentityDebitPending("x", payment: notSentFinal),
             flow: .identityToShielded
         )
-        XCTAssertEqual(vm.error, SendViewModel.identityDebitPendingMessage)
-        XCTAssertNil(vm.unconfirmedMessage)
+        // Nothing was sent: this flow's wording, and the form stays open.
+        XCTAssertEqual(vm.paymentFailure?.title, "Not sent")
+        XCTAssertEqual(vm.paymentFailure?.holdsSlot, false)
+        XCTAssertEqual(vm.paymentFailure?.detail, SendViewModel.identityDebitPendingMessage)
+        XCTAssertTrue(vm.paymentFailure?.message.contains(SendViewModel.identityDebitPendingMessage) == true)
+        XCTAssertNil(vm.error)
     }
 
     // MARK: - Admitting a tapped send
@@ -531,14 +558,17 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
             PlatformWalletError.insufficientIdentityCredits(
                 identityId: "id",
                 required: 150_000_000_000,
-                available: 50_000_000_000
+                available: 50_000_000_000,
+                payment: notSentFinal
             ),
             flow: .identityToShielded
         )
-        XCTAssertTrue(vm.error?.contains(formatCreditsAsDash(150_000_000_000)) == true)
-        XCTAssertTrue(vm.error?.contains(formatCreditsAsDash(50_000_000_000)) == true)
-        XCTAssertTrue(vm.error?.contains("Nothing was sent") == true)
-        XCTAssertNil(vm.unconfirmedMessage)
+        let message = vm.paymentFailure?.message
+        XCTAssertTrue(message?.contains(formatCreditsAsDash(150_000_000_000)) == true)
+        XCTAssertTrue(message?.contains(formatCreditsAsDash(50_000_000_000)) == true)
+        XCTAssertTrue(message?.contains("Nothing was sent") == true)
+        XCTAssertEqual(vm.paymentFailure?.holdsSlot, false)
+        XCTAssertNil(vm.error)
     }
 
     func test_insufficientIdentityCredits_oneCreditShortfall_showsDifferentAmounts() {
@@ -577,18 +607,44 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
     func test_identityBalanceUnavailable_saysNothingWasSent() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         vm.applySendFailure(
-            PlatformWalletError.identityBalanceUnavailable("x"),
+            PlatformWalletError.identityBalanceUnavailable(
+                "x", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)),
             flow: .identityToShielded
         )
-        XCTAssertTrue(vm.error?.contains("could not be read") == true)
-        XCTAssertTrue(vm.error?.contains("Nothing was sent") == true)
+        XCTAssertEqual(vm.paymentFailure?.title, "Failed")
+        XCTAssertTrue(vm.paymentFailure?.message.contains("could not be read") == true)
+        XCTAssertTrue(vm.paymentFailure?.message.contains("Nothing was sent") == true)
+        XCTAssertNil(vm.error)
     }
 
     func test_otherWalletError_showsItsOwnDescription() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        // No class: no payment ran, so its own description shows.
         let failure = PlatformWalletError.walletOperation("refused below protocol version 14")
         vm.applySendFailure(failure, flow: .identityToShielded)
         XCTAssertEqual(vm.error, failure.localizedDescription)
-        XCTAssertNil(vm.unconfirmedMessage)
+        XCTAssertNil(vm.paymentFailure)
+
+        // Classed, with no wording of this flow: its own description is the
+        // failure's text.
+        let classed = PlatformWalletError.walletOperation("refused", payment: notSentFinal)
+        vm.error = nil
+        vm.applySendFailure(classed, flow: .identityToShielded)
+        XCTAssertEqual(vm.paymentFailure?.detail, classed.localizedDescription)
+        XCTAssertNil(vm.error)
+    }
+
+    /// The flow's wording is for refusals with nothing sent only: a refusal
+    /// case Rust classed as maybe sent keeps the class's text and holds the
+    /// form.
+    func test_refusalCaseClassedMaybeSent_keepsTheClassText() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.applySendFailure(
+            PlatformWalletError.shieldedIdentityDebitPending("x", payment: maybeSent),
+            flow: .identityToShielded
+        )
+        XCTAssertEqual(vm.paymentFailure?.title, "May have gone through")
+        XCTAssertEqual(vm.paymentFailure?.holdsSlot, true)
+        XCTAssertNotEqual(vm.paymentFailure?.detail, SendViewModel.identityDebitPendingMessage)
     }
 }

@@ -298,7 +298,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     }
 
     private var failureMessage: String? {
-        if case .failed(let msg) = controller.phase { return msg }
+        if case .failed(let failure) = controller.phase { return failure.message }
         return nil
     }
 
@@ -486,6 +486,7 @@ struct ShieldedFundFromAssetLockProgressView: View {
     @ObservedObject var controller: ShieldedFundFromAssetLockController
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @State private var confirmingRelease = false
 
     init(controller: ShieldedFundFromAssetLockController) {
         self.controller = controller
@@ -527,25 +528,60 @@ struct ShieldedFundFromAssetLockProgressView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Shield failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
-                    Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(controller)
-                        dismiss()
-                    } label: {
-                        Text("Dismiss")
-                            .frame(maxWidth: .infinity)
+                    // Only a failure that releases its slot
+                    // (`PaymentFailure.holdsSlot`) offers Dismiss: one that
+                    // may have left or holds a lock keeps the controller, so
+                    // a fresh lock is never funded for this recipient (the
+                    // coordinator refuses the same dismissal). Leaving the
+                    // screen keeps it in the pending list.
+                    if !failure.holdsSlot {
+                        Button {
+                            walletManager.shieldedFundFromAssetLockCoordinator.dismiss(controller)
+                            dismiss()
+                        } label: {
+                            Text("Dismiss")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
                     }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
+                    // A hold without a lock to resume
+                    // (`PaymentFailure.releasableAfterReconciliation`) is
+                    // released only once the user confirmed the original
+                    // payment in the history.
+                    if failure.releasableAfterReconciliation {
+                        Button {
+                            confirmingRelease = true
+                        } label: {
+                            Text("Payment checked in history — release")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
+                        .confirmationDialog(
+                            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+                            isPresented: $confirmingRelease,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Release", role: .destructive) {
+                                walletManager.shieldedFundFromAssetLockCoordinator.release(
+                                    walletId: controller.walletId,
+                                    recipientRaw43: controller.recipientRaw43
+                                )
+                                dismiss()
+                            }
+                        }
+                    }
                 }
             }
         default:
