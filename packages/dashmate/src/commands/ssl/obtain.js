@@ -3,7 +3,7 @@ import { Flags } from '@oclif/core';
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import isInteractiveSession from '../../util/isInteractiveSession.js';
-import renderConfigFlag from '../../util/renderConfigFlag.js';
+import renderGatewayRestartCommand from '../../ssl/renderGatewayRestartCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
 import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
@@ -124,12 +124,12 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
           // restart would achieve the same thing and cost an outage.
           title: 'Reload gateway',
           task: async (ctx, listrTask) => {
-            // A bundle the obtain replaced is not the file the running
-            // gateway has mounted, so a signal would load the previous
-            // certificate again.
+            // A bundle the obtain wrote as a new file is not the file the
+            // running gateway has mounted, so a signal would load the
+            // previous certificate again. The command is printed after the
+            // task list.
             if (ctx.isGatewayRestartRequired) {
-              listrTask.skip('The certificate bundle was replaced, so a running gateway serves the'
-                + ` new certificate only after a restart: dashmate restart --platform ${renderConfigFlag(config.getName())}`);
+              listrTask.skip('Not reloaded: the certificate bundle was written as a new file');
 
               return;
             }
@@ -172,6 +172,15 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       await tasks.run(context);
     } catch (e) {
       throw new MuteOneLineError(e);
+    }
+
+    // On a line of its own: the task list's renderer cuts a message off at
+    // the terminal width.
+    if (context.isGatewayRestartRequired) {
+      // eslint-disable-next-line no-console
+      console.log('The certificate bundle was written as a new file, which a running gateway does'
+        + ' not see.\nIf the gateway is running, restart it to serve the new certificate:\n'
+        + `  ${renderGatewayRestartCommand(config)}`);
     }
   }
 }

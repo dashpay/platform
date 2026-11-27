@@ -210,6 +210,18 @@ describe('scheduleRenewalJob', () => {
     expect(rescheduledWith).to.have.lengthOf(1);
   });
 
+  it('should name a restart of the whole node when the quorum list is enabled', async function it() {
+    const logged = [];
+    this.sinon.stub(console, 'log').callsFake((text) => logged.push(text));
+    const { get } = config;
+    config.get = (key) => (key === 'platform.quorumList.enabled' ? true : get(key));
+
+    await run({ isBundleReplaced: true });
+
+    expect(logged.join('\n')).to.include(`dashmate restart --config ${CONFIG_NAME}`)
+      .and.not.include('restart --platform');
+  });
+
   it('should forget the record before handing renewal to another provider', async () => {
     // The handover is awaited, and the provider taking over writes its own
     // first record inside it. Clearing afterwards would delete that record and

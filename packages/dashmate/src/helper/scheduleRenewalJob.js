@@ -8,7 +8,7 @@ import {
 } from './record-renewal-outcome.js';
 import renewCertificate from './renewCertificate.js';
 import watchCertificateConfig from './watchCertificateConfig.js';
-import renderConfigFlag from '../util/renderConfigFlag.js';
+import renderGatewayRestartCommand from '../ssl/renderGatewayRestartCommand.js';
 
 export const RETRY_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -111,13 +111,13 @@ export default function scheduleRenewalJob({
         isRenewed = true;
 
         if (renewal.isGatewayRestartRequired) {
-          // The obtain replaced the bundle rather than writing it in place,
-          // and the gateway's bind mount keeps the file it had: a signal would
-          // load the previous certificate again.
+          // The obtain wrote the bundle as a new file rather than in place,
+          // and the gateway's bind mount keeps the file it had: a signal
+          // would load the previous certificate again.
           // eslint-disable-next-line no-console
-          console.log(`${providerName} certificate renewed, but its bundle file was replaced, so the`
-            + ' gateway serves it only after a restart: dashmate restart --platform'
-            + ` ${renderConfigFlag(configName)}`);
+          console.log(`${providerName} certificate renewed, but its bundle was written as a new`
+            + ' file, which the running gateway does not see. Restart the gateway to serve it:'
+            + ` ${renderGatewayRestartCommand(renewal.config)}`);
         } else {
           // A signal is sufficient and nothing here needs to restart the
           // container. PID 1 in the gateway container is Envoy's hot-restarter,

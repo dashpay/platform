@@ -113,26 +113,42 @@ describe('SSL obtain command', () => {
       .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
   });
 
-  // A bundle replaced by a new file is not the one the running gateway has
-  // mounted, so a signal would only load the previous certificate again.
-  it('should name a gateway restart instead of reloading when the bundle was replaced', async function it() {
-    let written = '';
-    this.sinon.stub(process.stdout, 'write').callsFake((chunk) => {
-      written += chunk;
+  // A bundle written as a new file is not the one the running gateway has
+  // mounted, so a signal would only load the previous certificate again. The
+  // command is printed on its own line after the task list, whose renderer
+  // cuts a message off at the terminal width.
+  describe('a bundle written as a new file', () => {
+    let dependencies;
+    let logged;
 
-      return true;
+    beforeEach(function beforeEach() {
+      logged = [];
+      this.sinon.stub(console, 'log').callsFake((text) => logged.push(text));
+
+      dependencies = obtainDependencies(this.sinon, 'zerossl');
+      dependencies.config.getName = this.sinon.stub().returns('testnet');
+      dependencies.config.get.withArgs('platform.quorumList.enabled').returns(false);
+      dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+        task: (ctx) => { ctx.isGatewayRestartRequired = true; },
+      }], { renderer: 'silent' }));
     });
 
-    const dependencies = obtainDependencies(this.sinon, 'zerossl');
-    dependencies.config.getName = this.sinon.stub().returns('testnet');
-    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
-      task: (ctx) => { ctx.isGatewayRestartRequired = true; },
-    }]));
+    it('should name a gateway restart instead of reloading', async () => {
+      await runObtain(dependencies);
 
-    await runObtain(dependencies);
+      expect(dependencies.dockerCompose.execCommand).to.not.have.been.called();
+      expect(logged.join('\n').split('\n')).to.include('  dashmate restart --platform --config testnet');
+    });
 
-    expect(dependencies.dockerCompose.execCommand).to.not.have.been.called();
-    expect(written).to.include('dashmate restart --platform --config testnet');
+    // stop --platform stops Core too when the quorum list is enabled, without
+    // the DKG check a masternode gets before Core stops.
+    it('should name a restart of the whole node when the quorum list is enabled', async () => {
+      dependencies.config.get.withArgs('platform.quorumList.enabled').returns(true);
+
+      await runObtain(dependencies);
+
+      expect(logged.join('\n').split('\n')).to.include('  dashmate restart --config testnet');
+    });
   });
 
   // Nothing on disk reveals which certificate a running Envoy actually holds,
