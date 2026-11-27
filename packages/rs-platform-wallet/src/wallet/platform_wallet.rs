@@ -2434,7 +2434,11 @@ impl PlatformWallet {
     /// [`PlatformWalletError::ShieldedPlanChanged`] when the notes moved.
     ///
     /// Planning only reads the notes: it reserves, signs and sends nothing, so
-    /// every failure is `NotSent` ([`PlatformWalletError::before_dispatch`]).
+    /// every failure is `NotSent`. One whose variant is otherwise classed
+    /// possibly sent (a zero amount, a spend kind not active at this protocol
+    /// version) arrives wrapped in [`PlatformWalletError::RefusedBeforeDispatch`]:
+    /// match the diagnostic on [`PlatformWalletError::dispatched_source`], and
+    /// read delivery and retry from the outer error.
     #[cfg(feature = "shielded")]
     pub async fn shielded_plan_spend(
         &self,

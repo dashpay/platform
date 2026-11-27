@@ -227,6 +227,14 @@ impl PlatformWallet {
     /// * `on_asset_lock_built` — Receives the outpoint of a newly built
     ///   asset lock before its row is persisted or it is broadcast; see
     ///   [`AssetLockBuiltObserver`]. Not called on resume.
+    ///
+    /// A batch no proof can carry is refused before anything is funded. On a
+    /// fresh lock (wallet balance, account or wallet drain) that refusal is
+    /// `NotSent` and arrives wrapped in
+    /// [`PlatformWalletError::RefusedBeforeDispatch`]: match the diagnostic on
+    /// [`PlatformWalletError::dispatched_source`], and read delivery and retry
+    /// from the outer error. On a resumed lock it keeps its own class, since
+    /// an earlier attempt may have used the lock.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
