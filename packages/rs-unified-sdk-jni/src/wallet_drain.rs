@@ -33,8 +33,7 @@ use jni::objects::{JByteArray, JClass};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIPaymentDelivery, PlatformWalletFFIResult,
-    PlatformWalletFFIResultCode,
+    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
 };
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::shielded_wallet_drain::{
@@ -550,6 +549,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_loc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_wallet_ffi::error::PlatformWalletFFIPaymentDelivery;
     use platform_wallet_ffi::OutPointFFI;
 
     /// The packed outcome is the only place the drain's error and its
