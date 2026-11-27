@@ -434,6 +434,13 @@ mod snapshot_bake_main {
         ) -> Result<QuorumInfoResult, Error> {
             unreachable!()
         }
+        fn get_quorum_info_with_short_timeout(
+            &self,
+            _: QuorumType,
+            _: &QuorumHash,
+        ) -> Result<QuorumInfoResult, Error> {
+            unreachable!()
+        }
         fn get_protx_diff_with_masternodes(
             &self,
             _: Option<u32>,

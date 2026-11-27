@@ -12,7 +12,8 @@ use dpp::dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::dashcore_rpc::json::GetRawTransactionResult;
 use dpp::dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
-use dpp::dashcore_rpc::jsonrpc::simple_http::Error as HttpError;
+use dpp::dashcore_rpc::jsonrpc::simple_http::{Error as HttpError, SimpleHttpTransport};
+use dpp::dashcore_rpc::jsonrpc::Client as JsonRpcClient;
 use dpp::dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::prelude::TimestampMillis;
 use serde_json::Value;
@@ -173,6 +174,18 @@ pub trait CoreRPCLike {
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
 
+    /// Get quorum information for a caller that can do without the answer: one request, without
+    /// the retries of [`CoreRPCLike::get_quorum_info`], on a connection whose socket operations
+    /// time out after [`CORE_RPC_SHORT_TIMEOUT`].
+    ///
+    /// The HTTP transport sends the request again, once, on a fresh connection when reading the
+    /// answer fails, so a Core that does not answer delays the caller by about twice that timeout.
+    fn get_quorum_info_with_short_timeout(
+        &self,
+        quorum_type: QuorumType,
+        hash: &QuorumHash,
+    ) -> Result<QuorumInfoResult, Error>;
+
     /// Get the difference in masternode list, return masternodes as diff elements
     fn get_protx_diff_with_masternodes(
         &self,
@@ -225,7 +238,15 @@ pub struct DefaultCoreRPC {
     /// Speculative fetcher for the next core height, on its own connection.
     /// `None` when a second connection could not be opened.
     prefetcher: Option<CorePrefetcher>,
+    /// Its own connection whose socket operations time out after [`CORE_RPC_SHORT_TIMEOUT`],
+    /// for calls that can do without the answer.
+    short_timeout: Client,
 }
+
+/// How long a call that can do without the answer waits on each socket operation. Core answers
+/// `quorum info` in milliseconds; the margin covers it computing a quorum's public key shares
+/// for the first time, and the transport's one resend gets another such wait.
+pub const CORE_RPC_SHORT_TIMEOUT: Duration = Duration::from_secs(1);
 
 // TODO: Create errors for these error codes in dashcore_rpc
 
@@ -327,9 +348,19 @@ impl DefaultCoreRPC {
                 "could not open a second Core RPC connection; masternode and quorum updates will be fetched on the critical path"
             );
         }
+        let short_timeout_transport = SimpleHttpTransport::builder()
+            .url(url)
+            .map_err(|e| Error::JsonRpc(e.into()))?
+            .timeout(CORE_RPC_SHORT_TIMEOUT)
+            .auth(username.as_str(), Some(password.as_str()))
+            .build();
+        let inner = Client::new(url, Auth::UserPass(username, password))?;
         Ok(DefaultCoreRPC {
-            inner: Client::new(url, Auth::UserPass(username, password))?,
+            inner,
             prefetcher,
+            short_timeout: Client::from_jsonrpc(JsonRpcClient::with_transport(
+                short_timeout_transport,
+            )),
         })
     }
 
@@ -468,6 +499,15 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_quorum_info_reversed(quorum_type, hash, include_secret_key_share))
+    }
+
+    fn get_quorum_info_with_short_timeout(
+        &self,
+        quorum_type: QuorumType,
+        hash: &QuorumHash,
+    ) -> Result<QuorumInfoResult, Error> {
+        self.short_timeout
+            .get_quorum_info_reversed(quorum_type, hash, None)
     }
 
     fn get_protx_diff_with_masternodes(
@@ -1237,6 +1277,118 @@ mod tests {
         }
     }
 
+    /// The JSON-RPC requests `DefaultCoreRPC` sends for a validator quorum's key shares.
+    mod quorum_info_requests {
+        use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC, CORE_RPC_SHORT_TIMEOUT};
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::QuorumHash;
+        use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
+        use dpp::dashcore_rpc::jsonrpc::{self, Request, Response, Transport};
+        use dpp::dashcore_rpc::Client;
+        use serde_json::Value;
+        use std::fmt;
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+        use std::time::Instant;
+
+        /// A transport to a Core that never answers: it records each request and fails it as a
+        /// timed-out connection does.
+        struct UnansweredTransport {
+            requests: Arc<Mutex<Vec<Value>>>,
+        }
+
+        impl Transport for UnansweredTransport {
+            fn send_request(&self, request: Request) -> Result<Response, jsonrpc::Error> {
+                self.requests
+                    .lock()
+                    .expect("requests lock")
+                    .push(serde_json::to_value(&request).expect("request is JSON"));
+                Err(jsonrpc::Error::Transport(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "timed out",
+                ))))
+            }
+
+            fn send_batch(&self, _: &[Request]) -> Result<Vec<Response>, jsonrpc::Error> {
+                Err(jsonrpc::Error::EmptyBatch)
+            }
+
+            fn fmt_target(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "unanswered transport")
+            }
+        }
+
+        /// The key shares are asked for on the block path and the block goes on without them,
+        /// so the request goes out once, on the short-timeout connection, without the retries
+        /// of the other calls.
+        #[test]
+        fn should_ask_core_for_quorum_info_once_on_its_own_connection() {
+            let inner_requests: Arc<Mutex<Vec<Value>>> = Arc::default();
+            let short_timeout_requests: Arc<Mutex<Vec<Value>>> = Arc::default();
+            let core_rpc = DefaultCoreRPC {
+                inner: Client::from_jsonrpc(jsonrpc::Client::with_transport(UnansweredTransport {
+                    requests: Arc::clone(&inner_requests),
+                })),
+                prefetcher: None,
+                short_timeout: Client::from_jsonrpc(jsonrpc::Client::with_transport(
+                    UnansweredTransport {
+                        requests: Arc::clone(&short_timeout_requests),
+                    },
+                )),
+            };
+
+            let answer = core_rpc.get_quorum_info_with_short_timeout(
+                QuorumType::Llmq100_67,
+                &QuorumHash::from_byte_array([7; 32]),
+            );
+
+            assert!(answer.is_err());
+            let requests = short_timeout_requests.lock().expect("requests lock");
+            assert_eq!(requests.len(), 1, "one attempt");
+            assert_eq!(requests[0]["method"], "quorum");
+            assert_eq!(requests[0]["params"][0], "info");
+            assert_eq!(requests[0]["params"][1], 4);
+            assert!(inner_requests.lock().expect("requests lock").is_empty());
+        }
+
+        /// A Core that accepts the connection and never answers costs the block about twice
+        /// the short timeout and at most two requests, not the retries of the other calls.
+        #[test]
+        fn should_give_up_on_a_core_that_never_answers_within_about_twice_the_short_timeout() {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+            let address = listener.local_addr().expect("the local address");
+            let connections = Arc::new(AtomicUsize::new(0));
+            let counted = Arc::clone(&connections);
+            thread::spawn(move || {
+                // Kept open, never answered.
+                let mut open = Vec::new();
+                for stream in listener.incoming().flatten() {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    open.push(stream);
+                }
+            });
+            let core_rpc =
+                DefaultCoreRPC::open(&format!("http://{address}"), "user".into(), "pass".into())
+                    .expect("expected to open the Core RPC client");
+
+            let started = Instant::now();
+            let answer = core_rpc.get_quorum_info_with_short_timeout(
+                QuorumType::Llmq100_67,
+                &QuorumHash::from_byte_array([7; 32]),
+            );
+            let waited = started.elapsed();
+
+            assert!(answer.is_err());
+            assert!(
+                waited < CORE_RPC_SHORT_TIMEOUT * 3,
+                "waited {waited:?} for a Core that never answers"
+            );
+            assert!(connections.load(Ordering::SeqCst) <= 2);
+        }
+    }
+
     /// The JSON-RPC requests `DefaultCoreRPC` sends for a chain lock.
     mod chain_lock_requests {
         use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
@@ -1286,11 +1438,18 @@ mod tests {
             let requests = Arc::new(Mutex::new(Vec::new()));
             let transport = RecordingTransport {
                 requests: Arc::clone(&requests),
+                answer: answer.clone(),
+            };
+            let short_timeout_transport = RecordingTransport {
+                requests: Arc::clone(&requests),
                 answer,
             };
             let core_rpc = DefaultCoreRPC {
                 inner: Client::from_jsonrpc(jsonrpc::Client::with_transport(transport)),
                 prefetcher: None,
+                short_timeout: Client::from_jsonrpc(jsonrpc::Client::with_transport(
+                    short_timeout_transport,
+                )),
             };
             (core_rpc, requests)
         }

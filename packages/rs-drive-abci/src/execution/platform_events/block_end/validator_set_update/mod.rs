@@ -7,11 +7,13 @@ mod v2;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0MutableGetters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 
 use crate::platform_types::platform::Platform;
 
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
@@ -38,6 +40,10 @@ where
     /// * `Result<Option<ValidatorSetUpdate>, Error>` - If the rotation is successful, it returns `Ok(Some(ValidatorSetUpdate))`
     ///   If there is no update, it returns `Ok(None)`. If there is an error, it returns `Error`.
     ///
+    /// An update that moves Tenderdash to a validator set whose members lack public key shares
+    /// gets the shares the local Core has by now, when it has them for every member (see
+    /// `complete_validator_key_shares`).
+    ///
     pub fn validator_set_update(
         &self,
         proposer_pro_tx_hash: [u8; 32],
@@ -45,7 +51,7 @@ where
         block_execution_context: &mut BlockExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ValidatorSetUpdate>, Error> {
-        match platform_version
+        let mut validator_set_update = match platform_version
             .drive_abci
             .methods
             .block_end
@@ -71,7 +77,23 @@ where
                 known_versions: vec![0, 1, 2],
                 received: version,
             })),
+        }?;
+
+        // The same at every protocol version, because member key shares are not consensus data:
+        // Tenderdash hashes a validator set by its threshold key and quorum hash only, the
+        // platform state is stored outside the GroveDB tree whose root hash this block already
+        // computed, and filling keys never changes whether an update is sent, its quorum or its
+        // validators. The block state it writes becomes the committed state, so the next block's
+        // check for a changed validator set compares two states that both hold the keys.
+        if let Some(update) = validator_set_update.as_mut() {
+            self.complete_validator_key_shares(
+                update,
+                &platform_state.current_validator_set_quorum_hash(),
+                block_execution_context.block_platform_state_mut(),
+            );
         }
+
+        Ok(validator_set_update)
     }
 }
 
