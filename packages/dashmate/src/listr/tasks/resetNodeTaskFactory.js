@@ -1,9 +1,81 @@
 import { Listr } from 'listr2';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import wait from '../../util/wait.js';
-import resolveConfigDirectory from '../../config/resolve-config-directory.js';
+import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
+import quoteShellArgument, { isShellQuotable } from '../../util/quoteShellArgument.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
+
+// More paths than this are counted rather than listed.
+const MAX_REPORTED_PATHS = 10;
+
+// A volume still in use after this many removals is held by a container the
+// reset does not remove.
+const MAX_VOLUME_REMOVAL_ATTEMPTS = 10;
+
+// The helper keeps certificate renewal state in the Platform directory, so a
+// Platform reset removes it with the Platform services; start brings it back.
+const HELPER_SERVICE_NAME = 'dashmate_helper';
+
+// A backslash, and what a terminal acts on rather than shows: C0 controls,
+// DEL and C1 controls.
+// eslint-disable-next-line no-control-regex
+const ESCAPED_FOR_DISPLAY = /[\\\u0000-\u001f\u007f-\u009f]/gu;
+
+const DISPLAY_ESCAPES = {
+  '\\': '\\\\',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+};
+
+/**
+ * Show text from the filesystem on one line, as it is but for what a terminal
+ * would act on, which is escaped
+ *
+ * A line break in a file name would otherwise start a line of the message
+ * that reads like the rest of it.
+ *
+ * @param {string} text
+ * @return {string}
+ */
+function escapeForDisplay(text) {
+  return String(text).replace(ESCAPED_FOR_DISPLAY, (character) => DISPLAY_ESCAPES[character]
+    ?? `\\x${character.codePointAt(0).toString(16).padStart(2, '0')}`);
+}
+
+/**
+ * @param {string} shownPath
+ * @return {string} the path quoted and on one line, for reading, not pasting
+ */
+function formatPath(shownPath) {
+  return `'${escapeForDisplay(shownPath).replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * Lines that give commands to run on a path
+ *
+ * A path that holds a control character cannot be given to every POSIX shell
+ * on one line, so no command is printed for it to paste: the commands are
+ * named, and the path is shown escaped, for reading.
+ *
+ * @param {string[]} commands - each without the path, which goes last
+ * @param {string} targetPath
+ * @return {string[]}
+ */
+function formatPathCommands(commands, targetPath) {
+  if (isShellQuotable(targetPath)) {
+    return commands.map((command) => `  ${command} ${quoteShellArgument(targetPath)}`);
+  }
+
+  return [
+    `  ${commands.map((command) => `'${command}'`).join(' and then ')} on the path below.`,
+    '  It holds control characters, so it is shown escaped, to read rather than paste:',
+    `  ${formatPath(targetPath)}`,
+  ];
+}
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -13,8 +85,7 @@ import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js
  * @param {DefaultConfigs} defaultConfigs
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
- * @param {generateEnvs} generateEnvs
- * @param {getConfigProfiles} getConfigProfiles
+ * @param {getServiceList} getServiceList
  * @return {resetNodeTask}
  */
 export default function resetNodeTaskFactory(
@@ -25,71 +96,517 @@ export default function resetNodeTaskFactory(
   defaultConfigs,
   configFile,
   homeDir,
-  generateEnvs,
-  getConfigProfiles,
+  getServiceList,
 ) {
-  function selectPlatformProfiles(config, options) {
-    return getConfigProfiles(config, options)
-      .filter((profile) => profile.startsWith('platform'));
+  /**
+   * Select every Platform service of the config, whether the config enables it
+   * or not
+   *
+   * A Platform-only reset names them rather than selecting their profiles.
+   * A profile selection leaves Core out of the Compose model, and a Platform
+   * service that depends on Core (the quorum list) then makes the project
+   * invalid: Compose fails, or for rm and stop acts on the whole project, Core
+   * included. Every profile is still enabled next to the names, because some
+   * Compose versions (2.10 to 2.12) skip a named service whose profile is not
+   * enabled. With every service in the model, Compose acts on the named ones
+   * only.
+   *
+   * @param {Config} config
+   * @return {{ serviceNames: string[], profiles: string[] }}
+   */
+  function selectPlatformServices(config) {
+    const services = getServiceList(config, { allProfiles: true });
+
+    const serviceNames = services
+      .filter(({ profiles }) => profiles.some((profile) => profile.startsWith('platform')))
+      .map(({ name }) => name);
+
+    // Compose acts on every service of the project when given no names.
+    if (serviceNames.length === 0) {
+      throw new Error('No Platform services found in the Compose files');
+    }
+
+    const profiles = Array.from(new Set(services.flatMap((service) => service.profiles)));
+
+    return { serviceNames, profiles };
   }
 
   /**
-   * Remove path but ignore permission issues to avoid failing reset on root-owned directories.
+   * @param {Error} e
+   * @return {boolean}
+   */
+  function isPermissionError(e) {
+    return e?.code === 'EACCES' || e?.code === 'EPERM';
+  }
+
+  /**
+   * Find the paths under a target that this user cannot remove, removing
+   * nothing
+   *
+   * The entries of a directory this user cannot write cannot be removed, so
+   * such a directory is named once rather than entry by entry, unless it is
+   * empty: removing an empty directory needs only its parent to be writable.
+   * The target itself goes only if its parent directory is writable, and is
+   * not even found if the parent cannot be searched. Symbolic links are never
+   * followed: a link is removed, wherever it points.
    *
    * @param {string} targetPath
-   * @param {Object} [task]
+   * @return {string[]}
    */
-  function removePathSafely(targetPath, task) {
-    try {
-      fs.rmSync(targetPath, {
-        recursive: true,
-        force: true,
-      });
-    } catch (e) {
-      if (e?.code === 'EACCES' || e?.code === 'EPERM') {
-        const message = `Skipping removal of '${targetPath}' due to insufficient permissions`;
+  function findUnremovablePaths(targetPath) {
+    const deniedPaths = [];
 
-        if (task) {
-          // eslint-disable-next-line no-param-reassign
-          task.output = message;
-        } else if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.warn(message);
+    /**
+     * @param {string} currentPath
+     * @return {boolean} whether this user can remove the path
+     */
+    function canRemove(currentPath) {
+      let stats;
+      try {
+        stats = fs.lstatSync(currentPath);
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          return true;
         }
-      } else if (e?.code !== 'ENOENT') {
+
+        // A parent directory this user cannot search
+        if (isPermissionError(e)) {
+          deniedPaths.push(currentPath);
+
+          return false;
+        }
+
         throw e;
       }
+
+      if (!stats.isDirectory()) {
+        return true;
+      }
+
+      try {
+        // eslint-disable-next-line no-bitwise
+        fs.accessSync(currentPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
+      } catch (e) {
+        if (!isPermissionError(e)) {
+          throw e;
+        }
+
+        let isEmpty;
+        try {
+          isEmpty = fs.readdirSync(currentPath).length === 0;
+        } catch (readError) {
+          if (!isPermissionError(readError)) {
+            throw readError;
+          }
+
+          isEmpty = false;
+        }
+
+        if (!isEmpty) {
+          deniedPaths.push(currentPath);
+        }
+
+        return isEmpty;
+      }
+
+      // Every entry is checked, so that each one left is named.
+      return fs.readdirSync(currentPath)
+        .map((entry) => canRemove(path.join(currentPath, entry)))
+        .every((isRemovable) => isRemovable);
     }
+
+    const parentPath = path.dirname(targetPath);
+
+    try {
+      fs.lstatSync(targetPath);
+      // eslint-disable-next-line no-bitwise
+      fs.accessSync(parentPath, fs.constants.W_OK | fs.constants.X_OK);
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return [];
+      }
+
+      if (!isPermissionError(e)) {
+        throw e;
+      }
+
+      return [parentPath];
+    }
+
+    canRemove(targetPath);
+
+    return deniedPaths;
+  }
+
+  /**
+   * @param {string[]} deniedPaths
+   * @return {string[]} one line per path, as many as are listed
+   */
+  function formatDeniedPaths(deniedPaths) {
+    const lines = deniedPaths.slice(0, MAX_REPORTED_PATHS)
+      .map((deniedPath) => `  ${formatPath(deniedPath)}`);
+
+    if (deniedPaths.length > MAX_REPORTED_PATHS) {
+      lines.push(`  and ${deniedPaths.length - MAX_REPORTED_PATHS} more`);
+    }
+
+    return lines;
+  }
+
+  /**
+   * The service files a hard reset removes: the config's whole directory, or
+   * its Platform part for a Platform-only reset
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {string|null} null when the reset removes no files
+   */
+  function getPathToRemove(config, ctx) {
+    // The group name only selects the defaults. Each member's service files
+    // live in a directory named after the config itself.
+    const configDirectory = resolveConfigDirectory(homeDir, config.getName());
+
+    if (!ctx.removeConfig && !ctx.isHardReset) {
+      return null;
+    }
+
+    // Old config files may hold a config under a name that is now reserved.
+    // Its directory would be a file the repository owns, such as the config
+    // file itself, so the entry is reset or removed and the path never is.
+    if (!isConfigNameAvailable(config.getName())) {
+      return null;
+    }
+
+    if (ctx.isPlatformOnlyReset) {
+      return path.join(configDirectory, 'platform');
+    }
+
+    return configDirectory;
+  }
+
+  /**
+   * Refuse a reset whose files this user cannot remove, while nothing has
+   * changed
+   *
+   * Found out only during removal, the services and part of the files would be
+   * gone, and with them service files Compose needs to load the project.
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   */
+  function assertPathCanBeRemoved(config, ctx) {
+    const targetPath = getPathToRemove(config, ctx);
+
+    if (targetPath === null) {
+      return;
+    }
+
+    let deniedPaths;
+    try {
+      deniedPaths = findUnremovablePaths(targetPath);
+    } catch (e) {
+      throw new Error([
+        `Cannot reset config '${config.getName()}': could not inspect ${formatPath(targetPath)}:`
+          + ` ${escapeForDisplay(e.message)}`,
+        'Nothing has been changed. Fix the cause and run the reset again.',
+      ].join('\n'));
+    }
+
+    if (deniedPaths.length === 0) {
+      return;
+    }
+
+    const { uid, gid } = os.userInfo();
+
+    // A parent that is not writable needs fixing on its own, not with all it
+    // holds.
+    const parentPath = path.dirname(targetPath);
+    const remedy = deniedPaths.includes(parentPath)
+      ? formatPathCommands([`sudo chown ${uid}:${gid}`, 'chmod u+rwx'], parentPath)
+      : formatPathCommands([`sudo chown -R ${uid}:${gid}`, 'chmod -R u+rwX'], targetPath);
+
+    throw new Error([
+      `Cannot reset config '${config.getName()}': this user cannot remove`
+        + ` ${deniedPaths.length} path(s) under ${formatPath(targetPath)}:`,
+      ...formatDeniedPaths(deniedPaths),
+      'They are probably owned by root, created by a container, or read-only.',
+      'Nothing has been changed. Give them to this user and make them writable, for example:',
+      ...remedy,
+      'then run the reset again.',
+    ].join('\n'));
+  }
+
+  /**
+   * Remove a path and everything under it, or fail naming what is left
+   *
+   * The config is saved only when the command succeeds, so after this error
+   * config.json is as it was.
+   *
+   * @param {string|null} targetPath - null when there is nothing to remove
+   * @param {Config} config
+   */
+  function removePath(targetPath, config) {
+    if (targetPath === null) {
+      return;
+    }
+
+    // Part of the service files may be gone by the time removal fails, and
+    // Compose needs them to load the project, so they are rendered again
+    // before the reset is. Starting the node first would let Docker create the
+    // missing mount sources, as root.
+    const recovery = [
+      'then render the service files again and run the reset again:',
+      `  dashmate config render ${renderConfigFlag(config.getName())}`,
+    ];
+
+    // A group reset that fails here has already reset the members before
+    // this one, and their service files are gone too.
+    const groupName = config.get('group');
+    if (groupName) {
+      recovery.push(`and the same for every config of group '${groupName}' it reset before this one.`);
+    }
+
+    recovery.push('Do not start the node before the reset has completed.');
+
+    // Node's own recursive removal: its native implementation can remove
+    // entries relative to the directories it holds open, which a walk by path
+    // name cannot. A target that is a link is unlinked instead: some Node
+    // versions' recursive removal leaves a link that points nowhere in place
+    // and reports success.
+    let removalError;
+    try {
+      if (fs.lstatSync(targetPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        fs.unlinkSync(targetPath);
+      } else {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
+
+      return;
+    } catch (e) {
+      // Removed meanwhile by something else, as `force` takes it
+      if (e.code === 'ENOENT') {
+        return;
+      }
+
+      removalError = e;
+    }
+
+    // Node's error names the target at most, so what is left is walked for
+    // the paths this user cannot remove.
+    let deniedPaths = [];
+    try {
+      deniedPaths = findUnremovablePaths(targetPath);
+    } catch {
+      // The removal's own error is what is reported then.
+    }
+
+    // A permission error the walk does not see, such as for a file in a
+    // sticky directory, yields to a removal that has the rights. EPERM also
+    // comes from a filesystem protection, such as an immutable file, which
+    // no rights get past until it is cleared.
+    if (deniedPaths.length === 0) {
+      let remedy = ['Fix the cause,'];
+      if (removalError.code === 'EACCES') {
+        remedy = ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)];
+      } else if (removalError.code === 'EPERM') {
+        remedy = [
+          'More rights help only when access rights are what stop the removal, for example:',
+          ...formatPathCommands(['sudo rm -rf'], targetPath),
+          'If that fails with EPERM too, a filesystem protection such as the immutable flag stops it'
+            + ' (lsattr and chattr on Linux, ls -lO and chflags on macOS): find it and clear it,',
+        ];
+      }
+
+      throw new Error([
+        `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(removalError.message)}`,
+        ...remedy,
+        ...recovery,
+      ].join('\n'));
+    }
+
+    throw new Error([
+      `Could not remove ${deniedPaths.length} path(s) under ${formatPath(targetPath)} for lack of permission:`,
+      ...formatDeniedPaths(deniedPaths),
+      'Remove them with sufficient rights, for example:',
+      ...formatPathCommands(['sudo rm -rf'], targetPath),
+      ...recovery,
+    ].join('\n'));
+  }
+
+  /**
+   * Refuse a reset that cannot be done, before it changes anything
+   *
+   * @param {Config} config
+   * @param {Object} ctx - the reset's context: isPlatformOnlyReset,
+   *  isHardReset, removeConfig
+   */
+  function assertNodeCanBeReset(config, ctx) {
+    // A hard Platform reset restores the Platform options from the defaults
+    // of the config's preset or group. Without them there is nothing to
+    // restore, so refuse before any service is touched rather than fall
+    // back to removing the whole config, Core included.
+    const defaultConfigName = config.get('group') || config.getName();
+
+    if (ctx.isPlatformOnlyReset && ctx.isHardReset && !ctx.removeConfig
+      && !defaultConfigs.has(defaultConfigName)) {
+      const name = config.getName();
+
+      throw new Error([
+        `Cannot reset Platform only for config '${name}': dashmate has no Platform defaults`
+          + ` for '${defaultConfigName}' to restore.`,
+        'To remove Platform services and data and keep the config, run it without --hard:',
+        `  dashmate reset ${renderConfigFlag(name)} --platform`,
+        'and set Platform options with \'dashmate config set\'.',
+        'To remove the whole config, Core included:',
+        `  dashmate reset ${renderConfigFlag(name)} --hard`,
+      ].join('\n'));
+    }
+
+    // `group reset --hard` removes the local group's configs. With
+    // --platform that would take their Core settings too and leave Core's
+    // containers and data without a config.
+    if (ctx.isPlatformOnlyReset && ctx.removeConfig) {
+      const groupName = config.get('group');
+
+      throw new Error([
+        `Cannot reset Platform only and remove config '${config.getName()}': its Core`
+          + ' settings would go with it.',
+        'To remove Platform services and data and keep the configs:',
+        `  dashmate group reset --group ${quoteShellArgument(groupName)} --platform`,
+        'To remove the configs, Core included, and set the network up again:',
+        `  dashmate group reset --group ${quoteShellArgument(groupName)} --hard`,
+      ].join('\n'));
+    }
+
+    // A hard reset that keeps a config under a name that is now reserved makes
+    // the command render its service files into a directory that cannot
+    // exist, which fails only once the services are gone.
+    if (ctx.isHardReset && !ctx.removeConfig && defaultConfigs.has(defaultConfigName)
+      && !isConfigNameAvailable(config.getName())) {
+      throw new Error([
+        `Cannot reset config '${config.getName()}': Dashmate now reserves this name, so the config`
+          + ' cannot have service files.',
+        'Remove the config instead:',
+        `  dashmate config remove ${quoteShellArgument(config.getName())}`,
+      ].join('\n'));
+    }
+
+    assertPathCanBeRemoved(config, ctx);
+  }
+
+  /**
+   * What a reset removes besides the config's files, worked out before it
+   * removes anything
+   *
+   * @typedef {Object} ResetPlan
+   * @property {string[]} [serviceNames] - the Platform services a Platform-only
+   *  reset checks and removes
+   * @property {string[]} [profiles] - the profiles to enable next to them
+   * @property {VolumeCandidate[]} [volumes] - the volumes it removes after
+   *  them, if Docker still labels them as Platform's by then
+   */
+
+  /**
+   * Refuse a reset that cannot be done and work out what it removes, while
+   * nothing has changed
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {Promise<ResetPlan>}
+   */
+  async function planReset(config, ctx) {
+    assertNodeCanBeReset(config, ctx);
+
+    if (!ctx.isPlatformOnlyReset) {
+      return {};
+    }
+
+    const { serviceNames, profiles } = selectPlatformServices(config);
+
+    // Compose fails to describe the project when service files are missing.
+    // Looked up now, that failure comes while nothing has been removed.
+    const volumes = ctx.keepData
+      ? []
+      : await dockerCompose.getVolumeCandidates(config, {
+        serviceNames,
+        removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
+      });
+
+    // Whose a volume is counts only when it is removed, but asking Docker now
+    // too means a Docker that cannot answer stops the reset while nothing has
+    // been removed.
+    await Promise.all(volumes.map((candidate) => dockerCompose.isVolumeOwned(candidate)));
+
+    return { serviceNames, profiles, volumes };
+  }
+
+  /**
+   * Refuse a reset while the services it removes are running
+   *
+   * @param {Config} config
+   * @param {Object} ctx
+   * @param {ResetPlan} plan
+   * @return {Promise<void>}
+   */
+  async function assertServicesAreStopped(config, ctx, plan) {
+    // A Platform-only reset asks about every Platform service, whether the
+    // config enables it or not.
+    const options = ctx.isPlatformOnlyReset
+      ? { serviceNames: plan.serviceNames, profiles: plan.profiles }
+      : undefined;
+
+    if (await dockerCompose.isNodeRunning(config, options)) {
+      throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
+    }
+  }
+
+  /**
+   * Everything the reset checks before it changes anything, the running
+   * services included unless the reset is forced, and what it will remove
+   *
+   * A group reset runs this for every member before it resets any of them,
+   * and gives each member's reset its plan.
+   *
+   * @typedef {function} prepareReset
+   * @param {Config} config
+   * @param {Object} ctx
+   * @return {Promise<ResetPlan>}
+   */
+  async function prepareReset(config, ctx) {
+    const plan = await planReset(config, ctx);
+
+    if (!ctx.isForce) {
+      await assertServicesAreStopped(config, ctx, plan);
+    }
+
+    return plan;
   }
 
   /**
    * @typedef {resetNodeTask}
    * @param {Config} config
+   * @param {ResetPlan} [preparedPlan] - from prepareReset, which has already
+   *  checked the reset
    */
-  function resetNodeTask(config) {
+  function resetNodeTask(config, preparedPlan = undefined) {
+    let plan = preparedPlan;
+
     return new Listr([
       {
-        task: (ctx) => {
-          if (!config.get('platform.enable') && ctx.isPlatformOnlyReset) {
-            throw new Error('Cannot reset platform only if platform services are not enabled in config');
-          }
+        // The default renderer shows a failed task's error in place of its
+        // title, and nothing for a task without one.
+        title: 'Check the reset can be done',
+        enabled: () => preparedPlan === undefined,
+        task: async (ctx) => {
+          plan = await planReset(config, ctx);
         },
       },
       {
+        // Checked again with a prepared plan: a group member can be started
+        // while the members before it are reset.
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
-        task: async (ctx) => {
-          const profiles = ctx.isPlatformOnlyReset
-            ? selectPlatformProfiles(config, { includeAll: true })
-            : [];
-
-          if (await dockerCompose.isNodeRunning(
-            config,
-            { profiles },
-          )) {
-            throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
-          }
-        },
+        task: (ctx) => assertServicesAreStopped(config, ctx, plan),
       },
       {
         title: 'Remove all services and associated data',
@@ -111,43 +628,61 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const profiles = selectPlatformProfiles(config, { includeAll: true });
+          const { serviceNames, profiles, volumes } = plan;
+
+          const removeOptions = {
+            serviceNames: [...serviceNames, HELPER_SERVICE_NAME],
+            profiles,
+            // Anonymous volumes go with their containers unless data is kept.
+            removeVolumes: !ctx.keepData,
+          };
 
           if (ctx.keepData) {
             // eslint-disable-next-line no-param-reassign
             task.title = 'Remove platform services and keep associated data';
           }
 
-          await dockerCompose.rm(config, { profiles });
+          await dockerCompose.rm(config, removeOptions);
 
           // Remove volumes
           if (!ctx.keepData) {
-            const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
-
-            const projectVolumeNames = await dockerCompose.getVolumeNames(
-              config,
-              { profiles },
-            );
-
             await Promise.all(
-              projectVolumeNames
-                .map((volumeName) => `${composeProjectName}_${volumeName}`)
-                .map(async (volumeName) => {
+              volumes
+                .map(async (candidate) => {
+                  const volumeName = candidate.name;
                   const volume = await docker.getVolume(volumeName);
 
+                  let attempts = 0;
                   let isRetry;
                   do {
                     isRetry = false;
+                    attempts += 1;
+
+                    // Asked before each attempt rather than when the reset was
+                    // planned: a group reset plans every member before it
+                    // resets any, and meanwhile, or while the volume is in
+                    // use, it can be created, or replaced by one that is not
+                    // Platform's.
+                    if (!await dockerCompose.isVolumeOwned(candidate)) {
+                      break;
+                    }
 
                     try {
                       await volume.remove({ force: true });
                     } catch (e) {
                       // volume is in use
                       if (e.statusCode === 409) {
+                        if (attempts >= MAX_VOLUME_REMOVAL_ATTEMPTS) {
+                          throw new Error(`Volume '${volumeName}' is still in use by a container this`
+                            + ' reset does not remove. Find it with'
+                            + ` 'docker ps -a --filter volume=${volumeName}', remove it, and run the`
+                            + ' reset again.');
+                        }
+
                         await wait(1000);
 
                         // Remove containers
-                        await dockerCompose.rm(config, { profiles });
+                        await dockerCompose.rm(config, removeOptions);
 
                         isRetry = true;
 
@@ -170,18 +705,16 @@ export default function resetNodeTaskFactory(
       {
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
-        task: (_, task) => {
-          const serviceConfigsPath = resolveConfigDirectory(homeDir, config.getName());
-
+        task: (ctx) => {
           configFile.removeConfig(config.getName());
 
-          removePathSafely(serviceConfigsPath, task);
+          removePath(getPathToRemove(config, ctx), config);
         },
       },
       {
         title: `Reset config ${config.getName()}`,
         enabled: (ctx) => !ctx.removeConfig && ctx.isHardReset,
-        task: (ctx, task) => {
+        task: (ctx) => {
           const groupName = config.get('group');
           const defaultConfigName = groupName || config.getName();
 
@@ -204,26 +737,20 @@ export default function resetNodeTaskFactory(
             ensureTenderdashNodeKey(config);
 
             // Remove service configs
-            let serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
-
-            if (ctx.isPlatformOnlyReset) {
-              serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
-            }
-
-            removePathSafely(serviceConfigsPath, task);
+            removePath(getPathToRemove(config, ctx), config);
           } else {
             // Delete config if no base config
-            const serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
-
             configFile.removeConfig(config.getName());
 
             // Remove service configs
-            removePathSafely(serviceConfigsPath, task);
+            removePath(getPathToRemove(config, ctx), config);
           }
         },
       },
     ]);
   }
+
+  resetNodeTask.prepare = prepareReset;
 
   return resetNodeTask;
 }

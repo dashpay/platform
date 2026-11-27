@@ -27,9 +27,9 @@ more right before the upload, and SHA256SUMS.asc is attached and read back.
 # The keys whose signatures the apt repository accepts, by primary key fingerprint. This list is
 # the one the release skill points to.
 ALLOWED_SIGNERS=(
-  19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C
+  19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C # Ivan Shumkov
+  556CBC89DA31CAD4928F0926D59CAD3E1BEAFEF0 # QuantumExplorer
 )
-# QuantumExplorer's key is added above once it exists.
 
 fail() {
   echo "Error: $*" >&2

@@ -10,6 +10,59 @@
   `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
   instead of a borrowed, non-`'static` prover.
 
+## [5.1.0](///compare/v5.1.0-rc.2...v5.1.0) (2026-11-26)
+
+
+### Build System
+
+* **dashmate:** upgrade Tenderdash to the 2.0 release line ([#6331](undefined/undefined/undefined/issues/6331))
+
+
+### Miscellaneous Chores
+
+* pin GroveDB and rust-dashcore by release tag ([#6332](undefined/undefined/undefined/issues/6332))
+
+
+### Continuous Integration
+
+* **release:** sign and notarize the macOS installer sooner ([#6329](undefined/undefined/undefined/issues/6329))
+
+
+### Documentation
+
+* **dashmate:** install and update the deb from Dash's apt repository ([#6338](undefined/undefined/undefined/issues/6338))
+
+## [5.1.0-rc.2](///compare/v5.1.0-rc.1...v5.1.0-rc.2) (2026-11-26)
+
+
+### Features
+
+* **dashmate:** ship the apt repository's source file and keyring in the deb ([#6267](undefined/undefined/undefined/issues/6267))
+
+
+### Bug Fixes
+
+* **dashmate:** move every Core 23 image of dashpay/dashd to Core 24 ([#6209](undefined/undefined/undefined/issues/6209))
+* **dashmate:** redact container environment and known secrets in the doctor report ([#6316](undefined/undefined/undefined/issues/6316))
+* **dashmate:** refuse to overwrite a config a newer dashmate migrated ([#6301](undefined/undefined/undefined/issues/6301))
+
+
+### Miscellaneous Chores
+
+* add the qa-fix-loop skill for device QA, fix threads and retests ([#6279](undefined/undefined/undefined/issues/6279))
+
+
+### Continuous Integration
+
+* **dashmate:** ask the apt publisher to publish a release's debs ([#6289](undefined/undefined/undefined/issues/6289))
+* let QuantumExplorer sign dashmate release checksums ([#6274](undefined/undefined/undefined/issues/6274))
+
+
+### Documentation
+
+* **dashmate:** describe updating a Debian package installation ([#6210](undefined/undefined/undefined/issues/6210))
+* **dashmate:** drop the Platform reset from major updates ([#6315](undefined/undefined/undefined/issues/6315))
+
 ## [5.1.0-rc.1](https://github.com/dashpay/platform/compare/v5.1.0-dev.4...v5.1.0-rc.1) (2026-11-24)
 
 

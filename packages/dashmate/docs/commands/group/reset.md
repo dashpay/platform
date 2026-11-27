@@ -28,6 +28,7 @@ For the `local` group (used for local development networks), the command will al
 Various flags can modify the behavior:
 - Use `--hard` to reset both configuration and data
 - Use `--platform` to reset only platform-related components
+- For the `local` group, `--hard` removes the configurations, so dashmate refuses `--platform --hard` there: it would remove their Core settings too. Use `--platform` alone to reset Platform services and data, or `--hard` to remove the configurations
 - Use `--force` to skip confirmation prompts and service checks
 
 This command is particularly useful when:
