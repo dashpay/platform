@@ -827,6 +827,40 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       });
     });
 
+    // An owner may make the key read-only. A hard link to it cannot be opened
+    // for writing then, and it is replaced all the same.
+    it('should replace a hard link to a read-only private key where the bundle goes', async function it() {
+      if (process.getuid?.() === 0 || process.platform === 'win32') {
+        // root writes whatever the mode says, and Windows has no hard links here
+        this.skip();
+      }
+
+      this.timeout(30000);
+      fs.rmSync(bundleFilePath);
+      fs.chmodSync(privateKeyFilePath, 0o400);
+      fs.linkSync(privateKeyFilePath, bundleFilePath);
+
+      const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+      await buildTask.call(this).run(ctx);
+
+      expect(fs.readFileSync(privateKeyFilePath, 'utf8')).to.equal(pair.keyPem);
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(ctx.isGatewayRestartRequired).to.be.true();
+    });
+
+    // A running gateway keeps the file it mounted, deleted or not, and does
+    // not see one written in its place.
+    it('should say a gateway restart is needed when it writes a missing bundle', async function it() {
+      this.timeout(30000);
+      fs.rmSync(bundleFilePath);
+
+      const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
+      await buildTask.call(this).run(ctx);
+
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(ctx.isGatewayRestartRequired).to.be.true();
+    });
+
     // The bundle is replaced in place, and renewal writes over one the gateway
     // is serving.
     it('should not replace the bundle with a download the key on disk cannot serve', async function it() {
