@@ -806,13 +806,25 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     // Writing through a link where the bundle goes would overwrite what it
     // points at, the key the certificate was issued for among them.
     [
-      ['a symbolic link to the private key', (target, link) => fs.symlinkSync(target, link)],
+      ['a symbolic link to the private key', (target, link, test) => {
+        try {
+          fs.symlinkSync(target, link);
+        } catch (e) {
+          // Windows lets only a user with the symbolic-link privilege, or
+          // Developer Mode, create one.
+          if (e.code === 'EPERM') {
+            test.skip();
+          }
+
+          throw e;
+        }
+      }],
       ['a hard link to the private key', (target, link) => fs.linkSync(target, link)],
     ].forEach(([description, makeLink]) => {
       it(`should replace ${description} where the bundle goes rather than write through it`, async function it() {
         this.timeout(30000);
         fs.rmSync(bundleFilePath);
-        makeLink(privateKeyFilePath, bundleFilePath);
+        makeLink(privateKeyFilePath, bundleFilePath, this);
 
         const ctx = { expirationDays: Certificate.EXPIRATION_LIMIT_DAYS };
         await buildTask.call(this).run(ctx);
