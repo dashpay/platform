@@ -388,7 +388,7 @@ class WalletManagerRoundTripTest {
      * had.
      *
      * The reset is run directly and then the service's fleet pass, which is
-     * what a Clear runs between its Room wipe and its sync restart, so no
+     * what a Clear runs between its native reset and its sync restart, so no
      * shielded sync loop is started. It uses this class's SDK fixture like
      * the tests around it.
      */

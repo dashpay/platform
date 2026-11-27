@@ -12,9 +12,9 @@ struct CoreContentView: View {
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
-    /// Threaded into `ShieldedService.clearLocalState(modelContext:)`
-    /// so the Clear button can scope its delete-by-predicate to
-    /// the bound wallet's persisted rows.
+    /// Threaded into `PlatformBalanceSyncService.clearLocalState` so the
+    /// Clear button can scope its delete-by-predicate to the network's
+    /// persisted rows.
     @Environment(\.modelContext) private var modelContext
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
@@ -743,9 +743,7 @@ var body: some View {
                             // handle open via FileBackedShieldedStore;
                             // see clearLocalState's doc).
                             Task {
-                                await shieldedService.clearLocalState(
-                                    modelContext: modelContext
-                                )
+                                await shieldedService.clearLocalState()
                             }
                         } label: {
                             Text("Clear")

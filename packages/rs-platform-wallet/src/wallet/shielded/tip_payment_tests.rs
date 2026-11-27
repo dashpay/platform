@@ -46,6 +46,7 @@ use super::viewing_key_bind_tests::{
     tip_race_fixture, CapturingPersistence, BIND_SEED,
 };
 use super::{shielded_identity_account_index, FileBackedShieldedStore};
+use crate::test_support::WipeCountingPersistence;
 use crate::PlatformWalletError;
 
 /// The Orchard note encryptor with Dash's 36-byte memo.
@@ -633,6 +634,68 @@ fn should_keep_unloaded_a_transfer_whose_row_lost_its_note_list() {
     ));
 }
 
+/// A wallet purge whose token note delete fails keeps the guard of the
+/// wallet's damaged recovery row, though the row itself is gone: its spend may
+/// still land, so a sweep must not release the token note holds that remain.
+#[test]
+fn should_keep_a_damaged_rows_guard_until_the_wallets_token_notes_are_gone() {
+    let (mut store, path) = store_at("purge_keeps_unloaded_guard");
+    let id = SubwalletId::new(WALLET, 0);
+    let payer = keys_of(1, 0);
+    arm_spend(
+        &mut store,
+        id,
+        transfer_paying(&payer, keys_of(2, 0).default_address),
+    );
+    drop(store);
+    let connection = rusqlite::Connection::open(&path).expect("open the store file");
+    connection
+        .execute("UPDATE shielded_pending_spends SET nullifiers = x''", [])
+        .expect("empty the note list");
+    connection
+        .execute(
+            "INSERT INTO shielded_token_pool_notes \
+             (wallet_id, account_index, token_id, position, cmx, nullifier, value, \
+              note_data, block_height) \
+             VALUES (?1, 0, ?2, 0, ?3, ?4, ?5, ?6, 10)",
+            rusqlite::params![
+                WALLET.as_slice(),
+                [0x7Au8; 32].as_slice(),
+                [0x01u8; 32].as_slice(),
+                [0x0Du8; 32].as_slice(),
+                500u64.to_le_bytes().as_slice(),
+                [0u8; 115].as_slice(),
+            ],
+        )
+        .expect("token note");
+    connection
+        .execute_batch(
+            "CREATE TRIGGER keep_token_notes BEFORE DELETE ON shielded_token_pool_notes \
+             BEGIN SELECT RAISE(ABORT, 'token notes kept'); END;",
+        )
+        .expect("trigger");
+
+    let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert!(store.has_unloaded_note_spends(WALLET));
+    assert!(store.purge_wallet(WALLET).is_err());
+    assert!(store.has_unloaded_note_spends(WALLET));
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count"),
+        0,
+        "the damaged row is deleted"
+    );
+
+    connection
+        .execute_batch("DROP TRIGGER keep_token_notes;")
+        .expect("drop trigger");
+    store.purge_wallet(WALLET).expect("purge");
+    assert!(!store.has_unloaded_note_spends(WALLET));
+}
+
 /// What the user confirmed for a name is kept per wallet, across a restart
 /// and a shielded Clear, and goes with the wallet.
 #[test]
@@ -691,7 +754,7 @@ fn should_keep_confirmed_recipients_across_a_restart_and_a_clear_until_the_walle
 /// wallet does not admit this wallet's tip.
 #[tokio::test]
 async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
-    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_admission").await;
+    let (wallet, seed, id, _coordinator) = tip_race_fixture("tip_admission").await;
     let first = wallet.admit_shielded_tip().expect("admit the first tip");
     assert!(matches!(
         wallet.admit_shielded_tip(),
@@ -715,7 +778,6 @@ async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
             other
                 .admit_shielded_tip()
                 .expect("admit on the other wallet"),
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Identity(id),
             "alice",
@@ -747,13 +809,12 @@ async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
             if expected == contact && resolved == moved_to
     ));
 
-    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_expected_identity").await;
+    let (wallet, seed, id, _coordinator) = tip_race_fixture("tip_expected_identity").await;
     let reviewed = recipient(2, [4; 43]);
     let prover = CachedOrchardProver::new();
     let result = wallet
         .send_shielded_tip(
             wallet.admit_shielded_tip().expect("admit"),
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Identity(id),
             "alice",
@@ -776,7 +837,6 @@ async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
     let result = wallet
         .send_shielded_tip(
             wallet.admit_shielded_tip().expect("admitted again"),
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Identity(id),
             "alice",
@@ -885,7 +945,6 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
     let paid = recipient(2, keys_of(3, 0).default_address.to_raw_address_bytes());
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Account(0),
             0,
@@ -904,7 +963,6 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
     // paid, so it confirms nothing either.
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Account(5),
             5,
@@ -930,6 +988,92 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
     );
 }
 
+/// A balance read copies its amount, then checks that the identity's account
+/// still stands prepared. A Clear that ran in between, followed by a bind and
+/// a preparation of the same account, leaves that check with nothing to
+/// object to: the account stands again and no Clear is running. The Clear
+/// epoch is what tells the read its amount came from the wiped ledger, so it
+/// reports busy and the caller reads again.
+#[tokio::test]
+async fn should_not_report_an_amount_read_before_a_clear_once_the_account_is_prepared_again() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_balance_across_clear").await;
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id)
+        .await
+        .expect("prepare");
+    let account = shielded_identity_account_index(2).unwrap();
+    {
+        let mut store = coordinator.store().write().await;
+        for scanned in wallet.shielded_account_indices().await {
+            store
+                .set_last_synced_note_index(SubwalletId::new(wallet.wallet_id(), scanned), 0)
+                .expect("complete a scan");
+        }
+        store
+            .save_note(
+                SubwalletId::new(wallet.wallet_id(), account),
+                &ShieldedNote {
+                    position: 1,
+                    cmx: [1; 32],
+                    nullifier: [1; 32],
+                    block_height: 1,
+                    is_spent: false,
+                    value: 4_200,
+                    note_data: vec![1; 115],
+                },
+            )
+            .expect("save a note");
+    }
+    assert_eq!(
+        wallet.shielded_identity_balance(&id).await.unwrap(),
+        ShieldedIdentityBalance::Available {
+            account,
+            credits: 4_200
+        }
+    );
+
+    // The read is held right after it copied its amount.
+    let (copied, resume) = super::tips::test_hooks::pause_after_balance_read(&wallet);
+    let read = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move { wallet.shielded_identity_balance(&id).await })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), copied)
+        .await
+        .expect("the balance read reaches its pause point")
+        .expect("the read copied its amount");
+
+    coordinator
+        .clear(&WipeCountingPersistence::default())
+        .await
+        .expect("clear");
+    wallet.bind_shielded(&seed[..], &[0]).await.expect("bind");
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id)
+        .await
+        .expect("prepare again");
+    assert_eq!(
+        wallet.prepared_shielded_identity_account(&id).await,
+        Some(account),
+        "the same account stands prepared again"
+    );
+
+    resume.send(()).expect("the read is waiting");
+    let resumed = tokio::time::timeout(std::time::Duration::from_secs(5), read)
+        .await
+        .expect("the read finishes")
+        .expect("the read task");
+    assert!(
+        matches!(resumed, Err(PlatformWalletError::ShieldedBalanceBusy)),
+        "{resumed:?}"
+    );
+    assert_eq!(
+        wallet.shielded_identity_balance(&id).await.unwrap(),
+        ShieldedIdentityBalance::Unavailable { account },
+        "read again, the cleared ledger is not a known amount"
+    );
+}
+
 /// A balance read that waits for the shielded store does not hold the
 /// coordinator's operation admission, so a Clear requested meanwhile is
 /// admitted. While that Clear is admitted the read reports nothing: the
@@ -940,7 +1084,7 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
 async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("tip_balance_read_and_clear").await;
     wallet
-        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .prepare_shielded_identity_address(&seed[..], &id)
         .await
         .expect("prepare");
     let account = shielded_identity_account_index(2).unwrap();
@@ -948,14 +1092,12 @@ async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
 
     // A writer (a sync's commit, a spend) holds the store.
     let scan = coordinator.store().write().await;
-    let busy = wallet
-        .shielded_identity_balance_now(&coordinator, &id)
-        .await;
+    let busy = wallet.shielded_identity_balance_now(&id).await;
     assert!(
         matches!(busy, Err(PlatformWalletError::ShieldedBalanceBusy)),
         "{busy:?}"
     );
-    let mut waiting = Box::pin(wallet.shielded_identity_balance(&coordinator, &id));
+    let mut waiting = Box::pin(wallet.shielded_identity_balance(&id));
     assert!(
         futures::poll!(&mut waiting).is_pending(),
         "the read waits for the store"
@@ -979,10 +1121,7 @@ async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
     drop(admission);
     assert!(!coordinator.clear_in_progress());
     assert_eq!(
-        wallet
-            .shielded_identity_balance(&coordinator, &id)
-            .await
-            .expect("read"),
+        wallet.shielded_identity_balance(&id).await.expect("read"),
         ShieldedIdentityBalance::Unavailable { account }
     );
     // Asking whether a Clear is admitted takes nothing a Clear needs.
@@ -996,21 +1135,18 @@ async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
     coordinator
         .try_admit_clear()
         .expect("admit")
-        .clear()
+        .clear(&WipeCountingPersistence::default())
         .await
         .expect("clear");
     assert!(!coordinator.clear_in_progress());
     assert_eq!(
-        wallet
-            .shielded_identity_balance(&coordinator, &id)
-            .await
-            .expect("read"),
+        wallet.shielded_identity_balance(&id).await.expect("read"),
         ShieldedIdentityBalance::Unverified
     );
     // An identity the wallet does not hold is not a busy store.
     assert!(matches!(
         wallet
-            .shielded_identity_balance_now(&coordinator, &Identifier::from([0x01; 32]))
+            .shielded_identity_balance_now(&Identifier::from([0x01; 32]))
             .await,
         Err(PlatformWalletError::IdentityNotFound(_))
     ));
@@ -1023,7 +1159,7 @@ async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
 async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("tip_to_own_account").await;
     wallet
-        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .prepare_shielded_identity_address(&seed[..], &id)
         .await
         .expect("prepare");
     let identity_account = shielded_identity_account_index(2).unwrap();
@@ -1036,7 +1172,6 @@ async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
 
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Identity(id),
             identity_account,
@@ -1066,7 +1201,6 @@ async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
     // other: admitted, and the spend then finds no notes to pay with.
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Account(0),
             0,
@@ -1086,32 +1220,6 @@ async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
     );
 }
 
-/// A review and an identity's balance read the store of the coordinator
-/// the wallet is bound on. Another coordinator's store holds none of the
-/// wallet's history, and would show a changed recipient as new and an
-/// unresolved payment as none.
-#[tokio::test]
-async fn should_refuse_a_review_and_a_balance_on_a_coordinator_the_wallet_is_not_bound_on() {
-    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_other_coordinator").await;
-    wallet
-        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
-        .await
-        .expect("prepare");
-    let other = coordinator_at(&temp_dir("tip_other_coordinator_second"));
-    assert!(matches!(
-        wallet.review_shielded_tip(&other, "alice", None).await,
-        Err(PlatformWalletError::ShieldedNotBound)
-    ));
-    assert!(matches!(
-        wallet.shielded_identity_balance(&other, &id).await,
-        Err(PlatformWalletError::ShieldedNotBound)
-    ));
-    assert!(wallet
-        .shielded_identity_balance(&coordinator, &id)
-        .await
-        .is_ok());
-}
-
 /// A bind that would drop the account an unresolved spend was paid from is
 /// refused: dropping the account drops the spend's saved record, which is
 /// what holds back a second payment to the same recipient. Once the spend
@@ -1120,7 +1228,7 @@ async fn should_refuse_a_review_and_a_balance_on_a_coordinator_the_wallet_is_not
 async fn should_refuse_a_bind_that_drops_the_account_of_an_unresolved_spend() {
     let (wallet, seed, _id, coordinator) = tip_race_fixture("tip_bind_drops_payer").await;
     wallet
-        .bind_shielded(&seed[..], &[0, 1], &coordinator)
+        .bind_shielded(&seed[..], &[0, 1])
         .await
         .expect("bind a second ordinary account");
     let payer = wallet
@@ -1136,7 +1244,7 @@ async fn should_refuse_a_bind_that_drops_the_account_of_an_unresolved_spend() {
     let spent = record.nullifiers[0];
     arm_spend(&mut *coordinator.store().write().await, payer_id, record);
 
-    let result = wallet.bind_shielded(&seed[..], &[0], &coordinator).await;
+    let result = wallet.bind_shielded(&seed[..], &[0]).await;
     assert!(
         matches!(
             result,
@@ -1167,7 +1275,7 @@ async fn should_refuse_a_bind_that_drops_the_account_of_an_unresolved_spend() {
         .clear_pending(payer_id, &spent)
         .expect("release"));
     wallet
-        .bind_shielded(&seed[..], &[0], &coordinator)
+        .bind_shielded(&seed[..], &[0])
         .await
         .expect("bind without the account once its spend resolved");
 }
@@ -1188,7 +1296,6 @@ async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands(
     // With nothing to claim the transfer ends before the check.
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             gone,
             identity_account,
@@ -1222,7 +1329,6 @@ async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands(
     for source in [gone, held_by_number] {
         let result = wallet
             .send_resolved_shielded_tip(
-                &coordinator,
                 &seed[..],
                 source,
                 identity_account,
@@ -1278,8 +1384,11 @@ async fn should_refuse_a_first_bind_without_the_account_of_an_unresolved_spend()
         );
     }
     let coordinator = coordinator_at(&dir);
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
 
-    let result = wallet.bind_shielded(&BIND_SEED, &[0], &coordinator).await;
+    let result = wallet.bind_shielded(&BIND_SEED, &[0]).await;
     assert!(
         matches!(
             result,
@@ -1291,7 +1400,7 @@ async fn should_refuse_a_first_bind_without_the_account_of_an_unresolved_spend()
         "{result:?}"
     );
     wallet
-        .bind_shielded(&BIND_SEED, &[0, 1], &coordinator)
+        .bind_shielded(&BIND_SEED, &[0, 1])
         .await
         .expect("bind with the paying account");
 }
@@ -1332,6 +1441,9 @@ async fn should_refuse_a_bind_that_drops_an_account_while_a_damaged_spend_record
         .execute("UPDATE shielded_pending_spends SET anchor = x'00'", [])
         .expect("damage the record");
     let coordinator = coordinator_at(&dir);
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
     assert!(coordinator
         .store()
         .read()
@@ -1339,10 +1451,10 @@ async fn should_refuse_a_bind_that_drops_an_account_while_a_damaged_spend_record
         .has_unloaded_note_spends(wallet.wallet_id()));
 
     wallet
-        .bind_shielded(&BIND_SEED, &[0, 1], &coordinator)
+        .bind_shielded(&BIND_SEED, &[0, 1])
         .await
         .expect("a bind that drops nothing");
-    let result = wallet.bind_shielded(&BIND_SEED, &[0], &coordinator).await;
+    let result = wallet.bind_shielded(&BIND_SEED, &[0]).await;
     assert!(
         matches!(
             result,
@@ -1533,7 +1645,6 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
 
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Account(0),
             0,
@@ -1562,7 +1673,6 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
     let rotated = recipient(1, other.address);
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Account(0),
             0,
@@ -1592,7 +1702,6 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
     // notes to pay with.
     let result = wallet
         .send_resolved_shielded_tip(
-            &coordinator,
             &seed[..],
             ShieldedTipSource::Account(0),
             0,
@@ -1628,37 +1737,31 @@ async fn should_report_an_identitys_shielded_balance_only_once_it_is_known() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("tip_identity_balance").await;
     assert!(matches!(
         wallet
-            .shielded_identity_balance(&coordinator, &Identifier::from([0x01; 32]))
+            .shielded_identity_balance(&Identifier::from([0x01; 32]))
             .await,
         Err(PlatformWalletError::IdentityNotFound(_))
     ));
     // A recorded index alone proves nothing about the account.
     assert_eq!(
-        wallet
-            .shielded_identity_balance(&coordinator, &id)
-            .await
-            .unwrap(),
+        wallet.shielded_identity_balance(&id).await.unwrap(),
         ShieldedIdentityBalance::Unverified
     );
 
     wallet
-        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .prepare_shielded_identity_address(&seed[..], &id)
         .await
         .expect("prepare");
     let account = shielded_identity_account_index(2).unwrap();
     // Proved, but neither restored nor scanned: not a known zero.
     assert_eq!(
-        wallet
-            .shielded_identity_balance(&coordinator, &id)
-            .await
-            .unwrap(),
+        wallet.shielded_identity_balance(&id).await.unwrap(),
         ShieldedIdentityBalance::Unavailable { account }
     );
 
     // Another identity's account being scanned says nothing about this one.
     let other = add_identity_at_slot(&wallet, &seed[..], 0x67, 3).await;
     wallet
-        .prepare_shielded_identity_address(&seed[..], &other, &coordinator)
+        .prepare_shielded_identity_address(&seed[..], &other)
         .await
         .expect("prepare the other identity");
     let identity_subwallet = SubwalletId::new(wallet.wallet_id(), account);
@@ -1685,20 +1788,14 @@ async fn should_report_an_identitys_shielded_balance_only_once_it_is_known() {
             .expect("save a note");
     }
     assert_eq!(
-        wallet
-            .shielded_identity_balance(&coordinator, &id)
-            .await
-            .unwrap(),
+        wallet.shielded_identity_balance(&id).await.unwrap(),
         ShieldedIdentityBalance::Available {
             account,
             credits: 4_200
         }
     );
     assert_eq!(
-        wallet
-            .shielded_identity_balance(&coordinator, &other)
-            .await
-            .unwrap(),
+        wallet.shielded_identity_balance(&other).await.unwrap(),
         ShieldedIdentityBalance::Available {
             account: shielded_identity_account_index(3).unwrap(),
             credits: 0

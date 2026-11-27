@@ -29,6 +29,7 @@ use super::{
 };
 use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
 use crate::manager::{PlatformWalletManager, WalletWorker};
+use crate::test_support::WipeCountingPersistence;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use crate::wallet::platform_wallet::WalletId;
 use dash_async::WorkerStatus;
@@ -576,7 +577,10 @@ async fn should_emit_unbound_after_a_successful_clear() {
     let mut emitter = Emitter::start(&coordinator);
     assert_eq!(ordinary_credits(&emitter.next().await), 0);
 
-    coordinator.clear().await.expect("clear");
+    coordinator
+        .clear(&WipeCountingPersistence::default())
+        .await
+        .expect("clear");
     let update = emitter.next().await;
     assert_eq!(update.state, ShieldedLocalBalanceState::Unbound);
     emitter.assert_quiet().await;

@@ -23,7 +23,7 @@ use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletF
 use crate::handle::Handle;
 use crate::persistence::{funding_type_from_u8, status_from_u8};
 use crate::runtime::block_on_worker;
-use crate::shielded_send::{catch_funding_panic, resolve_wallet_and_coordinator};
+use crate::shielded_send::{catch_funding_panic, resolve_shielded_wallet};
 use crate::types::FFINetwork;
 
 use std::sync::Arc;
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_wallet_drain_preview(
     let mut wallet_id = [0; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     catch_wallet_drain_read_panic("shielded wallet drain preview", || {
-        let (wallet, _) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
             Ok(value) => value,
             Err(error) => return error,
         };
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                     )
                 }
             };
-            let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
                 Ok(value) => value,
                 Err(error) => return error,
             };
@@ -237,7 +237,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                 };
                 wallet
                     .shielded_fund_from_asset_lock(
-                        &coordinator,
                         AssetLockFunding::DrainWalletBalance {
                             account_index,
                             minimum_lock_duffs: None,
@@ -288,7 +287,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_wallet_drain_status(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     std::ptr::copy_nonoverlapping(operation_id_bytes, operation_id.as_mut_ptr(), 16);
     catch_wallet_drain_read_panic("shielded wallet drain status", || {
-        let (wallet, _) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
             Ok(value) => value,
             Err(error) => return error,
         };

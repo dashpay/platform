@@ -1000,6 +1000,8 @@ mod address_patch_tests {
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            #[cfg(feature = "shielded")]
+            Default::default(),
         )
     }
 
@@ -1184,6 +1186,8 @@ mod address_patch_tests {
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            #[cfg(feature = "shielded")]
+            Default::default(),
         );
         assert_eq!(
             wallet.identity().dashpay().sync_profiles().await.unwrap(),

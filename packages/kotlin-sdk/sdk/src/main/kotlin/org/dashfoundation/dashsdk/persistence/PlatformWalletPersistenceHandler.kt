@@ -191,7 +191,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_CORE_SWEEP_REMOVAL or
             CAPABILITY_ASSET_LOCK_OPERATION_IDS or
             CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or
-            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            CAPABILITY_SHIELDED_STATE_WIPE
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -4326,6 +4327,47 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Native Clear's host half: drop the shielded rows of every wallet on
+     * [network] in one transaction. Scoped by the wallet rows' network rather
+     * than the loaded fleet, so a same-network wallet that failed restore
+     * loses its rows too.
+     *
+     * Shielded rows carry no wallet FK, so they are enumerated from the
+     * shielded tables. Rows of a wallet with no wallet row belong to no
+     * wallet on any network and go too, as a wallet deletion would have
+     * taken them. Rows of a wallet whose network is not yet known fail the
+     * wipe with nothing deleted: they may be [network]'s, and reporting
+     * success with them in place would let a later bind restore them.
+     */
+    override fun onWipeShieldedState(network: Int): Int = guarded {
+        runBlockingResult {
+            database.withTransaction {
+                val dao = database.shieldedDao()
+                val doomed = ArrayList<ByteArray>()
+                for (walletId in dao.getShieldedWalletIds()) {
+                    val wallet = database.walletDao().getByWalletId(walletId)
+                    when {
+                        wallet == null -> doomed += walletId
+                        wallet.networkRaw == null -> {
+                            Log.e(TAG, "shielded wipe refused: a wallet with shielded rows has no network")
+                            return@withTransaction 1
+                        }
+                        wallet.networkRaw == network -> doomed += walletId
+                    }
+                }
+                for (walletId in doomed) {
+                    dao.deleteActivityByWallet(walletId)
+                    dao.deleteOutgoingNotesByWallet(walletId)
+                    dao.deleteNotesByWallet(walletId)
+                    dao.deleteSyncStatesByWallet(walletId)
+                    dao.deleteViewingKeysByWallet(walletId)
+                }
+                0
+            }
+        }
+    }
+
     // ── Load callbacks ────────────────────────────────────────────────
 
     /**
@@ -6016,6 +6058,9 @@ class PlatformWalletPersistenceHandler(
 
         internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+
+        internal const val CAPABILITY_SHIELDED_STATE_WIPE: Long =
+            NativePersistenceBridge.CAPABILITY_SHIELDED_STATE_WIPE
 
         internal const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long =
             NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS

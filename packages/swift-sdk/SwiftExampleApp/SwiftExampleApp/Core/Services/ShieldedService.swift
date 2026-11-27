@@ -766,20 +766,21 @@ class ShieldedService: ObservableObject {
         syncTickTimer = nil
     }
 
-    /// Wipe every wallet's persisted shielded state and stop. The
-    /// service is left unbound, but the stashed bind credentials
-    /// (`walletManager` / `boundWalletId` / `network` / `resolver`
-    /// / `boundAccounts`) survive so [`manualSync`] can rebind on
-    /// demand without the user navigating away. The "Sync Now"
-    /// button on the Sync Status screen is the path back —
-    /// pressing it self-binds + syncs from a clean SQLite tree
-    /// and an empty SwiftData snapshot.
+    /// Wipe the network's shielded state and stop. The service is left
+    /// unbound, but the stashed bind credentials (`walletManager` /
+    /// `boundWalletId` / `network` / `resolver` / `boundAccounts`)
+    /// survive so [`manualSync`] can rebind on demand without the user
+    /// navigating away. The "Sync Now" button on the Sync Status screen
+    /// is the path back — pressing it self-binds + syncs from a clean
+    /// SQLite tree and an empty SwiftData snapshot.
     ///
-    /// The user reaches this through the Clear button on the
-    /// **global** Sync Status surface, not a per-wallet screen.
-    /// "Clear" therefore wipes every wallet's shielded rows and
-    /// empties the per-network commitment tree, so the rebind on
-    /// the next Sync Now walks the cmx stream from genesis.
+    /// The user reaches this through the Clear button on the **global**
+    /// Sync Status surface, not a per-wallet screen. `clearShielded()`
+    /// resets every wallet's shielded state on the manager's network and,
+    /// before returning, has the persistence handler delete every
+    /// shielded SwiftData row of that network's wallets
+    /// (`PlatformWalletPersistenceHandler.wipeShieldedState`). Nothing is
+    /// deleted here, so a sync or bind cannot land rows between the two.
     ///
     /// What survives the reset:
     ///   * The per-network commitment-tree SQLite file at
@@ -793,13 +794,7 @@ class ShieldedService: ObservableObject {
     ///     inline soft-cleanup below only zeroes the published
     ///     mirror; [`canResume`] therefore stays `true` and the
     ///     Sync Now button stays usable.
-    ///
-    /// Per-wallet scoping was tried first and rejected because the
-    /// Clear button doesn't carry wallet context — other wallets'
-    /// `PersistentShieldedSyncState` rows would silently survive
-    /// (the symptom the user reported when "Clear" left a row
-    /// behind for a non-active wallet).
-    func clearLocalState(modelContext: ModelContext) async {
+    func clearLocalState() async {
         // Capture the manager before the soft-cleanup below
         // touches anything, so we can stop the background loop
         // first. (We used to capture `network` here too for the
@@ -814,66 +809,24 @@ class ShieldedService: ObservableObject {
             fields: ["wallet_count": .integer(Int64(walletManager?.wallets.count ?? 0))]
         )
 
-        // 1) Reset the Rust-side shielded state BEFORE touching
-        //    state on disk. The Swift `ShieldedService` is
-        //    per-wallet-at-a-time, but the Rust
-        //    `PlatformWalletManager` keeps **every** wallet that
-        //    ever ran `bind_shielded` registered on the
-        //    network-scoped coordinator. Without this call the
-        //    coordinator's next sync iterates the still-registered
-        //    wallets and the persister callback immediately
-        //    re-creates the `PersistentShieldedNote` /
-        //    `PersistentShieldedSyncState` rows we're about to
-        //    delete (the "Clear left a row behind / re-derived a
-        //    fresh row" symptom from before). `clearShielded`
-        //    does three things on the Rust side in one call:
-        //      - stops the background sync loop
-        //      - drops every wallet registration from the
-        //        coordinator (`accounts` + `persisters` maps)
-        //      - resets the network-wide caught-up cooldown
-        //    The single SQLite commitment-tree file stays open;
-        //    the next `bindShielded` call repopulates the
-        //    registries and the next sync re-saves notes via
-        //    the changeset path. This reset is load-bearing: if it
-        //    cannot run, abort the host-row wipe so the tree file and
-        //    SwiftData rows cannot diverge.
+        // Re-binding scope after Clear: `clearShielded` drops EVERY
+        // wallet (not just the mirror's `firstWallet`) from the
+        // coordinator. "Sync Now" (`manualSync()`) re-registers every
+        // loaded wallet on each tap: the mirror wallet via `bind(...)`
+        // (in the recovery branch, only when unbound), and every OTHER
+        // loaded wallet via the `engineBindOtherWallets` / `bindEngine`
+        // pass, best-effort across the mirror. `rebindWalletScopedServices`
+        // remains the recovery path for wallets loaded LATER.
         //
-        //    Re-binding scope after Clear: `clearShielded` drops
-        //    EVERY wallet (not just the mirror's `firstWallet`)
-        //    from the coordinator. "Sync Now" (`manualSync()`)
-        //    UNCONDITIONALLY re-registers EVERY loaded wallet on each
-        //    tap: the mirror wallet via `bind(...)` (in the recovery
-        //    branch, only when unbound), and every OTHER loaded wallet
-        //    via a `engineBindOtherWallets` / `bindEngine` pass that
-        //    runs on every Sync Now regardless of the recovery branch.
-        //    That unconditional pass matters because a detail-view
-        //    `switchTo` between Clear and Sync Now re-binds only the
-        //    viewed wallet (flipping `isBound` true and skipping the
-        //    recovery branch), which would otherwise leave the other
-        //    wallets engine-unregistered. The pass is also best-effort
-        //    across the mirror: a mirror-bind FAILURE (missing mnemonic
-        //    / declined resolver) no longer bails Sync Now — the engine
-        //    pass still runs so every OTHER wallet with an intact
-        //    mnemonic re-registers, and Sync Now only bails when NOTHING
-        //    registered (mirror + every other bind failed). So
-        //    cross-wallet shielded flows (SH-14/15/16) come back
-        //    immediately on the first post-Clear Sync Now, not only on
-        //    the next `rebindWalletScopedServices()` fire.
-        //    `rebindWalletScopedServices` remains the recovery path for
-        //    wallets loaded LATER (a wallet added after the Clear isn't
-        //    in the manager's set at Sync-Now time); it re-`bindEngine`s
-        //    every wallet on any wallet-set change or network switch. We
-        //    keep the WIPE scope global on purpose (see the class-level
-        //    doc below) — this note is about the re-BIND scope.
-        //
-        //    `prepareForShieldedRebind()` runs once Rust has acted on the
-        //    Clear (`afterResetAttempt`), in the same synchronous MainActor
-        //    turn as `clearShielded()`, so no queued event is delivered
-        //    between the two; the only thing `clearShielded()` publishes on
-        //    the way is the progress reset, which the rebind prep repeats.
-        //    A Clear Rust refused because a shielded operation is in flight
-        //    changed nothing there: the wallet is still bound and the loop
-        //    still runs, so the service is left exactly as it was.
+        // `prepareForShieldedRebind()` runs once Rust has acted on the
+        // Clear (`afterResetAttempt`), in the same synchronous MainActor
+        // turn as `clearShielded()`, so no queued event is delivered
+        // between the two; the only thing `clearShielded()` publishes on
+        // the way is the progress reset, which the rebind prep repeats.
+        // A Clear Rust refused because a shielded operation is in flight
+        // changed nothing there: the wallet is still bound, the loop still
+        // runs and the host's rows were not wiped, so the service is left
+        // exactly as it was.
         guard let managerForStop else {
             prepareForShieldedRebind()
             lastError = "Failed to reset shielded state: no wallet manager is bound."
@@ -887,7 +840,7 @@ class ShieldedService: ObservableObject {
         }
 
         do {
-            try Self.executeClearPersistenceSequence(
+            try Self.executeClearSequence(
                 resetRustState: {
                     try managerForStop.clearShielded()
                 },
@@ -899,24 +852,9 @@ class ShieldedService: ObservableObject {
                     // included: the native clear can purge before a later
                     // error is returned. A refused Clear purged nothing.
                     localStateClearCount &+= 1
-                },
-                clearHostState: {
-                    // Delete every shielded SwiftData row across all
-                    // wallets on this device. The Clear button is on the
-                    // global Sync Status surface, so this is intentionally
-                    // global rather than wallet-scoped.
-                    try modelContext.delete(model: PersistentShieldedNote.self)
-                    try modelContext.delete(model: PersistentShieldedOutgoingNote.self)
-                    try modelContext.delete(model: PersistentShieldedSyncState.self)
-                    try modelContext.delete(model: PersistentShieldedActivity.self)
-                    // Viewing keys are included so a corrupted row cannot
-                    // outlive Clear; the next bind re-persists them.
-                    try modelContext.delete(model: PersistentShieldedViewingKey.self)
-                    try modelContext.save()
                 }
             )
         } catch {
-            let phase: String
             let underlyingError: Error
             switch error {
             case .refusedDuringShieldedOperation:
@@ -933,29 +871,21 @@ class ShieldedService: ObservableObject {
                 )
                 return
             case .rustReset(let error):
-                phase = "rust_state"
                 underlyingError = error
-                lastError =
-                    "Failed to reset shielded state: \(error.localizedDescription)"
-            case .hostPersistence(let error):
-                phase = "host_persistence"
-                underlyingError = error
-                lastError =
-                    "Failed to wipe persisted shielded state: "
-                    + error.localizedDescription
             }
+            lastError = "Failed to reset shielded state: \(underlyingError.localizedDescription)"
             SDKLogger.event(
                 "shielded_reset_failed",
                 category: .shielded,
                 severity: .error,
-                fields: ["phase": .publicText(phase)],
+                fields: ["phase": .publicText("clear")],
                 error: underlyingError
             )
             return
         }
 
-        // 3) Finish zeroing the published mirror. The subscriptions
-        //    were cancelled once Rust had reset. Keep the bind credentials
+        // Finish zeroing the published mirror. The subscriptions
+        //    were cancelled once Rust had acted on the Clear. Keep the bind credentials
         //    (walletManager / boundWalletId / network / resolver
         //    / boundAccounts) so [`manualSync`] can re-bind on
         //    the next Sync Now tap. Bare [`reset`] would nil
@@ -984,7 +914,6 @@ class ShieldedService: ObservableObject {
         /// Nothing changed there, so nothing changes here either.
         case refusedDuringShieldedOperation
         case rustReset(Error)
-        case hostPersistence(Error)
     }
 
     /// Shown when Clear is tapped while a shielded operation is in flight.
@@ -992,19 +921,19 @@ class ShieldedService: ObservableObject {
     static let clearRefusedDuringShieldedOperationMessage =
         "A shielded payment or wallet setup is in progress. Try Clear again when it finishes."
 
-    /// Enforces reset-before-delete ordering for the two persistence halves.
-    /// Kept separate from the user-facing operation so tests can exercise
-    /// failure ordering without exposing a reset bypass on `clearLocalState`.
+    /// Runs the Rust Clear and sorts its outcome. Kept separate from the
+    /// user-facing operation so tests can exercise the outcomes without a
+    /// live manager. The host deletes nothing here: Rust's Clear wipes the
+    /// host rows itself through the persistence handler.
     ///
     /// `afterResetAttempt` runs once Rust has acted on the Clear, whether the
-    /// reset succeeded or failed, and before the host wipe. It does not run
-    /// when Rust refused the Clear because a shielded operation is in
-    /// flight: Rust changed nothing then, so the host keeps its binding,
-    /// subscriptions and rows.
-    static func executeClearPersistenceSequence(
+    /// reset succeeded or failed. It does not run when Rust refused the Clear
+    /// because a shielded operation is in flight: Rust changed nothing then
+    /// and the host's rows were not wiped, so the host keeps its binding and
+    /// subscriptions.
+    static func executeClearSequence(
         resetRustState: () throws -> Void,
-        afterResetAttempt: () -> Void,
-        clearHostState: () throws -> Void
+        afterResetAttempt: () -> Void
     ) throws(ClearLocalStateFailure) {
         do {
             try resetRustState()
@@ -1015,11 +944,6 @@ class ShieldedService: ObservableObject {
             throw ClearLocalStateFailure.rustReset(error)
         }
         afterResetAttempt()
-        do {
-            try clearHostState()
-        } catch {
-            throw ClearLocalStateFailure.hostPersistence(error)
-        }
     }
 
     /// A clear attempt Rust acted on quiesced Rust before it could report

@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
-use crate::sqlite::schema::{blob, id32};
+use crate::sqlite::schema::{blob, id32, wallets};
 
 const VIEWING_KEY_WIDTH: usize = 96;
 
@@ -65,6 +65,21 @@ pub(crate) fn apply(
             viewing_key,
         ])?;
     }
+    Ok(())
+}
+
+/// Delete the viewing keys of every wallet stored on `network`, and of every
+/// wallet with no `wallets` row, whose network is unknown.
+pub(crate) fn delete_for_network(
+    tx: &Transaction<'_>,
+    network: key_wallet::Network,
+) -> Result<(), WalletStorageError> {
+    tx.execute(
+        "DELETE FROM shielded_viewing_keys WHERE wallet_id IN \
+         (SELECT wallet_id FROM wallets WHERE network = ?1) \
+         OR wallet_id NOT IN (SELECT wallet_id FROM wallets)",
+        params![wallets::network_to_str(network)],
+    )?;
     Ok(())
 }
 

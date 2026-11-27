@@ -50,7 +50,6 @@ use super::keys::AccountViewingKeys;
 use super::operations::shielded_actions;
 use super::store::ShieldedStore;
 use super::tips::{is_shielded_identity_account, SHIELDED_IDENTITY_ACCOUNT_BASE};
-use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::PlatformWalletError;
 
@@ -451,7 +450,7 @@ impl PlatformWallet {
     /// shielded payment to that recipient is still unresolved, in which case
     /// a send is refused.
     ///
-    /// Confirmed recipients are kept per wallet in `coordinator`'s store by
+    /// Confirmed recipients are kept per wallet in the coordinator's store by
     /// the name's normalized label. A send records the recipient it pays, a
     /// shielded Clear keeps the record, and removing the wallet drops it.
     ///
@@ -468,17 +467,24 @@ impl PlatformWallet {
     /// an identity or by Platform addresses is not counted, whomever it
     /// pays.
     ///
-    /// Requires the wallet's shielded accounts to be bound on `coordinator`,
-    /// with no Clear since ([`PlatformWalletError::ShieldedNotBound`]
-    /// otherwise). Changes nothing.
+    /// Requires the wallet's shielded accounts to be bound, with no Clear
+    /// since ([`PlatformWalletError::ShieldedNotBound`] otherwise). Changes
+    /// nothing.
     pub async fn review_shielded_tip(
         &self,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
         username: &str,
         expected_identity: Option<&Identifier>,
     ) -> Result<ShieldedTipReview, PlatformWalletError> {
-        // Refused before the lookups, and checked again below.
-        self.ensure_shielded_bound_on(coordinator)?;
+        let coordinator = self.shielded_coordinator().await?;
+        // Refused before the lookups, and checked again below: the wallet is
+        // registered and no Clear is running. The epoch tells a Clear that
+        // finishes meanwhile.
+        let epoch = coordinator
+            .settled_epoch()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        if !coordinator.is_wallet_registered(self.wallet_id()).await {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         let recipient = self
             .resolve_tip_recipient(username, expected_identity)
             .await?;
@@ -501,14 +507,13 @@ impl PlatformWallet {
         );
         // The rows were read under the store guard still held. They are not
         // this wallet's history if a Clear is purging them (it is admitted
-        // from before its purge until it has advanced the generation), if
-        // one finished since the wallet was bound, or if the caller passed
-        // another coordinator: the review would then show a changed or
-        // still unpaid recipient as new and free.
-        if coordinator.clear_in_progress() {
+        // from before its purge until it has advanced the epoch) or if one
+        // finished since the review started: the review would then show a
+        // changed or still unpaid recipient as new and free. Neither check
+        // waits, so nothing is awaited under the store guard.
+        if coordinator.clear_in_progress() || coordinator.settled_epoch() != Some(epoch) {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
-        self.ensure_shielded_bound_on(coordinator)?;
         // Nor if the wallet was removed during the lookups: a removal marks
         // the handle before it purges the wallet's confirmed recipients,
         // and that purge waits for the store guard held here.
@@ -568,14 +573,13 @@ impl PlatformWallet {
     /// about the earlier payment that caused it, which may pay the
     /// recipient: see the variant.
     ///
-    /// Holds the wallet's lifecycle gate, `coordinator`'s operation
-    /// admission and the account-set lock through the spend, so a removal
-    /// of the wallet, a shielded Clear and a bind wait for it.
+    /// Holds the wallet's lifecycle gate, the coordinator's admission and
+    /// the account-set lock through the spend, so a removal of the wallet
+    /// and a bind wait for it, and a shielded Clear is refused meanwhile.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_shielded_tip<P: OrchardProver>(
         &self,
         admission: ShieldedTipAdmission,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
         source: ShieldedTipSource,
         username: &str,
@@ -600,20 +604,17 @@ impl PlatformWallet {
             ));
         }
         let _sending = admission;
-        let _lifecycle = self.core().generation_payment_guard().await;
-        if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
-                self.wallet_id(),
-            )));
-        }
+        // Held through settlement, so a removal waits for the tip and a
+        // Clear is refused instead of purging the store it reserves in and
+        // settles against. Refused for a wallet removed, or not bound since
+        // the last Clear.
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
         coordinator.ensure_network(self.sdk.network)?;
-        // Held through settlement, so a Clear waits for the tip instead of
-        // purging the store it reserves in and settles against.
-        let _operation = coordinator.operation_guard().await;
+        let _admission = locks.admit_spend(self).await?;
         // A bind that dropped the paying account would purge the notes the
         // tip reserves, and its saved record with them.
         let _config = self.shielded_config_lock.lock().await;
-        self.ensure_shielded_bound_on(coordinator)?;
         let account = self.tip_source_account(seed, source).await?;
         // The name is looked up again, and its owner checked against the
         // expected identity before its profile is read: a name that moved
@@ -633,7 +634,6 @@ impl PlatformWallet {
         self.ensure_tip_source_selects(seed, source, account)
             .await?;
         self.send_resolved_shielded_tip(
-            coordinator,
             seed,
             source,
             account,
@@ -662,7 +662,6 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn send_resolved_shielded_tip<P: OrchardProver>(
         &self,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
         source: ShieldedTipSource,
         account: u32,
@@ -672,6 +671,7 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        let coordinator = &self.shielded_coordinator().await?;
         // Refused before the recipient is recorded as confirmed: the
         // transfer would refuse it only afterwards.
         if amount == 0 {
@@ -755,32 +755,40 @@ impl PlatformWallet {
     ///   index is not proof: it may be a placeholder a host restored, whose
     ///   account belongs to another identity.
     /// - [`ShieldedIdentityBalance::Unavailable`] while that account's
-    ///   ledger is not established on `coordinator` (not bound, or neither
-    ///   restored nor scanned).
+    ///   ledger is not established (not bound, or neither restored nor
+    ///   scanned).
     /// - [`ShieldedIdentityBalance::Available`] with its spendable credits.
     ///
     /// A host shows these states and does not add up stored notes, which
     /// cannot tell an empty account from one whose ledger was cleared.
     /// Reads local state only. Fails with
     /// [`PlatformWalletError::IdentityNotFound`] for an identity this wallet
-    /// does not hold, with [`PlatformWalletError::ShieldedNotBound`] for a
-    /// `coordinator` other than the one the proved account is bound on, and
-    /// with [`PlatformWalletError::ShieldedBalanceBusy`] while a shielded
-    /// Clear is admitted and has not finished: the caller keeps the state
-    /// it last read and reads again. An identity whose account is not
-    /// proved is `Unverified` whichever coordinator is passed.
+    /// does not hold, and with [`PlatformWalletError::ShieldedBalanceBusy`]
+    /// while a shielded Clear is admitted and has not finished: the caller
+    /// keeps the state it last read and reads again. Before the manager's
+    /// shielded store is configured no account can be proved, and every
+    /// identity is `Unverified`.
     pub async fn shielded_identity_balance(
         &self,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
         identity_id: &Identifier,
     ) -> Result<ShieldedIdentityBalance, PlatformWalletError> {
         self.ensure_wallet_identity(identity_id).await?;
-        let Some(account) = self.prepared_shielded_identity_account(identity_id).await else {
+        let Ok(coordinator) = self.shielded_coordinator().await else {
             return Ok(ShieldedIdentityBalance::Unverified);
         };
-        // The account was proved on the coordinator the wallet is bound on.
-        // Another coordinator's ledger says nothing about it.
-        self.ensure_shielded_bound_on(coordinator)?;
+        let Some(account) = self.prepared_shielded_identity_account(identity_id).await else {
+            // A preparation is not read while a Clear holds the admission,
+            // and that Clear may yet give up with the preparation standing.
+            return match coordinator.clear_in_progress() {
+                true => Err(PlatformWalletError::ShieldedBalanceBusy),
+                false => Ok(ShieldedIdentityBalance::Unverified),
+            };
+        };
+        // The amount read below is this epoch's or the read is retried: a
+        // Clear that holds the admission, or waits for it, reads as none.
+        let Some(epoch) = coordinator.settled_epoch() else {
+            return Err(PlatformWalletError::ShieldedBalanceBusy);
+        };
         let established = match coordinator.local_balance_snapshot(self.wallet_id()).await? {
             ShieldedLocalBalanceState::Ready(snapshot) => snapshot
                 .accounts
@@ -791,6 +799,8 @@ impl PlatformWallet {
                 None
             }
         };
+        #[cfg(test)]
+        super::tips::test_hooks::after_balance_read(self).await;
         // Whether a Clear is admitted is sampled before the preparation is
         // read again, not after: a Clear that wiped the ledger just read
         // and finished between the two checks would otherwise be seen by
@@ -798,18 +808,26 @@ impl PlatformWallet {
         let clearing = coordinator.clear_in_progress();
         // A Clear ends the preparation: one that finished since the
         // preparation was read leaves the account unproved. Checked after
-        // the read rather than by holding the coordinator's operation
-        // admission across it, which would refuse a Clear for as long as
-        // the read waited for the store.
-        if self.prepared_shielded_identity_account(identity_id).await != Some(account) {
-            return Ok(ShieldedIdentityBalance::Unverified);
-        }
+        // the read rather than by holding the coordinator's admission
+        // across it, which would refuse a Clear for as long as the read
+        // waited for the store.
+        let standing = self.prepared_shielded_identity_account(identity_id).await;
         // A Clear that was admitted and had not finished may be purging the
         // ledger just read, and may also give up without wiping anything,
-        // with the preparation still standing. Neither is known yet, so
+        // with the preparation still standing; while it holds the admission
+        // the preparation is not read at all. None of it is known yet, so
         // nothing is reported: the caller reads again.
-        if clearing {
+        if clearing || coordinator.clear_in_progress() {
             return Err(PlatformWalletError::ShieldedBalanceBusy);
+        }
+        // A Clear that started and finished since the amount was read wiped
+        // the ledger it came from, whatever the preparation read says: the
+        // epoch moved, and the caller reads again.
+        if coordinator.settled_epoch() != Some(epoch) {
+            return Err(PlatformWalletError::ShieldedBalanceBusy);
+        }
+        if standing != Some(account) {
+            return Ok(ShieldedIdentityBalance::Unverified);
         }
         Ok(match established {
             Some(credits) => ShieldedIdentityBalance::Available { account, credits },
@@ -828,12 +846,11 @@ impl PlatformWallet {
     /// the state last read and read again; every other one is a failure.
     pub async fn shielded_identity_balance_now(
         &self,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
         identity_id: &Identifier,
     ) -> Result<ShieldedIdentityBalance, PlatformWalletError> {
         tokio::time::timeout(
             SHIELDED_IDENTITY_BALANCE_WAIT,
-            self.shielded_identity_balance(coordinator, identity_id),
+            self.shielded_identity_balance(identity_id),
         )
         .await
         .unwrap_or(Err(PlatformWalletError::ShieldedBalanceBusy))

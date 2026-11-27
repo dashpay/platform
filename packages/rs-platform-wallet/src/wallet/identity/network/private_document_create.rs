@@ -721,6 +721,7 @@ mod tests {
     #[cfg(feature = "shielded")]
     mod create {
         use super::*;
+        use crate::test_support::WipeCountingPersistence;
         use crate::wallet::identity::network::private_documents::tests::wallet_keeping;
         use crate::wallet::shielded::viewing_key_bind_tests::CapturingPersistence;
         use crate::wallet::shielded::{
@@ -759,13 +760,11 @@ mod tests {
         /// Create `new` from `wallet`'s account 0, sealed by `crypto`.
         async fn create<C: ContactCryptoProvider + Sync>(
             wallet: &PlatformWallet,
-            coordinator: &Arc<NetworkShieldedCoordinator>,
             crypto: &C,
             new: &NewPrivateDocumentEntry,
         ) -> Result<PrivateDocumentEntryCreated, PlatformWalletError> {
             wallet
                 .create_private_document_entry(
-                    coordinator,
                     &seed(ALICE_PHRASE),
                     0,
                     new,
@@ -799,6 +798,9 @@ mod tests {
             let coordinator = coordinator_at(dir.path());
             let alice = identity(ALICE_PHRASE, ALICE, true);
             let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+            wallet
+                .attach_shielded_coordinator_for_test(&coordinator)
+                .await;
             serve_bob(&wallet, identity(BOB_PHRASE, BOB, true)).await;
 
             let mut signing_key = new_entry(PrivateDocumentSenderAuth::Anonymous, "hello");
@@ -808,7 +810,7 @@ mod tests {
             not_json.properties_json = "[1]".to_string();
             for new in [signing_key, too_short, not_json] {
                 // `NoKeys` and `UnreachableProver` panic if reached.
-                let refused = create(&wallet, &coordinator, &NoKeys, &new).await;
+                let refused = create(&wallet, &NoKeys, &new).await;
                 assert!(
                     matches!(refused, Err(PlatformWalletError::InvalidParameter(_))),
                     "{refused:?}"
@@ -827,12 +829,15 @@ mod tests {
             let coordinator = coordinator_at(dir.path());
             let alice = identity(ALICE_PHRASE, ALICE, true);
             let (manager, removed) = wallet(ALICE_PHRASE, &alice).await;
+            removed
+                .attach_shielded_coordinator_for_test(&coordinator)
+                .await;
             serve_bob(&removed, identity(BOB_PHRASE, BOB, true)).await;
             let new = new_entry(PrivateDocumentSenderAuth::Anonymous, "hello");
             let wallet_id = removed.wallet_id();
 
             manager.remove_wallet(&wallet_id).await.expect("removed");
-            let refused = create(&removed, &coordinator, &NoKeys, &new).await;
+            let refused = create(&removed, &NoKeys, &new).await;
             assert!(
                 matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
                     if *id == hex::encode(wallet_id)),
@@ -849,7 +854,7 @@ mod tests {
                 .await
                 .expect("re-created");
             assert_eq!(recreated.wallet_id(), wallet_id);
-            let refused = create(&removed, &coordinator, &NoKeys, &new).await;
+            let refused = create(&removed, &NoKeys, &new).await;
             assert!(
                 matches!(
                     refused,
@@ -870,10 +875,12 @@ mod tests {
             let coordinator = coordinator_at(dir.path());
             let alice = identity(ALICE_PHRASE, ALICE, true);
             let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+            wallet
+                .attach_shielded_coordinator_for_test(&coordinator)
+                .await;
             serve_bob(&wallet, identity(BOB_PHRASE, BOB, true)).await;
             let current = create(
                 &wallet,
-                &coordinator,
                 &alice_crypto(),
                 &new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob"),
             )
@@ -910,7 +917,7 @@ mod tests {
                 .expect("configured");
             let coordinator = manager.shielded_coordinator().await.expect("coordinator");
             wallet
-                .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+                .bind_shielded(&seed(ALICE_PHRASE), &[0])
                 .await
                 .expect("bound");
             (manager, wallet, coordinator)
@@ -930,11 +937,9 @@ mod tests {
             let keys = wallet.shielded_keys.write().await;
             let running = {
                 let wallet = Arc::clone(&wallet);
-                let coordinator = Arc::clone(&coordinator);
                 tokio::spawn(async move {
                     create(
                         &wallet,
-                        &coordinator,
                         &alice_crypto(),
                         &new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob"),
                     )
@@ -961,9 +966,12 @@ mod tests {
                 removal_waits().await,
                 "a removal waits for the create in flight"
             );
-            let refused = tokio::time::timeout(REACHED, coordinator.clear())
-                .await
-                .expect("a Clear does not wait for the create");
+            let refused = tokio::time::timeout(
+                REACHED,
+                coordinator.clear(&WipeCountingPersistence::default()),
+            )
+            .await
+            .expect("a Clear does not wait for the create");
             assert!(
                 matches!(
                     refused,
@@ -996,7 +1004,7 @@ mod tests {
             );
             assert!(!removal_waits().await);
             coordinator
-                .clear()
+                .clear(&WipeCountingPersistence::default())
                 .await
                 .expect("a Clear goes through once the create has returned");
         }
@@ -1032,7 +1040,7 @@ mod tests {
             let new = new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob");
 
             let mut held = coordinator.store().write().await;
-            let mut creating = Box::pin(create(&wallet, &coordinator, &crypto, &new));
+            let mut creating = Box::pin(create(&wallet, &crypto, &new));
             let mut steps = 0;
             while !held.get_unspent_notes(id).expect("notes").is_empty() {
                 steps += 1;
@@ -1059,9 +1067,12 @@ mod tests {
                 coordinator.has_admitted_operation(),
                 "still admitted with its note reserved"
             );
-            let refused = tokio::time::timeout(REACHED, coordinator.clear())
-                .await
-                .expect("a Clear does not wait for the create");
+            let refused = tokio::time::timeout(
+                REACHED,
+                coordinator.clear(&WipeCountingPersistence::default()),
+            )
+            .await
+            .expect("a Clear does not wait for the create");
             assert!(
                 matches!(
                     refused,
@@ -1097,7 +1108,7 @@ mod tests {
             );
             assert!(!coordinator.has_admitted_operation());
             coordinator
-                .clear()
+                .clear(&WipeCountingPersistence::default())
                 .await
                 .expect("a Clear goes through once the create has returned");
         }
@@ -1105,7 +1116,7 @@ mod tests {
         /// A create does not wait for a bind of its wallet, nor for what that
         /// bind waits for: an asset-lock funding holds `shield_guard` across
         /// a ChainLock wait with no deadline, and a bind that arrives then
-        /// waits for the guard holding the configuration lock. The create
+        /// waits for the guard holding only the lifecycle gate. The create
         /// returns all the same, with the guard still held.
         #[tokio::test]
         async fn should_not_hold_a_create_behind_a_bind_queued_on_a_funding() {
@@ -1116,19 +1127,20 @@ mod tests {
             let funding = wallet.shield_guard.lock().await;
             let bind = {
                 let wallet = Arc::clone(&wallet);
-                let coordinator = Arc::clone(&coordinator);
-                tokio::spawn(async move {
-                    wallet
-                        .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
-                        .await
-                })
+                tokio::spawn(async move { wallet.bind_shielded(&seed(ALICE_PHRASE), &[0]).await })
             };
-            // The bind has the configuration lock, and waits for the guard.
+            // The bind has the lifecycle gate, and waits for the guard.
             let deadline = tokio::time::Instant::now() + REACHED;
-            while wallet.shielded_config_lock.try_lock().is_ok() {
+            while tokio::time::timeout(
+                Duration::from_millis(100),
+                wallet.generation().teardown_guard(),
+            )
+            .await
+            .is_ok()
+            {
                 assert!(
                     tokio::time::Instant::now() < deadline,
-                    "the bind never took the configuration lock"
+                    "the bind never took the lifecycle gate"
                 );
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
@@ -1137,7 +1149,6 @@ mod tests {
                 REACHED,
                 create(
                     &wallet,
-                    &coordinator,
                     &alice_crypto(),
                     &new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob"),
                 ),
@@ -1172,12 +1183,15 @@ mod tests {
             let (_manager, wallet, coordinator) = bound_alice(dir.path()).await;
             let new = new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob");
 
-            coordinator.clear().await.expect("cleared");
+            coordinator
+                .clear(&WipeCountingPersistence::default())
+                .await
+                .expect("cleared");
             assert!(
                 wallet.is_shielded_bound().await,
                 "the handle keeps its keys across a Clear"
             );
-            let refused = create(&wallet, &coordinator, &alice_crypto(), &new).await;
+            let refused = create(&wallet, &alice_crypto(), &new).await;
             assert!(
                 matches!(refused, Err(PlatformWalletError::ShieldedNotBound)),
                 "{refused:?}"
@@ -1185,10 +1199,10 @@ mod tests {
             assert!(!coordinator.has_admitted_operation());
 
             wallet
-                .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+                .bind_shielded(&seed(ALICE_PHRASE), &[0])
                 .await
                 .expect("bound again");
-            let admitted = create(&wallet, &coordinator, &alice_crypto(), &new).await;
+            let admitted = create(&wallet, &alice_crypto(), &new).await;
             assert!(
                 !matches!(
                     admitted,

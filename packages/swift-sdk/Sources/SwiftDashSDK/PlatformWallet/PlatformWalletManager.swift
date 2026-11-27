@@ -132,6 +132,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
     /// the declaration when all three slots are wired.
     public static let outpointLocks: UInt64 = 1 << 16
+    /// The store deletes its shielded rows for a network when native Clear
+    /// asks (`on_wipe_shielded_state_fn`), which `clearShielded()` requires.
+    /// Mirrors `PersistenceCapabilities::SHIELDED_STATE_WIPE`; Rust only
+    /// honours the declaration when the wipe callback is wired.
+    public static let shieldedStateWipe: UInt64 = 1 << 17
 
     public let version: UInt32
     public let bits: UInt64
@@ -777,6 +782,12 @@ public class PlatformWalletManager: ObservableObject {
     /// [`nativeTeardownCalls`].
     internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
         platform_wallet_manager_shielded_shield_from_identity_to_recipient
+
+    /// Test seam for the native call behind `clearShielded()`, so its
+    /// admission and its handling of Rust's answer are tested without a live
+    /// native manager; same contract as [`nativeTeardownCalls`].
+    internal var nativeShieldedClearCall: ShieldedClearCall =
+        platform_wallet_manager_shielded_clear
 
     /// Test-only: told the operation name each time [`admitNativeOp`] admits
     /// an operation, so a test can prove an entry point is admitted without a
@@ -1452,8 +1463,7 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
-    /// `clearShielded`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an
@@ -1474,12 +1484,6 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
-    /// Whether an async native operation is admitted and has not finished.
-    /// For a synchronous entrypoint that reports that refusal by a typed
-    /// error of its own instead of [`ensureSyncNativeOpAllowed`]'s
-    /// `invalidHandle`.
-    var hasAdmittedNativeOp: Bool { activeNativeOpCount > 0 }
-
     func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {

@@ -83,7 +83,6 @@ impl ShieldedTokenPurchaser {
         let result = self
             .wallet
             .shielded_token_purchase_from_pool(
-                &self.coordinator,
                 seed,
                 account,
                 data_contract_id,
@@ -121,7 +120,6 @@ impl ShieldedTokenPurchaser {
         let result = self
             .wallet
             .shielded_token_transfer(
-                &self.coordinator,
                 seed,
                 account,
                 data_contract_id,
@@ -159,7 +157,6 @@ impl ShieldedTokenPurchaser {
         let result = self
             .wallet
             .shielded_token_unshield(
-                &self.coordinator,
                 seed,
                 account,
                 data_contract_id,

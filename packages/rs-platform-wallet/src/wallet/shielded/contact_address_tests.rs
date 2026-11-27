@@ -20,6 +20,7 @@ use super::viewing_key_bind_tests::{
     coordinator_at, seed_master_key, temp_dir, CapturingPersistence,
 };
 use crate::error::PlatformWalletError;
+use crate::test_support::WipeCountingPersistence;
 use crate::wallet::identity::network::{
     derive_identity_auth_key_hash_from_master, ContactCryptoProvider, ContactInfoOpened,
     ContactInfoSealed, SeedCryptoProvider, MASTER_KEY_INDEX,
@@ -87,6 +88,7 @@ async fn fixture(
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::changeset::DurableCursors::default(),
+        Default::default(),
     );
     let id = Identifier::from([0x66; 32]);
     {
@@ -105,9 +107,9 @@ async fn fixture(
     if bind {
         let coordinator = coordinator_at(&temp_dir(tag));
         wallet
-            .bind_shielded(&seed[..], &[0], &coordinator)
-            .await
-            .unwrap();
+            .attach_shielded_coordinator_for_test(&coordinator)
+            .await;
+        wallet.bind_shielded(&seed[..], &[0]).await.unwrap();
     }
     (wallet, *seed, id)
 }
@@ -618,15 +620,18 @@ async fn should_still_give_the_address_after_a_clear_from_the_keys_held_in_memor
     let (wallet, seed, id) = fixture("contact_address_cleared", 15, false).await;
     let coordinator = coordinator_at(&temp_dir("contact_address_cleared"));
     wallet
-        .bind_shielded(&seed[..], &[0], &coordinator)
-        .await
-        .unwrap();
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    wallet.bind_shielded(&seed[..], &[0]).await.unwrap();
     let crypto = own_provider(&seed);
     let before = address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE, &crypto)
         .await
         .expect("an address while bound");
 
-    coordinator.clear().await.unwrap();
+    coordinator
+        .clear(&WipeCountingPersistence::default())
+        .await
+        .unwrap();
     assert!(coordinator.registered_subwallets().await.is_empty());
     assert!(wallet.is_shielded_bound().await, "the keys stay in memory");
     assert_eq!(
@@ -642,8 +647,11 @@ async fn should_still_give_the_address_after_a_clear_from_the_keys_held_in_memor
 async fn should_never_give_an_address_of_another_seeds_account() {
     let (wallet, seed, id) = fixture("contact_address_foreign_bind", 15, false).await;
     let coordinator = coordinator_at(&temp_dir("contact_address_foreign_bind"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
     let err = wallet
-        .bind_shielded(&[0x42; 64], &[0], &coordinator)
+        .bind_shielded(&[0x42; 64], &[0])
         .await
         .expect_err("another seed's keys are not bound");
     assert!(

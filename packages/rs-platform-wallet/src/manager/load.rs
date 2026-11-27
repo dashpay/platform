@@ -598,6 +598,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 broadcaster,
                 Arc::clone(&self.sync_fault),
                 Arc::clone(&self.durable_cursors),
+                #[cfg(feature = "shielded")]
+                Arc::clone(&self.shielded_coordinator),
             );
 
             // Initialize the platform-address provider. If the snapshot
@@ -695,6 +697,37 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // a DIFFERENT generation under it before this rollback runs.
             // Removing by id alone would delete that live wallet — one this
             // call never created and whose owner is still using it.
+            // A handle a caller obtained while this load published it is
+            // retired before the id is freed, in `remove_wallet`'s lock
+            // order: under its lifecycle gate, re-checked as still this
+            // load's, then `shield_guard`, the coordinator resolved under
+            // them and its removal admission. The wallet is marked detached
+            // and its live registration dropped; its store rows, including
+            // signed recovery records, stay for the next load.
+            #[cfg(feature = "shielded")]
+            {
+                let published = self.wallets.load_full();
+                for id in rollback_targets(&inserted_in_wallets, &published) {
+                    let wallet = Arc::clone(&published[&id]);
+                    let _teardown = wallet.generation().teardown_guard().await;
+                    let still_ours = self.wallets.load().get(&id).is_some_and(|current| {
+                        Arc::ptr_eq(current.generation(), wallet.generation())
+                    });
+                    if !still_ours {
+                        continue;
+                    }
+                    let _shield_guard = wallet.shield_guard.lock().await;
+                    let coordinator = self.shielded_coordinator().await;
+                    let _admission = match coordinator.as_ref() {
+                        Some(coordinator) => Some(coordinator.admit_removal().await),
+                        None => None,
+                    };
+                    wallet.mark_shielded_detached();
+                    if let Some(coordinator) = coordinator.as_ref() {
+                        coordinator.release_wallet(id).await;
+                    }
+                }
+            }
             let rolled_back = std::cell::RefCell::new(Vec::<WalletId>::new());
             if !inserted_in_wallets.is_empty() {
                 self.wallets.rcu(|wallets| {
@@ -1585,6 +1618,66 @@ mod idempotent_load_tests {
                 .is_none(),
             "and out of the inner manager, so a retry can re-insert it"
         );
+    }
+
+    /// The rollback of a failed load keeps a published wallet's signed
+    /// recovery records, saved by an earlier process, for the next load.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_keep_a_rolled_back_wallets_recovery_records_for_the_next_load() {
+        use crate::wallet::shielded::store::PendingRedrive;
+        use crate::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
+
+        let ctx = TestWalletContext::new_random();
+        let id = SubwalletId::new(ctx.wallet.compute_wallet_id(), 0);
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let redrive = PendingRedrive {
+            activity_id: [0x21; 32],
+            anchor: [0x22; 32],
+            nullifiers: vec![[0x23; 32]],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            anchor_height: None,
+            spend_context: None,
+        };
+        FileBackedShieldedStore::open_path(&path, 100)
+            .expect("the store")
+            .arm_redrive(id, redrive)
+            .expect("the record saved");
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(MismatchedSecondWalletPersister {
+                wallet: ctx.wallet,
+                managed: ctx.managed_wallet,
+            }),
+            event_handler,
+        ));
+        manager
+            .configure_shielded(&path)
+            .await
+            .expect("the store configured");
+
+        assert!(manager.load_from_persistor().await.is_err());
+
+        let coordinator = manager.shielded_coordinator().await.expect("configured");
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(coordinator.registered_subwallets().await.is_empty());
+        let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("the store");
+        assert_eq!(reopened.pending_redrives(id).unwrap().len(), 1);
     }
 }
 

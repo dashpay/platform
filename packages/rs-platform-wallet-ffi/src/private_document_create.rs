@@ -46,7 +46,7 @@ use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
 use crate::private_contact_request::seed_mismatch_result;
 #[cfg(feature = "shielded")]
 use crate::shielded_send::{
-    catch_spend_panic, map_spend_result, poke_sync_on_unconfirmed, resolve_wallet_and_coordinator,
+    catch_spend_panic, map_spend_result, poke_sync_on_unconfirmed, resolve_shielded_wallet,
 };
 
 /// A key of an identity an entry of a private document type may be sealed
@@ -460,8 +460,8 @@ unsafe fn create_private_document_entry_inner(
         .to_string(),
     };
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(pair) => pair,
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
+        Ok(wallet) => wallet,
         Err(result) => return result,
     };
     let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
@@ -479,14 +479,7 @@ unsafe fn create_private_document_entry_inner(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let result = wallet
-            .create_private_document_entry(
-                &coordinator,
-                seed.as_ref(),
-                account,
-                &new,
-                &crypto,
-                &prover,
-            )
+            .create_private_document_entry(seed.as_ref(), account, &new, &crypto, &prover)
             .await;
         poke_sync_on_unconfirmed(&result, handle);
         result

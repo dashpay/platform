@@ -8,6 +8,8 @@ use crate::event_handler::{
     PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::handle::*;
+#[cfg(all(test, feature = "shielded"))]
+use crate::persistence::PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
     FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn, LoadAssetLockOperationIdFn,
@@ -20,7 +22,7 @@ use crate::persistence::{
     PersistWalletChangesetOutpointLocksFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
-    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    WipeShieldedStateFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::{big_stack_spawn_failed, run_on_big_stack_thread, runtime};
 use crate::types::{FFINetwork, Network};
@@ -422,6 +424,7 @@ unsafe fn persistence_extension_callbacks(
             on_load_wallet_locked_outpoints_free_fn,
             FreeWalletLockedOutpointsFn
         ),
+        wipe_shielded_state: slot!(on_wipe_shielded_state_fn, WipeShieldedStateFn),
     }
 }
 
@@ -1749,6 +1752,56 @@ mod tests {
         };
         let read = unsafe { persistence_extension_callbacks(&with) };
         assert!(read.wallet_dashpay_backfill.is_some());
+    }
+
+    /// The wipe slot is read only from a host whose `struct_size` covers it,
+    /// and `SHIELDED_STATE_WIPE` is attested only when the host both wires it
+    /// and declares the bit.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_size_gate_and_attest_the_shielded_wipe_slot() {
+        unsafe extern "C" fn wipe(_: *mut c_void, _: FFINetwork) -> i32 {
+            0
+        }
+        let wired = PersistenceCallbacksExtension {
+            on_wipe_shielded_state_fn: Some(wipe),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_callbacks(&wired) }
+            .wipe_shielded_state
+            .is_some());
+        let short = PersistenceCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_wipe_shielded_state_fn
+            ),
+            ..wired
+        };
+        assert!(unsafe { persistence_extension_callbacks(&short) }
+            .wipe_shielded_state
+            .is_none());
+
+        let declared = |bits: PersistenceCapabilities| PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: bits.bits(),
+        };
+        let effective = |extension: &PersistenceCallbacksExtension, bits| unsafe {
+            effective_persistence_capabilities(
+                PersistenceCallbacks::default(),
+                &declared(bits),
+                extension,
+            )
+        };
+        let unwired = PersistenceCallbacksExtension::default();
+        let wipe_bit = PersistenceCapabilities::SHIELDED_STATE_WIPE;
+        assert!(effective(&wired, wipe_bit).contains(wipe_bit));
+        assert!(!effective(&unwired, wipe_bit).contains(wipe_bit));
+        assert!(!effective(&wired, PersistenceCapabilities::NONE).contains(wipe_bit));
+        assert_eq!(
+            wipe_bit.bits(),
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE
+        );
     }
 
     #[test]

@@ -53,7 +53,10 @@ fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
 /// exists in a production build, and it is not part of any public API.
 #[cfg(test)]
 pub(crate) type RemoveWalletMidpointHook = Box<
-    dyn Fn(&WalletId) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    dyn Fn(
+            &WalletId,
+            &Arc<WalletGeneration>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
         + Send
         + Sync,
 >;
@@ -719,6 +722,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             broadcaster,
             Arc::clone(&self.sync_fault),
             Arc::clone(&self.durable_cursors),
+            #[cfg(feature = "shielded")]
+            Arc::clone(&self.shielded_coordinator),
         );
 
         // Restore the platform-address provider from the slice read above —
@@ -1005,10 +1010,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Unconditional: a removal with no coordinator yet has nothing
         // to unregister, but the handle must still be barred from
         // binding onto one a later `configure_shielded` installs.
+        //
+        // Inside the shielded admission protocol, in its lock order after
+        // the generation gate: the wallet's `shield_guard`, then a shared
+        // admission, both held to the end of the removal. Every shielded
+        // persist path of the handle checks the detached flag under those
+        // same locks before it writes, so each write either lands before
+        // this returns (and the host's deletion after it removes it) or is
+        // refused. The admission is the removal one, granted while a host
+        // wipe is pending: deleting a wallet is not what a pending wipe
+        // guards against.
+        #[cfg(feature = "shielded")]
+        let _shield_guard = Arc::clone(&removed.shield_guard).lock_owned().await;
+        #[cfg(feature = "shielded")]
+        let coordinator = self.shielded_coordinator().await;
+        #[cfg(feature = "shielded")]
+        let _admission = match coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.admit_removal().await),
+            None => None,
+        };
         #[cfg(feature = "shielded")]
         removed.mark_shielded_detached();
         #[cfg(feature = "shielded")]
-        if let Some(coordinator) = self.shielded_coordinator().await {
+        if let Some(coordinator) = coordinator.as_ref() {
             coordinator.unregister_wallet(*wallet_id).await;
         }
 
@@ -1066,7 +1090,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .lock()
                 .expect("remove-wallet midpoint hook mutex")
                 .as_ref()
-                .map(|hook| hook(wallet_id));
+                .map(|hook| hook(wallet_id, &generation));
             if let Some(rendezvous) = pending {
                 rendezvous.await;
             }
@@ -2542,12 +2566,16 @@ mod remove_versus_recreate_tests {
             let manager_for_hook = Arc::clone(&manager);
             let recreated_slot = Arc::clone(&recreated);
             // One-shot: the re-registration must not recurse into a later
-            // removal, and no other test in this binary may see the hook.
+            // removal. Only the removal of this test's own generation fires
+            // it: every fixture shares the wallet id, and another test's
+            // removal running meanwhile passes through.
             let fired = AtomicBool::new(false);
+            let target = Arc::clone(original.generation());
             *REMOVE_WALLET_MIDPOINT_HOOK
                 .lock()
-                .expect("midpoint hook mutex") = Some(Box::new(move |id| {
-                let already_fired = fired.swap(true, Ordering::SeqCst);
+                .expect("midpoint hook mutex") = Some(Box::new(move |id, generation| {
+                let already_fired =
+                    !Arc::ptr_eq(generation, &target) || fired.swap(true, Ordering::SeqCst);
                 let manager = Arc::clone(&manager_for_hook);
                 let recreated_slot = Arc::clone(&recreated_slot);
                 let id = *id;

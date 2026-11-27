@@ -38,7 +38,7 @@ use dpp::prelude::Identifier;
 use grovedb_commitment_tree::{
     Anchor, ClientMemoryCommitmentTree, CommitmentTreeError, MerklePath, Position, Retention,
 };
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -415,8 +415,13 @@ pub(super) fn remove_watch(
     Ok(())
 }
 
-/// Drop the leaves and scan state of every pool no wallet watches.
 fn drop_unwatched_pools(conn: &Connection) -> Result<(), PlatformWalletError> {
+    purge_unwatched_pools(conn).map_err(storage("drop unwatched pools"))
+}
+
+/// Drop the leaves and scan state of every pool no wallet watches. These are
+/// public pool state, shared by every wallet watching the pool.
+pub(super) fn purge_unwatched_pools(conn: &Connection) -> rusqlite::Result<()> {
     for table in ["shielded_token_pool_scans", "shielded_token_pool_leaves"] {
         conn.execute(
             &format!(
@@ -424,15 +429,14 @@ fn drop_unwatched_pools(conn: &Connection) -> Result<(), PlatformWalletError> {
                  (SELECT token_id FROM shielded_token_pool_watches)"
             ),
             [],
-        )
-        .map_err(storage("drop unwatched pools"))?;
+        )?;
     }
     Ok(())
 }
 
-/// Drop everything kept for `wallet_id`, as its removal does.
-pub(super) fn purge_wallet(conn: &mut Connection, wallet_id: WalletId) -> rusqlite::Result<()> {
-    let tx = conn.transaction()?;
+/// Drop the watches, watermarks and notes kept for `wallet_id`, as its
+/// removal does. [`purge_unwatched_pools`] then drops the pools it left.
+pub(super) fn purge_wallet(tx: &Transaction<'_>, wallet_id: WalletId) -> rusqlite::Result<()> {
     for table in [
         "shielded_token_pool_watches",
         "shielded_token_pool_watermarks",
@@ -443,22 +447,12 @@ pub(super) fn purge_wallet(conn: &mut Connection, wallet_id: WalletId) -> rusqli
             params![wallet_id.as_slice()],
         )?;
     }
-    for table in ["shielded_token_pool_scans", "shielded_token_pool_leaves"] {
-        tx.execute(
-            &format!(
-                "DELETE FROM {table} WHERE token_id NOT IN \
-                 (SELECT token_id FROM shielded_token_pool_watches)"
-            ),
-            [],
-        )?;
-    }
-    tx.commit()
+    Ok(())
 }
 
 /// Drop one account's notes and scan state in every pool, as dropping or
 /// re-keying the account does. The wallet keeps watching its pools.
-pub(super) fn purge_subwallet(conn: &mut Connection, id: SubwalletId) -> rusqlite::Result<()> {
-    let tx = conn.transaction()?;
+pub(super) fn purge_subwallet(tx: &Transaction<'_>, id: SubwalletId) -> rusqlite::Result<()> {
     for table in [
         "shielded_token_pool_watermarks",
         "shielded_token_pool_notes",
@@ -468,15 +462,14 @@ pub(super) fn purge_subwallet(conn: &mut Connection, id: SubwalletId) -> rusqlit
             params![id.wallet_id.as_slice(), id.account_index],
         )?;
     }
-    tx.commit()
+    Ok(())
 }
 
 /// Drop every token pool row but the watches, as clearing the shielded store
 /// does: like the credit pool after a Clear, the next sync scans the watched
 /// pools again from the start. The watches stay because nothing else would
 /// bring them back, so the tokens they hold would stay unseen.
-pub(super) fn purge_all(conn: &mut Connection) -> rusqlite::Result<()> {
-    let tx = conn.transaction()?;
+pub(super) fn purge_all(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     for table in [
         "shielded_token_pool_scans",
         "shielded_token_pool_watermarks",
@@ -486,7 +479,7 @@ pub(super) fn purge_all(conn: &mut Connection) -> rusqlite::Result<()> {
     ] {
         tx.execute(&format!("DELETE FROM {table}"), [])?;
     }
-    tx.commit()
+    Ok(())
 }
 
 /// Every watch, by wallet.

@@ -78,6 +78,8 @@ final class InvitationPersistenceTests: XCTestCase {
             // Locked outpoints: the handler wires the persist/load/free trio
             // onto `PersistentLockedOutpoint`, so locks survive a restart.
             | PlatformWalletPersistenceCapabilities.outpointLocks
+            // Shielded state wipe: the handler wires `on_wipe_shielded_state_fn`.
+            | PlatformWalletPersistenceCapabilities.shieldedStateWipe
 
         XCTAssertEqual(
             capabilities.version,

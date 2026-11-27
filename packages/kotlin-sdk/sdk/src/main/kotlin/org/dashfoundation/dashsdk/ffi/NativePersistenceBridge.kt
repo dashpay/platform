@@ -149,6 +149,15 @@ abstract class NativePersistenceBridge {
         const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
 
         /**
+         * `PersistenceCapabilities::SHIELDED_STATE_WIPE` (bit 17,
+         * `0x20000`): the store deletes its shielded rows for a network when
+         * native Clear asks ([onWipeShieldedState]). Native Clear refuses
+         * without it. The one Kotlin home of this bit, aliased by the public
+         * diagnostic mirror.
+         */
+        const val CAPABILITY_SHIELDED_STATE_WIPE: Long = 1L shl 17
+
+        /**
          * Packed row widths of [onPersistPrivateContactScanState] and
          * [onLoadPrivateContactScanState]: a read position is the identity
          * id (32), the position (u64, little-endian), the key fingerprint
@@ -1061,6 +1070,22 @@ abstract class NativePersistenceBridge {
         accountIndex: Int,
         fvkBytes: ByteArray,
     ): Int = 0
+
+    /**
+     * `on_wipe_shielded_state_fn`. Descriptor `(I)I`. Delete every shielded
+     * row kept for [network] (an `FFINetwork` discriminant,
+     * [org.dashfoundation.dashsdk.Network.ffiValue]): the viewing keys,
+     * notes, outgoing notes, sync watermarks and activity of every wallet on
+     * that network, loaded or not, in one transaction. Return 0 once they are
+     * gone; non-zero leaves them in place and fails the Clear.
+     *
+     * Native Clear calls it once, after its own reset and before it returns,
+     * with every other shielded operation held out. JNI wires the slot only
+     * for a subclass that overrides this method, and the store must also
+     * declare [CAPABILITY_SHIELDED_STATE_WIPE]; the inherited body is never
+     * called.
+     */
+    open fun onWipeShieldedState(network: Int): Int = -1
 
     // ── Load callbacks ────────────────────────────────────────────────
     //

@@ -979,13 +979,13 @@ sealed class DashSdkError(
         /**
          * `ErrorShieldedOperationInProgress` (native code 84). A shielded
          * Clear was refused because a shielded operation is in flight on the
-         * wallet manager: a bind, an account being added, a token pool
-         * transfer or unshield, a DashPay profile write, a tip address
-         * preparation, or another Clear. Rust does not make Clear wait for
-         * it. Clear returned at once and changed nothing (the sync loop keeps
-         * running, no registration, note or tree leaf was touched), so the
-         * host keeps its Room rows and offers Clear again once the operation
-         * has finished.
+         * wallet manager: a bind, an account being added, a spend from the
+         * pool, a shield, a token pool transfer or unshield, a DashPay
+         * profile write, a tip address preparation, or another Clear. Rust
+         * does not make Clear wait for it. Clear returned at once and changed
+         * nothing (the sync loop keeps running, no registration, note or
+         * tree leaf was touched, no Room row was deleted), so the host
+         * offers Clear again once the operation has finished.
          * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
          */
         class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :

@@ -27,6 +27,16 @@ import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 @Dao
 interface ShieldedDao {
 
+    /** Every wallet any shielded table holds a row of. */
+    @Query(
+        "SELECT walletId FROM shielded_notes " +
+            "UNION SELECT walletId FROM shielded_outgoing_notes " +
+            "UNION SELECT walletId FROM shielded_activities " +
+            "UNION SELECT walletId FROM shielded_sync_states " +
+            "UNION SELECT walletId FROM shielded_viewing_keys"
+    )
+    suspend fun getShieldedWalletIds(): List<ByteArray>
+
     // MARK: Notes (received, spendable)
 
     @Query("SELECT * FROM shielded_notes WHERE nullifier = :nullifier")

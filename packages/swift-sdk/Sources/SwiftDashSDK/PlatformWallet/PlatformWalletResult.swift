@@ -367,11 +367,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (stale-node rejection, transport or proof failures) are not this code.
     case errorBalanceHistoryInconsistentHeights = 83
     /// A shielded Clear was refused because a shielded operation (a bind, an
-    /// account being added, a token pool transfer or unshield, a DashPay
-    /// profile write, a tip address preparation or a shielded tip being
-    /// sent, or another Clear) is in flight. Clear does not wait for it:
-    /// nothing was changed and sync keeps
-    /// running, so the host keeps its rows. Retry once it has finished.
+    /// account being added, a spend from the pool, a shield, a token pool
+    /// transfer or unshield, a DashPay profile write, a tip address
+    /// preparation or a shielded tip being sent, or another Clear) is in
+    /// flight. Clear does not wait for it: nothing was changed, sync keeps
+    /// running and the host's rows were not wiped. Retry once it has
+    /// finished.
     case errorShieldedOperationInProgress = 84
     /// A shielded tip was refused before anything was selected, built or
     /// sent: another tip from this wallet is being sent, or an earlier
@@ -914,12 +915,13 @@ public enum PlatformWalletError: LocalizedError {
     /// history again later.
     case balanceHistoryInconsistentHeights(String)
     /// `PlatformWalletManager.clearShielded()` was refused at once because a
-    /// shielded operation (a bind, an account being added, a token pool
-    /// transfer or unshield, a DashPay profile write or a tip address
-    /// preparation, or another Clear) is in flight. Clear does not wait for
-    /// it. Nothing was changed: sync keeps running and no shielded state was
-    /// reset, so the host must not wipe its own rows. Clear again once the
-    /// operation has finished.
+    /// shielded operation (a bind, an account being added, a spend from the
+    /// pool, a shield, a token pool transfer or unshield, a DashPay profile
+    /// write, a tip address preparation or a shielded tip being sent, or
+    /// another Clear) is in flight. Clear does not wait for it. Nothing was
+    /// changed: sync keeps running, no shielded state was reset and the
+    /// host's rows were not wiped. Clear again once the operation has
+    /// finished.
     case shieldedOperationInProgress(String)
     /// `sendShieldedTip` refused the tip with nothing sent: another tip from
     /// this wallet is being sent, or an earlier shielded payment to the

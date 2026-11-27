@@ -1,10 +1,8 @@
 package org.dashfoundation.dashsdk.services
 
-import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -22,7 +20,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.DashDatabase
@@ -129,50 +126,22 @@ class ShieldedService(private val database: DashDatabase) {
     /** See [withLedgerLifecycle]. */
     private val ledgerLifecycle = Mutex()
 
-    /** A Room wipe a Clear still owes. Touched only inside [withLedgerLifecycle]. */
-    private val pendingHostWipe = PendingHostWipe()
-
     /**
-     * Run [step] with no other ledger lifecycle step in flight. Two things
-     * take it: a bind's native calls, which restore the wallet's stored
-     * notes and watermark from Room into Rust, and a Clear from its Rust
-     * reset to the end of its Room wipe. So a bind cannot restore rows into
-     * the store a Clear just emptied and then lose them to that Clear's
-     * wipe, which would leave Rust holding notes Room no longer has. A bind
-     * that arrives during a Clear waits and then restores from the wiped
-     * tables.
+     * Run [step] with no other bind step of this service in flight. A bind's
+     * native calls take it, so two binds of one service register on the
+     * coordinator one at a time: the later one, once it holds the ledger,
+     * finds it is the latest and registers, and an overtaken one finds it is
+     * not and leaves the native side alone. The engine bind reads the
+     * accounts Rust holds for a wallet and binds them in one step, so no
+     * bind of this service changes them in between.
+     *
+     * A Clear does not take it. Rust keeps a Clear and a bind apart: it
+     * refuses a Clear while a bind is admitted, makes a bind that arrives
+     * during a Clear wait for it, and deletes the Room rows inside the
+     * Clear, so the bind then restores from the wiped tables.
      */
     internal suspend fun <T> withLedgerLifecycle(step: suspend () -> T): T =
         ledgerLifecycle.withLock { step() }
-
-    /**
-     * [withLedgerLifecycle] for a Clear, which does not wait for a step in
-     * flight: when a bind's native calls (or another Clear) hold the ledger,
-     * [step] is not run and
-     * [DashSdkError.PlatformWallet.ShieldedOperationInProgress] is thrown at
-     * once. That is the refusal Rust gives a Clear while a bind is admitted;
-     * this lock is taken before Rust is asked, so without it a Clear tapped
-     * during a bind would wait here and then go through with no second tap.
-     * A bind that arrives while the Clear holds the ledger still waits.
-     *
-     * The error is raised here, without native code 84 behind it, and the
-     * holder may be an earlier Clear that has already reset Rust and is
-     * still wiping Room. So it promises only that the refused request
-     * changed nothing, not that nothing is being cleared.
-     */
-    internal suspend fun <T> withLedgerLifecycleForClear(step: suspend () -> T): T {
-        if (!ledgerLifecycle.tryLock()) {
-            throw DashSdkError.PlatformWallet.ShieldedOperationInProgress(
-                "A shielded bind or another clear is in progress; clear the shielded state " +
-                    "once it has finished",
-            )
-        }
-        try {
-            return step()
-        } finally {
-            ledgerLifecycle.unlock()
-        }
-    }
     private var pollJob: Job? = null
 
     private val _boundAccounts = MutableStateFlow<List<Int>>(emptyList())
@@ -369,10 +338,6 @@ class ShieldedService(private val database: DashDatabase) {
                 // accounts) is the one that must stand, so this bind leaves
                 // the native side alone.
                 if (bindingTurns.isLatest(turn)) {
-                    // A Clear whose Room wipe failed left rows behind that
-                    // the reset tree no longer matches. The wipe goes first;
-                    // if it fails again this bind fails and restores nothing.
-                    pendingHostWipe.commit()
                     manager.configureShielded(dbPath)
                     manager.bindShielded(walletId, sortedAccounts)
                     true
@@ -508,7 +473,6 @@ class ShieldedService(private val database: DashDatabase) {
         val walletIdHex4 = walletId.take(4).joinToString("") { "%02x".format(it) }
         return try {
             val accounts = withLedgerLifecycle {
-                pendingHostWipe.commit()
                 manager.configureShielded(dbPath)
                 accountsFor().also { manager.bindShielded(walletId, it) }
             }
@@ -605,62 +569,39 @@ class ShieldedService(private val database: DashDatabase) {
 
     /**
      * Reset shielded state for the bound wallet — port of Swift
-     * `ShieldedService.clearLocalState(modelContext:)`. Two ordered halves:
+     * `ShieldedService.clearLocalState()`.
      *
-     * 1. **Rust-side reset FIRST** via
-     *    [PlatformWalletManager.clearShieldedStorage]
-     *    (`platform_wallet_manager_shielded_clear`): quiesce the background
-     *    sync loop, drop every wallet registration from the network-scoped
-     *    coordinator, empty the shared commitment tree, and reset the
-     *    caught-up cooldown. This MUST run before the Room wipe — the
-     *    coordinator keeps every bound wallet registered, so without it the
-     *    next sync pass's persister callback immediately re-creates the very
-     *    rows we're about to delete. It also resets the on-disk tree size, so
-     *    the post-clear resync cold-rebuilds from index 0 instead of
-     *    gate-skipping every re-downloaded position against a stale tree
-     *    (the frozen-tree / zero-notes desync this Clear exists to fix).
-     * 2. **Room wipe — every wallet on THIS network** (INCLUDING
-     *    `shielded_sync_states`, the per-subwallet watermark; leaving any
-     *    would let [bind]'s `restore_for_wallet` re-seed a caught-up
-     *    watermark and re-freeze the tree) in one transaction, and zero the
-     *    published counters. Scoped to the active network's wallets
-     *    (`walletDao().getByNetwork`), NOT global: [clearShieldedStorage]
-     *    empties only this network's `shielded_tree_<network>.sqlite`, so
-     *    wiping other networks' rows would drop notes/activity/watermarks
-     *    whose Rust trees are still populated → data loss + Room↔Rust
-     *    divergence on the next network switch. Within this network the wipe
-     *    must cover EVERY wallet (not just the loaded/bound fleet — an
-     *    unloaded same-network wallet's surviving watermark would restore a
-     *    position ahead of the now-empty shared tree on re-bind and
-     *    gate-skip every note, the exact Room↔SQLite watermark-divergence
-     *    freeze this Clear exists to fix).
-     * 3. **Re-bind + restart sync** — [clearShieldedStorage] dropped every
-     *    coordinator registration and quiesced the sync loop, so nothing
-     *    would resync until the next app relaunch otherwise. Re-run [bind]
-     *    for the mirror wallet (re-registers the viewing keys on the
-     *    now-empty coordinator, its `restore_for_wallet` finding no
-     *    watermark → starts at index 0), then engine-bind every OTHER
-     *    loaded wallet with the accounts Rust holds for it
-     *    ([PlatformWalletManager.shieldedOrdinaryAccounts]: the reset drops
-     *    a wallet's registration, not its keys), so each comes back with
-     *    the accounts it had and not with a default. A mirror-bind failure
-     *    does NOT skip the others ([bind] swallows its errors; the fleet
-     *    pass runs regardless, the iOS best-effort lesson). Then restart
-     *    the background loop, so the button alone triggers an in-session
-     *    cold rebuild 0→N for the whole fleet. Swift's Clear registers
-     *    nothing again; its next Sync Now does.
+     * 1. **Native Clear** via [PlatformWalletManager.clearShieldedStorage]
+     *    (`platform_wallet_manager_shielded_clear`). It resets the network's
+     *    shielded state in Rust and then, before returning and with every
+     *    other shielded operation held out, has the persistence handler
+     *    delete this network's shielded Room rows
+     *    ([org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler.onWipeShieldedState]).
+     *    Nothing is deleted here. A failure throws and the published
+     *    counters stay as they were.
+     * 2. **Re-bind + restart sync** — Clear dropped every coordinator
+     *    registration and quiesced the sync loop, so nothing would resync
+     *    until the next app relaunch otherwise. Re-run [bind] for the mirror
+     *    wallet (re-registers the viewing keys on the now-empty coordinator,
+     *    its `restore_for_wallet` finding no watermark → starts at index 0),
+     *    then engine-bind every OTHER loaded wallet with the accounts Rust
+     *    holds for it ([PlatformWalletManager.shieldedOrdinaryAccounts]: the
+     *    reset drops a wallet's registration, not its keys), so each comes
+     *    back with the accounts it had and not with a default. A mirror-bind
+     *    failure does NOT skip the others ([bind] swallows its errors; the
+     *    fleet pass runs regardless, the iOS best-effort lesson). Then
+     *    restart the background loop, so the button alone triggers an
+     *    in-session cold rebuild 0→N for the whole fleet. Swift's Clear
+     *    registers nothing again; its next Sync Now does.
      *
-     * Fail-closed: if the Rust reset throws, the exception propagates and the
-     * Room rows are left intact — the FFI's contract is that the host must
-     * not drop its persistence while the shared tree may still be populated.
-     * That includes a Clear refused because a shielded operation is in flight
+     * A Clear refused because a shielded operation is in flight
      * ([DashSdkError.PlatformWallet.ShieldedOperationInProgress], from Rust,
-     * or from this service for one of its own binds): nothing was reset,
-     * wiped or bound again, and the caller offers the Clear again once the
-     * operation has finished.
+     * a bind of this service inside its native call included) throws the
+     * same way: nothing was reset, wiped or bound again, sync keeps running,
+     * and the caller offers the Clear again once the operation has finished.
      * No-op when unbound.
      */
-    suspend fun clearLocalState(db: DashDatabase = database) {
+    suspend fun clearLocalState() {
         // The binding this Clear is for: its turn and its credentials, read
         // together. A bind or unbind that begins later makes the turn stale,
         // which is how the steps below know the service's mirror has moved
@@ -674,35 +615,24 @@ class ShieldedService(private val database: DashDatabase) {
         val dbPath = binding.second.dbPath
 
         // A bound service must have a manager (both are set together in
-        // bind, cleared together in unbind). If it doesn't, the Rust-side
-        // reset can't run — fail LOUDLY rather than silently wiping only
-        // Room and leaving the on-disk tree at its full size (which would
-        // re-freeze the tree on the next cold resync).
+        // bind, cleared together in unbind).
         if (mgr == null) {
             error("Shielded clear: bound wallet has no manager — cannot reset the Rust store")
         }
 
-        // Rust-side reset FIRST (empties the on-disk commitment tree +
-        // watermarks, durably). This THROWS on failure (native FFI error →
-        // DashSDKException), and we deliberately do NOT catch it: the Room
-        // wipe below must not run unless the tree was truly reset, else the
-        // host drops its rows while the shared tree stays populated and the
-        // next resync gate-skips every position. Fail-closed by propagation.
-        //
-        // The reset and the Room wipe run as one ledger lifecycle step: no
-        // bind can restore the still-present rows into the emptied store in
-        // between (see [withLedgerLifecycle]). A bind in flight refuses the
-        // Clear here, as Rust refuses it for every other shielded operation
-        // (see [withLedgerLifecycleForClear]); nothing was reset or wiped.
+        // One native call. Rust refuses it at once while a shielded operation
+        // is in flight, a bind of this service included (code 84, thrown as
+        // [DashSdkError.PlatformWallet.ShieldedOperationInProgress]). Otherwise
+        // it resets its store and, before returning and with every other
+        // shielded operation held out, has the persistence handler delete
+        // this network's shielded Room rows, so no bind can restore those
+        // rows into the emptied store in between. It THROWS on failure and we
+        // deliberately do NOT catch it: nothing below runs for a Clear that
+        // was refused or failed.
         val walletIdHex = walletId.joinToString("") { "%02x".format(it) }
-        android.util.Log.i(TAG, "Shielded clear: resetting Rust store for $walletIdHex")
-        withLedgerLifecycleForClear {
-            // Once the reset has started, the wipe must follow even if the
-            // caller (a screen that was left) is cancelled: a reset whose
-            // wipe never ran would let the next bind restore the old
-            // watermark into the emptied tree.
-            withContext(NonCancellable) { resetAndWipe(mgr, db) }
-        }
+        android.util.Log.i(TAG, "Shielded clear: resetting shielded state for $walletIdHex")
+        mgr.clearShieldedStorage()
+        android.util.Log.i(TAG, "Shielded clear: native and Room shielded state reset")
 
         // The counters belong to the binding that was cleared. If a later
         // bind took over meanwhile, they are that binding's now.
@@ -811,47 +741,6 @@ class ShieldedService(private val database: DashDatabase) {
         return true
     }
 
-    /**
-     * The two halves of a Clear that must not be separated: the Rust reset,
-     * then the Room wipe. Called inside [withLedgerLifecycle].
-     */
-    private suspend fun resetAndWipe(mgr: PlatformWalletManager, db: DashDatabase) {
-        mgr.clearShieldedStorage()
-        android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
-        // From here the Room wipe is owed. If it fails now, no bind restores
-        // anything until it has gone through (see [PendingHostWipe]).
-        pendingHostWipe.owe { wipeNetworkRows(mgr, db) }
-        pendingHostWipe.commit()
-    }
-
-    /** Delete the shielded Room rows of every wallet on [mgr]'s network. */
-    private suspend fun wipeNetworkRows(mgr: PlatformWalletManager, db: DashDatabase) {
-
-        // Wipe every wallet on THIS network, but NOT other networks'. `mgr`
-        // is network-scoped and its shielded tree
-        // (`shielded_tree_<network>.sqlite`) is per-network, so the Rust
-        // reset above emptied only the ACTIVE network's SHARED tree. A
-        // global deleteAll* would drop other networks' notes/activity/
-        // watermarks while their Rust trees stay populated → Room/Rust
-        // divergence + data loss on the next network switch. Scope to the
-        // network via `walletDao().getByNetwork` — NOT `mgr.wallets`, which
-        // only holds the successfully-loaded fleet: a same-network wallet
-        // that failed restore still has Room rows, and a surviving watermark
-        // would restore a position ahead of the now-empty tree on re-bind
-        // and gate-skip every note (see doc, step 2).
-        val networkWalletIds = db.walletDao()
-            .getByNetwork(mgr.network.ffiValue)
-            .map { it.walletId }
-        db.withTransaction {
-            for (wid in networkWalletIds) {
-                db.shieldedDao().deleteActivityByWallet(wid)
-                db.shieldedDao().deleteOutgoingNotesByWallet(wid)
-                db.shieldedDao().deleteNotesByWallet(wid)
-                db.shieldedDao().deleteSyncStatesByWallet(wid)
-            }
-        }
-    }
-
     /** Tear down the service scope permanently. */
     fun close() {
         scope.cancel()
@@ -869,38 +758,6 @@ class ShieldedService(private val database: DashDatabase) {
          * for it, because it was never bound: [bindEngine]'s default.
          */
         val NEVER_BOUND_ACCOUNTS = listOf(0)
-    }
-}
-
-/**
- * A host persistence wipe that a Clear owes after its Rust reset went
- * through. Until the wipe commits, the stored notes and watermarks describe a
- * tree that no longer exists, and restoring them would make the next scan
- * skip what the tree has lost. So every step that restores from the store
- * commits the owed wipe first and fails if it cannot.
- *
- * Kept in memory: a wipe still owed when the process dies is not remembered
- * across the restart.
- */
-internal class PendingHostWipe {
-    private var owed: (suspend () -> Unit)? = null
-
-    /** Whether a wipe is owed. */
-    val isOwed: Boolean get() = owed != null
-
-    /** Record [wipe] as owed, replacing an earlier one. */
-    fun owe(wipe: suspend () -> Unit) {
-        owed = wipe
-    }
-
-    /**
-     * Run the owed wipe, if any, and forget it once it has succeeded. A
-     * failure leaves it owed and is thrown to the caller.
-     */
-    suspend fun commit() {
-        val wipe = owed ?: return
-        wipe()
-        owed = null
     }
 }
 

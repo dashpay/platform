@@ -3387,16 +3387,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
-/// Reset the Rust-side shielded state on this manager: quiesce the
-/// background sync loop, drop every wallet registration on the
-/// network-scoped coordinator, empty the shared commitment tree, and
-/// reset the caught-up cooldown. The per-network SQLite file stays on
-/// disk but its contents are reset so the next `shieldedBind` +
-/// sync cold-rebuilds from index 0. Throws `DashSDKException` on a
-/// store-reset failure — the host must NOT wipe its own persistence
-/// unless this succeeds. While a shielded operation is in flight it
-/// throws at once with code 1084 (`ErrorShieldedOperationInProgress`),
-/// nothing changed. Mirrors Swift's
+/// Reset this manager's shielded state: quiesce the background sync loop,
+/// drop every wallet registration on the network-scoped coordinator, empty
+/// the shared commitment tree, reset the caught-up cooldown, and have the
+/// persistence bridge delete the network's shielded rows
+/// (`onWipeShieldedState`) before returning. Throws `DashSDKException` when
+/// the bridge cannot wipe (nothing reset) or any step fails. While a
+/// shielded operation is in flight it throws at once with code 1084
+/// (`ErrorShieldedOperationInProgress`), nothing changed. Mirrors Swift's
 /// `PlatformWalletManager.clearShielded()`.
 #[cfg(feature = "shielded")]
 #[no_mangle]

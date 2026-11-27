@@ -208,6 +208,7 @@ mod tests {
             Arc::new(SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            Default::default(),
         )
     }
 
@@ -321,6 +322,7 @@ mod tests {
             Arc::new(SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            Default::default(),
         );
         assert_eq!(
             wallet

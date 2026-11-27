@@ -4416,8 +4416,14 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
 /// from the spent notes' nullifiers) together with the proof-verified [`Identity`] returned by the
 /// SDK broadcast. The caller registers that `Identity` in its local `IdentityManager` so the host
 /// persister emits the row, mirroring the address-funded registration path.
+///
+/// `held` is what the caller locked to admit the create; it is dropped once the notes are reserved
+/// and witnessed, before the build, so neither the proof nor an open signing prompt holds a wallet
+/// removal or a Clear back. `reacquire` locks again after the build and refuses a removed wallet or
+/// a completed Clear before anything is recorded or broadcast; its guard is returned for the
+/// caller's registration of the identity.
 #[allow(clippy::too_many_arguments)]
-pub async fn identity_create_from_shielded_pool<S, P, IS>(
+pub(crate) async fn identity_create_from_shielded_pool<S, P, IS, H, R, RF, G>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     anchor_cache: &RecordedAnchorCache,
@@ -4430,12 +4436,18 @@ pub async fn identity_create_from_shielded_pool<S, P, IS>(
     send_to_address_on_creation_failure: PlatformAddress,
     identity_signer: &IS,
     prover: &P,
-) -> Result<(Identifier, Identity), PlatformWalletError>
+    held: H,
+    reacquire: R,
+) -> Result<(Identifier, Identity, G), PlatformWalletError>
 where
     S: ShieldedStore,
     P: OrchardProver,
     IS: Signer<IdentityPublicKey>,
+    R: FnOnce() -> RF,
+    RF: Future<Output = Result<G, PlatformWalletError>>,
 {
+    // Held from the build's end through the outcome's bookkeeping, failed or not.
+    let mut fence = None;
     if public_keys.is_empty() {
         return Err(PlatformWalletError::ShieldedBuildError(
             "identity-create-from-shielded-pool requires at least one public key".to_string(),
@@ -4491,6 +4503,7 @@ where
         // broadcast-accepted-but-unconfirmed create can be auto-released once
         // this anchor is pruned from Platform's recorded set.
         let anchor_bytes = anchor.to_bytes();
+        drop(held);
 
         let build = build_identity_create_from_shielded_pool_transition(
             public_keys,
@@ -4508,6 +4521,7 @@ where
         )
         .await
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        fence = Some(reacquire().await?);
 
         let identity_id = build.identity_id;
         derived_identity_id = Some(identity_id);
@@ -4610,7 +4624,8 @@ where
                 identity_id = %identity_id,
                 "IdentityCreateFromShieldedPool broadcast succeeded"
             );
-            Ok((identity_id, identity))
+            let fence = fence.expect("the broadcast ran under the reacquired locks");
+            Ok((identity_id, identity, fence))
         }
         // A create that may have reached a node keeps its reservation, its saved record and its
         // `Pending` activity row (see `unshield`'s outer match), and reports the derived id: the

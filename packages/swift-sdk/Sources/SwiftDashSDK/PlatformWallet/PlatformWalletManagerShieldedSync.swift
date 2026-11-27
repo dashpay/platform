@@ -181,6 +181,10 @@ typealias ShieldFromIdentityToRecipientCall = @Sendable (
     UInt64, UnsafePointer<CChar>?, OpaquePointer, UnsafeMutablePointer<UInt64>
 ) -> PlatformWalletFFIResult
 
+/// The native shielded Clear; injectable through
+/// `PlatformWalletManager.nativeShieldedClearCall`.
+typealias ShieldedClearCall = @Sendable (Handle) -> PlatformWalletFFIResult
+
 /// Which token pool spend a `shieldedTokenSpendPreview` asks about. Mirrors
 /// the Rust `TokenPoolSpendKind`; the raw value is the FFI `kind` byte.
 public enum ShieldedTokenPoolSpendKind: UInt8, Sendable {
@@ -423,11 +427,15 @@ extension PlatformWalletManager {
     /// store. Must be non-empty and at most 64 entries.
     ///
     /// The resolver does NOT fire on the common path: when every
-    /// requested account has a persisted viewing key (written by the
-    /// first seed-backed bind into `PersistentShieldedViewingKey`
+    /// account the bind registers has a persisted viewing key (written
+    /// by the first seed-backed bind into `PersistentShieldedViewingKey`
     /// rows), Rust rebinds from those rows and the mnemonic is never
-    /// read. Only when a row is missing (first bind after create /
-    /// import) does the resolver fire — exactly once, with the
+    /// read. Those accounts are the requested ones and the wallet's
+    /// identity accounts: the tip accounts it discovered, those with a
+    /// persisted key, and those a shielded Clear kept. Only when a row is
+    /// missing (first bind after create / import, or an identity account
+    /// whose key is not persisted) does the resolver fire — exactly once,
+    /// with the
     /// mnemonic and derived seed in zeroized Rust-side buffers,
     /// scrubbed before this call returns.
     ///
@@ -760,57 +768,50 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Reset the Rust-side shielded state on this manager:
-    /// stops the background sync loop, drops every wallet
-    /// registration on the network-scoped coordinator, and
-    /// resets the caught-up cooldown stamp.
+    /// Reset this manager's shielded state: stops the background sync loop,
+    /// drops every wallet registration on the network-scoped coordinator,
+    /// empties the shared commitment tree, resets the caught-up cooldown
+    /// stamp, and has the persistence handler delete every shielded
+    /// SwiftData row of the network's wallets before returning, with every
+    /// other shielded operation held out. The host deletes nothing itself.
+    /// The per-network SQLite file stays open; the next [`bindShielded`]
+    /// repopulates the coordinator and the next sync rebuilds from index 0.
     ///
-    /// Use this from the host's "Clear" flow before wiping
-    /// host-side persistence (e.g. SwiftData rows). The single
-    /// per-network SQLite commitment-tree file stays open —
-    /// Clear semantics are "wipe my host persistence and
-    /// re-sync from index 0 on the shared tree", not "blow
-    /// away the chain-wide cache". After Clear, the next
-    /// [`bindShielded`] call repopulates the coordinator's
-    /// registries and the next sync pass re-saves notes via
-    /// the changeset path.
+    /// Throws when the handler cannot wipe (nothing is reset), when the
+    /// native reset fails, or when the SwiftData wipe fails after it; in the
+    /// last case binds are refused until a retried Clear succeeds.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: Clear quiesces the same loop and would wait on the calling
     /// thread for the pass that stop is draining.
     ///
-    /// Throws `PlatformWalletError.shieldedOperationInProgress` at once,
-    /// without waiting, while a shielded operation is in flight (a bind, an
-    /// account being added, a token pool transfer or unshield, a DashPay
-    /// profile write, a tip address preparation or a shielded tip being
-    /// sent, or another Clear). Rust
-    /// decides that and changed nothing: the sync loop keeps running, and
-    /// this manager keeps its sync generation, progress mirrors and any
-    /// local balance read in flight. The host must not wipe its own rows;
-    /// call again once the operation has finished.
+    /// Throws `invalidHandle` when the manager is not configured or its
+    /// shutdown is in progress.
     ///
-    /// Throws the same error, before Rust is called, while an async native
-    /// operation is admitted on this manager (for example a shielded spend
-    /// or a wallet drain): Clear would wipe the recovery state that
-    /// operation is about to write or has armed. Nothing changed here
-    /// either.
+    /// An async native operation in flight does not stop Clear here; Rust
+    /// decides whether Clear may run alongside it. Throws
+    /// `PlatformWalletError.shieldedOperationInProgress` at once, without
+    /// waiting, while a shielded operation is in flight (a bind, an account
+    /// being added, a spend from the pool, a shield, a token pool transfer
+    /// or unshield, a DashPay profile write, a tip address preparation or a
+    /// shielded tip being sent, or another Clear). Rust decides that and
+    /// changed nothing: the sync loop keeps running, the host's rows were not
+    /// wiped, and this manager keeps its sync generation, progress mirrors
+    /// and any local balance read in flight. Call again once the operation
+    /// has finished.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
-        guard !hasAdmittedNativeOp else {
-            throw PlatformWalletError.shieldedOperationInProgress(
-                "an async native operation is in flight; clearShielded rejected")
-        }
-        try ensureSyncNativeOpAllowed("clearShielded")
         // Every throw, the refusal included, leaves before the bump and the
         // progress reset below.
+        let clear = nativeShieldedClearCall
         try withShieldedLocalBalanceMutation {
-            try platform_wallet_manager_shielded_clear(handle).check()
+            try clear(handle).check()
         }
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after Clear is dropped
-        // (it would otherwise briefly repopulate the mirror the host is
-        // about to wipe).
+        // (it would otherwise briefly repopulate the mirror Clear just
+        // wiped).
         shieldedSyncGeneration.bump()
         // The dropped completion would normally clear the per-pass
         // progress mirrors; do it here so a pass cleared mid-flight

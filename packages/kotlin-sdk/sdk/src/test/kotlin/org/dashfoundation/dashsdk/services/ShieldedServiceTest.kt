@@ -1,14 +1,12 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.test.core.app.ApplicationProvider
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
-import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceSource
@@ -336,69 +334,6 @@ class ShieldedServiceTest {
     }
 
     @Test
-    fun shouldMakeABindWaitForAClearsResetAndWipe() = runTest {
-        val order = mutableListOf<String>()
-        val resetDone = CompletableDeferred<Unit>()
-        val wipeMayFinish = CompletableDeferred<Unit>()
-        // A Clear: the Rust reset is done, the Room wipe is still running.
-        val clear = launch(UnconfinedTestDispatcher(testScheduler)) {
-            service.withLedgerLifecycleForClear {
-                order += "reset"
-                resetDone.complete(Unit)
-                wipeMayFinish.await()
-                order += "wiped"
-            }
-        }
-        resetDone.await()
-        // A bind arrives in between. Its native calls would restore the
-        // rows the wipe is about to delete.
-        val bind = launch(UnconfinedTestDispatcher(testScheduler)) {
-            service.withLedgerLifecycle { order += "bind restores" }
-        }
-        assertEquals(listOf("reset"), order)
-        wipeMayFinish.complete(Unit)
-        clear.join()
-        bind.join()
-        assertEquals(listOf("reset", "wiped", "bind restores"), order)
-    }
-
-    @Test
-    fun shouldRefuseAClearWhileABindHoldsTheLedgerAndRunItAfterwards() = runTest {
-        val bindRunning = CompletableDeferred<Unit>()
-        val bindMayFinish = CompletableDeferred<Unit>()
-        // A bind is inside its native calls.
-        val bind = launch(UnconfinedTestDispatcher(testScheduler)) {
-            service.withLedgerLifecycle {
-                bindRunning.complete(Unit)
-                bindMayFinish.await()
-            }
-        }
-        bindRunning.await()
-
-        // A Clear tapped now does not queue behind the bind: it is refused
-        // and neither resets nor wipes.
-        var cleared = false
-        val refused = runCatching {
-            service.withLedgerLifecycleForClear { cleared = true }
-        }.exceptionOrNull()
-        assertTrue(
-            "expected the typed refusal, got $refused",
-            refused is DashSdkError.PlatformWallet.ShieldedOperationInProgress,
-        )
-        assertTrue("Clear can be requested again", (refused as DashSdkError).isRetryable)
-        assertFalse(cleared)
-
-        // The bind finishing does not run the refused Clear after all.
-        bindMayFinish.complete(Unit)
-        bind.join()
-        assertFalse(cleared)
-
-        // Tapped again, it goes through.
-        service.withLedgerLifecycleForClear { cleared = true }
-        assertTrue(cleared)
-    }
-
-    @Test
     fun shouldGiveABindItsOwnTurnWhenItsInstallWakesAnUnbind() {
         // An observer woken by a bind's first writes calls unbind on the
         // same thread, inside the lock. The bind must get its own turn
@@ -463,53 +398,6 @@ class ShieldedServiceTest {
         assertEquals("jobs started", done.last())
     }
 
-    private suspend fun failsWithIllegalState(block: suspend () -> Unit): Boolean =
-        try {
-            block()
-            false
-        } catch (e: IllegalStateException) {
-            true
-        }
-
-    @Test
-    fun shouldRestoreNothingWhileAClearsWipeIsStillOwed() = runTest {
-        // The Rust reset went through and the Room wipe failed.
-        val pending = PendingHostWipe()
-        var wipeFails = true
-        var wiped = 0
-        pending.owe {
-            if (wipeFails) error("disk full")
-            wiped += 1
-        }
-        assertTrue(failsWithIllegalState { pending.commit() })
-        assertTrue(pending.isOwed)
-
-        // A bind commits the owed wipe before it restores. While the wipe
-        // keeps failing the bind fails and restores nothing.
-        val restored = mutableListOf<String>()
-        assertTrue(
-            failsWithIllegalState {
-                service.withLedgerLifecycle {
-                    pending.commit()
-                    restored += "stale rows"
-                }
-            },
-        )
-        assertTrue(restored.isEmpty())
-
-        // Once the wipe goes through, the bind restores from the wiped
-        // tables, and the wipe is not run a second time.
-        wipeFails = false
-        service.withLedgerLifecycle {
-            pending.commit()
-            restored += "wiped tables"
-        }
-        pending.commit()
-        assertEquals(listOf("wiped tables"), restored)
-        assertEquals(1, wiped)
-        assertFalse(pending.isOwed)
-    }
-
     @Test
     fun shouldShowNoBalanceAfterUnbind() = runTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
@@ -531,14 +419,11 @@ class ShieldedServiceTest {
     }
 
     @Test
-    fun clearLocalStateDeletesBoundWalletRows() = runTest {
-        // Simulate bind by hand (native bind is unavailable under Robolectric):
-        // populate rows, drive reduce, then clear.
+    fun clearLocalStateIsANoOpWhileUnbound() = runTest {
         db.shieldedDao().upsertNote(note(1, 1_000, spent = false))
         db.shieldedDao().upsertNote(note(2, 2_000, spent = false, wallet = otherWallet))
 
-        // Clear is a no-op while unbound (nothing to scope to).
-        service.clearLocalState(db)
+        service.clearLocalState()
         assertEquals(2, db.shieldedDao().getAllNotes().size)
     }
 

@@ -870,12 +870,13 @@ pub enum PlatformWalletFFIResultCode {
     ErrorBalanceHistoryInconsistentHeights = 83,
 
     /// Maps `PlatformWalletError::ShieldedOperationInProgress`: a shielded
-    /// Clear was refused because a shielded operation (a bind, an account
-    /// being added, a token pool transfer or unshield, a DashPay profile
-    /// write, a tip address preparation or a shielded tip being sent, or
-    /// another Clear) is in flight.
+    /// Clear was refused because a shielded operation a caller started (a
+    /// bind, an account being added, a spend from the pool, a shield, a token
+    /// pool transfer or unshield, a DashPay profile write, a tip address
+    /// preparation or a shielded tip being sent, or another Clear) is in
+    /// flight.
     /// Clear does not wait for it: it returned at once and changed nothing,
-    /// so the sync loop keeps running and the host must not wipe its own
+    /// so the sync loop keeps running and the host was not asked to wipe its
     /// rows. Retryable once the operation has finished. Returned by
     /// `platform_wallet_manager_shielded_clear`. Not the reverse case, an
     /// operation refused because a Clear holds the wallet.
@@ -1490,7 +1491,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
             }
             // A Clear refused while a shielded operation is in flight changed
-            // nothing: the host keeps its rows and offers the Clear again.
+            // nothing, host rows included: the host offers the Clear again.
             PlatformWalletError::ShieldedOperationInProgress => {
                 PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress
             }

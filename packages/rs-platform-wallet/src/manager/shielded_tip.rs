@@ -12,9 +12,7 @@ use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
-use crate::wallet::shielded::{
-    NetworkShieldedCoordinator, ShieldedTipAdmission, ShieldedTipRecipient, ShieldedTipSource,
-};
+use crate::wallet::shielded::{ShieldedTipAdmission, ShieldedTipRecipient, ShieldedTipSource};
 
 /// What a shielded tip from one wallet needs from the manager: the wallet,
 /// the shielded coordinator whose store holds its notes, and the shielded
@@ -24,7 +22,6 @@ use crate::wallet::shielded::{
 /// holding the manager.
 pub struct ShieldedTipSender {
     wallet: Arc<PlatformWallet>,
-    coordinator: Arc<NetworkShieldedCoordinator>,
     sync: Arc<ShieldedSyncManager>,
 }
 
@@ -60,7 +57,6 @@ impl ShieldedTipSender {
             .wallet
             .send_shielded_tip(
                 admission,
-                &self.coordinator,
                 seed,
                 source,
                 username,
@@ -91,13 +87,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .get_wallet(wallet_id)
             .await
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
-        let coordinator = self
-            .shielded_coordinator()
-            .await
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        if self.shielded_coordinator().await.is_none() {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         Ok(ShieldedTipSender {
             wallet,
-            coordinator,
             sync: self.shielded_sync_arc(),
         })
     }
