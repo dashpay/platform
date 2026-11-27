@@ -115,10 +115,10 @@ describe('getDefaultSeedUpdates', () => {
     const removedOther = seeds.find(seed => seed !== self);
     const withoutSelf = seeds.filter(seed => seed !== self);
 
-    it(`should refresh ${network} 5.1.0-rc.1 stock seeds with only self removed`, () => {
+    it(`should keep ${network} 5.1.0-rc.1 stock seeds with only self removed as custom`, () => {
       expect(getDefaultSeedUpdates({
         repaired: config(withoutSelf, { network, node: { id: self.id } }),
-      })).to.deep.equal([['repaired', current]]);
+      })).to.deep.equal([]);
     });
 
     it(`should refresh ${network} 5.1.0 stock seeds with only self removed across rotations`, function refreshFinalSeeds() {
