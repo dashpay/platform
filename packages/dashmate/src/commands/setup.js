@@ -366,7 +366,9 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         task: () => dependencies.setupPlatformTask(),
       },
     ], {
-      renderer: flags.verbose ? 'verbose' : 'default',
+      // Interactivity beats --verbose: the verbose renderer manages no prompt
+      // area, and logs every redraw of a prompt as a line of its own.
+      renderer: (context.interactive && 'default') || (flags.verbose && 'verbose') || 'default',
       rendererOptions: {
         showTimer: flags.verbose,
         // Errors explain what to do next on several lines; truncating them to
