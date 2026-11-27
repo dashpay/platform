@@ -494,31 +494,32 @@ extension SDK {
     /// identity ids. An empty
     /// `documentType` is the same as `nil`; any other name is asked for as given. No identity ids
     /// answer an empty dictionary, without a query.
-    public func identityGetContractKeys(
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
         documentType: String?,
         purposes: [String]? = nil
-    ) async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
+    ) async throws -> sending [String: Any] {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
         // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
-        let result = dash_sdk_identities_fetch_contract_keys(
-            handle,
-            identityIdsStr,
-            contractId,
-            documentType,
-            purposesStr
-        )
-
-        return try processJSONResult(result)
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_identities_fetch_contract_keys(
+                handle,
+                identityIdsStr,
+                contractId,
+                documentType,
+                purposesStr
+            ))
+        }
+        return try Self.parseJSONObject(json)
     }
 
     /// Get identity nonce
@@ -595,31 +596,42 @@ extension SDK {
     /// - Returns: one entry per key id the node answered for. The value is
     ///   what is left of that key's budget in CREDITS, or `nil` for a key
     ///   that carries no budget, or that the identity does not have.
-    public func fetchKeysRemainingBudgets(
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func fetchKeysRemainingBudgets(
         identityId: String,
         keyIds: [UInt32]
     ) async throws -> [UInt32: UInt64?] {
-        guard let handle = handle else {
+        guard handle != nil else {
             throw SDKError.invalidState("SDK not initialized")
         }
         guard !keyIds.isEmpty else {
             throw SDKError.invalidParameter("At least one key id is required")
         }
 
-        // The FFI answers with a JSON object keyed by key id, whose values
-        // are decimal STRINGS (credits are `u64`, which JSON numbers cannot
-        // carry losslessly) or null.
-        let json = try keyIds.withUnsafeBufferPointer { buffer in
-            try processJSONResult(
-                dash_sdk_identity_fetch_keys_remaining_budgets(
-                    handle,
-                    identityId,
-                    buffer.baseAddress,
-                    UInt(buffer.count)
+        let json = try await performBlockingQuery { handle in
+            try keyIds.withUnsafeBufferPointer { buffer in
+                try Self.consumeStringResult(
+                    dash_sdk_identity_fetch_keys_remaining_budgets(
+                        handle,
+                        identityId,
+                        buffer.baseAddress,
+                        UInt(buffer.count)
+                    )
                 )
-            )
+            }
         }
+        return try Self.parseKeysRemainingBudgets(try Self.parseJSONObject(json))
+    }
 
+    /// The remaining-budgets answer of the FFI: a JSON object keyed by key
+    /// id, whose values are decimal STRINGS (credits are `u64`, which JSON
+    /// numbers cannot carry losslessly) or null.
+    nonisolated static func parseKeysRemainingBudgets(
+        _ json: [String: Any]
+    ) throws -> [UInt32: UInt64?] {
         var budgets: [UInt32: UInt64?] = [:]
         budgets.reserveCapacity(json.count)
         for (rawKeyId, value) in json {
@@ -2282,12 +2294,15 @@ extension SDK {
     /// (`ExtendedEpochInfo::fetch_current`): the epochs-info query cannot
     /// express "the latest epoch" — `start = nil, ascending` is epoch 0, and an
     /// unbounded descending proved query is rejected by the proof verifier.
-    public func getCurrentEpoch() async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func getCurrentEpoch() async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_system_get_current_epoch(handle))
         }
-        let result = dash_sdk_system_get_current_epoch(handle)
-        return try processJSONResult(result)
+        return try Self.parseJSONObject(json)
     }
 
     /// Get finalized epoch infos
