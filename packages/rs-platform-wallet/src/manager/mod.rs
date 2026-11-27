@@ -1685,7 +1685,15 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
             Ok(mut slot) => *slot = None,
             Err(_) => {
                 let slot = Arc::clone(&self.shielded_coordinator);
-                std::thread::spawn(move || *slot.blocking_write() = None);
+                if let Err(error) = std::thread::Builder::new()
+                    .name("shielded-slot-release".into())
+                    .spawn(move || *slot.blocking_write() = None)
+                {
+                    tracing::warn!(
+                        %error,
+                        "could not start the thread that releases the shielded coordinator"
+                    );
+                }
             }
         }
     }

@@ -154,18 +154,6 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         XCTAssertNil(manager.currentShieldedSyncBlockHeight)
         XCTAssertNil(manager.currentShieldedTreeCommitted)
         XCTAssertNil(manager.currentShieldedTreeTotal)
-
-        // A Clear that fails after the native reset (a host wipe that
-        // failed) drops the callbacks queued before it as well.
-        manager.currentShieldedSyncScanned = 21
-        manager.currentShieldedTreeCommitted = 23
-        let beforeFailure = manager.shieldedSyncGeneration.current()
-        clearCode.value = PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN
-        XCTAssertThrowsError(try manager.clearShielded())
-        XCTAssertEqual(clearCalls.count, 3)
-        XCTAssertNotEqual(manager.shieldedSyncGeneration.current(), beforeFailure)
-        XCTAssertNil(manager.currentShieldedSyncScanned)
-        XCTAssertNil(manager.currentShieldedTreeCommitted)
     }
 
     /// The `memo` argument reaches the native call: `nil` and an empty string

@@ -2103,10 +2103,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         // wallet_id — SQL before memory, so an Err return means neither
         // store was touched (fail-atomic) rather than a memory purge
         // the caller can't distinguish from a no-op.
-        // The wallet's saved spends, the recipients it confirmed for its tips,
-        // its kept identity accounts and its token pool rows go in one
-        // transaction: a failure leaves all of them, and the caches below
-        // change only once it committed.
+        // The wallet's saved spends, the recipients it confirmed for its tips
+        // and its kept identity accounts go in one transaction, and the caches
+        // follow once it committed. The token pool rows go last in their own
+        // transaction: a failure there leaves only public pool state behind.
         {
             let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
             let tx = conn
@@ -2129,9 +2129,6 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge identity accounts for wallet: {e}"))
             })?;
-            super::token_pool::purge_wallet(&tx, wallet_id).map_err(|e| {
-                FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
-            })?;
             tx.commit().map_err(|e| {
                 FileShieldedStoreError::Storage(format!("commit wallet purge: {e}"))
             })?;
@@ -2147,7 +2144,15 @@ impl ShieldedStore for FileBackedShieldedStore {
         // The wallet's recovery rows, damaged ones included, are deleted above.
         self.unloaded_note_spends.remove(&Some(wallet_id));
         self.kept_identity_accounts.remove(&wallet_id);
-        Ok(())
+        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let tx = conn
+            .transaction()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("begin token pool purge: {e}")))?;
+        super::token_pool::purge_wallet(&tx, wallet_id).map_err(|e| {
+            FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
+        })?;
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("commit token pool purge: {e}")))
     }
 
     fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
@@ -2155,7 +2160,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // Empty-nullifier ShieldFromIdentity guards are wallet-wide: the signed
         // debit remains executable after its recipient account is re-bound, so
         // retain those rows and their minimal in-memory state. One
-        // transaction with the token pool rows, as in `purge_wallet`.
+        // transaction with the token pool rows, so a failure keeps them all.
         {
             let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
             let tx = conn.transaction().map_err(|e| {
@@ -2195,8 +2200,7 @@ impl ShieldedStore for FileBackedShieldedStore {
 
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
         // Durable redrive rows for every wallet go with the in-memory
-        // purge; SQL first for the same fail-atomic reason as
-        // `purge_wallet`, and in one transaction with the token pool rows,
+        // purge, SQL first and in one transaction with the token pool rows,
         // so a failed Clear keeps every recovery row.
         {
             let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
@@ -3341,12 +3345,22 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A purge whose token pool step fails deletes nothing: the wallet's
-    /// recovery row and kept identity accounts stay on disk and in memory,
-    /// for an account purge, a wallet purge and a Clear's purge of every
-    /// wallet.
+    fn count_rows(store: &FileBackedShieldedStore, table: &str) -> i64 {
+        store
+            .pending_conn
+            .lock()
+            .unwrap()
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("count")
+    }
+
+    /// An account purge or a Clear's purge whose token pool step fails deletes
+    /// nothing. A wallet purge still deletes the removed wallet's private rows
+    /// and reports the token pool failure.
     #[test]
-    fn should_keep_every_recovery_row_when_a_purge_fails_part_way() {
+    fn should_keep_account_rows_on_a_failed_purge_and_drop_a_removed_wallets_private_rows() {
         let path = temp_tree_path("purge_fails_part_way");
         let id = SubwalletId::new([0xC3; 32], 0);
         let identity_accounts = BTreeSet::from([0x4000_0002]);
@@ -3379,30 +3393,28 @@ mod tests {
                 .expect("drop");
 
             assert!(store.purge_subwallet(id).is_err());
-            assert!(store.purge_wallet(id.wallet_id).is_err());
             assert!(store.purge_all_subwallets().is_err());
             assert_eq!(store.pending_redrives(id).expect("redrives").len(), 1);
             assert_eq!(
                 store.kept_identity_accounts().get(&id.wallet_id),
                 Some(&identity_accounts)
             );
+            assert_eq!(count_rows(&store, "shielded_pending_spends"), 1);
+            assert_eq!(count_rows(&store, "shielded_identity_accounts"), 1);
+
+            assert!(store.purge_wallet(id.wallet_id).is_err());
+            assert!(store.pending_redrives(id).expect("redrives").is_empty());
+            assert_eq!(store.kept_identity_accounts().get(&id.wallet_id), None);
         }
-        let rows: i64 = rusqlite::Connection::open(&path)
-            .expect("reopen")
-            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
-                row.get(0)
-            })
-            .expect("count");
-        assert_eq!(rows, 1, "the recovery row is still on disk");
-        let accounts: i64 = rusqlite::Connection::open(&path)
-            .expect("reopen")
-            .query_row(
-                "SELECT COUNT(*) FROM shielded_identity_accounts",
-                [],
-                |row| row.get(0),
-            )
-            .expect("count");
-        assert_eq!(accounts, 1, "the kept identity account is still on disk");
+        let conn = rusqlite::Connection::open(&path).expect("reopen");
+        for table in ["shielded_pending_spends", "shielded_identity_accounts"] {
+            let rows: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            assert_eq!(rows, 0, "the removed wallet's {table} rows are gone");
+        }
         let _ = std::fs::remove_file(&path);
     }
 

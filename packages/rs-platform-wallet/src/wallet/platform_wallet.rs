@@ -2212,12 +2212,16 @@ impl PlatformWallet {
                 "shielded account {account} not bound"
             )));
         }
-        // Admitted as a balance read is, which a pending host wipe refuses. The
-        // handle keeps its keys across a Clear, so the registration is what
-        // says the store holds this wallet's notes: without it they read as
-        // none.
+        // Admitted as a balance read is, which a pending host wipe refuses, and
+        // under the generation's lifecycle gate, so a handle kept past its
+        // wallet's removal is refused rather than quoting the notes of a
+        // wallet re-imported under the same id. The handle keeps its keys
+        // across a Clear, so the registration is what says the store holds
+        // this wallet's notes: without it they read as none.
         let coordinator = self.shielded_coordinator().await?;
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _admission = coordinator.admit().await?;
+        self.ensure_shielded_attached()?;
         if !coordinator.is_wallet_registered(self.wallet_id).await {
             return Err(PlatformWalletError::ShieldedNotBound);
         }

@@ -775,9 +775,7 @@ extension PlatformWalletManager {
     ///
     /// Throws when the handler cannot wipe (nothing is reset), when the
     /// native reset fails, or when the SwiftData wipe fails after it; in the
-    /// last case binds are refused until a retried Clear succeeds. Every such
-    /// failure drops the sync callbacks queued before it and clears the
-    /// progress mirrors, as a successful Clear does.
+    /// last case binds are refused until a retried Clear succeeds.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: Clear quiesces the same loop and would wait on the calling
@@ -800,31 +798,20 @@ extension PlatformWalletManager {
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
-        // Rust's refusal leaves before the bump and the progress reset below.
-        // Any other failure may follow the native reset (a host wipe that
-        // failed after it), so it drops the stale callbacks too.
+        // Every throw, the refusal included, leaves before the bump and the
+        // progress reset below.
         let clear = nativeShieldedClearCall
-        do {
-            try withShieldedLocalBalanceMutation {
-                try clear(handle).check()
-            }
-        } catch {
-            if case PlatformWalletError.shieldedOperationInProgress(_) = error {
-                throw error
-            }
-            invalidateShieldedSyncCallbacks()
-            throw error
+        try withShieldedLocalBalanceMutation {
+            try clear(handle).check()
         }
-        invalidateShieldedSyncCallbacks()
-    }
-
-    /// Bump the generation so any trailing completion event the main actor
-    /// delivers after Clear is dropped (it would otherwise briefly repopulate
-    /// the mirror Clear just wiped), and clear the per-pass progress mirrors
-    /// the dropped completion would have cleared, so a pass cleared mid-flight
-    /// leaves no stale `currentShielded*` values on the UI.
-    private func invalidateShieldedSyncCallbacks() {
+        // The Rust drain returned; bump the generation so any trailing
+        // completion event the main actor delivers after Clear is dropped
+        // (it would otherwise briefly repopulate the mirror Clear just
+        // wiped).
         shieldedSyncGeneration.bump()
+        // The dropped completion would normally clear the per-pass
+        // progress mirrors; do it here so a pass cleared mid-flight
+        // doesn't leave stale `currentShielded*` values on the UI.
         resetCurrentShieldedProgress()
     }
 

@@ -2361,6 +2361,56 @@ mod identity_account_tests {
         unsafe { platform_wallet_ffi_result_free(&mut destroyed) };
     }
 
+    /// Before the shielded store is configured, the spend preview export lets
+    /// the wallet answer: a never-bound wallet reports itself not bound, not
+    /// the manager's missing shielded setup.
+    #[test]
+    fn should_let_the_wallet_answer_a_spend_preview_before_shielded_is_configured() {
+        let manager = mock_manager();
+        let wallet_id = runtime().block_on(async {
+            manager
+                .create_wallet_from_mnemonic(
+                    TEST_MNEMONIC,
+                    dashcore::Network::Testnet,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create wallet")
+                .wallet_id()
+        });
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+
+        let mut plan = crate::shielded_types::ShieldedSpendPlanFFI::default();
+        let mut r = unsafe {
+            crate::shielded_send::platform_wallet_manager_shielded_plan_spend(
+                handle,
+                wallet_id.as_ptr(),
+                0,
+                0,
+                1_000,
+                false,
+                0,
+                &mut plan,
+            )
+        };
+        let code = r.code;
+        let message = (!r.message.is_null()).then(|| {
+            unsafe { std::ffi::CStr::from_ptr(r.message) }
+                .to_string_lossy()
+                .into_owned()
+        });
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        let message = message.expect("a message");
+        assert!(message.contains("not bound"), "{message}");
+        assert!(!message.contains("not configured"), "{message}");
+
+        let mut destroyed = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut destroyed) };
+    }
+
     /// Calls the export for `id` with a pre-filled buffer and returns the
     /// result code, its message and the buffer.
     fn prepare(

@@ -1045,7 +1045,8 @@ async fn should_refuse_restorations_until_a_failed_host_wipe_is_retried() {
 /// A spend preview answers from the wallet's state, never from a store a
 /// Clear emptied under keys the handle kept: a never-bound wallet is not
 /// bound even before shielded setup, a failed host wipe asks for the retry,
-/// and a successful Clear leaves the wallet unbound until it binds again.
+/// a successful Clear leaves the wallet unbound until it binds again, and a
+/// handle kept past its wallet's removal is refused.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_refuse_a_spend_preview_the_store_cannot_answer() {
     use crate::wallet::shielded::note_selection::{ShieldedSpendAmount, ShieldedSpendKind};
@@ -1088,9 +1089,19 @@ async fn should_refuse_a_spend_preview_the_store_cannot_answer() {
         .clear_shielded()
         .await
         .expect("the retry wipes the host");
-    let result = preview(wallet).await;
+    let result = preview(Arc::clone(&wallet)).await;
     assert!(
         matches!(result, Err(PlatformWalletError::ShieldedNotBound)),
+        "{result:?}"
+    );
+
+    // A handle detached by its wallet's removal is refused even while the id
+    // is registered again, as a same-seed re-import registers it.
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    wallet.mark_shielded_detached();
+    let result = preview(wallet).await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
         "{result:?}"
     );
 }
