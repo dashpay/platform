@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Listr } from 'listr2';
+import forge from 'node-forge';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import installCertificateFilesTaskFactory from '../../../src/listr/tasks/ssl/installCertificateFilesTaskFactory.js';
@@ -246,6 +247,21 @@ describe('readCertificateFilePair', () => {
     fs.writeFileSync(form.chainFilePath, issueCertificate({ ip: '1.2.3.4', keys: pair.keys, days: -1 }).pem);
 
     expect(() => readCertificateFilePair(form)).to.throw('The certificate expired on');
+  });
+
+  // A date that does not parse compares as neither before nor after now, so
+  // it would pass both window checks.
+  it('should refuse a certificate whose validity dates cannot be read', () => {
+    const asn1 = forge.pki.certificateToAsn1(pair.certificate);
+    // TBSCertificate ::= SEQUENCE { version [0], serialNumber, signature,
+    // issuer, validity { notBefore, notAfter }, ... }, a 13th month here
+    asn1.value[0].value[4].value[1].value = '991399000000Z';
+    fs.writeFileSync(form.chainFilePath, forge.pem.encode({
+      type: 'CERTIFICATE',
+      body: forge.asn1.toDer(asn1).getBytes(),
+    }));
+
+    expect(() => readCertificateFilePair(form)).to.throw('validity dates cannot be read');
   });
 
   it('should refuse a certificate that is not valid yet', () => {
