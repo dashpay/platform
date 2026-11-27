@@ -1,4 +1,5 @@
-import { MAX_DETAIL_CHARS, sanitizeDetail } from '../renewal-failure.js';
+import { SSL_PROVIDERS } from '../../constants.js';
+import { MAX_DETAIL_CHARS, RENEWAL_FAILURE_CODES, sanitizeDetail } from '../renewal-failure.js';
 
 /**
  * What the helper recorded about the last renewal for one config.
@@ -30,6 +31,11 @@ export default class RenewalRecord {
     SUCCEEDED: 'succeeded',
     FAILED: 'failed',
   };
+
+  /**
+   * The provider a diagnostic report names for one dashmate does not know
+   */
+  static UNKNOWN_PROVIDER = 'unknown';
 
   #provider;
 
@@ -160,6 +166,31 @@ export default class RenewalRecord {
         ? this.#gatewayReloadFailedAt.toISOString()
         : null,
     };
+  }
+
+  /**
+   * What a diagnostic report carries: the record as written, with a provider
+   * or a code dashmate does not know replaced by a label saying so.
+   *
+   * The report keeps these two as they are, since doctor decides on them. The
+   * file can be edited by hand, so an unfamiliar value is any text at all,
+   * and it tells doctor nothing more than the label does: it matches no
+   * configured provider and no known cause either way.
+   *
+   * @return {Object}
+   */
+  toDiagnosticObject() {
+    const object = this.toObject();
+
+    if (object.provider !== null && !Object.values(SSL_PROVIDERS).includes(object.provider)) {
+      object.provider = RenewalRecord.UNKNOWN_PROVIDER;
+    }
+
+    if (object.code !== null && !Object.values(RENEWAL_FAILURE_CODES).includes(object.code)) {
+      object.code = RENEWAL_FAILURE_CODES.UNKNOWN;
+    }
+
+    return object;
   }
 
   /**

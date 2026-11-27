@@ -3,7 +3,7 @@ import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
 import si from 'systeminformation';
-import obfuscateConfig from '../../../config/obfuscateConfig.js';
+import obfuscateConfig, { REDACTED_VALUE } from '../../../config/obfuscateConfig.js';
 import createSecretScrubber from '../../../doctor/createSecretScrubber.js';
 import getSampleFreeTextFields from '../../../doctor/getSampleFreeTextFields.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
@@ -51,7 +51,9 @@ async function fetchTextOrError(url) {
  * @param {Object} data - mutated in place
  * @param {function(string): string} scrub - masks the config's secrets
  * @param {string[]|null} [freeTextFields] - the only fields to rewrite, for
- *   a sample whose other fields are facts doctor decides on
+ *   a sample whose other fields are facts doctor decides on. Matched by the
+ *   name of the field holding each value, which is all the samples given one
+ *   here need: the SSL check's free text is its `data`, rewritten whole.
  */
 function obfuscateOperatorName(data, scrub, freeTextFields = null) {
   const identity = getOperatorIdentity();
@@ -73,8 +75,6 @@ function obfuscateOperatorName(data, scrub, freeTextFields = null) {
 function hideOperatorNameIn(text, scrub) {
   return maskOperatorIdentity(typeof text === 'string' ? scrub(text) : text, getOperatorIdentity());
 }
-
-const REDACTED_VALUE = '<redacted>';
 
 /**
  * @param {*} entry - a `NAME=value` string
@@ -215,6 +215,18 @@ function omitContainerCommand(inspect) {
     holder[field] = REDACTED_VALUE;
   }
 
+  // What the health check printed goes with its command: a probe can print a
+  // value the image brings. Its status, times and exit code stay.
+  const healthLog = inspect?.State?.Health?.Log;
+
+  if (Array.isArray(healthLog)) {
+    for (const entry of healthLog) {
+      if (entry !== null && typeof entry === 'object' && 'Output' in entry) {
+        entry.Output = REDACTED_VALUE;
+      }
+    }
+  }
+
   return values;
 }
 
@@ -346,6 +358,10 @@ export default function collectSamplesTaskFactory(
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
 
+                      // The contact address is left out, as it is from the
+                      // config copy, which says whether it is set
+                      delete data?.email;
+
                       obfuscateOperatorName(data, scrub);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
@@ -441,7 +457,11 @@ export default function collectSamplesTaskFactory(
                   // hands to whoever is helping them, so the path stays - it is
                   // what makes the problem actionable - and the name in it does
                   // not.
-                  obfuscateOperatorName(installed, scrub);
+                  obfuscateOperatorName(
+                    installed,
+                    scrub,
+                    getSampleFreeTextFields('gateway', 'installedCertificate'),
+                  );
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },
@@ -466,7 +486,7 @@ export default function collectSamplesTaskFactory(
                     state: renewal.state,
                     path: renewal.path,
                     error: renewal.error,
-                    ...renewal.record?.toObject(),
+                    ...renewal.record?.toDiagnosticObject(),
                   };
 
                   // Same treatment as the certificate above: the path is what

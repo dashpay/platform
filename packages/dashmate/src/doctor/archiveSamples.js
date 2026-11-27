@@ -5,10 +5,11 @@ import fs from 'fs';
 import { pipeline } from 'stream/promises';
 import { create } from 'tar';
 import createSecretScrubber from './createSecretScrubber.js';
-import getSampleFreeTextFields from './getSampleFreeTextFields.js';
+import getSampleFreeTextFields, { getSampleFactFilter } from './getSampleFreeTextFields.js';
 
 function writeSampleFile(archiveDir, service, filename, data, scrub) {
   const freeTextFields = service ? getSampleFreeTextFields(service, filename) : null;
+  const isFact = service ? getSampleFactFilter(service, filename) : null;
 
   if (data === undefined || data === null) {
     return;
@@ -22,19 +23,44 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
   const dataType = typeof data;
 
   if (dataType === 'string') {
-    buffer = scrub(data);
+    buffer = isFact?.([], data) ? data : scrub(data);
     filetype = '.txt';
   } else {
+    // What a free-text field holds is free text all the way down
+    const freeText = new WeakSet();
+    // The keys that lead to each object, for the facts named by them
+    const paths = new WeakMap();
+
     // Scrubbed value by value rather than as text, so keys, numbers and the
     // structure are left alone and doctor can still read the sample back. In
     // a sample whose fields are facts doctor decides on, only its free text.
     buffer = JSON.stringify(
       data,
-      (key, value) => (
-        typeof value === 'string' && (freeTextFields === null || freeTextFields.includes(key))
+      function scrubFreeText(key, value) {
+        const holderPath = isFact ? paths.get(this) : undefined;
+        // The sample itself is reached through the key of an outer wrapper
+        const valuePath = holderPath ? [...holderPath, key] : [];
+
+        const isFreeText = freeTextFields === null
+          || freeText.has(this)
+          || freeTextFields.includes(key);
+
+        if (typeof value === 'object' && value !== null) {
+          if (isFact) {
+            paths.set(value, valuePath);
+          }
+
+          if (isFreeText) {
+            freeText.add(value);
+          }
+
+          return value;
+        }
+
+        return typeof value === 'string' && isFreeText && !isFact?.(valuePath, value)
           ? scrub(value)
-          : value
-      ),
+          : value;
+      },
       2,
     );
     filetype = '.json';
@@ -45,6 +71,51 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
   }
 
   fs.writeFileSync(path.join(serviceDir, `${filename}${filetype}`), buffer, 'utf8');
+}
+
+/**
+ * @param {*} error
+ * @return {string}
+ */
+function describeError(error) {
+  return error?.message ?? String(error);
+}
+
+/**
+ * @param {string} archiveDir
+ * @param {*} removalError
+ * @return {string} what the operator is told when the staged samples are
+ *   left behind: they are under a name no later run looks for
+ */
+function describeStagedSamplesLeft(archiveDir, removalError) {
+  return `the staged samples could not be removed (${describeError(removalError)}): remove ${archiveDir} yourself`;
+}
+
+/**
+ * @param {*} error - what stopped the archive, which comes first
+ * @param {string} archiveDir
+ * @param {*} removalError
+ * @return {Error} the error, also saying where the staged samples were left
+ */
+function withStagedSamplesLeft(error, archiveDir, removalError) {
+  const note = describeStagedSamplesLeft(archiveDir, removalError);
+  const sentence = `${note[0].toUpperCase()}${note.slice(1)}`;
+
+  if (error instanceof Error) {
+    try {
+      // eslint-disable-next-line no-param-reassign
+      error.message = `${error.message}\n${sentence}`;
+
+      return error;
+    } catch {
+      // An error that cannot be changed is reported inside a new one
+    }
+  }
+
+  return Object.assign(
+    new Error(`${describeError(error)}\n${sentence}`, { cause: error }),
+    { code: error?.code },
+  );
 }
 
 /**
@@ -99,6 +170,12 @@ export default async function archiveSamples(samples, folderPath, config) {
     // Listed before the archive file is opened, which only packing closes.
     const stagedFiles = fs.readdirSync(archiveDir);
 
+    // The packer refuses an empty list before it takes over the file, which
+    // would then be left open; something removed what was written meanwhile
+    if (stagedFiles.length === 0) {
+      throw new Error('No samples were left in the staging directory to pack');
+    }
+
     // Packed under a name only this run uses and renamed once complete, so a
     // failure never leaves a truncated archive under the report's name and
     // never touches a file this run did not create.
@@ -108,9 +185,12 @@ export default async function archiveSamples(samples, folderPath, config) {
     // and a file this run did not create is not its own to remove. Created
     // readable by its owner only, since it can be left behind when renaming
     // and removing it both fail.
-    const output = fs.createWriteStream(null, { fd: fs.openSync(partialFilePath, 'wx', 0o600) });
+    const fd = fs.openSync(partialFilePath, 'wx', 0o600);
+    let output;
 
     try {
+      output = fs.createWriteStream(null, { fd });
+
       // pipeline closes the file when packing fails, so it can be removed
       await pipeline(
         create(
@@ -128,6 +208,21 @@ export default async function archiveSamples(samples, folderPath, config) {
 
       fs.renameSync(partialFilePath, archiveFilePath);
     } catch (e) {
+      // A failure before packing takes the file over leaves it open, and a
+      // file still open cannot be removed everywhere
+      try {
+        if (!output) {
+          fs.closeSync(fd);
+        } else if (!output.closed) {
+          await new Promise((resolve) => {
+            output.once('close', resolve);
+            output.destroy();
+          });
+        }
+      } catch {
+        // The packing or rename error is the one to report
+      }
+
       try {
         fs.rmSync(partialFilePath, { force: true });
       } catch {
@@ -139,14 +234,21 @@ export default async function archiveSamples(samples, folderPath, config) {
   } catch (e) {
     try {
       fs.rmSync(archiveDir, { recursive: true, force: true });
-    } catch {
-      // The error that stopped the archive is the one to report
+    } catch (removalError) {
+      throw withStagedSamplesLeft(e, archiveDir, removalError);
     }
 
     throw e;
   }
 
-  fs.rmSync(archiveDir, { recursive: true, force: true });
+  try {
+    fs.rmSync(archiveDir, { recursive: true, force: true });
+  } catch (removalError) {
+    throw new Error(
+      `The report was saved to ${archiveFilePath}, but ${describeStagedSamplesLeft(archiveDir, removalError)}`,
+      { cause: removalError },
+    );
+  }
 
   return archiveFilePath;
 }

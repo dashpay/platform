@@ -67,6 +67,29 @@ describe('legacyReportCleanupTasks', () => {
     expect(fs.existsSync(dir)).to.be.true();
   });
 
+  // What was found is held open until it is removed, so a run that removes
+  // nothing lets go of it, whether the operator says no or is not asked
+  [
+    ['says no', (sinon) => sinon.stub().resolves(false)],
+    ['cannot be asked', (sinon) => sinon.stub().rejects(new Error('no terminal'))],
+  ].forEach(([name, makePrompt]) => {
+    it(`should let go of what it found when the operator ${name}`, async function it() {
+      makeStagingDir(legacyName);
+
+      const [findTask, removeTask] = createLegacyReportCleanupTasks(tempDir);
+      const ctx = {};
+
+      await findTask.task(ctx, { skip: this.sinon.stub(), output: undefined });
+
+      const [{ handle }] = ctx.legacyReportDirs;
+
+      await removeTask.task(ctx, { skip: this.sinon.stub(), prompt: makePrompt(this.sinon) })
+        .catch(() => {});
+
+      expect(() => fs.fstatSync(handle)).to.throw().with.property('code', 'EBADF');
+    });
+  });
+
   it('should remove the listed directories when the operator says yes', async function it() {
     const dir = makeStagingDir(legacyName);
 
@@ -93,6 +116,23 @@ describe('legacyReportCleanupTasks', () => {
 
     expect(find.output).to.match(new RegExp(`^Left ${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, closed to other users: `));
     expect(remove.prompt).to.not.have.been.called();
+  });
+
+  // A removal that stopped partway leaves the directory it was moving into
+  // behind, and nothing else may be found to mention it alongside
+  it('should list a directory a removal that did not finish left, and leave it', async function it() {
+    const holding = path.join(tempDir, '.dashmate-report-removal-Ab12Cd');
+
+    fs.mkdirSync(path.join(holding, legacyName), { recursive: true, mode: 0o700 });
+
+    const { find, remove } = await run(this.sinon, true);
+
+    expect(find.skip).to.not.have.been.called();
+    expect(find.output).to.equal(
+      `Found ${holding}, left by a removal that did not finish: check what it holds and remove it yourself`,
+    );
+    expect(remove.prompt).to.not.have.been.called();
+    expect(fs.existsSync(path.join(holding, legacyName))).to.be.true();
   });
 
   it('should report a temp directory it could not look in apart from directories it left', async function it() {
