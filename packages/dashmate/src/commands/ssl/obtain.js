@@ -94,6 +94,11 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       }
       : {};
 
+    // Whether the obtain may ask a question is decided here rather than inside
+    // the shared task, so a caller that never opts in - the helper's
+    // unattended renewal - cannot enable prompting by omission.
+    const interactive = isInteractiveSession({ flags });
+
     const tasks = new Listr(
       [
         {
@@ -174,7 +179,9 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
         },
       ],
       {
-        renderer: isVerbose ? 'verbose' : 'default',
+        // Interactivity beats --verbose: the verbose renderer manages no prompt
+        // area, and logs every redraw of the retry prompt as a line of its own.
+        renderer: (interactive && 'default') || (isVerbose && 'verbose') || 'default',
         rendererOptions: {
           showTimer: isVerbose,
           clearOutput: false,
@@ -189,10 +196,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       noRetry,
       force,
       expirationDays,
-      // Whether the obtain may ask a question is decided here rather than
-      // inside the shared task, so a caller that never opts in - the helper's
-      // unattended renewal - cannot enable prompting by omission.
-      interactive: isInteractiveSession({ flags }),
+      interactive,
     };
 
     try {

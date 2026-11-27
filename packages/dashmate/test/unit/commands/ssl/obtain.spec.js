@@ -52,14 +52,14 @@ describe('SSL obtain command', () => {
    */
   function runObtain({
     provider, config, dockerCompose, obtainTask, homeDir, waitForGatewayToServeBundle,
-    'no-retry': noRetry = true,
+    'no-retry': noRetry = true, verbose = false,
   }) {
     const noop = () => new Listr([]);
 
     return new ObtainCommand().runWithDependencies(
       {},
       {
-        verbose: false,
+        verbose,
         'no-retry': noRetry,
         'expiration-days': undefined,
         force: false,
@@ -396,5 +396,54 @@ describe('SSL obtain command', () => {
     }
 
     expect(context.interactive).to.equal(true);
+  });
+  // listr2's verbose renderer has no prompt area: it logs every redraw of the
+  // retry prompt as a line of its own, so the question is lost among them.
+  describe('the renderer under --verbose', () => {
+    let renderers;
+
+    beforeEach(function beforeEach() {
+      renderers = [];
+      this.sinon.stub(Listr.prototype, 'run').callsFake(function run() {
+        renderers.push(this.options.renderer);
+
+        return Promise.resolve();
+      });
+    });
+
+    it('should keep the default renderer when it can prompt', async function it() {
+      const dependencies = obtainDependencies(this.sinon);
+
+      const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
+      this.sinon.stub(process, 'env').value({ ...process.env, CI: '0', DASHMATE_NON_INTERACTIVE: '' });
+      process.stdin.isTTY = true;
+      process.stdout.isTTY = true;
+
+      try {
+        await runObtain({ ...dependencies, 'no-retry': false, verbose: true });
+      } finally {
+        process.stdin.isTTY = restore.stdin;
+        process.stdout.isTTY = restore.stdout;
+      }
+
+      expect(renderers).to.deep.equal(['default']);
+    });
+
+    it('should use the verbose renderer when it cannot prompt', async function it() {
+      const dependencies = obtainDependencies(this.sinon);
+
+      const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
+      delete process.stdin.isTTY;
+      delete process.stdout.isTTY;
+
+      try {
+        await runObtain({ ...dependencies, 'no-retry': false, verbose: true });
+      } finally {
+        process.stdin.isTTY = restore.stdin;
+        process.stdout.isTTY = restore.stdout;
+      }
+
+      expect(renderers).to.deep.equal(['verbose']);
+    });
   });
 });
