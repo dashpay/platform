@@ -4926,21 +4926,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             // A sender this wallet tracks as an identity keeps its profile on
             // its own record; any other sender's is in the contact cache. A
-            // tracked record not yet synced holds none, and the cache may
-            // still hold the one read before the sender was tracked.
+            // tracked record not yet synced holds no profile, and the cache
+            // may still hold the one read before the sender was tracked. The
+            // profile is chosen first: a synced one without an address is the
+            // newer word, and the cache is not asked.
             let profile_address = info
                 .identity_manager
                 .managed_identity(contact_id)
                 .and_then(|sender| sender.dashpay().profile.as_ref())
-                .and_then(|profile| profile.shielded_address.clone())
                 .or_else(|| {
                     managed
                         .dashpay()
                         .contact_profiles
                         .get(contact_id)
                         .and_then(|entry| entry.profile.as_ref())
-                        .and_then(|profile| profile.shielded_address.clone())
-                });
+                })
+                .and_then(|profile| profile.shielded_address.clone());
             (
                 contact.incoming_request.encrypted_shielded_address.clone(),
                 profile_address,
