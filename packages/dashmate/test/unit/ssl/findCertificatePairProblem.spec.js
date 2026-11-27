@@ -6,7 +6,11 @@ import checkGatewayCertificateFactory, {
 } from '../../../src/ssl/checkGatewayCertificateFactory.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
-import { issueCertificate, issueChain } from '../../../src/test/certificateFixtures.js';
+import {
+  issueCertificate,
+  issueCertificateWithUnreadableExpiry,
+  issueChain,
+} from '../../../src/test/certificateFixtures.js';
 
 describe('findCertificatePairProblem', () => {
   let chain;
@@ -48,6 +52,16 @@ describe('findCertificatePairProblem', () => {
     const expired = issueCertificate({ ip: '1.2.3.4', days: -1 });
 
     expect(findCertificatePairProblem(expired.pem, expired.keyPem)).to.include('expired');
+  });
+
+  // Signed over the date it carries, so only the date check can refuse it:
+  // an invalid Date compares as neither before nor after now.
+  it('should refuse a certificate whose expiry cannot be read', () => {
+    const leaf = issueCertificateWithUnreadableExpiry(chain.intermediate);
+    const bundle = `${leaf.pem}\n${chain.intermediate.pem}`;
+
+    expect(findCertificatePairProblem(bundle, leaf.keyPem))
+      .to.equal('its certificate\'s validity dates cannot be read');
   });
 
   // ssl obtain checks the pair with this before it enables TLS, and update's

@@ -58,8 +58,7 @@ export function checkCertificatePair({ certificateFile, privateKeyFile }) {
 
   const validity = readValidityWindow(leaf);
 
-  // A date that does not parse compares as neither before nor after now.
-  if (!Number.isFinite(validity.validFrom.getTime()) || !Number.isFinite(validity.validTo.getTime())) {
+  if (validity.isUnreadable) {
     throw new Error('The certificate\'s validity dates cannot be read');
   }
 

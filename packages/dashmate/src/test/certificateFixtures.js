@@ -190,6 +190,44 @@ export function issueCertificateForKey(issuer, privateKey, { ip = '1.2.3.4', day
 }
 
 /**
+ * A leaf whose expiry cannot be read, signed by its issuer over that expiry
+ *
+ * The date names a 13th month. Node still loads the certificate and reports
+ * the date as text that does not parse, so only a check of the date refuses
+ * it: the signature verifies under the issuer's key.
+ *
+ * @param {Object} issuer - the authority whose key signs the result
+ * @param {Object} [options]
+ * @param {string} [options.ip]
+ * @return {{pem: string, keyPem: string}}
+ */
+export function issueCertificateWithUnreadableExpiry(issuer, { ip = '1.2.3.4' } = {}) {
+  const leaf = issueCertificate({ subject: {}, issuer, ip });
+
+  const asn1 = forge.pki.certificateToAsn1(leaf.certificate);
+  const tbsCertificate = asn1.value[0];
+
+  // TBSCertificate ::= SEQUENCE { version [0], serialNumber, signature,
+  // issuer, validity { notBefore, notAfter }, ... }
+  tbsCertificate.value[4].value[1].value = '991399000000Z';
+
+  const digest = forge.md.sha256.create();
+  digest.update(forge.asn1.toDer(tbsCertificate).getBytes());
+
+  asn1.value[2] = forge.asn1.create(
+    forge.asn1.Class.UNIVERSAL,
+    forge.asn1.Type.BITSTRING,
+    false,
+    String.fromCharCode(0) + issuer.keys.privateKey.sign(digest),
+  );
+
+  return {
+    pem: toPem(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary')),
+    keyPem: leaf.keyPem,
+  };
+}
+
+/**
  * A certificate for an Ed25519 key. This is what proves the leaf is selected
  * by comparing key material rather than by an RSA-only signature test.
  *

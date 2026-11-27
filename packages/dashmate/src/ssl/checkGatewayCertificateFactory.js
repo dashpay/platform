@@ -295,8 +295,21 @@ export default function checkGatewayCertificateFactory(homeDir) {
       return verdict();
     }
 
-    const isLeafSelfSigned = isSelfSigned(leaf);
     const validity = readValidityWindow(leaf);
+
+    // Before anything reads the dates: nothing can be said about the window,
+    // and every report formats the expiry.
+    if (validity.isUnreadable) {
+      reasons.push({
+        code: CERTIFICATE_REASONS.BUNDLE_UNREADABLE,
+        message: `The certificate in ${bundleFilePath} cannot be used: its validity dates`
+          + ' cannot be read',
+      });
+
+      return verdict();
+    }
+
+    const isLeafSelfSigned = isSelfSigned(leaf);
     const { validTo } = validity;
     const expiresInDays = (validTo.getTime() - Date.now()) / DAY_MS;
 
