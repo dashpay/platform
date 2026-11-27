@@ -79,10 +79,10 @@ use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoun
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::identity::Purpose;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{IdentityPublicKey, KeyType};
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::IdentityPublicKey;
+use crate::identity::Purpose;
+use crate::identity::{KeyID, KeyType, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
 use crate::serialization::JsonConvertible;
