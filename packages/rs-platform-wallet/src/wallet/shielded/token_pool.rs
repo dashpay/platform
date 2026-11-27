@@ -36,7 +36,7 @@ use dash_sdk::query_types::{
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
 use grovedb_commitment_tree::{
-    Anchor, ClientMemoryCommitmentTree, MerklePath, Position, Retention,
+    Anchor, ClientMemoryCommitmentTree, CommitmentTreeError, MerklePath, Position, Retention,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use tokio::sync::RwLock;
@@ -1266,10 +1266,7 @@ pub(crate) fn spend_paths(
 /// No sync repairs it, so it is a store fault, not the retry-after-sync
 /// [`PlatformWalletError::ShieldedMerkleWitnessUnavailable`] (code 88), which
 /// [`spend_paths`] keeps for a note past the leaves kept.
-fn tree_build_error(
-    token_id: Identifier,
-    error: grovedb_commitment_tree::CommitmentTreeError,
-) -> PlatformWalletError {
+fn tree_build_error(token_id: Identifier, error: CommitmentTreeError) -> PlatformWalletError {
     PlatformWalletError::ShieldedStoreError(format!(
         "the tree of the shielded pool of token {token_id} does not build: {error}"
     ))
