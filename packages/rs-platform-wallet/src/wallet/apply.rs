@@ -385,6 +385,7 @@ impl PlatformWalletInfo {
                         existing.operation_id,
                         existing.shielded_recipient,
                         existing.identity_recipient,
+                        existing.platform_address_recipients.as_ref(),
                     ) {
                         continue;
                     }
@@ -394,6 +395,7 @@ impl PlatformWalletInfo {
                         existing.operation_id = entry.operation_id;
                         existing.shielded_recipient = entry.shielded_recipient;
                         existing.identity_recipient = entry.identity_recipient;
+                        existing.platform_address_recipients = entry.platform_address_recipients;
                         continue;
                     }
                 }
@@ -411,6 +413,7 @@ impl PlatformWalletInfo {
                         proof: entry.proof,
                         shielded_recipient: entry.shielded_recipient,
                         identity_recipient: entry.identity_recipient,
+                        platform_address_recipients: entry.platform_address_recipients,
                     },
                 );
             }
@@ -783,6 +786,7 @@ mod tests {
                 operation_id: None,
                 shielded_recipient: None,
                 identity_recipient: None,
+                platform_address_recipients: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -862,6 +866,7 @@ mod tests {
             proof: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
         }
     }
 
@@ -964,6 +969,46 @@ mod tests {
         apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.identity_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+    }
+
+    #[test]
+    fn should_preserve_platform_address_recipients_when_applying_stale_snapshots() {
+        use crate::changeset::PlatformAddressRecipients;
+        use dpp::address_funds::PlatformAddress;
+        let recipients = |hash: u8| {
+            PlatformAddressRecipients::new(
+                [
+                    (PlatformAddress::P2pkh([hash; 20]), Some(1_000)),
+                    (PlatformAddress::P2pkh([0x01; 20]), None),
+                ]
+                .into(),
+            )
+            .unwrap()
+        };
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
+        recorded.platform_address_recipients = Some(recipients(0x91));
+        apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
+
+        // A stale snapshot without the recipients (reconstruction, a status
+        // advance from an older row) keeps them.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.platform_address_recipients, Some(recipients(0x91)));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        // A snapshot naming other recipients is dropped whole.
+        let mut redirected = recovery_asset_lock(AssetLockStatus::ChainLocked, None);
+        redirected.platform_address_recipients = Some(recipients(0x92));
+        apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.platform_address_recipients, Some(recipients(0x91)));
         assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
     }
 

@@ -301,6 +301,7 @@ fn seed_asset_lock_status_drift(
         operation_id: None,
         shielded_recipient: None,
         identity_recipient: None,
+        platform_address_recipients: None,
         amount_duffs: 1_000,
         status: AssetLockStatus::Consumed,
         proof: None,

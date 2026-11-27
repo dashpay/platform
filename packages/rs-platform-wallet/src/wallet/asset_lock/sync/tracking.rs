@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::PersistenceCapabilities;
+use crate::changeset::PlatformAddressRecipients;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use dpp::prelude::Identifier;
@@ -132,6 +133,32 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
             .and_then(|lock| lock.operation_id)
+    }
+
+    /// The Orchard recipient a tracked shielded funding was built to pay, if
+    /// the row recorded one (see `TrackedAssetLock::shielded_recipient`).
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn tracked_shielded_recipient(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<crate::changeset::ShieldedRecipientRaw> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .and_then(|lock| lock.shielded_recipient)
+    }
+
+    /// The Platform addresses a tracked external Platform-address funding was
+    /// built to pay, if its row recorded them (see
+    /// [`TrackedAssetLock::platform_address_recipients`]).
+    pub async fn tracked_platform_address_recipients(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<PlatformAddressRecipients> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .and_then(|lock| lock.platform_address_recipients.clone())
     }
 
     /// Assign the identity an unbound identity top-up lock pays, for a lock
@@ -924,6 +951,7 @@ pub(crate) struct TrackedResumeMetadata {
     pub identity_recipient: Option<Identifier>,
     #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
     pub shielded_recipient: Option<crate::changeset::ShieldedRecipientRaw>,
+    pub platform_address_recipients: Option<PlatformAddressRecipients>,
 }
 
 impl TrackedResumeMetadata {
@@ -934,6 +962,7 @@ impl TrackedResumeMetadata {
             status: lock.status.clone(),
             identity_recipient: lock.identity_recipient,
             shielded_recipient: lock.shielded_recipient,
+            platform_address_recipients: lock.platform_address_recipients.clone(),
         }
     }
 }

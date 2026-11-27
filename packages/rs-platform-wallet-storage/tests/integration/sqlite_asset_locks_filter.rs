@@ -41,6 +41,7 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         operation_id: None,
         shielded_recipient: None,
         identity_recipient: None,
+        platform_address_recipients: None,
         amount_duffs: 1000,
         status,
         proof: None,
@@ -955,4 +956,200 @@ fn should_write_buffered_changes_before_an_assignment() {
     );
     assert!(!persister.buffer_has_changeset_for_test(&w));
     assert_eq!(persister.asset_lock_status(&w, &swept).unwrap(), None);
+}
+
+fn platform_address_recipients(payee: u8) -> platform_wallet::changeset::PlatformAddressRecipients {
+    use dpp::address_funds::PlatformAddress;
+    platform_wallet::changeset::PlatformAddressRecipients::new(
+        [
+            (PlatformAddress::P2pkh([payee; 20]), Some(1_000_000)),
+            (PlatformAddress::P2pkh([0x01; 20]), None),
+        ]
+        .into(),
+    )
+    .expect("one remainder")
+}
+
+/// An external Platform-address funding with `recipients` recorded.
+fn external_funding(
+    outpoint: OutPoint,
+    status: AssetLockStatus,
+    recipients: Option<u8>,
+) -> AssetLockEntry {
+    AssetLockEntry {
+        funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+        platform_address_recipients: recipients.map(platform_address_recipients),
+        ..entry(outpoint, status)
+    }
+}
+
+/// The recipients of an external funding survive a reopen with the row, a
+/// later snapshot without them keeps them, a snapshot naming others is
+/// refused, and a row stored before the column existed loads with none.
+#[test]
+fn should_preserve_platform_address_recipients_and_reject_a_change() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xB0);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x3D);
+    let legacy = op(0x3E);
+    let store = |persister: &platform_wallet_storage::SqlitePersister, row: AssetLockEntry| {
+        persister.store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(row.out_point, row)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+    };
+    store(
+        &persister,
+        external_funding(outpoint, AssetLockStatus::Built, Some(0x21)),
+    )
+    .unwrap();
+    store(
+        &persister,
+        external_funding(outpoint, AssetLockStatus::Broadcast, None),
+    )
+    .unwrap();
+    assert!(store(
+        &persister,
+        external_funding(outpoint, AssetLockStatus::ChainLocked, Some(0x22)),
+    )
+    .is_err());
+    store(
+        &persister,
+        external_funding(legacy, AssetLockStatus::Broadcast, None),
+    )
+    .unwrap();
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&outpoint];
+    assert_eq!(
+        restored.platform_address_recipients,
+        Some(platform_address_recipients(0x21))
+    );
+    assert_eq!(restored.status, AssetLockStatus::Broadcast);
+    assert_eq!(locks[&0][&legacy].platform_address_recipients, None);
+    // The column refuses an empty or over-long value and never changes once
+    // set.
+    for refused in [vec![], vec![1_u8; 4097]] {
+        assert!(conn
+            .execute(
+                "UPDATE asset_locks SET platform_address_recipients = ?1 \
+                 WHERE platform_address_recipients IS NULL",
+                [refused]
+            )
+            .is_err());
+    }
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET platform_address_recipients = ?1 \
+             WHERE platform_address_recipients IS NOT NULL",
+            [platform_address_recipients(0x23).to_bytes()]
+        )
+        .is_err());
+}
+
+/// A stored record that cannot be read fails the load rather than yielding a
+/// row with none, which a resume would consume as an owned funding.
+#[test]
+fn should_fail_the_load_when_stored_platform_address_recipients_are_malformed() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xB1);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x3F);
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(
+                        outpoint,
+                        external_funding(outpoint, AssetLockStatus::Built, None),
+                    )]
+                    .into_iter()
+                    .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "UPDATE asset_locks SET platform_address_recipients = ?1",
+        [vec![0x09_u8, 0, 1]],
+    )
+    .unwrap();
+    assert!(
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .is_err()
+    );
+}
+
+/// A completed external funding stays a consumed tombstone across a restart,
+/// with its recipients: rebuilt from the chain without them, it would be
+/// offered as the wallet's own lock. A consumed row without recipients stays
+/// excluded.
+#[test]
+fn should_restore_consumed_external_fundings_that_record_their_recipients() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xB2);
+    ensure_wallet_meta(&persister, &w);
+    let paid = op(0x40);
+    let owned = op(0x41);
+    for status in [AssetLockStatus::Built, AssetLockStatus::Consumed] {
+        persister
+            .store(
+                w,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: [
+                            (paid, external_funding(paid, status.clone(), Some(0x24))),
+                            (owned, external_funding(owned, status, None)),
+                        ]
+                        .into_iter()
+                        .collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        persister.flush(w).unwrap();
+    }
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&paid];
+    assert_eq!(restored.status, AssetLockStatus::Consumed);
+    assert_eq!(
+        restored.platform_address_recipients,
+        Some(platform_address_recipients(0x24))
+    );
+    assert!(
+        !locks[&0].contains_key(&owned),
+        "a consumed row without recipients stays out of the feed"
+    );
+}
+
+#[test]
+fn should_advertise_asset_lock_platform_address_recipients() {
+    let (persister, _tmp, _) = fresh_persister();
+    assert!(persister.persistence_capabilities().contains(
+        platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
+    ));
 }

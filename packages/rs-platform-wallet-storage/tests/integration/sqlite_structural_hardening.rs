@@ -486,6 +486,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         operation_id: None,
         shielded_recipient: None,
         identity_recipient: None,
+        platform_address_recipients: None,
         amount_duffs: 1,
         status: AssetLockStatus::Built,
         proof: None,

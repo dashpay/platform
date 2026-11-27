@@ -50,6 +50,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
+use crate::changeset::platform_address_recipients::PlatformAddressRecipients;
 use crate::wallet::identity::state::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity,
 };
@@ -1635,18 +1636,22 @@ pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
 /// before the lock is dispatched so a resume pays it rather than whatever the
 /// resuming call names.
 ///
-/// Only two funding types record one. A shielded funding (Type 18) records its
+/// Three funding types record one. A shielded funding (Type 18) records its
 /// Orchard address. An unbound identity top-up (`IdentityTopUpNotBound`)
 /// records its identity: its credit output is the next address of the wallet's
 /// unbound top-up account, so nothing on chain names the identity. A bound
 /// top-up names its identity by the account's registration index and records
-/// nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// nothing. A Platform-address funding (`AssetLockAddressTopUp`) records its
+/// recipient map when it pays someone else (`fund_from_asset_lock_external`);
+/// one that funds only the wallet's own addresses records nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetLockRecipient {
     /// The raw Orchard address a shielded funding pays.
     Shielded(ShieldedRecipientRaw),
     /// The identity an identity top-up pays.
     Identity(Identifier),
+    /// The Platform addresses an external Platform-address funding pays.
+    PlatformAddresses(PlatformAddressRecipients),
 }
 
 /// A single asset lock entry in the changeset.
@@ -1700,6 +1705,13 @@ pub struct AssetLockEntry {
     /// rebuilt from the chain). Like `operation_id`, immutable once recorded.
     #[cfg_attr(feature = "serde", serde(default))]
     pub identity_recipient: Option<Identifier>,
+    /// The Platform addresses an external Platform-address funding
+    /// (`AssetLockAddressTopUp` built by `fund_from_asset_lock_external`) was
+    /// built to pay; `None` for every other funding, for an owned
+    /// Platform-address funding and for legacy rows. Like `operation_id`,
+    /// immutable once recorded.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub platform_address_recipients: Option<PlatformAddressRecipients>,
 }
 
 impl AssetLockEntry {
@@ -1714,6 +1726,7 @@ impl AssetLockEntry {
         previous_operation_id: Option<[u8; 16]>,
         previous_shielded_recipient: Option<ShieldedRecipientRaw>,
         previous_identity_recipient: Option<Identifier>,
+        previous_platform_address_recipients: Option<&PlatformAddressRecipients>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1745,6 +1758,17 @@ impl AssetLockEntry {
             }
             self.identity_recipient = Some(previous_recipient);
         }
+        if let Some(previous_recipients) = previous_platform_address_recipients {
+            if self
+                .platform_address_recipients
+                .as_ref()
+                .is_some_and(|incoming| incoming != previous_recipients)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with conflicting Platform-address recipients");
+                return false;
+            }
+            self.platform_address_recipients = Some(previous_recipients.clone());
+        }
         true
     }
 }
@@ -1770,6 +1794,7 @@ impl Merge for AssetLockChangeSet {
                     existing.operation_id,
                     existing.shielded_recipient,
                     existing.identity_recipient,
+                    existing.platform_address_recipients.as_ref(),
                 ) {
                     continue;
                 }
@@ -1781,6 +1806,7 @@ impl Merge for AssetLockChangeSet {
                     existing.operation_id = entry.operation_id;
                     existing.shielded_recipient = entry.shielded_recipient;
                     existing.identity_recipient = entry.identity_recipient;
+                    existing.platform_address_recipients = entry.platform_address_recipients;
                     continue;
                 }
             }
@@ -2924,6 +2950,56 @@ mod tests {
             .contains_key("shielded"));
     }
 
+    /// A row serialized before Platform-address recipients were recorded
+    /// still reads, with none, and recorded recipients survive the round
+    /// trip.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn should_read_an_asset_lock_row_without_platform_address_recipients() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let mut entry = AssetLockEntry {
+            operation_id: None,
+            shielded_recipient: None,
+            identity_recipient: None,
+            platform_address_recipients: Some(
+                PlatformAddressRecipients::new(
+                    [(dpp::address_funds::PlatformAddress::P2pkh([0x5a; 20]), None)].into(),
+                )
+                .unwrap(),
+            ),
+            out_point: OutPoint {
+                txid: Txid::from_byte_array([0x62; 32]),
+                vout: 0,
+            },
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 1,
+            status: AssetLockStatus::Broadcast,
+            proof: None,
+        };
+        let json = serde_json::to_value(&entry).expect("row serializes");
+        let restored: AssetLockEntry = serde_json::from_value(json.clone()).expect("row reads");
+        assert_eq!(restored, entry);
+
+        let mut legacy = json;
+        legacy
+            .as_object_mut()
+            .expect("row is an object")
+            .remove("platform_address_recipients");
+        let restored: AssetLockEntry = serde_json::from_value(legacy).expect("legacy row reads");
+        entry.platform_address_recipients = None;
+        assert_eq!(restored, entry);
+    }
+
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
     /// terminal: when the wallet-event adapter's batched drain folds a
     /// stale reconstruction/enrichment snapshot after (or before) the
@@ -2941,6 +3017,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -3061,6 +3138,35 @@ mod tests {
             .get_mut(&outpoint)
             .unwrap()
             .identity_recipient = Some(Identifier::from([0x74u8; 32]));
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
+
+        // The recorded Platform-address recipients of an external funding
+        // follow the same rule.
+        let recipients = |hash: u8| {
+            PlatformAddressRecipients::new(
+                [(dpp::address_funds::PlatformAddress::P2pkh([hash; 20]), None)].into(),
+            )
+            .unwrap()
+        };
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .platform_address_recipients = Some(recipients(0x75));
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].platform_address_recipients,
+            Some(recipients(0x75))
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .platform_address_recipients = Some(recipients(0x76));
         let expected = recorded.clone();
         recorded.merge(redirected);
         assert_eq!(recorded.asset_locks, expected.asset_locks);
@@ -3714,6 +3820,7 @@ mod tests {
                             operation_id: None,
                             shielded_recipient: None,
                             identity_recipient: None,
+                            platform_address_recipients: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
