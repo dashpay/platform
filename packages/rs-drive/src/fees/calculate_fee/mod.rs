@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::{BaseOp, LowLevelDriveOperation};
+use crate::fees::record;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
@@ -41,7 +42,9 @@ impl Drive {
         epoch: &Epoch,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version.drive.methods.fees.calculate_fee {
+        // What a thread that records its fee calculations is given here: `None` on any other.
+        let given = record::given(base_operations.as_ref(), drive_operations.as_deref());
+        let fee = match platform_version.drive.methods.fees.calculate_fee {
             0 => Self::calculate_fee_v0(
                 base_operations,
                 drive_operations,
@@ -55,7 +58,14 @@ impl Drive {
                 known_versions: vec![0, 1],
                 received: version,
             })),
+        };
+        // Counted where it is recorded, at its end: a calculation that panics is in neither.
+        #[cfg(any(test, feature = "fixtures-and-mocks"))]
+        record::every_thread::calculated(self);
+        if let Some(given) = given {
+            record::returned(given, epoch.index, &fee);
         }
+        fee
     }
 }
 
@@ -256,6 +266,64 @@ mod tests {
             processing_fee(12, protocol_version_14),
             processing_fee(REMOVING_EPOCH, protocol_version_14)
         );
+    }
+
+    /// The read of an earlier epoch's record is in the record of the calculation that
+    /// charged it, with the cost it was charged at, and in no other's.
+    #[test]
+    fn should_record_the_read_of_an_earlier_epochs_record_with_the_calculation() {
+        use crate::fees::record::{record_fee_calculations, RecordedOperation};
+        let latest = PlatformVersion::latest();
+        let drive = drive_with_epoch_protocol_versions(&[(12, latest.protocol_version)]);
+        let removing_epoch = Epoch::new(REMOVING_EPOCH).expect("expected an epoch");
+        let ((with_a_read, without_a_read), recorded) = record_fee_calculations(|| {
+            let with_a_read = price_removal(&drive, &[12], latest).expect("expected a fee");
+            let without_a_read =
+                price_removal(&drive, &[REMOVING_EPOCH], latest).expect("expected a fee");
+            drive
+                .calculate_fee(
+                    None,
+                    Some(vec![removal_operation(&[12]), removal_operation(&[12])]),
+                    &removing_epoch,
+                    latest,
+                )
+                .expect("expected a fee");
+            (with_a_read, without_a_read)
+        });
+        assert_eq!(recorded.len(), 3);
+        assert_eq!(recorded[0].reads.len(), 1, "{:?}", recorded[0].reads);
+        assert!(recorded[1].reads.is_empty());
+        // Two removals from one earlier epoch read its record once.
+        assert_eq!(recorded[2].reads, recorded[0].reads);
+        assert_eq!(recorded[2].operations.as_ref().map(Vec::len), Some(2));
+
+        // The cost that is recorded is the one the calculation charged itself.
+        let RecordedOperation::Cost(read) = &recorded[0].reads[0] else {
+            panic!("the read is recorded as {:?}", recorded[0].reads[0]);
+        };
+        let fee_of_the_read = drive
+            .calculate_fee(
+                None,
+                Some(vec![LowLevelDriveOperation::CalculatedCostOperation(
+                    read.clone(),
+                )]),
+                &removing_epoch,
+                latest,
+            )
+            .expect("expected a fee")
+            .processing_fee;
+        assert!(fee_of_the_read > 0);
+        assert_eq!(
+            with_a_read.processing_fee - without_a_read.processing_fee,
+            fee_of_the_read
+        );
+
+        // Generation 0 reads nothing and records no read.
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let (_, recorded) = record_fee_calculations(|| {
+            price_removal(&drive, &[12], protocol_version_14).expect("expected a fee")
+        });
+        assert!(recorded[0].reads.is_empty());
     }
 
     /// An earlier epoch that stored bytes had a block, which recorded its protocol version, so
