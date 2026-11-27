@@ -138,8 +138,11 @@ An `ML_DSA_65` key trades size for security against a quantum computer: its publ
 `ECDSA_SECP256K1`. Its private key is the 32 byte seed the key pair is expanded from, and a
 signature is over the signable bytes themselves with the empty context string, in the
 deterministic variant of the scheme. A transition that registers one is not active before
-protocol version 16. An identity is only protected against a quantum computer once every key
-that can change its keys or move its funds is an `ML_DSA_65` key, the master key included.
+protocol version 16. It signs and cannot encrypt, so it is registered for `AUTHENTICATION` or
+`TRANSFER`; one registered for `ENCRYPTION` or `DECRYPTION` is refused with
+`IdentityPublicKeyTypeNotAllowedForPurposeError` (10540). An identity is only protected
+against a quantum computer once every key that can change its keys or move its funds is an
+`ML_DSA_65` key, the master key included.
 
 ### Unique vs Non-Unique Keys
 

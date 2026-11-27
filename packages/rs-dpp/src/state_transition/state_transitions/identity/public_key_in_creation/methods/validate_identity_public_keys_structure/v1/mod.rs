@@ -1,6 +1,6 @@
 use crate::consensus::basic::identity::{
-    IdentityPublicKeyLimitsNotAllowedError, InvalidIdentityPublicKeyBudgetError,
-    InvalidIdentityPublicKeyDataError,
+    IdentityPublicKeyLimitsNotAllowedError, IdentityPublicKeyTypeNotAllowedForPurposeError,
+    InvalidIdentityPublicKeyBudgetError, InvalidIdentityPublicKeyDataError,
 };
 use crate::consensus::ConsensusError;
 use crate::identity::{KeyType, Purpose, SecurityLevel};
@@ -18,7 +18,8 @@ const HASH_KEY_DATA_SIZE: usize = 20;
 
 impl IdentityPublicKeyInCreation {
     /// v1 runs the v0 checks, then decides which keys may carry a budget or an expiry, then
-    /// checks the size of each hash key's data.
+    /// refuses an ML_DSA_65 key for a purpose it cannot serve, then checks the size of each
+    /// hash key's and each ML_DSA_65 key's data.
     ///
     /// Limits exist to hand an application a key that can only do so much, so they are only
     /// allowed on AUTHENTICATION keys below the MASTER security level: the master key is what
@@ -32,7 +33,9 @@ impl IdentityPublicKeyInCreation {
     /// data that is not a public key (an uncompressed 65-byte ECDSA_SECP256K1 key is valid).
     ///
     /// The data of an ML_DSA_65 key must be the 1,952 bytes of an encoded public key: every
-    /// string of that size is a public key and no other is. The key type exists from protocol
+    /// string of that size is a public key and no other is. An ML_DSA_65 key signs and can
+    /// neither encrypt nor decrypt, so it is refused for the ENCRYPTION and DECRYPTION
+    /// purposes, where it would be a key nobody can use. The key type exists from protocol
     /// version 16; a transition carrying one is not active before it, so the versions before it
     /// that select this generation never see one here.
     #[inline(always)]
@@ -70,6 +73,32 @@ impl IdentityPublicKeyInCreation {
                 } else {
                     None
                 }
+            })
+            .collect();
+        if !validation_errors.is_empty() {
+            return Ok(SimpleConsensusValidationResult::new_with_errors(
+                validation_errors,
+            ));
+        }
+
+        // Unreachable before protocol version 16, where no transition carrying the key type is
+        // active.
+        let validation_errors: Vec<ConsensusError> = identity_public_keys_with_witness
+            .iter()
+            .filter(|identity_public_key| {
+                identity_public_key.key_type() == KeyType::ML_DSA_65
+                    && matches!(
+                        identity_public_key.purpose(),
+                        Purpose::ENCRYPTION | Purpose::DECRYPTION
+                    )
+            })
+            .map(|identity_public_key| {
+                IdentityPublicKeyTypeNotAllowedForPurposeError::new(
+                    identity_public_key.id(),
+                    identity_public_key.key_type(),
+                    identity_public_key.purpose(),
+                )
+                .into()
             })
             .collect();
         if !validation_errors.is_empty() {
@@ -387,9 +416,93 @@ mod tests {
         assert!(result.is_valid(), "{:?}", result.errors);
     }
 
-    /// An ML_DSA_65 key is good for every purpose and security level a key of another type is.
+    fn ml_dsa_65_key(
+        id: u32,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+    ) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreationV0 {
+            id,
+            key_type: KeyType::ML_DSA_65,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![id as u8 + 2; 1952]),
+            signature: BinaryData::default(),
+        }
+        .into()
+    }
+
+    /// An ML_DSA_65 key signs and cannot encrypt or decrypt, so one registered for either
+    /// purpose would be a key nobody can use. Every such key of the set is reported.
     #[test]
-    fn should_accept_an_ml_dsa_65_key_at_every_purpose_and_security_level_open_to_added_keys() {
+    fn should_reject_an_ml_dsa_65_key_for_encryption_or_decryption() {
+        for purpose in [Purpose::ENCRYPTION, Purpose::DECRYPTION] {
+            let result = validate(&[ml_dsa_65_key(1, purpose, SecurityLevel::MEDIUM)]);
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IdentityPublicKeyTypeNotAllowedForPurposeError(e)
+                    )] if e.public_key_id() == 1
+                        && e.key_type() == KeyType::ML_DSA_65
+                        && e.purpose() == purpose
+                ),
+                "{purpose:?}: {:?}",
+                result.errors
+            );
+        }
+
+        let result = validate(&[
+            ml_dsa_65_key(0, Purpose::ENCRYPTION, SecurityLevel::MEDIUM),
+            ml_dsa_65_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+            ml_dsa_65_key(2, Purpose::DECRYPTION, SecurityLevel::MEDIUM),
+        ]);
+        let reported_key_ids: Vec<_> = result
+            .errors
+            .iter()
+            .map(|error| match error {
+                ConsensusError::BasicError(
+                    BasicError::IdentityPublicKeyTypeNotAllowedForPurposeError(e),
+                ) => e.public_key_id(),
+                other => panic!("unexpected error {other:?}"),
+            })
+            .collect();
+        assert_eq!(reported_key_ids, vec![0, 2]);
+    }
+
+    /// The rule is about the ML_DSA_65 key type alone: a key of a type that could be
+    /// registered for ENCRYPTION or DECRYPTION before still can.
+    #[test]
+    fn should_leave_encryption_and_decryption_keys_of_other_types_alone() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::BLS12_381] {
+            for purpose in [Purpose::ENCRYPTION, Purpose::DECRYPTION] {
+                let key: IdentityPublicKeyInCreation = IdentityPublicKeyInCreationV0 {
+                    id: 1,
+                    key_type,
+                    purpose,
+                    security_level: SecurityLevel::MEDIUM,
+                    contract_bounds: None,
+                    read_only: false,
+                    data: BinaryData::new(vec![3; key_type.default_size()]),
+                    signature: BinaryData::default(),
+                }
+                .into();
+                let result = validate(&[key]);
+                assert!(
+                    result.is_valid(),
+                    "{key_type}/{purpose:?}: {:?}",
+                    result.errors
+                );
+            }
+        }
+    }
+
+    /// An ML_DSA_65 key is good for every purpose a key signs for, at every security level
+    /// open to it.
+    #[test]
+    fn should_accept_an_ml_dsa_65_key_at_every_signing_purpose_and_security_level() {
         for (purpose, security_level) in [
             (Purpose::AUTHENTICATION, SecurityLevel::MASTER),
             (Purpose::AUTHENTICATION, SecurityLevel::CRITICAL),
@@ -397,18 +510,7 @@ mod tests {
             (Purpose::AUTHENTICATION, SecurityLevel::MEDIUM),
             (Purpose::TRANSFER, SecurityLevel::CRITICAL),
         ] {
-            let key: IdentityPublicKeyInCreation = IdentityPublicKeyInCreationV0 {
-                id: 1,
-                key_type: KeyType::ML_DSA_65,
-                purpose,
-                security_level,
-                contract_bounds: None,
-                read_only: false,
-                data: BinaryData::new(vec![3; 1952]),
-                signature: BinaryData::default(),
-            }
-            .into();
-            let result = validate(&[key]);
+            let result = validate(&[ml_dsa_65_key(1, purpose, security_level)]);
             assert!(
                 result.is_valid(),
                 "{purpose:?}/{security_level:?}: {:?}",

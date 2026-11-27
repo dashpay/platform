@@ -48,9 +48,12 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///      this version and is refused unpaid there (`StateTransitionNotActiveError`, 10603), as
 ///      software that cannot decode the key type refuses it.
 ///    - Key structure validation 1 refuses key data that is not 1,952 bytes
-///      (`InvalidIdentityPublicKeyDataError`, 10511). A proof of possession that does not verify
-///      is `BasicMLDSAError` (20019), and a transition signature that does not verify is
-///      `InvalidStateTransitionSignatureError` (20002), as for the other key types.
+///      (`InvalidIdentityPublicKeyDataError`, 10511), and a key of the type registered for
+///      ENCRYPTION or DECRYPTION, which a signing key cannot serve
+///      (`IdentityPublicKeyTypeNotAllowedForPurposeError`, 10540).
+///    - A proof of possession that does not verify is `BasicMLDSAError` (20019), and a
+///      transition signature that does not verify is `InvalidStateTransitionSignatureError`
+///      (20002), as for the other key types.
 ///    - Checking one signature costs `verify_signature_ml_dsa_65`, 100,000 credits, a new entry
 ///      of the signature fee table that no earlier version reads.
 pub const PLATFORM_V16: PlatformVersion = PlatformVersion {

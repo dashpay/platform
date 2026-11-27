@@ -3875,6 +3875,26 @@ mod tests {
             key_data: Vec<u8>,
             prove: impl FnOnce(&[u8]) -> Vec<u8>,
         ) -> StateTransition {
+            update_for_purpose(
+                owner,
+                key_type,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+                key_data,
+                prove,
+            )
+            .await
+        }
+
+        /// The same update, adding the key for `purpose` at `security_level`.
+        async fn update_for_purpose(
+            owner: &Owner,
+            key_type: KeyType,
+            purpose: Purpose,
+            security_level: SecurityLevel,
+            key_data: Vec<u8>,
+            prove: impl FnOnce(&[u8]) -> Vec<u8>,
+        ) -> StateTransition {
             let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
                 identity_id: owner.identity.id(),
                 revision: 1,
@@ -3882,8 +3902,8 @@ mod tests {
                 add_public_keys: vec![IdentityPublicKeyInCreationV0 {
                     id: ADDED_KEY_ID,
                     key_type,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_level: SecurityLevel::HIGH,
+                    purpose,
+                    security_level,
                     contract_bounds: None,
                     read_only: false,
                     data: key_data.into(),
@@ -4192,6 +4212,53 @@ mod tests {
                         ))
                     ),
                     "{data_len} bytes"
+                );
+            }
+        }
+
+        /// An ML_DSA_65 key signs and cannot encrypt or decrypt. One added for either purpose,
+        /// with a proof of possession that verifies, fails basic structure validation: check_tx
+        /// refuses it and a block refuses it unpaid, and the identity is left as it was.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_ml_dsa_65_key_for_encryption_or_decryption() {
+            let platform_version = PlatformVersion::latest();
+            for purpose in [Purpose::ENCRYPTION, Purpose::DECRYPTION] {
+                let platform = new_platform(platform_version);
+                let owner = owner(&platform, ECDSA_SECP256K1, platform_version);
+                let identity_before = stored_identity(&platform, &owner, platform_version);
+                let transition = update_for_purpose(
+                    &owner,
+                    KeyType::ML_DSA_65,
+                    purpose,
+                    SecurityLevel::MEDIUM,
+                    ml_dsa_65::public_key_from_seed(&ADDED_KEY_SEED),
+                    |signable_bytes| {
+                        ml_dsa_65::sign(signable_bytes, &ADDED_KEY_SEED).expect("expected to sign")
+                    },
+                )
+                .await;
+
+                let errors = check_tx(&platform, &transition, platform_version);
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IdentityPublicKeyTypeNotAllowedForPurposeError(error)
+                    )] if error.public_key_id() == ADDED_KEY_ID && error.purpose() == purpose,
+                    "{purpose:?}: {errors:?}"
+                );
+                assert_matches!(
+                    process_block(&platform, &transition, platform_version),
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(
+                            BasicError::IdentityPublicKeyTypeNotAllowedForPurposeError(_)
+                        )
+                    ),
+                    "{purpose:?}"
+                );
+                assert_eq!(
+                    stored_identity(&platform, &owner, platform_version),
+                    identity_before,
+                    "{purpose:?}"
                 );
             }
         }

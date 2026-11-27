@@ -238,6 +238,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityPublicKeyBudgetError(_) => 10537,
             Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
             Self::IdentityKeyLimitsUpdateEmptyError(_) => 10539,
+            Self::IdentityPublicKeyTypeNotAllowedForPurposeError(_) => 10540,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,

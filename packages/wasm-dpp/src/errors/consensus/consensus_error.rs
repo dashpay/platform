@@ -149,7 +149,7 @@ use dpp::consensus::state::identity::identity_public_key_already_exists_for_uniq
 use dpp::consensus::basic::identity::{
     IdentityKeyLimitsUpdateEmptyError, IdentityPublicKeyLimitsNotAllowedError,
     IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
-    InvalidIdentityPublicKeyBudgetError,
+    IdentityPublicKeyTypeNotAllowedForPurposeError, InvalidIdentityPublicKeyBudgetError,
 };
 use dpp::consensus::signature::{
     BasicMLDSAError, PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
@@ -1480,6 +1480,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DuplicatePrivateDocumentEntryError(e) => {
             generic_consensus_error!(DuplicatePrivateDocumentEntryError, e).into()
+        }
+        BasicError::IdentityPublicKeyTypeNotAllowedForPurposeError(e) => {
+            generic_consensus_error!(IdentityPublicKeyTypeNotAllowedForPurposeError, e).into()
         }
     }
 }
