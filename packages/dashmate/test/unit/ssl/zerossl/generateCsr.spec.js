@@ -13,14 +13,17 @@ function toSpki(key) {
 
 /**
  * @param {string} pem - a certificate request
- * @return {string} the value of its subject's one attribute
+ * @return {{ oid: string, type: number, value: string }} its subject's one
+ *  attribute
  */
-function readCommonName(pem) {
+function readSubjectAttribute(pem) {
   const [block] = forge.pem.decode(pem);
   const request = forge.asn1.fromDer(block.body);
 
   // CertificationRequestInfo, its subject, the RDN's SET, the attribute
-  return request.value[0].value[1].value[0].value[0].value[1].value;
+  const [type, value] = request.value[0].value[1].value[0].value[0].value;
+
+  return { oid: forge.asn1.derToOid(type.value), type: value.type, value: value.value };
 }
 
 /**
@@ -53,7 +56,12 @@ describe('generateCsr', () => {
       expect(request).to.not.be.null();
       expect(request.publicKey.export({ type: 'spki', format: 'der' }))
         .to.deep.equal(toSpki(keyPair.privateKey));
-      expect(readCommonName(pem)).to.equal('1.2.3.4');
+      // The common name as a PrintableString, as node-forge writes it
+      expect(readSubjectAttribute(pem)).to.deep.equal({
+        oid: '2.5.4.3',
+        type: forge.asn1.Type.PRINTABLESTRING,
+        value: '1.2.3.4',
+      });
     });
   });
 
