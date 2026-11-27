@@ -46,6 +46,20 @@ export default function assertPlatformCanStartFactory(
   }
 
   /**
+   * The node ID the configured key gives
+   *
+   * @param {string} key
+   * @return {string|null} null when it is not a Tenderdash node key
+   */
+  function deriveKeyNodeId(key) {
+    try {
+      return parseTenderdashNodeKey(key).id;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * @param {Config} config
    * @return {Promise<Object>}
    */
@@ -192,6 +206,34 @@ export default function assertPlatformCanStartFactory(
         name,
         'its Platform setup did not finish',
         describePlatformSetupState(setupState, name),
+      );
+    }
+
+    // `config set` of the key alone renders it at once and keeps the saved
+    // ID, so rendering again could not bring the two together. Which of them
+    // the registration names is not known here; doctor checks it.
+    const keyNodeId = deriveKeyNodeId(key);
+
+    if (keyNodeId !== id) {
+      const editKey = 'the Tenderdash node key that the masternode\'s registration names into'
+        + ` platform.drive.tenderdash.node.key, by editing ${homeDir.joinPath('config.json')}`
+        + ' while no dashmate command runs. Then render the service files with:';
+
+      refuse(
+        name,
+        keyNodeId === null
+          ? 'its Platform node key is not a Tenderdash node key'
+          : `its node key gives node ID ${keyNodeId}, but platform.drive.tenderdash.node.id is ${id}`,
+        [
+          ...(keyNodeId === null
+            ? [`Put ${editKey}`]
+            : [
+              `If ${keyNodeId} is the node ID the masternode's registration names, save it with:`,
+              `  dashmate config set platform.drive.tenderdash.node.id ${keyNodeId} ${flag}`,
+              `Otherwise put ${editKey}`,
+            ]),
+          `  dashmate config render ${flag}`,
+        ].join('\n'),
       );
     }
 

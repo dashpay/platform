@@ -432,6 +432,33 @@ describe('assertPlatformCanStart', () => {
     expect((await refusalOf(config)).message).to.include('dashmate config render --config testnet');
   });
 
+  // `config set` of the key alone renders it at once and keeps the saved ID.
+  // Rendering again cannot reconcile the two, so the remedy names the ID the
+  // key gives, which doctor checks against the registration.
+  it('should name the node ID to save when only the node key was changed', async () => {
+    const config = setUp('testnet', { masternode: true });
+    const staleId = config.get('platform.drive.tenderdash.node.id');
+    const key = generateTenderdashNodeKey();
+    const keyId = deriveTenderdashNodeId(key);
+    config.set('platform.drive.tenderdash.node.key', key);
+    renderNodeKey(config, { id: staleId, key });
+
+    const refusal = await refusalOf(config);
+
+    expect(refusal.problem).to.equal(`its node key gives node ID ${keyId}, but`
+      + ` platform.drive.tenderdash.node.id is ${staleId}`);
+    expect(refusal.remedy).to.include(
+      `dashmate config set platform.drive.tenderdash.node.id ${keyId} --config testnet`,
+    );
+    expect(refusal.message).to.not.include(key);
+
+    // What `config set` of the ID leaves: saved and rendered agree
+    config.set('platform.drive.tenderdash.node.id', keyId);
+    renderNodeKey(config);
+
+    expect(await refusalOf(config)).to.be.null();
+  });
+
   it('should refuse while no node key has been rendered', async () => {
     const config = setUp('testnet', { masternode: true });
 
