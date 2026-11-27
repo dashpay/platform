@@ -498,7 +498,14 @@ extension SDK {
   /// the shared Platform query queue (see ``SDK/performBlockingQuery(_:)``).
   public nonisolated func dpnsContestFundToJoin(name: String) async throws -> UInt64? {
     try await performBlockingQuery { handle in
-      let result = name.withCString { dash_sdk_dpns_get_contest_fund_to_join(handle, $0) }
+      // A name with an embedded NUL cannot cross the C ABI intact (Rust would
+      // read only its prefix), so it is refused here rather than quoted as
+      // another name.
+      let result = try withDecisionProposalCString(
+        name, field: "name", invalid: SDKError.invalidParameter
+      ) { namePtr in
+        dash_sdk_dpns_get_contest_fund_to_join(handle, namePtr)
+      }
 
       if let error = result.error {
         let sdkError = SDKError.fromDashSDKError(error.pointee)

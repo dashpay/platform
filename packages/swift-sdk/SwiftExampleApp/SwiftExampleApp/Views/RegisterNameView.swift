@@ -30,6 +30,8 @@ struct RegisterNameView: View {
   @State private var isRegistering = false
   @State private var registrationSuccess = false
   @State private var contestFund = ContestFundState.idle
+  /// The normalized name `contestFund` was read for.
+  @State private var contestFundName = ""
 
   /// The read of what joining the typed name's contest costs now.
   private enum ContestFundState: Equatable {
@@ -171,6 +173,7 @@ struct RegisterNameView: View {
   /// being typed is not read letter by letter.
   private func loadContestFund(for name: String) async {
     contestFund = .loading
+    contestFundName = name
     guard let sdk = appState.sdk else {
       contestFund = .failed("SDK not initialized")
       return
@@ -186,6 +189,22 @@ struct RegisterNameView: View {
       guard !Task.isCancelled else { return }
       contestFund = .failed(error.localizedDescription)
     }
+  }
+
+  /// The fund shown for the name now typed, which a registration states as
+  /// the most it pays into the contest (`maxContestFund`): what is paid never
+  /// exceeds what the form shows. `nil` while no fund is shown for this name.
+  private var shownContestFund: UInt64? {
+    guard contestFundName == normalizedUsername, case .loaded(let credits?) = contestFund else {
+      return nil
+    }
+    return credits
+  }
+
+  /// A contested name is not registered before its fund is shown: without a
+  /// stated maximum Rust would pay whatever the contest costs at signing.
+  private var isWaitingForContestFund: Bool {
+    isContested && shownContestFund == nil
   }
 
   /// 1 DASH is 100,000,000,000 credits.
@@ -380,7 +399,8 @@ struct RegisterNameView: View {
             .background(isValidUsername && isAvailable == true && !isRegistering ? Color.blue : Color.gray)
             .cornerRadius(10)
           }
-          .disabled(!isValidUsername || isAvailable != true || isRegistering)
+          .disabled(
+            !isValidUsername || isAvailable != true || isRegistering || isWaitingForContestFund)
           .listRowInsets(EdgeInsets())
           .listRowBackground(Color.clear)
         }
@@ -490,6 +510,16 @@ struct RegisterNameView: View {
     // subsequent display.
     let displayLabel = username.trimmingCharacters(in: .whitespacesAndNewlines)
 
+    // The most the registration pays into its contest is the fund the form
+    // shows. If the contest grew past it meanwhile, Platform refuses the
+    // registration instead of charging more, and the form reads the fund again.
+    let maxContestFund = isContested ? shownContestFund : nil
+    guard !isWaitingForContestFund else {
+      errorMessage = "The fund to join this name's contest is not known yet"
+      showingError = true
+      return
+    }
+
     isRegistering = true
 
     Task {
@@ -497,7 +527,8 @@ struct RegisterNameView: View {
         let registeredName = try await wallet.registerDpnsName(
           identityId: identity.identityId,
           name: displayLabel,
-          signer: signer
+          signer: signer,
+          maxContestFund: maxContestFund
         )
 
         await MainActor.run {
