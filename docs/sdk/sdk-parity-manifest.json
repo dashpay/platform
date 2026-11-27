@@ -97,6 +97,7 @@
     "platform_wallet_manager_accept_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_create_with_sdk": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_manager_masternodes_by_voting_key": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
@@ -5570,6 +5571,54 @@
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/ShieldFromIdentityToRecipientBindingTest.kt",
           "id": "shouldReachTheFfiInvalidHandlePathForWellFormedCalls",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "network.masternodes_by_voting_key",
+      "title": "Look up the masternodes that vote with a voting key hash",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_masternodes_by_voting_key"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Only the raw JNI declaration exists (WalletManagerNative.masternodesByVotingKey, returning the flat byte array); no public Kotlin API calls it, no test names it and KotlinExampleApp has no control for it."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/spv/runtime.rs",
+          "id": "masternodes_by_voting_key_tests",
+          "command": "cargo test -p platform-wallet masternodes_by_voting_key",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/MasternodesByVotingKeyTests.swift",
+          "id": "testShouldRejectAVotingKeyIdThatIsNotTwentyBytes",
+          "command": "swift test --package-path packages/swift-sdk --filter MasternodesByVotingKeyTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "CORE-25",
           "covers_restart": false
         }
       ]
