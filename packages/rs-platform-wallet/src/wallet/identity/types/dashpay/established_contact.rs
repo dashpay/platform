@@ -92,6 +92,25 @@ pub struct EstablishedContact {
     /// is the per-launch re-walk of dashpay/platform#4302.
     #[cfg_attr(feature = "serde", serde(default))]
     pub external_account_reference: Option<u32>,
+
+    /// The shielded payment address the contact gave us in their contact
+    /// request: the raw 43 bytes `incoming_request.encrypted_shielded_address`
+    /// decrypts to under the request's shared key. Set when the contact's
+    /// external account is built, by the same shared key that opened their
+    /// xpub. `None` when the request carries none, or what it carries is not
+    /// an address this wallet takes (see
+    /// `DashPayView::store_contact_shielded_address`).
+    ///
+    /// Like the label it belongs to the incoming request, so it is reset to
+    /// `None` on (re-)establish and on rotation.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::optional_shielded_recipient"
+        )
+    )]
+    pub contact_shielded_address: Option<[u8; 43]>,
 }
 
 impl EstablishedContact {
@@ -112,6 +131,7 @@ impl EstablishedContact {
             payment_channel_broken: false,
             contact_account_label: None,
             external_account_reference: None,
+            contact_shielded_address: None,
         }
     }
 
@@ -155,6 +175,8 @@ impl EstablishedContact {
             // incoming request, so the marker resets — the sweep re-registers
             // and re-stamps it.
             external_account_reference: None,
+            // As the label: it belongs to the incoming request.
+            contact_shielded_address: None,
         }
     }
 
@@ -266,6 +288,7 @@ mod tests {
         existing.add_accepted_account(7);
         existing.payment_channel_broken = true;
         existing.contact_account_label = Some("Stale label".to_string());
+        existing.contact_shielded_address = Some([7u8; 43]);
 
         // Re-establish with fresh request docs (newer timestamps).
         let mut newer_outgoing = create_test_outgoing_request();
@@ -292,6 +315,8 @@ mod tests {
         // The label is re-derived from the fresh incoming request, not
         // carried over (it is a property of the request, not user metadata).
         assert_eq!(reestablished.contact_account_label, None);
+        // So is the contact's shielded address.
+        assert_eq!(reestablished.contact_shielded_address, None);
     }
 
     #[test]

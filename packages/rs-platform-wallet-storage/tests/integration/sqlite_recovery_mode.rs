@@ -1443,6 +1443,7 @@ fn a_torn_contact_blob_costs_the_contact_not_the_wallet() {
                 auto_accept_proof: None,
                 core_height_created_at: 0,
                 created_at: 0,
+                encrypted_shielded_address: None,
             },
         };
         let readable = dpp::prelude::Identifier::from([0x71; 32]);

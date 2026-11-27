@@ -11002,6 +11002,134 @@ mod tests {
         );
     }
 
+    /// A valid raw Orchard address.
+    fn orchard_address(seed: u8) -> [u8; 43] {
+        use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+
+        let spending_key = SpendingKey::from_bytes([seed; 32]).expect("a valid spending key");
+        FullViewingKey::from(&spending_key)
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes()
+    }
+
+    /// The wallet of `wallet_with_labeled_contact`, its contact's requests
+    /// carrying the given `encryptedShieldedAddress` values instead of labels.
+    async fn wallet_with_contact_shielded_address(
+        incoming: Option<Vec<u8>>,
+        outgoing: Option<Vec<u8>>,
+    ) -> (
+        Arc<PlatformWalletManager<RecordingPersister>>,
+        WalletId,
+        Identifier,
+        Identifier,
+    ) {
+        let (manager, wallet_id, owner, contact) = wallet_with_labeled_contact(None, None).await;
+        {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let established = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .established_contact_mut(&contact)
+                .expect("established");
+            established.incoming_request.encrypted_shielded_address = incoming;
+            established.outgoing_request.encrypted_shielded_address = outgoing;
+        }
+        (manager, wallet_id, owner, contact)
+    }
+
+    /// Read back the stored `contact_shielded_address` for the test contact.
+    async fn stored_shielded_address(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: &WalletId,
+        owner: &Identifier,
+        contact: &Identifier,
+    ) -> Option<[u8; 43]> {
+        let wallet = manager.get_wallet(wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity(owner))
+            .and_then(|m| m.dashpay().established_contacts().get(contact))
+            .and_then(|c| c.contact_shielded_address)
+    }
+
+    #[tokio::test]
+    async fn should_store_the_shielded_address_of_a_contacts_incoming_request() {
+        let shared = [0x55u8; 32];
+        let address = orchard_address(7);
+        let field = platform_encryption::encrypt_shielded_address(&shared, &[0x11; 16], &address);
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_contact_shielded_address(Some(field.to_vec()), None).await;
+
+        let drive = || async {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            wallet
+                .identity()
+                .dashpay()
+                .store_contact_shielded_address(&owner, &contact, &shared)
+                .await;
+        };
+        drive().await;
+        assert_eq!(
+            stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
+            Some(address)
+        );
+        // A second pass changes nothing.
+        drive().await;
+        assert_eq!(
+            stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
+            Some(address)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_take_a_contacts_shielded_address_from_the_outgoing_request() {
+        let shared = [0x55u8; 32];
+        let ours = platform_encryption::encrypt_shielded_address(
+            &shared,
+            &[0x11; 16],
+            &orchard_address(7),
+        );
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_contact_shielded_address(None, Some(ours.to_vec())).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .dashpay()
+            .store_contact_shielded_address(&owner, &contact, &shared)
+            .await;
+
+        assert_eq!(
+            stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn should_leave_a_contact_without_a_shielded_address_it_cannot_read() {
+        let shared = [0x55u8; 32];
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_contact_shielded_address(Some(vec![0u8; 64]), None).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .dashpay()
+            .store_contact_shielded_address(&owner, &contact, &shared)
+            .await;
+
+        assert_eq!(
+            stored_shielded_address(&manager, &wallet_id, &owner, &contact).await,
+            None
+        );
+    }
+
     /// The seedless drain's RegisterReceiving path: `register_contact_account`
     /// with a **precomputed** receiving xpub (the Keychain signer derived our
     /// friendship key) builds the `DashpayReceivingFunds` account without

@@ -752,6 +752,8 @@ impl ManagedIdentity {
                 // the new request rather than showing the old label against
                 // fresh key material.
                 updated.contact_account_label = None;
+                // So does the shielded address the old request carried.
+                updated.contact_shielded_address = None;
                 // The stale external account (built from the old reference)
                 // is torn down by the caller — reset the marker so the build
                 // sweep re-registers from the new xpub and re-stamps it.
@@ -1821,6 +1823,7 @@ mod tests {
         let incoming = create_contact_request(contact_id, our_id, 1001);
         let mut established = EstablishedContact::new(contact_id, outgoing, incoming);
         established.contact_account_label = Some("Old label".to_string());
+        established.contact_shielded_address = Some([9u8; 43]);
         established.payment_channel_broken = true;
         managed
             .dashpay
@@ -1845,6 +1848,10 @@ mod tests {
         assert_eq!(
             contact.contact_account_label, None,
             "rotation must drop the stale label so it re-derives from the new request"
+        );
+        assert_eq!(
+            contact.contact_shielded_address, None,
+            "rotation must drop the shielded address the replaced request carried"
         );
         assert!(
             !contact.payment_channel_broken,

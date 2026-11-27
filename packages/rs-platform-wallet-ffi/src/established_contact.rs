@@ -8,6 +8,10 @@ use crate::types::*;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::EstablishedContact;
 
+/// The bytes of a raw Orchard payment address: an 11-byte diversifier and a
+/// 32-byte transmission key.
+const CONTACT_SHIELDED_ADDRESS_LEN: usize = 43;
+
 // Storage for established contacts
 lazy_static::lazy_static! {
     pub static ref ESTABLISHED_CONTACT_STORAGE: HandleStorage<EstablishedContact> = HandleStorage::new();
@@ -174,6 +178,42 @@ pub unsafe extern "C" fn established_contact_is_payment_channel_broken(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read the shielded payment address the contact gave in their contact
+/// request (`EstablishedContact::contact_shielded_address`).
+///
+/// `out_has_address` says whether the contact has one; when it does, the raw
+/// 43 bytes (an 11-byte diversifier and a 32-byte transmission key) are
+/// written to `out_address`, which is zeroed otherwise. The wallet decided
+/// what it takes when it read the request; nothing is decided here.
+///
+/// # Safety
+/// - `out_has_address` must be a valid, writable pointer.
+/// - `out_address` must point to 43 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn established_contact_get_shielded_address(
+    contact_handle: Handle,
+    out_has_address: *mut bool,
+    out_address: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_has_address);
+    check_ptr!(out_address);
+
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.contact_shielded_address);
+    let address = unwrap_option_or_return!(option);
+    unsafe {
+        *out_has_address = address.is_some();
+        std::ptr::copy_nonoverlapping(
+            address
+                .unwrap_or([0u8; CONTACT_SHIELDED_ADDRESS_LEN])
+                .as_ptr(),
+            out_address,
+            CONTACT_SHIELDED_ADDRESS_LEN,
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 /// Destroy an established contact handle and free resources
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_destroy(
@@ -185,3 +225,54 @@ pub unsafe extern "C" fn established_contact_destroy(
 }
 
 // Tests for this module are in tests/comprehensive_tests.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::prelude::Identifier;
+    use platform_wallet::ContactRequest;
+
+    fn established(address: Option<[u8; 43]>) -> Handle {
+        let us = Identifier::from([1u8; 32]);
+        let them = Identifier::from([2u8; 32]);
+        let mut contact = EstablishedContact::new(
+            them,
+            ContactRequest::new(us, them, 0, 0, 0, vec![0u8; 96], 100, 1),
+            ContactRequest::new(them, us, 0, 0, 0, vec![0u8; 96], 101, 2),
+        );
+        contact.contact_shielded_address = address;
+        ESTABLISHED_CONTACT_STORAGE.insert(contact)
+    }
+
+    #[test]
+    fn should_return_the_shielded_address_of_an_established_contact() {
+        let handle = established(Some([0x5a; 43]));
+        let mut has_address = false;
+        let mut address = [0u8; 43];
+
+        let result = unsafe {
+            established_contact_get_shielded_address(handle, &mut has_address, address.as_mut_ptr())
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(has_address);
+        assert_eq!(address, [0x5a; 43]);
+        unsafe { established_contact_destroy(handle) };
+    }
+
+    #[test]
+    fn should_return_no_shielded_address_for_a_contact_without_one() {
+        let handle = established(None);
+        let mut has_address = true;
+        let mut address = [0xffu8; 43];
+
+        let result = unsafe {
+            established_contact_get_shielded_address(handle, &mut has_address, address.as_mut_ptr())
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!has_address);
+        assert_eq!(address, [0u8; 43]);
+        unsafe { established_contact_destroy(handle) };
+    }
+}

@@ -41,6 +41,13 @@ pub struct ContactRequest {
 
     /// Timestamp when the contact request was created (milliseconds)
     pub created_at: TimestampMillis,
+
+    /// The request's `encryptedShieldedAddress` as it stands on Platform: the
+    /// sender's shielded payment address for this contact, under the request's
+    /// shared key (DashPay v3, protocol version 15). `None` when the document
+    /// has none. Kept as ciphertext because the key that opens it is only at
+    /// hand when the contact's account is built, which can be a later launch.
+    pub encrypted_shielded_address: Option<Vec<u8>>,
 }
 
 impl ContactRequest {
@@ -67,6 +74,7 @@ impl ContactRequest {
             auto_accept_proof: None,
             core_height_created_at,
             created_at,
+            encrypted_shielded_address: None,
         }
     }
 

@@ -166,6 +166,25 @@ pub struct ContactRequestFFI {
     /// account was built from; meaningful only when
     /// [`Self::has_external_account_reference`].
     pub external_account_reference: u32,
+    /// Heap-allocated copy of `ContactRequest::encrypted_shielded_address`:
+    /// the request's `encryptedShieldedAddress` as it stands on Platform
+    /// (DashPay v3), or `null` when the request carries none. A property of
+    /// the request, so it rides the row of the direction the request has.
+    /// The host stores the bytes and hands them back on restore; it never
+    /// opens them. Released by [`free_contact_requests_ffi`].
+    pub encrypted_shielded_address: *const u8,
+    /// Length of [`Self::encrypted_shielded_address`] in bytes; `0` when the
+    /// pointer is null.
+    pub encrypted_shielded_address_len: usize,
+    /// Whether [`Self::contact_shielded_address`] is set — the mirror of
+    /// `EstablishedContact::contact_shielded_address` being `Some`.
+    /// Direction-specific like [`Self::contact_account_label`]: only the
+    /// **incoming** row of an established contact carries it.
+    pub has_contact_shielded_address: bool,
+    /// The raw 43-byte shielded payment address the contact gave in their
+    /// contact request, as the wallet read it; meaningful only when
+    /// [`Self::has_contact_shielded_address`].
+    pub contact_shielded_address: [u8; 43],
 }
 
 /// Composite identifier for [`ContactChangeSet::removed_sent`] and
@@ -293,9 +312,14 @@ pub struct PrivateShieldedAddressFFI {
 //   200       has_external_account_reference bool
 //   201..=203 (padding to 4)
 //   204..=207 external_account_reference     u32
+//   208..=215 encrypted_shielded_address     *const u8
+//   216..=223 encrypted_shielded_address_len usize
+//   224       has_contact_shielded_address   bool
+//   225..=267 contact_shielded_address       [u8; 43]
+//   268..=271 (tail padding to 8)
 //
-// Total size = 208, alignment = 8 (from u64 / pointer fields).
-const _: [u8; 208] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
+// Total size = 272, alignment = 8 (from u64 / pointer fields).
+const _: [u8; 272] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 
 // Expected `ContactRequestRemovalFFI` layout: 64 bytes, alignment 1.
@@ -474,8 +498,9 @@ impl ContactRequestFFI {
         contact_account_label: Option<&str>,
         accepted_accounts: &[u32],
         external_account_reference: Option<u32>,
+        contact_shielded_address: Option<[u8; 43]>,
     ) -> Self {
-        Self::from_parts(
+        let mut row = Self::from_parts(
             owner_id,
             contact_id,
             false,
@@ -487,7 +512,12 @@ impl ContactRequestFFI {
             contact_account_label,
             accepted_accounts,
             external_account_reference,
-        )
+        );
+        // Direction-specific, as the label: the address the contact gave
+        // rides the incoming row only.
+        row.has_contact_shielded_address = contact_shielded_address.is_some();
+        row.contact_shielded_address = contact_shielded_address.unwrap_or([0u8; 43]);
+        row
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -517,6 +547,11 @@ impl ContactRequestFFI {
             None => (ptr::null(), 0),
         };
         let (accepted_accounts, accepted_accounts_len) = allocate_u32_buffer(accepted_accounts);
+        let (encrypted_shielded_address, encrypted_shielded_address_len) =
+            match request.encrypted_shielded_address.as_deref() {
+                Some(bytes) => allocate_byte_buffer(bytes),
+                None => (ptr::null(), 0),
+            };
         Self {
             owner_id,
             contact_id,
@@ -541,6 +576,10 @@ impl ContactRequestFFI {
             accepted_accounts_len,
             has_external_account_reference: external_account_reference.is_some(),
             external_account_reference: external_account_reference.unwrap_or(0),
+            encrypted_shielded_address,
+            encrypted_shielded_address_len,
+            has_contact_shielded_address: false,
+            contact_shielded_address: [0u8; 43],
         }
     }
 }
@@ -634,6 +673,10 @@ pub unsafe fn free_contact_requests_ffi(entries: *mut ContactRequestFFI, count: 
             &mut entry.accepted_accounts,
             &mut entry.accepted_accounts_len,
         );
+        free_byte_buffer(
+            &mut entry.encrypted_shielded_address,
+            &mut entry.encrypted_shielded_address_len,
+        );
     }
 }
 
@@ -721,7 +764,73 @@ mod tests {
             auto_accept_proof: Some(vec![0xDE, 0xAD, 0xBE, 0xEF]),
             core_height_created_at: 100_000,
             created_at: 1_700_000_000_000,
+            encrypted_shielded_address: None,
         }
+    }
+
+    /// A request's `encryptedShieldedAddress` rides its own row whatever the
+    /// direction, and the address the wallet read from it rides the incoming
+    /// row of an established contact only. Freeing a row reclaims the bytes.
+    #[test]
+    fn should_carry_the_encrypted_shielded_address_and_the_contacts_address() {
+        let mut request = sample_request();
+        request.encrypted_shielded_address = Some(vec![0x3c; 64]);
+        let owner = [3u8; 32];
+        let contact = [4u8; 32];
+        let field = |row: &ContactRequestFFI| unsafe {
+            std::slice::from_raw_parts(
+                row.encrypted_shielded_address,
+                row.encrypted_shielded_address_len,
+            )
+            .to_vec()
+        };
+
+        let mut pending = ContactRequestFFI::from_incoming(owner, contact, &request);
+        assert_eq!(field(&pending), vec![0x3c; 64]);
+        assert!(!pending.has_contact_shielded_address);
+
+        let mut out = ContactRequestFFI::from_established_outgoing(
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            &[],
+            None,
+        );
+        assert_eq!(field(&out), vec![0x3c; 64]);
+        assert!(!out.has_contact_shielded_address);
+
+        let mut inc = ContactRequestFFI::from_established_incoming(
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            None,
+            &[],
+            None,
+            Some([0x5a; 43]),
+        );
+        assert!(inc.has_contact_shielded_address);
+        assert_eq!(inc.contact_shielded_address, [0x5a; 43]);
+
+        let mut without = ContactRequestFFI::from_incoming(owner, contact, &sample_request());
+        assert!(without.encrypted_shielded_address.is_null());
+        assert_eq!(without.encrypted_shielded_address_len, 0);
+
+        unsafe {
+            free_contact_requests_ffi(&mut pending as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut out as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut inc as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut without as *mut ContactRequestFFI, 1);
+        }
+        assert!(inc.encrypted_shielded_address.is_null());
+        assert_eq!(inc.encrypted_shielded_address_len, 0);
     }
 
     #[test]
@@ -812,6 +921,7 @@ mod tests {
             None,
             &[],
             None,
+            None,
         );
         assert!(out.is_outgoing);
         assert!(!inc.is_outgoing);
@@ -885,6 +995,7 @@ mod tests {
             Some("Main wallet"),
             &[],
             None,
+            None,
         );
 
         assert!(
@@ -941,6 +1052,7 @@ mod tests {
             None,
             &[],
             Some(4),
+            None,
         );
         for row in [&out, &inc] {
             assert!(row.has_external_account_reference);
@@ -957,6 +1069,7 @@ mod tests {
             false,
             None,
             &[],
+            None,
             None,
         );
         assert!(!unstamped.has_external_account_reference);

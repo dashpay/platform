@@ -2005,7 +2005,7 @@ mod tests {
 
         assert_eq!(
             schema_version(&conn),
-            23,
+            24,
             "the upgrade runs on through the migrations after V022"
         );
     }
