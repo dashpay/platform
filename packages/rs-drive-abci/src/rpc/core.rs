@@ -1,3 +1,4 @@
+use crate::rpc::deadline_http::DeadlineHttpTransport;
 use crate::rpc::prefetch::CorePrefetcher;
 use dpp::dashcore::consensus::encode::deserialize_partial;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -13,10 +14,12 @@ use dpp::dashcore_rpc::dashcore_rpc_json::{
 use dpp::dashcore_rpc::json::GetRawTransactionResult;
 use dpp::dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
 use dpp::dashcore_rpc::jsonrpc::simple_http::Error as HttpError;
+use dpp::dashcore_rpc::jsonrpc::Client as JsonRpcClient;
 use dpp::dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::prelude::TimestampMillis;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io;
 use std::time::Duration;
 
 /// Information returned by QuorumListExtended
@@ -173,6 +176,23 @@ pub trait CoreRPCLike {
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
 
+    /// Get quorum information for a caller that can do without the answer: one request, without
+    /// the retries of [`CoreRPCLike::get_quorum_info`], that gives up when Core has not answered
+    /// in full within [`BOUNDED_CORE_CALL_DEADLINE`].
+    ///
+    /// A client that cannot bound a request that way keeps this default, which asks nothing and
+    /// reports the lookup as unsupported.
+    fn get_quorum_info_within_deadline(
+        &self,
+        _quorum_type: QuorumType,
+        _hash: &QuorumHash,
+    ) -> Result<QuorumInfoResult, Error> {
+        Err(Error::Io(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "this Core RPC client cannot bound a quorum info request",
+        )))
+    }
+
     /// Get the difference in masternode list, return masternodes as diff elements
     fn get_protx_diff_with_masternodes(
         &self,
@@ -225,7 +245,15 @@ pub struct DefaultCoreRPC {
     /// Speculative fetcher for the next core height, on its own connection.
     /// `None` when a second connection could not be opened.
     prefetcher: Option<CorePrefetcher>,
+    /// Calls that can do without the answer, each on a connection of its own and given up after
+    /// [`BOUNDED_CORE_CALL_DEADLINE`].
+    bounded: Client,
 }
+
+/// How long a call that can do without the answer waits for Core's whole answer. Core answers
+/// `quorum info` in milliseconds; the margin covers it computing a quorum's public key shares
+/// for the first time.
+pub const BOUNDED_CORE_CALL_DEADLINE: Duration = Duration::from_secs(2);
 
 // TODO: Create errors for these error codes in dashcore_rpc
 
@@ -327,9 +355,14 @@ impl DefaultCoreRPC {
                 "could not open a second Core RPC connection; masternode and quorum updates will be fetched on the critical path"
             );
         }
+        let bounded_transport =
+            DeadlineHttpTransport::new(url, &username, &password, BOUNDED_CORE_CALL_DEADLINE)
+                .map_err(Error::Io)?;
+        let inner = Client::new(url, Auth::UserPass(username, password))?;
         Ok(DefaultCoreRPC {
-            inner: Client::new(url, Auth::UserPass(username, password))?,
+            inner,
             prefetcher,
+            bounded: Client::from_jsonrpc(JsonRpcClient::with_transport(bounded_transport)),
         })
     }
 
@@ -468,6 +501,15 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_quorum_info_reversed(quorum_type, hash, include_secret_key_share))
+    }
+
+    fn get_quorum_info_within_deadline(
+        &self,
+        quorum_type: QuorumType,
+        hash: &QuorumHash,
+    ) -> Result<QuorumInfoResult, Error> {
+        self.bounded
+            .get_quorum_info_reversed(quorum_type, hash, None)
     }
 
     fn get_protx_diff_with_masternodes(
@@ -1237,6 +1279,127 @@ mod tests {
         }
     }
 
+    /// The JSON-RPC requests `DefaultCoreRPC` sends for a validator quorum's key shares.
+    mod quorum_info_requests {
+        use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC, BOUNDED_CORE_CALL_DEADLINE};
+        use crate::rpc::deadline_http::fake_core::{FakeCore, Reply};
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::QuorumHash;
+        use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
+        use dpp::dashcore_rpc::jsonrpc::{self, Request, Response, Transport};
+        use dpp::dashcore_rpc::Client;
+        use serde_json::Value;
+        use std::fmt;
+        use std::sync::{Arc, Mutex};
+        use std::time::{Duration, Instant};
+
+        /// A transport to a Core that never answers: it records each request and fails it as a
+        /// timed-out connection does.
+        struct UnansweredTransport {
+            requests: Arc<Mutex<Vec<Value>>>,
+        }
+
+        impl Transport for UnansweredTransport {
+            fn send_request(&self, request: Request) -> Result<Response, jsonrpc::Error> {
+                self.requests
+                    .lock()
+                    .expect("requests lock")
+                    .push(serde_json::to_value(&request).expect("request is JSON"));
+                Err(jsonrpc::Error::Transport(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "timed out",
+                ))))
+            }
+
+            fn send_batch(&self, _: &[Request]) -> Result<Vec<Response>, jsonrpc::Error> {
+                Err(jsonrpc::Error::EmptyBatch)
+            }
+
+            fn fmt_target(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "unanswered transport")
+            }
+        }
+
+        /// The key shares are asked for on the block path and the block goes on without them,
+        /// so the request goes out once, on the bounded connection, without the retries of the
+        /// other calls.
+        #[test]
+        fn should_ask_core_for_quorum_info_once_on_its_own_connection() {
+            let inner_requests: Arc<Mutex<Vec<Value>>> = Arc::default();
+            let bounded_requests: Arc<Mutex<Vec<Value>>> = Arc::default();
+            let core_rpc = DefaultCoreRPC {
+                inner: Client::from_jsonrpc(jsonrpc::Client::with_transport(UnansweredTransport {
+                    requests: Arc::clone(&inner_requests),
+                })),
+                prefetcher: None,
+                bounded: Client::from_jsonrpc(jsonrpc::Client::with_transport(
+                    UnansweredTransport {
+                        requests: Arc::clone(&bounded_requests),
+                    },
+                )),
+            };
+
+            let answer = core_rpc.get_quorum_info_within_deadline(
+                QuorumType::Llmq100_67,
+                &QuorumHash::from_byte_array([7; 32]),
+            );
+
+            assert!(answer.is_err());
+            let requests = bounded_requests.lock().expect("requests lock");
+            assert_eq!(requests.len(), 1, "one attempt");
+            assert_eq!(requests[0]["method"], "quorum");
+            assert_eq!(requests[0]["params"][0], "info");
+            assert_eq!(requests[0]["params"][1], 4);
+            assert!(inner_requests.lock().expect("requests lock").is_empty());
+        }
+
+        /// A Core that takes the request and never answers costs the block the deadline, and
+        /// is asked once.
+        #[test]
+        fn should_give_up_on_a_core_that_never_answers_by_the_deadline() {
+            let core = FakeCore::start(|_| Reply::silence());
+            let core_rpc = DefaultCoreRPC::open(&core.url(), "user".into(), "pass".into())
+                .expect("expected to open the Core RPC client");
+
+            let started = Instant::now();
+            let answer = core_rpc.get_quorum_info_within_deadline(
+                QuorumType::Llmq100_67,
+                &QuorumHash::from_byte_array([7; 32]),
+            );
+            let waited = started.elapsed();
+
+            assert!(answer.is_err());
+            assert!(
+                waited < BOUNDED_CORE_CALL_DEADLINE + Duration::from_secs(1),
+                "waited {waited:?} for a Core that never answers"
+            );
+            let requests = core.stop();
+            assert_eq!(requests.len(), 1, "one request");
+            assert!(requests[0].contains("\"method\":\"quorum\""));
+        }
+
+        /// A Core that closes the connection in the middle of its answer's headers ends the
+        /// request at once with an error.
+        #[test]
+        fn should_fail_at_once_when_core_closes_the_connection_in_the_headers() {
+            let core = FakeCore::start(|_| {
+                Reply::raw("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n")
+            });
+            let core_rpc = DefaultCoreRPC::open(&core.url(), "user".into(), "pass".into())
+                .expect("expected to open the Core RPC client");
+
+            let started = Instant::now();
+            let answer = core_rpc.get_quorum_info_within_deadline(
+                QuorumType::Llmq100_67,
+                &QuorumHash::from_byte_array([7; 32]),
+            );
+
+            assert!(answer.is_err());
+            assert!(started.elapsed() < BOUNDED_CORE_CALL_DEADLINE);
+            assert_eq!(core.stop().len(), 1);
+        }
+    }
+
     /// The JSON-RPC requests `DefaultCoreRPC` sends for a chain lock.
     mod chain_lock_requests {
         use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
@@ -1286,11 +1449,16 @@ mod tests {
             let requests = Arc::new(Mutex::new(Vec::new()));
             let transport = RecordingTransport {
                 requests: Arc::clone(&requests),
+                answer: answer.clone(),
+            };
+            let bounded_transport = RecordingTransport {
+                requests: Arc::clone(&requests),
                 answer,
             };
             let core_rpc = DefaultCoreRPC {
                 inner: Client::from_jsonrpc(jsonrpc::Client::with_transport(transport)),
                 prefetcher: None,
+                bounded: Client::from_jsonrpc(jsonrpc::Client::with_transport(bounded_transport)),
             };
             (core_rpc, requests)
         }

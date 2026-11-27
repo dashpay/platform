@@ -1,3 +1,4 @@
+mod complete_validator_key_shares;
 mod reconcile_operator_payouts_with_core;
 mod update_core_info;
 mod update_masternode_identities;

@@ -1,7 +1,7 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dashcore_crypto::dash_pkc::__deps::ff::{Field, PrimeField};
-use dashcore_crypto::dash_pkc::bls::Fr;
+use dashcore_crypto::dash_pkc::bls::{BlsShareId, Fr};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsPrivateKey};
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dpp::dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
@@ -128,12 +128,9 @@ fn random_socket_addr(rng: &mut StdRng) -> SocketAddr {
 // https://github.com/dashpay/base-sdk/issues/113
 fn recover_quorum_private_key(members: &[(ProTxHash, BlsPrivateKey)]) -> BlsPrivateKey {
     assert!(members.len() >= 2, "expected at least two quorum members");
-    // Core reads the stored proTxHash bytes as a big-endian scalar, reduced modulo r.
     let ids: Vec<_> = members
         .iter()
-        .map(|(id, _)| {
-            Fr::from_bendian_reduce(&id.to_byte_array()).expect("nonzero quorum member id")
-        })
+        .map(|(pro_tx_hash, _)| member_id_scalar(pro_tx_hash))
         .collect();
     let mut recovered = Fr::ZERO;
     for (i, (_, key)) in members.iter().enumerate() {
@@ -149,12 +146,27 @@ fn recover_quorum_private_key(members: &[(ProTxHash, BlsPrivateKey)]) -> BlsPriv
         let inverse = denominator
             .invert()
             .expect("distinct quorum member identifiers");
-        let scalar = Fr::from_bendian_reduce(&key.to_be_bytes()).expect("nonzero member key");
-        recovered += scalar * numerator * inverse;
+        recovered += scalar_of(key) * numerator * inverse;
     }
-    let mut bytes = recovered.to_repr();
+    private_key_of(recovered)
+}
+
+/// A member's BLS id as a scalar: its proTxHash as Core prints it, read as Core and Tenderdash
+/// read it.
+fn member_id_scalar(pro_tx_hash: &ProTxHash) -> Fr {
+    let id = BlsShareId::from_hex(&hex::encode(pro_tx_hash.to_byte_array()))
+        .expect("a proTxHash in hex");
+    Fr::from_bendian_reduce(id.as_bytes()).expect("nonzero quorum member id")
+}
+
+fn scalar_of(key: &BlsPrivateKey) -> Fr {
+    Fr::from_bendian_reduce(&key.to_be_bytes()).expect("nonzero key")
+}
+
+fn private_key_of(scalar: Fr) -> BlsPrivateKey {
+    let mut bytes = scalar.to_repr();
     bytes.reverse();
-    BlsPrivateKey::from_be_bytes(&bytes).expect("nonzero recovered quorum private key")
+    BlsPrivateKey::from_be_bytes(&bytes).expect("nonzero private key")
 }
 
 impl TestQuorumInfo {
@@ -173,6 +185,62 @@ impl TestQuorumInfo {
             .map(|id| (id, BlsPrivateKey::random(&mut *rng)))
             .collect();
         let recovered_private_key = recover_quorum_private_key(&members);
+        Self::with_member_keys(
+            core_height,
+            quorum_hash,
+            quorum_index,
+            members,
+            recovered_private_key,
+            rng,
+        )
+    }
+
+    /// Like [`Self::from_quorum_hash_and_pro_tx_hashes`], but the shares of any `threshold`
+    /// members recover the quorum key, as in a real quorum whose threshold is below its size.
+    pub fn from_quorum_hash_and_pro_tx_hashes_with_threshold(
+        core_height: u32,
+        quorum_hash: QuorumHash,
+        quorum_index: Option<u32>,
+        pro_tx_hashes: Vec<ProTxHash>,
+        threshold: usize,
+        rng: &mut StdRng,
+    ) -> Self {
+        assert!(
+            threshold >= 2 && threshold <= pro_tx_hashes.len(),
+            "expected a threshold between 2 and the member count"
+        );
+        let coefficients: Vec<Fr> = (0..threshold)
+            .map(|_| scalar_of(&BlsPrivateKey::random(&mut *rng)))
+            .collect();
+        let members = pro_tx_hashes
+            .into_iter()
+            .map(|pro_tx_hash| {
+                let x = member_id_scalar(&pro_tx_hash);
+                let share = coefficients
+                    .iter()
+                    .rev()
+                    .fold(Fr::ZERO, |share, coefficient| share * x + coefficient);
+                (pro_tx_hash, private_key_of(share))
+            })
+            .collect();
+        Self::with_member_keys(
+            core_height,
+            quorum_hash,
+            quorum_index,
+            members,
+            private_key_of(coefficients[0]),
+            rng,
+        )
+    }
+
+    fn with_member_keys(
+        core_height: u32,
+        quorum_hash: QuorumHash,
+        quorum_index: Option<u32>,
+        members: Vec<(ProTxHash, BlsPrivateKey)>,
+        recovered_private_key: BlsPrivateKey,
+        rng: &mut StdRng,
+    ) -> Self {
         let validator_set: Vec<_> = members
             .into_iter()
             .map(|(pro_tx_hash, key)| {
@@ -315,11 +383,73 @@ mod tests {
         signature: String,
     }
 
+    /// The proTxHash whose BLS id is the vectors' id for member `index`: the curve reads a
+    /// proTxHash's id in the reverse of Platform's byte order, so these are the ids reversed.
     fn member_hash(index: u8) -> ProTxHash {
         let mut id = [0; 32];
         id[0] = index + 1;
         id[31] = index + 11;
+        id.reverse();
         ProTxHash::from_byte_array(id)
+    }
+
+    /// A test quorum with a threshold below its size behaves like a real one: any `threshold`
+    /// members' key shares recover its key, and fewer do not.
+    #[test]
+    fn should_recover_a_threshold_quorum_key_from_any_threshold_members() {
+        let quorum = TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes_with_threshold(
+            100,
+            QuorumHash::from_byte_array([42; 32]),
+            None,
+            (1..=5u8)
+                .map(|index| ProTxHash::from_byte_array([index; 32]))
+                .collect(),
+            3,
+            &mut StdRng::seed_from_u64(42),
+        );
+        let shares: Vec<(ProTxHash, BlsPublicKey)> = quorum
+            .validator_set
+            .iter()
+            .map(|member| (member.pro_tx_hash, member.public_key))
+            .collect();
+
+        for subset in [&shares[..3], &shares[2..], &shares[..]] {
+            assert_eq!(
+                BlsPublicKey::recover_threshold(subset).unwrap(),
+                quorum.public_key
+            );
+        }
+        assert_ne!(
+            BlsPublicKey::recover_threshold(&shares[..2]).unwrap(),
+            quorum.public_key
+        );
+    }
+
+    /// Drive checks the key shares Core gives by recovering the quorum's public key from them,
+    /// as Tenderdash checks a fully keyed validator set. The frozen vectors pin that recovery to
+    /// the one Core's BLS library made from the same keys and ids.
+    #[test]
+    fn should_recover_frozen_core_quorum_public_keys_from_member_key_shares() {
+        let vectors: Vec<QuorumVector> =
+            serde_json::from_str(include_str!("fixtures/core_quorums.json")).unwrap();
+        for vector in vectors {
+            let shares: Vec<(ProTxHash, BlsPublicKey)> = vector
+                .members
+                .iter()
+                .enumerate()
+                .map(|(index, member)| {
+                    let key = hex::decode(&member.public_key).unwrap();
+                    (
+                        member_hash(index as u8),
+                        BlsPublicKey::try_from(key.as_slice()).unwrap(),
+                    )
+                })
+                .collect();
+
+            let recovered = BlsPublicKey::recover_threshold(&shares).unwrap();
+
+            assert_eq!(hex::encode(recovered.to_bytes()), vector.public_key);
+        }
     }
 
     #[test]
@@ -416,18 +546,23 @@ mod tests {
     #[test]
     #[should_panic(expected = "distinct quorum member identifiers")]
     fn should_reject_member_identifiers_equal_modulo_the_scalar_order() {
+        // ProTxHashes whose BLS ids, their bytes reversed, are one and the scalar order plus one.
         let mut one = [0; 32];
         one[31] = 1;
-        let order_plus_one =
+        one.reverse();
+        let mut order_plus_one: [u8; 32] =
             hex::decode("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000002")
+                .unwrap()
+                .try_into()
                 .unwrap();
+        order_plus_one.reverse();
         TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
             100,
             QuorumHash::from_byte_array([42; 32]),
             None,
             vec![
                 ProTxHash::from_byte_array(one),
-                ProTxHash::from_slice(&order_plus_one).unwrap(),
+                ProTxHash::from_byte_array(order_plus_one),
             ],
             &mut StdRng::seed_from_u64(42),
         );

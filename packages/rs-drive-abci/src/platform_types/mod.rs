@@ -18,6 +18,8 @@ pub mod masternode;
 pub mod platform;
 /// Platform state
 pub mod platform_state;
+/// Validator quorum member key shares Core has given, kept in memory
+pub(crate) mod quorum_key_share_cache;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
 /// Signature verification quorums for Core

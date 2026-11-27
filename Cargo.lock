@@ -2474,6 +2474,7 @@ dependencies = [
  "arc-swap",
  "assert_matches",
  "async-trait",
+ "base64 0.22.1",
  "blake3",
  "bytes",
  "chrono",

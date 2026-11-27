@@ -11,6 +11,7 @@ use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+use crate::platform_types::quorum_key_share_cache::QuorumKeyShareCache;
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
@@ -54,6 +55,9 @@ pub struct Platform<C> {
     pub core_rpc: C,
     /// CheckTx-only proof-verification admission control
     pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
+    /// Validator quorum member key shares Core has given, sent to Tenderdash for sets Drive
+    /// first saw without them
+    pub(crate) quorum_key_shares: QuorumKeyShareCache,
 }
 
 // @append_only
@@ -289,6 +293,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
+            quorum_key_shares: QuorumKeyShareCache::default(),
         };
 
         Ok(platform)
@@ -327,6 +332,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
+            quorum_key_shares: QuorumKeyShareCache::default(),
         })
     }
 }
