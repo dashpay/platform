@@ -934,6 +934,34 @@ async fn should_give_token_notes_paths_to_the_root_of_the_kept_leaves() {
     ));
 }
 
+/// A token pool tree that does not build from its kept leaves is a store
+/// fault no sync repairs, not the retry-after-sync witness refusal (code 88)
+/// that a note past those leaves gets. The kept leaf here is 32 bytes that
+/// are not a field element, which the tree refuses to append.
+#[tokio::test]
+async fn should_report_a_token_pool_tree_that_does_not_build_as_a_store_error() {
+    let tables = TestTables::new();
+    let selected = owned(SubwalletId::new(WALLET, 0), 0, 5);
+    let err = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            conn.execute(
+                "INSERT INTO shielded_token_pool_leaves (token_id, position, cmx) \
+                 VALUES (?1, 0, ?2)",
+                params![token().token_id.as_slice(), [0xFF_u8; 32].as_slice()],
+            )
+            .expect("leaf row");
+            spend_paths(conn, token().token_id, &[selected])
+        })
+        .expect_err("the kept leaf is not a field element");
+    assert!(
+        matches!(&err, PlatformWalletError::ShieldedStoreError(message)
+            if message.contains("does not build")),
+        "a tree that does not build is a store error, got {err:?}"
+    );
+}
+
 /// The sweep judges only the accounts it was given: a reservation of an
 /// account not registered now (its records unread) is kept, even in a pool
 /// another account's scan completed.
