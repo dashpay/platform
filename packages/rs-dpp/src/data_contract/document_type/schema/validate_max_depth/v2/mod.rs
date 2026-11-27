@@ -1,12 +1,13 @@
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::BasicError;
-use crate::data_contract::document_type::schema::MaxDepthValidationResult;
+use crate::data_contract::document_type::schema::{
+    follow_json_pointer, json_pointer_of, MaxDepthValidationResult,
+};
 use crate::data_contract::errors::DataContractError;
 use crate::validation::ConsensusValidationResult;
 
@@ -159,68 +160,21 @@ fn max_depth_exceeded(
 }
 
 /// The schema `uri`, a `$ref`, points at, read as the document validator's `$ref` resolver
-/// reads it (RFC 6901), so the depth and cycle check sees the schema the validator walks.
-/// `uri` is a pointer into the document schema, `#` or `#/...`, without a percent escape,
-/// whitespace or control character, which the validator's resolver parses into a URL that
-/// would drop or re-encode those. In each segment `~1` is `/` and `~0` is `~`, an array
-/// index has no sign or leading zero, and a segment naming a repeated map key reaches its
-/// last entry, as the validator reads a map.
+/// reads it (RFC 6901, [`follow_json_pointer`]), so the depth and cycle check sees the schema
+/// the validator walks. `uri` is a pointer into the document schema, `#` or `#/...`, without a
+/// percent escape, whitespace or control character ([`json_pointer_of`]).
 fn resolve_json_pointer<'a>(root: &'a Value, uri: &str) -> Result<&'a Value, DataContractError> {
-    let pointer = uri
-        .strip_prefix('#')
-        .filter(|pointer| pointer.is_empty() || pointer.starts_with('/'))
-        .filter(|pointer| {
-            !pointer.contains(|c: char| c == '%' || c.is_whitespace() || c.is_control())
-        })
-        .ok_or_else(|| {
-            DataContractError::InvalidURI(format!(
-                "`{uri}` is not a JSON pointer into the document schema (`#` or `#/...`, \
-                 without `%`, whitespace or control characters)"
-            ))
-        })?;
-    let unresolved = || {
+    let pointer = json_pointer_of(uri).ok_or_else(|| {
+        DataContractError::InvalidURI(format!(
+            "`{uri}` is not a JSON pointer into the document schema (`#` or `#/...`, \
+             without `%`, whitespace or control characters)"
+        ))
+    })?;
+    follow_json_pointer(root, pointer).ok_or_else(|| {
         DataContractError::InvalidURI(format!(
             "`{uri}` does not resolve within the document schema"
         ))
-    };
-    let mut target = root;
-    let Some(pointer) = pointer.strip_prefix('/') else {
-        return Ok(target);
-    };
-    for segment in pointer.split('/') {
-        let segment = if segment.contains('~') {
-            Cow::Owned(segment.replace("~1", "/").replace("~0", "~"))
-        } else {
-            Cow::Borrowed(segment)
-        };
-        target = match target {
-            Value::Map(map) => last_value(map, &segment).ok_or_else(unresolved)?,
-            Value::Array(elements) => array_index(&segment)
-                .and_then(|index| elements.get(index))
-                .ok_or_else(unresolved)?,
-            _ => return Err(unresolved()),
-        };
-    }
-    Ok(target)
-}
-
-/// The value of the last entry of `map` whose key is the text `key`, as the document
-/// validator reads a map keeping a repeated key's last entry; `None` when it holds none.
-fn last_value<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
-    map.iter()
-        .rev()
-        .find(|(name, _)| name.as_text() == Some(key))
-        .map(|(_, value)| value)
-}
-
-/// An array index in a JSON pointer segment, as the document validator reads one: decimal
-/// digits with no sign and no leading zero.
-fn array_index(segment: &str) -> Option<usize> {
-    if segment.starts_with('+') || (segment.starts_with('0') && segment.len() != 1) {
-        None
-    } else {
-        segment.parse().ok()
-    }
+    })
 }
 
 #[cfg(test)]

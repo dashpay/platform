@@ -68,6 +68,9 @@
 
 use std::collections::BTreeMap;
 
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
@@ -75,13 +78,18 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::v0::IdentityV0;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransition;
+use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 
 use crate::core::FetchedCoreTransaction;
 use crate::platform::transition::asset_lock_submission::{
@@ -90,8 +98,9 @@ use crate::platform::transition::asset_lock_submission::{
 };
 use crate::platform::transition::put_identity::PutIdentity;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::types::identity::PublicKeyHash;
 use crate::platform::Fetch;
-use crate::{Error, Sdk};
+use crate::{Error, ProtocolVersionInfo, Sdk};
 
 /// Hard cap on the amount an invitation can lock (0.26 DASH). The voucher is a
 /// bearer credential, so the blast radius of a leaked link is bounded here in
@@ -160,6 +169,40 @@ pub enum InvitationError {
     /// says which.
     #[error("{0}")]
     NotChainLocked(String),
+
+    /// The invitation is claimed: an identity already exists at its id. Whose
+    /// it is is not decided here; no key the claim submitted proves it (a
+    /// shared application key does not prove the master). It may be someone
+    /// else's claim, or an earlier claim of the same claimant whose result
+    /// was lost; a wallet tells the two apart only by an identity it already
+    /// records. Usually found before the broadcast, else from Platform's
+    /// consumed-outpoint refusal when the identity is not exactly the
+    /// submitted one.
+    #[error("invitation was already claimed by identity {identity_id}")]
+    AlreadyClaimed { identity_id: Identifier },
+
+    /// A submitted key is already registered to another identity, so
+    /// Platform would refuse the claim and charge the voucher for it.
+    /// `identity_id` is that identity when the claim's own lookup found it,
+    /// and `None` when the refusal came from Platform after the broadcast
+    /// (a node that had not seen the identity yet answered the lookup).
+    /// `rejection` is then Platform's refusal itself (consensus error 40207,
+    /// or 10501 before protocol v11), kept for its consensus code.
+    #[error(
+        "a key of this claim is already registered to {}",
+        key_owner(identity_id)
+    )]
+    KeysAlreadyRegistered {
+        identity_id: Option<Identifier>,
+        #[source]
+        rejection: Option<Error>,
+    },
+
+    /// The claim's identity lookups could not be verified yet: the trusted
+    /// quorum source is not ready (see [`Error::is_quorum_source_unavailable`]).
+    /// Nothing was broadcast; retry once the wallet has synced.
+    #[error("cannot verify Platform's answer yet, retry once synced: {0}")]
+    NotReady(#[source] Error),
 
     /// An SDK call failed.
     #[error(transparent)]
@@ -268,6 +311,14 @@ impl std::fmt::Debug for ParsedInvitation {
             .field("inviter", &self.inviter)
             .finish_non_exhaustive()
     }
+}
+
+/// The owner [`InvitationError::KeysAlreadyRegistered`] names in its message.
+fn key_owner(identity_id: &Option<Identifier>) -> String {
+    identity_id.map_or_else(
+        || "another identity".to_string(),
+        |id| format!("identity {id}"),
+    )
 }
 
 fn invalid(msg: impl Into<String>) -> InvitationError {
@@ -704,6 +755,131 @@ fn preflight_keys_map(keys_map: &BTreeMap<u32, IdentityPublicKey>) -> Result<(),
             ))
         }
     }
+    // The transition carries each key's own id, not its map position, so a
+    // key filed under another slot is refused: the map's keys are then no
+    // longer a promise that the ids are unique. Two keys sharing an id would
+    // be refused by Platform with 10501, the code a key registered elsewhere
+    // also got before protocol v11, which the claim reads as
+    // `KeysAlreadyRegistered`.
+    if let Some((slot, key)) = keys_map.iter().find(|(slot, key)| key.id() != **slot) {
+        return Err(InvitationError::Invalid(format!(
+            "keys_map entry {slot} holds key id {id}; file each key under its own id \
+             (key {id} goes in entry {id})",
+            id = key.id()
+        )));
+    }
+    // More keys than any protocol version this build knows lets an identity
+    // create carry are refused here, before a lookup is started for each:
+    // the network's version is known only after those lookups, and a version
+    // newer than this build is refused then anyway.
+    let most_keys = PLATFORM_VERSIONS
+        .iter()
+        .map(|version| {
+            version
+                .dpp
+                .state_transitions
+                .identities
+                .max_public_keys_in_creation
+        })
+        .max()
+        .unwrap_or_default() as usize;
+    if keys_map.len() > most_keys {
+        return Err(InvitationError::Invalid(format!(
+            "keys_map holds {} keys, but an identity is created with at most \
+             {most_keys}; claim with at most {most_keys} keys and add the rest \
+             to the identity after the claim",
+            keys_map.len()
+        )));
+    }
+    Ok(())
+}
+
+/// The protocol version whose rules judge a claim's keys: the newer of the
+/// version this SDK builds operations with and the one the network signed in a
+/// verified answer, so neither an SDK that starts below its network nor one
+/// pinned below it judges by older rules. Refused when no verified answer
+/// showed the network's version, or when this build lacks its rules: the keys
+/// cannot be checked, and Platform refuses bad ones only after charging part
+/// of the voucher.
+fn claim_keys_platform_version(
+    info: &ProtocolVersionInfo,
+) -> Result<&'static PlatformVersion, InvitationError> {
+    let network = info.verified_version.ok_or_else(|| {
+        invalid("the network's protocol version was not verified, so the identity keys cannot be checked")
+    })?;
+    let version = network.max(info.effective_version);
+    PlatformVersion::get(version).map_err(|_| {
+        invalid(format!(
+            "the network runs protocol version {version}, newer than this SDK knows \
+             (up to {}), so the identity keys cannot be checked",
+            info.maximum_supported_version
+        ))
+    })
+}
+
+/// Refuse a key set that Platform's structural validation of an identity
+/// create would refuse (duplicate key data, too many keys, master key count,
+/// security levels), using that validation itself. Platform refuses those
+/// only after it has charged part of the voucher.
+fn validate_claim_keys_structure(
+    keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
+    platform_version: &PlatformVersion,
+) -> Result<(), InvitationError> {
+    let keys: Vec<IdentityPublicKeyInCreation> = keys_map.values().map(Into::into).collect();
+    let result = IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+        &keys,
+        true,
+        platform_version,
+    )
+    .map_err(|e| invalid(format!("could not validate the identity keys: {e}")))?;
+    match result.errors.first() {
+        Some(error) => Err(invalid(format!(
+            "Platform would refuse these identity keys: {error}"
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// Refuse a key set whose format the network's protocol version does not
+/// accept yet (a version 1 key or a group-bound key before the version that
+/// introduced them), by DPP's own activation rule for an identity create.
+/// The node would drop such a claim undecoded, so it is refused before the
+/// signer is asked for anything. The version this SDK builds operations with
+/// (a pin, or what it detected) must accept the format as well. Without a
+/// verified network version [`claim_keys_platform_version`] has already
+/// refused the claim.
+fn validate_claim_keys_active(
+    keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
+    info: &ProtocolVersionInfo,
+) -> Result<(), InvitationError> {
+    let Some(network) = info.verified_version else {
+        return Ok(());
+    };
+    let transition = StateTransition::IdentityCreate(
+        IdentityCreateTransitionV0 {
+            public_keys: keys_map.values().map(Into::into).collect(),
+            ..Default::default()
+        }
+        .into(),
+    );
+    let active = transition.active_version_range();
+    if !active.contains(&network) {
+        return Err(invalid(format!(
+            "the network runs protocol version {network}, but these identity keys \
+             need protocol version {} or later; claim with version 0 keys that are \
+             not bound to a contract group",
+            active.start()
+        )));
+    }
+    if !active.contains(&info.effective_version) {
+        return Err(invalid(format!(
+            "this SDK builds with protocol version {}, but these identity keys \
+             need protocol version {} or later; claim with version 0 keys that are \
+             not bound to a contract group, or build with the network's version",
+            info.effective_version,
+            active.start()
+        )));
+    }
     Ok(())
 }
 
@@ -796,7 +972,8 @@ impl Sdk {
         let funding = inspect_invitation_funding(self, invitation).await?;
         let prospective_identity_id = identity_id_for_out_point(funding.out_point);
         let already_claimed = Identity::fetch(self, prospective_identity_id)
-            .await?
+            .await
+            .map_err(lookup_failure)?
             .is_some();
         Ok(InvitationClaimStatus {
             prospective_identity_id,
@@ -844,9 +1021,22 @@ impl Sdk {
     /// lock's inputs nor its tracking. `keys_map[0]` must be a MASTER-level
     /// AUTHENTICATION key.
     ///
-    /// A claim repeated after an earlier one landed is refused by Platform
-    /// because its outpoint is consumed; the identity at the prospective id is
-    /// returned when it carries exactly the submitted keys.
+    /// Before anything is broadcast, the claim looks up the identity at the
+    /// invitation's id and every identity registered under a submitted key's
+    /// hash, because Platform would charge the voucher
+    /// for a claim whose keys are taken. It returns, without broadcasting:
+    /// - [`InvitationError::AlreadyClaimed`] when an identity is already
+    ///   there, whoever's it is (no submitted key proves whose);
+    /// - [`InvitationError::KeysAlreadyRegistered`] when another identity
+    ///   already holds one of the keys;
+    /// - [`InvitationError::NotReady`] or [`InvitationError::Sdk`] when a
+    ///   lookup fails.
+    ///
+    /// A node that lags behind can still miss either identity. Platform then
+    /// refuses the broadcast: taken keys come back as
+    /// [`InvitationError::KeysAlreadyRegistered`] with no id, and a consumed
+    /// outpoint whose identity carries exactly the submitted keys returns that
+    /// identity.
     ///
     /// The caller records the returned identity in its own wallet; nothing is
     /// persisted here. The contact-bootstrap is a separate step: on success the
@@ -881,55 +1071,250 @@ impl Sdk {
         )?;
         let prospective_identity_id = identity_id_for_out_point(out_point);
 
-        // The voucher key signs the asset lock's outer ST signature (ECDSA over
-        // the credit-output pubkey hash), scrubbed on every exit path by the
-        // native secret-key owner.
-        let voucher_priv =
-            PrivateKey::from_byte_array(&invitation.voucher_key.to_secret_bytes(), self.network)
-                .map_err(|e| invalid(format!("invalid invitation voucher scalar: {e}")))?;
+        let key_hashes = claim_key_hashes(&keys_map)?;
+        if !keys_map.contains_key(&0) {
+            return Err(invalid("keys_map must include key id=0"));
+        }
+        let preflight = preflight_claim(
+            prospective_identity_id,
+            &key_hashes,
+            || Identity::fetch(self, prospective_identity_id),
+            |hash| Identity::fetch(self, PublicKeyHash(hash)),
+        );
 
-        // Build the placeholder identity ONCE so both the primary attempt and the
-        // IS→CL fallback submit the same key set without a `keys_map` clone.
-        let placeholder = Identity::V0(IdentityV0 {
-            id: Identifier::default(),
-            public_keys: keys_map,
-            balance: 0,
-            revision: 0,
-        });
+        claim_unless_refused(preflight, || async move {
+            // Checked here, after the preflight: its lookups are proved, so the
+            // network's signed protocol version is known, and the keys are
+            // judged by the rules Platform will apply rather than by the
+            // version an SDK starts with or is pinned to.
+            let version_info = self.protocol_version_info();
+            let rules = claim_keys_platform_version(&version_info)?;
+            validate_claim_keys_structure(&keys_map, rules)?;
+            validate_claim_keys_active(&keys_map, &version_info)?;
 
-        // Submit the primary proof first and — only when the IS proof is
-        // unusable (a stale islock, a claim too large to submit with it, or a
-        // funding transaction over the input cap) —
-        // the ChainLock fallback over the SAME credit output. Each
-        // submission is wrapped in the CL-height-too-low retry (Platform's
-        // observed Core tip briefly behind the proof's chain-locked height;
-        // harmless for an IS proof, which never triggers it).
-        let placeholder = &placeholder;
-        let voucher_priv = &voucher_priv;
-        let submitted =
-            submit_claim_with_chain_lock_fallback(primary, chain_fallback, move |proof| {
-                submit_with_cl_height_retry(settings, move |s| {
-                    placeholder.put_to_platform_and_wait_for_response_with_private_key(
-                        self,
-                        proof.clone(),
-                        voucher_priv,
-                        identity_signer,
-                        s,
-                    )
+            // The voucher key signs the asset lock's outer ST signature (ECDSA
+            // over the credit-output pubkey hash), scrubbed on every exit path
+            // by the native secret-key owner.
+            let voucher_priv = PrivateKey::from_byte_array(
+                &invitation.voucher_key.to_secret_bytes(),
+                self.network,
+            )
+            .map_err(|e| invalid(format!("invalid invitation voucher scalar: {e}")))?;
+
+            // Build the placeholder identity ONCE so both the primary attempt
+            // and the IS→CL fallback submit the same key set without a
+            // `keys_map` clone.
+            let placeholder = Identity::V0(IdentityV0 {
+                id: Identifier::default(),
+                public_keys: keys_map,
+                balance: 0,
+                revision: 0,
+            });
+
+            // Submit the primary proof first and — only when the IS proof is
+            // unusable (a stale islock, a claim too large to submit with it,
+            // or a funding transaction over the input cap) — the ChainLock
+            // fallback over the SAME credit output. Each submission is wrapped
+            // in the CL-height-too-low retry (Platform's observed Core tip briefly
+            // behind the proof's chain-locked height; harmless for an IS
+            // proof, which never triggers it).
+            let placeholder = &placeholder;
+            let voucher_priv = &voucher_priv;
+            let submitted =
+                submit_claim_with_chain_lock_fallback(primary, chain_fallback, move |proof| {
+                    submit_with_cl_height_retry(settings, move |s| {
+                        placeholder.put_to_platform_and_wait_for_response_with_private_key(
+                            self,
+                            proof.clone(),
+                            voucher_priv,
+                            identity_signer,
+                            s,
+                        )
+                    })
                 })
-            })
-            .await;
+                .await;
 
-        // A lost-ACK duplicate of this very submission ("already in the
-        // mempool / in chain") is resolved inside the result wait. What
-        // reaches here is a claim repeated after an earlier one landed, refused
-        // because its outpoint is consumed: adopt the identity when it carries
-        // exactly the keys we submitted.
-        adopt_already_landed_claim(submitted, &out_point, placeholder.public_keys(), || {
-            Identity::fetch(self, prospective_identity_id)
+            // A lost-ACK duplicate of this very submission ("already in the
+            // mempool / in chain") is resolved inside the result wait. What
+            // reaches here is a claim repeated after an earlier one landed,
+            // refused because its outpoint is consumed: adopt the identity
+            // when it carries exactly the keys we submitted.
+            adopt_already_landed_claim(submitted, &out_point, placeholder.public_keys(), || {
+                Identity::fetch(self, prospective_identity_id)
+            })
+            .await
         })
         .await
     }
+}
+
+/// The 20-byte hash of every key a claim submits: what Platform checks
+/// against its unique-key index before it creates the identity
+/// (`validate_unique_identity_public_key_hashes_not_in_state`), deduplicated.
+fn claim_key_hashes(
+    keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
+) -> Result<Vec<[u8; 20]>, InvitationError> {
+    let mut hashes = Vec::with_capacity(keys_map.len());
+    for (id, key) in keys_map {
+        let hash = key
+            .public_key_hash()
+            .map_err(|e| invalid(format!("identity key {id} has no public key hash: {e}")))?;
+        if !hashes.contains(&hash) {
+            hashes.push(hash);
+        }
+    }
+    Ok(hashes)
+}
+
+/// Broadcast the claim only when its preflight lets it through, and read
+/// Platform's refusal of taken keys as [`InvitationError::KeysAlreadyRegistered`].
+///
+/// `preflight` and `submit` are the injectable seams (production passes
+/// [`preflight_claim`] and the signed submission with its adopt path).
+async fn claim_unless_refused<P, S, SFut>(
+    preflight: P,
+    submit: S,
+) -> Result<Identity, InvitationError>
+where
+    P: std::future::Future<Output = Result<(), InvitationError>>,
+    S: FnOnce() -> SFut,
+    SFut: std::future::Future<Output = Result<Identity, InvitationError>>,
+{
+    preflight.await?;
+    keys_taken_on_broadcast(submit().await)
+}
+
+/// Look the claim up before it is broadcast, so that it is never sent when
+/// Platform would refuse it and charge the voucher.
+///
+/// Fetches the identity at the invitation's id first: a proved identity there
+/// decides the claim alone, so the claim's key hashes are not sent. Otherwise
+/// fetches the identity under every submitted key hash, concurrently, and
+/// decides from all the answers, the invitation's identity first:
+/// 1. it exists → [`InvitationError::AlreadyClaimed`], whoever's it is;
+/// 2. any key hash names the invitation's identity → as in 1 (the lookup by
+///    id failed or reached a node that had not seen it yet), whatever the
+///    other key hashes found;
+/// 3. a key hash names another identity →
+///    [`InvitationError::KeysAlreadyRegistered`] (the first such identity);
+/// 4. a lookup failed → [`InvitationError::NotReady`] when any failed
+///    lookup could not be verified yet, else [`InvitationError::Sdk`].
+///
+/// Nothing is adopted or recorded here.
+///
+/// `fetch_by_id` and `fetch_by_hash` are the injectable seams (production
+/// passes `Identity::fetch` by id and by `PublicKeyHash`).
+async fn preflight_claim<FI, FIFut, FH, FHFut>(
+    prospective_identity_id: Identifier,
+    key_hashes: &[[u8; 20]],
+    fetch_by_id: FI,
+    fetch_by_hash: FH,
+) -> Result<(), InvitationError>
+where
+    FI: FnOnce() -> FIFut,
+    FIFut: std::future::Future<Output = Result<Option<Identity>, Error>>,
+    FH: Fn([u8; 20]) -> FHFut,
+    FHFut: std::future::Future<Output = Result<Option<Identity>, Error>>,
+{
+    // A failed lookup by id does not stop the key-hash answers from
+    // deciding: one of them may name the invitation's identity or a taken key.
+    let mut lookup_error = None;
+    let mut foreign_owner = None;
+    match fetch_by_id().await {
+        Ok(Some(identity)) => return Err(already_claimed(&identity)),
+        Ok(None) => {}
+        Err(error) => lookup_error = Some(error),
+    }
+    let by_hash =
+        futures::future::join_all(key_hashes.iter().map(|hash| fetch_by_hash(*hash))).await;
+    for result in by_hash {
+        match result {
+            // Each lookup may reach a different node: one that already has
+            // the invitation's identity can answer a key hash while the one
+            // asked by id had not seen it yet.
+            Ok(Some(identity)) if identity.id() == prospective_identity_id => {
+                return Err(already_claimed(&identity));
+            }
+            // A later key hash may still name the invitation's identity,
+            // which decides first.
+            Ok(Some(identity)) => {
+                foreign_owner.get_or_insert(identity.id());
+            }
+            Ok(None) => {}
+            // Keep "not verified yet" over any other failure: it is the one
+            // that tells the caller to retry once synced.
+            Err(error) => {
+                let keep = lookup_error
+                    .as_ref()
+                    .is_some_and(Error::is_quorum_source_unavailable);
+                if !keep {
+                    lookup_error = Some(error);
+                }
+            }
+        }
+    }
+    if let Some(identity_id) = foreign_owner {
+        return Err(InvitationError::KeysAlreadyRegistered {
+            identity_id: Some(identity_id),
+            rejection: None,
+        });
+    }
+    match lookup_error {
+        Some(error) => Err(lookup_failure(error)),
+        None => Ok(()),
+    }
+}
+
+/// The invitation's identity exists. No submitted key decides whose it is:
+/// a key the claim shares with that identity (a delegated application key,
+/// say) does not show that the claimant controls its master.
+fn already_claimed(identity: &Identity) -> InvitationError {
+    InvitationError::AlreadyClaimed {
+        identity_id: identity.id(),
+    }
+}
+
+/// A preflight lookup that failed: [`InvitationError::NotReady`] when the
+/// trusted quorum source could not vouch for the answer yet.
+fn lookup_failure(error: Error) -> InvitationError {
+    if error.is_quorum_source_unavailable() {
+        InvitationError::NotReady(error)
+    } else {
+        InvitationError::Sdk(error)
+    }
+}
+
+/// Platform refused the broadcast claim because one of its keys is already
+/// registered to another identity: 40207 (`DuplicatedIdentityPublicKeyIdStateError`),
+/// or 10501 (`DuplicatedIdentityPublicKeyIdBasicError`) before protocol v11.
+/// That refusal is final for these keys, so it becomes
+/// [`InvitationError::KeysAlreadyRegistered`], which keeps the refusal for
+/// its consensus code. 10501 is also Platform's answer
+/// to two keys sharing an id inside one transition, which
+/// [`preflight_keys_map`] refuses before anything is sent.
+fn keys_taken_on_broadcast(
+    result: Result<Identity, InvitationError>,
+) -> Result<Identity, InvitationError> {
+    match result {
+        Err(InvitationError::Sdk(error)) if is_identity_key_already_registered(&error) => {
+            Err(InvitationError::KeysAlreadyRegistered {
+                identity_id: None,
+                rejection: Some(error),
+            })
+        }
+        other => other,
+    }
+}
+
+fn is_identity_key_already_registered(error: &Error) -> bool {
+    matches!(
+        error.consensus_error(),
+        Some(ConsensusError::StateError(
+            StateError::DuplicatedIdentityPublicKeyIdStateError(_)
+        )) | Some(ConsensusError::BasicError(
+            BasicError::DuplicatedIdentityPublicKeyIdBasicError(_)
+        ))
+    )
 }
 
 /// The wrong-network guard, the funding-tx fetch and its inspection: what
@@ -1112,9 +1497,10 @@ fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
 /// Recognize a claim Platform already executed. A claim repeated after an
 /// earlier attempt landed (reported as a failure, or interrupted) is refused
 /// because its outpoint is consumed; the identity at the prospective id is
-/// ours when it carries exactly the keys we submitted, and is then the
-/// claim's result. Anything else (no identity, someone else's, a failed
-/// lookup) reports the original rejection.
+/// ours when it carries exactly the keys we submitted, at least one of them
+/// an ECDSA or BLS key, and is then the claim's result. Another identity
+/// there is [`InvitationError::AlreadyClaimed`]; no identity or a failed
+/// lookup reports the original rejection.
 ///
 /// `fetch` looks up the identity at the prospective id: the injectable seam
 /// (production passes `Identity::fetch`).
@@ -1142,7 +1528,8 @@ where
             );
             Ok(identity)
         }
-        Ok(_) => Err(InvitationError::Sdk(error)),
+        Ok(Some(identity)) => Err(already_claimed(&identity)),
+        Ok(None) => Err(InvitationError::Sdk(error)),
         Err(lookup) => {
             tracing::warn!(
                 error = %lookup,
@@ -1160,6 +1547,8 @@ where
 /// Key data is what only our signer could have produced, so a match means the
 /// identity was created by our claim, not by a finder of the link; the other
 /// fields (purpose, security level, bounds, limits) are what we asked for.
+/// That holds only for ECDSA and BLS keys, which Platform admits with a
+/// signature: a hash-only key set anyone could copy, so it never matches.
 fn identity_carries_keys(
     identity: &Identity,
     expected: &BTreeMap<KeyID, IdentityPublicKey>,
@@ -1170,7 +1559,12 @@ fn identity_carries_keys(
         key
     };
     let actual = identity.public_keys();
-    actual.len() == expected.len()
+    expected.values().any(|key| {
+        matches!(
+            key.key_type(),
+            KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381
+        )
+    }) && actual.len() == expected.len()
         && expected.iter().all(|(id, key)| {
             actual
                 .get(id)
@@ -1972,6 +2366,55 @@ mod tests {
         [(0, test_key(0, 1)), (1, test_key(1, 2))].into()
     }
 
+    /// A hash-only (`ECDSA_HASH160`) key: Platform admits it without a
+    /// signature, so it proves nothing about who submitted it.
+    fn hash_key(id: KeyID, byte: u8) -> IdentityPublicKey {
+        use dpp::identity::KeyType;
+        use dpp::platform_value::BinaryData;
+
+        let mut key = test_key(id, byte);
+        key.set_key_type(KeyType::ECDSA_HASH160);
+        key.set_data(BinaryData::new(vec![byte; 20]));
+        key
+    }
+
+    /// `key` moved below the master: a claim carries one master key.
+    fn high(mut key: IdentityPublicKey) -> IdentityPublicKey {
+        key.set_security_level(SecurityLevel::HIGH);
+        key
+    }
+
+    /// A full ECDSA key with a real secp256k1 point, at HIGH.
+    fn signed_high_key(id: KeyID, byte: u8) -> IdentityPublicKey {
+        use dpp::platform_value::BinaryData;
+
+        let secret = SecretKey::from_secret_bytes([byte; 32]).expect("valid scalar");
+        let mut key = high(test_key(id, byte));
+        key.set_data(BinaryData::new(
+            PublicKey::from_secret_key(&secret).serialize().to_vec(),
+        ));
+        key
+    }
+
+    /// A hash-only master beside our full ECDSA key 1.
+    fn hash_master_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        [(0, hash_key(0, 1)), (1, signed_high_key(1, 2))].into()
+    }
+
+    /// Only hash-only keys: nothing in it was signed.
+    fn all_hash_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        [(0, hash_key(0, 1)), (1, high(hash_key(1, 2)))].into()
+    }
+
+    /// The hash-key fixtures are key sets an identity create can carry, so
+    /// the tests that use them describe claims that could have landed.
+    #[test]
+    fn should_build_hash_key_fixtures_platform_accepts() {
+        let platform_version = PlatformVersion::latest();
+        assert!(validate_claim_keys_structure(&hash_master_keys(), platform_version).is_ok());
+        assert!(validate_claim_keys_structure(&all_hash_keys(), platform_version).is_ok());
+    }
+
     /// A claim that already landed is recognized as ours only by its keys:
     /// the same key set is ours, anything else (a finder of the link claiming
     /// first) is not.
@@ -1987,6 +2430,23 @@ mod tests {
         assert!(!identity_carries_keys(&identity_with_keys(theirs), &ours));
         let fewer: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 1))].into();
         assert!(!identity_carries_keys(&identity_with_keys(fewer), &ours));
+    }
+
+    /// An exact match counts only through a signed key: a hash-only master
+    /// beside our full key matches, a set of hash-only keys anyone could
+    /// copy never does.
+    #[test]
+    fn should_recognize_an_exact_match_only_through_a_full_key() {
+        let hash_master = hash_master_keys();
+        assert!(identity_carries_keys(
+            &identity_with_keys(hash_master.clone()),
+            &hash_master
+        ));
+        let all_hash = all_hash_keys();
+        assert!(!identity_carries_keys(
+            &identity_with_keys(all_hash.clone()),
+            &all_hash
+        ));
     }
 
     /// Matching key data is not enough: a key that differs from what we
@@ -2095,6 +2555,544 @@ mod tests {
         );
     }
 
+    /// Two keys with the same id would be refused by Platform with the code
+    /// the claim reads as "keys already registered", so they never leave.
+    #[test]
+    fn should_refuse_a_keys_map_whose_key_ids_differ_from_their_slots() {
+        let mut keys = our_keys();
+        keys.insert(2, test_key(1, 3));
+        assert!(matches!(
+            preflight_keys_map(&keys),
+            Err(InvitationError::Invalid(_))
+        ));
+        assert!(preflight_keys_map(&our_keys()).is_ok());
+    }
+
+    /// A keys map larger than any known protocol version lets an identity
+    /// create carry is refused before a lookup is started for each key; one
+    /// at the limit passes.
+    #[test]
+    fn should_refuse_more_keys_than_any_version_allows_before_the_lookups() {
+        let most = PLATFORM_VERSIONS
+            .iter()
+            .map(|v| {
+                v.dpp
+                    .state_transitions
+                    .identities
+                    .max_public_keys_in_creation
+            })
+            .max()
+            .expect("versions") as u32;
+        let mut keys = our_keys();
+        for id in 1..most {
+            keys.insert(id, test_key(id, id as u8 + 1));
+        }
+        assert!(preflight_keys_map(&keys).is_ok());
+        keys.insert(most, test_key(most, most as u8 + 1));
+        assert!(matches!(
+            preflight_keys_map(&keys),
+            Err(InvitationError::Invalid(_))
+        ));
+    }
+
+    /// A key set Platform's structural validation refuses (here two keys with
+    /// the same data, refused with 10500 after part of the voucher is charged)
+    /// never leaves; a valid set passes.
+    #[test]
+    fn should_refuse_keys_platform_refuses_structurally() {
+        let high = |id: KeyID, byte: u8| {
+            let mut key = test_key(id, byte);
+            key.set_security_level(SecurityLevel::HIGH);
+            key
+        };
+        let platform_version = PlatformVersion::latest();
+        let valid: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 1)), (1, high(1, 2))].into();
+        assert!(validate_claim_keys_structure(&valid, platform_version).is_ok());
+
+        let duplicate_data: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 1)), (1, high(1, 1))].into();
+        assert!(matches!(
+            validate_claim_keys_structure(&duplicate_data, platform_version),
+            Err(InvitationError::Invalid(_))
+        ));
+    }
+
+    /// The claim's keys are judged by the newer of the SDK's version and the
+    /// network's verified one, so an SDK started or pinned at an older version
+    /// still refuses keys the network's rules refuse. A hash key whose data is
+    /// not 20 bytes passes protocol version 13 and is refused by the latest.
+    /// Without a verified version, or with one this build has no rules for,
+    /// the keys cannot be checked and the claim is refused.
+    #[test]
+    fn should_judge_claim_keys_by_the_networks_verified_version() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::platform_value::BinaryData;
+
+        let latest = PlatformVersion::latest().protocol_version;
+        let info = |verified: Option<u32>, effective: u32| ProtocolVersionInfo {
+            verified_version: verified,
+            effective_version: effective,
+            maximum_supported_version: latest,
+            newer_protocol_available: verified.is_some_and(|v| v > latest),
+        };
+        let short_hash_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(vec![7; 19]),
+            disabled_at: None,
+        });
+        let keys: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 1)), (1, short_hash_key)].into();
+
+        let v13 = PlatformVersion::get(13).expect("v13");
+        assert!(validate_claim_keys_structure(&keys, v13).is_ok());
+
+        // Started or pinned at 13, network verified at the latest.
+        let rules = claim_keys_platform_version(&info(Some(latest), 13)).expect("known");
+        assert_eq!(rules.protocol_version, latest);
+        assert!(matches!(
+            validate_claim_keys_structure(&keys, rules),
+            Err(InvitationError::Invalid(_))
+        ));
+
+        // Pinned ahead of the network: its own, newer rules.
+        let rules = claim_keys_platform_version(&info(Some(13), latest)).expect("known");
+        assert_eq!(rules.protocol_version, latest);
+
+        assert!(matches!(
+            claim_keys_platform_version(&info(None, latest)),
+            Err(InvitationError::Invalid(_))
+        ));
+        assert!(matches!(
+            claim_keys_platform_version(&info(Some(latest + 1), 13)),
+            Err(InvitationError::Invalid(_))
+        ));
+    }
+
+    /// The claim looks up the hash of every key it submits, once each, and a
+    /// key with no valid hash stops the claim before any lookup.
+    #[test]
+    fn should_hash_every_submitted_key_once() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::platform_value::BinaryData;
+
+        let hash_key = |id: KeyID, byte: u8| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_HASH160,
+                read_only: false,
+                data: BinaryData::new(vec![byte; 20]),
+                disabled_at: None,
+            })
+        };
+        let keys: BTreeMap<KeyID, IdentityPublicKey> = [
+            (0, hash_key(0, 1)),
+            (1, hash_key(1, 2)),
+            (2, hash_key(2, 1)),
+        ]
+        .into();
+        assert_eq!(claim_key_hashes(&keys).unwrap(), vec![[1u8; 20], [2u8; 20]]);
+
+        // `test_key` data is 33 bytes that are not a secp256k1 point.
+        assert!(matches!(
+            claim_key_hashes(&our_keys()),
+            Err(InvitationError::Invalid(_))
+        ));
+    }
+
+    // --- preflight_claim: never broadcast a claim Platform would charge for ---
+
+    mod claim_preflight {
+        use std::cell::RefCell;
+
+        use super::super::{claim_unless_refused, preflight_claim, Error, InvitationError};
+        use super::{identity_with_keys, our_keys, test_key};
+        use crate::error::ContextProviderError;
+        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+        use dpp::prelude::Identifier;
+        use std::collections::BTreeMap;
+
+        const OUR_HASH: [u8; 20] = [1u8; 20];
+        const OTHER_HASH: [u8; 20] = [2u8; 20];
+
+        fn identity(id: u8, keys: BTreeMap<KeyID, IdentityPublicKey>) -> Identity {
+            let mut identity = identity_with_keys(keys);
+            identity.set_id(Identifier::new([id; 32]));
+            identity
+        }
+
+        fn ours() -> Identity {
+            identity(1, our_keys())
+        }
+
+        fn theirs() -> Identity {
+            identity(2, [(0, test_key(0, 9))].into())
+        }
+
+        fn not_ready() -> Error {
+            Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(
+                "not verified yet".to_string(),
+            ))
+        }
+
+        fn timeout() -> Error {
+            Error::Generic("timeout".to_string())
+        }
+
+        /// Run the preflight with a scripted lookup by id and by each hash,
+        /// recording the hashes it looked up.
+        async fn preflight(
+            by_id: Result<Option<Identity>, Error>,
+            by_hash: impl Fn([u8; 20]) -> Result<Option<Identity>, Error>,
+        ) -> (Result<(), InvitationError>, Vec<[u8; 20]>) {
+            let looked_up = RefCell::new(Vec::new());
+            let result = preflight_claim(
+                ours().id(),
+                &[OUR_HASH, OTHER_HASH],
+                || async { by_id },
+                |hash| {
+                    looked_up.borrow_mut().push(hash);
+                    let answer = by_hash(hash);
+                    async move { answer }
+                },
+            )
+            .await;
+            (result, looked_up.into_inner())
+        }
+
+        #[tokio::test]
+        async fn should_let_the_claim_through_when_nothing_is_registered() {
+            let (result, looked_up) = preflight(Ok(None), |_| Ok(None)).await;
+            assert!(result.is_ok());
+            assert_eq!(looked_up, vec![OUR_HASH, OTHER_HASH]);
+        }
+
+        /// A proved identity at the invitation's id decides the claim, so
+        /// none of the claim's key hashes is sent.
+        #[tokio::test]
+        async fn should_send_no_key_hash_once_the_invitations_identity_is_found() {
+            let (result, looked_up) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+            assert!(looked_up.is_empty(), "looked up {looked_up:?}");
+
+            let (result, looked_up) = preflight(Ok(Some(ours())), |_| Ok(None)).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+            assert!(looked_up.is_empty(), "looked up {looked_up:?}");
+        }
+
+        /// No submitted key decides whose the invitation's identity is: an
+        /// identity that carries every key the claim submits (our own landed
+        /// claim, or one that shares a delegated application key with it) is
+        /// reported as claimed, ownership unknown, and nothing is broadcast.
+        #[tokio::test]
+        async fn should_not_take_any_submitted_key_for_ownership() {
+            let submit_calls = std::cell::Cell::new(0);
+            let result = claim_unless_refused(
+                async { preflight(Ok(Some(ours())), |_| Ok(None)).await.0 },
+                || {
+                    submit_calls.set(submit_calls.get() + 1);
+                    async { Ok(ours()) }
+                },
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { identity_id })
+                    if identity_id == ours().id()
+            ));
+            assert_eq!(submit_calls.get(), 0, "nothing may be broadcast");
+        }
+
+        #[tokio::test]
+        async fn should_report_a_claim_by_someone_else() {
+            let (result, _) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == theirs().id()
+            ));
+        }
+
+        /// The invitation's identity decides before any key hash does.
+        #[tokio::test]
+        async fn should_put_the_invitations_identity_before_taken_keys() {
+            let (result, _) = preflight(Ok(Some(theirs())), |_| Ok(Some(ours()))).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+
+            // The lookup by id failed, but a key hash names the invitation's
+            // own identity: that answer stands.
+            let (result, _) = preflight(Err(timeout()), |_| Ok(Some(ours()))).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == ours().id()
+            ));
+            let (result, _) = preflight(Err(timeout()), |_| Ok(None)).await;
+            assert!(matches!(result, Err(InvitationError::Sdk(_))));
+        }
+
+        /// Another identity of this wallet already holds the keys (the slot
+        /// was registered before): Platform would refuse the claim and charge
+        /// the voucher, so it is never sent.
+        #[tokio::test]
+        async fn should_refuse_keys_another_identity_holds() {
+            let (result, _) = preflight(Ok(None), |hash| {
+                Ok((hash == OTHER_HASH).then(|| identity(3, our_keys())))
+            })
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::KeysAlreadyRegistered { identity_id: Some(id), .. })
+                    if id == Identifier::new([3; 32])
+            ));
+        }
+
+        /// A key that is known to be taken is the answer, even when another
+        /// key's lookup failed.
+        #[tokio::test]
+        async fn should_prefer_a_taken_key_over_a_failed_lookup() {
+            let (result, _) = preflight(Ok(None), |hash| {
+                if hash == OUR_HASH {
+                    Err(timeout())
+                } else {
+                    Ok(Some(theirs()))
+                }
+            })
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::KeysAlreadyRegistered {
+                    identity_id: Some(_),
+                    ..
+                })
+            ));
+        }
+
+        #[tokio::test]
+        async fn should_not_claim_when_a_lookup_cannot_be_verified_yet() {
+            let (result, _) = preflight(Err(not_ready()), |_| Ok(None)).await;
+            assert!(matches!(result, Err(InvitationError::NotReady(_))));
+
+            let (result, _) = preflight(Ok(None), |hash| {
+                if hash == OTHER_HASH {
+                    Err(Error::NoAvailableAddressesToRetry(Box::new(not_ready())))
+                } else {
+                    Ok(None)
+                }
+            })
+            .await;
+            assert!(matches!(result, Err(InvitationError::NotReady(_))));
+        }
+
+        /// The node asked by id has not seen the invitation's identity yet,
+        /// but a node asked by key hash has: the invitation is claimed, not
+        /// "keys taken".
+        #[tokio::test]
+        async fn should_read_the_invitations_identity_found_by_hash_as_a_claim() {
+            let (result, _) = preflight(Ok(None), |_| Ok(Some(ours()))).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == ours().id()
+            ));
+
+            let squatter = identity(1, [(0, test_key(0, 9))].into());
+            let (result, _) = preflight(Ok(None), move |_| Ok(Some(squatter.clone()))).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+        }
+
+        /// A key hash that names the invitation's identity decides whatever
+        /// an earlier key hash found: the order the keys were submitted in
+        /// does not turn the claim into "keys taken".
+        #[tokio::test]
+        async fn should_put_the_invitations_identity_before_an_earlier_taken_key() {
+            for by_id in [Ok(None), Err(timeout())] {
+                let (result, _) = preflight(by_id, |hash| {
+                    Ok(Some(if hash == OUR_HASH { theirs() } else { ours() }))
+                })
+                .await;
+                assert!(matches!(
+                    result,
+                    Err(InvitationError::AlreadyClaimed { identity_id })
+                        if identity_id == ours().id()
+                ));
+            }
+        }
+
+        /// A refused preflight never reaches the submission (which signs and
+        /// broadcasts), and Platform's refusal of taken keys is typed.
+        #[tokio::test]
+        async fn should_broadcast_only_after_the_preflight_lets_the_claim_through() {
+            let refused = claim_unless_refused(
+                async {
+                    Err(InvitationError::AlreadyClaimed {
+                        identity_id: ours().id(),
+                    })
+                },
+                || async { panic!("a refused claim must never be broadcast") },
+            )
+            .await;
+            assert!(matches!(
+                refused,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+
+            let taken = claim_unless_refused(async { Ok(()) }, || async {
+                Err(super::taken_keys_refusal())
+            })
+            .await;
+            assert!(matches!(
+                taken,
+                Err(InvitationError::KeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: Some(_),
+                })
+            ));
+
+            let claimed = claim_unless_refused(async { Ok(()) }, || async { Ok(ours()) }).await;
+            assert!(claimed.is_ok());
+        }
+
+        /// "Not verified yet" outlives any other failed key-hash lookup, so
+        /// the caller keeps its retry-once-synced signal.
+        #[tokio::test]
+        async fn should_keep_not_ready_over_a_failed_lookup_by_id() {
+            let (result, _) = preflight(Err(timeout()), |_| Err(not_ready())).await;
+            assert!(matches!(result, Err(InvitationError::NotReady(_))));
+
+            let (result, _) = preflight(Err(not_ready()), |_| Err(timeout())).await;
+            assert!(matches!(result, Err(InvitationError::NotReady(_))));
+        }
+
+        /// A key known to be taken decides even when the lookup by id failed.
+        #[tokio::test]
+        async fn should_refuse_taken_keys_when_the_lookup_by_id_failed() {
+            let (result, _) = preflight(Err(timeout()), |_| Ok(Some(theirs()))).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::KeysAlreadyRegistered {
+                    identity_id: Some(_),
+                    ..
+                })
+            ));
+        }
+
+        #[tokio::test]
+        async fn should_keep_not_ready_over_another_failed_lookup() {
+            for not_ready_hash in [OUR_HASH, OTHER_HASH] {
+                let (result, _) = preflight(Ok(None), |hash| {
+                    if hash == not_ready_hash {
+                        Err(not_ready())
+                    } else {
+                        Err(timeout())
+                    }
+                })
+                .await;
+                assert!(matches!(result, Err(InvitationError::NotReady(_))));
+            }
+        }
+
+        #[tokio::test]
+        async fn should_not_claim_when_a_lookup_fails() {
+            let (result, _) = preflight(Ok(None), |_| Err(timeout())).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::Sdk(Error::Generic(_)))
+            ));
+        }
+    }
+
+    /// Platform's 40207 refusal of a claim whose keys are taken.
+    fn taken_keys_refusal() -> InvitationError {
+        use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::consensus::ConsensusError;
+
+        InvitationError::Sdk(Error::Protocol(dpp::ProtocolError::ConsensusError(
+            Box::new(ConsensusError::StateError(
+                StateError::DuplicatedIdentityPublicKeyIdStateError(
+                    DuplicatedIdentityPublicKeyIdStateError::new(vec![0]),
+                ),
+            )),
+        )))
+    }
+
+    // --- keys_taken_on_broadcast: Platform's refusal of taken keys ---
+
+    mod taken_keys_backstop {
+        use super::super::{keys_taken_on_broadcast, Error, InvitationError};
+        use super::{identity_with_keys, our_keys};
+        use dpp::consensus::basic::identity::{
+            DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyIdBasicError,
+        };
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::consensus::ConsensusError;
+        use dpp::prelude::Identifier;
+
+        fn refused(error: ConsensusError) -> InvitationError {
+            InvitationError::Sdk(Error::Protocol(dpp::ProtocolError::ConsensusError(
+                Box::new(error),
+            )))
+        }
+
+        #[test]
+        fn should_read_a_duplicate_key_refusal_as_taken_keys() {
+            for error in [
+                ConsensusError::StateError(StateError::DuplicatedIdentityPublicKeyIdStateError(
+                    DuplicatedIdentityPublicKeyIdStateError::new(vec![0]),
+                )),
+                ConsensusError::BasicError(BasicError::DuplicatedIdentityPublicKeyIdBasicError(
+                    DuplicatedIdentityPublicKeyIdBasicError::new(vec![0]),
+                )),
+            ] {
+                let code = error.code();
+                // The refusal stays with the typed outcome, for its consensus code.
+                match keys_taken_on_broadcast(Err(refused(error))) {
+                    Err(InvitationError::KeysAlreadyRegistered {
+                        identity_id: None,
+                        rejection: Some(rejection),
+                    }) => assert_eq!(rejection.consensus_error().map(|e| e.code()), Some(code)),
+                    other => panic!("expected taken keys, got {other:?}"),
+                }
+            }
+        }
+
+        /// Platform charges the voucher for other refusals too (a key's
+        /// contract bounds); those are not about taken keys.
+        #[test]
+        fn should_pass_other_refusals_and_successes_through() {
+            let bounds = ConsensusError::BasicError(BasicError::DataContractBoundsNotPresentError(
+                DataContractBoundsNotPresentError::new(Identifier::new([4; 32])),
+            ));
+            assert!(matches!(
+                keys_taken_on_broadcast(Err(refused(bounds))),
+                Err(InvitationError::Sdk(Error::Protocol(_)))
+            ));
+            assert!(keys_taken_on_broadcast(Ok(identity_with_keys(our_keys()))).is_ok());
+        }
+    }
+
     // --- adopt_already_landed_claim: recognizing our own earlier claim ---
 
     mod claim_adoption {
@@ -2102,7 +3100,7 @@ mod tests {
 
         use super::super::adopt_already_landed_claim;
         use super::super::{Error, InvitationError};
-        use super::{identity_with_keys, our_keys, test_key};
+        use super::{all_hash_keys, hash_master_keys, identity_with_keys, our_keys, test_key};
         use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
@@ -2137,14 +3135,47 @@ mod tests {
             submitted: Result<Identity, InvitationError>,
             lookup: Result<Option<Identity>, Error>,
         ) -> (Result<Identity, InvitationError>, u32) {
+            adopt_submitting(&our_keys(), submitted, lookup).await
+        }
+
+        /// [`adopt`] for a claim that submitted `keys`.
+        async fn adopt_submitting(
+            keys: &BTreeMap<KeyID, IdentityPublicKey>,
+            submitted: Result<Identity, InvitationError>,
+            lookup: Result<Option<Identity>, Error>,
+        ) -> (Result<Identity, InvitationError>, u32) {
             let calls = Cell::new(0);
-            let keys = our_keys();
-            let result = adopt_already_landed_claim(submitted, &out_point(), &keys, || {
+            let result = adopt_already_landed_claim(submitted, &out_point(), keys, || {
                 calls.set(calls.get() + 1);
                 async { lookup }
             })
             .await;
             (result, calls.get())
+        }
+
+        /// A hash-only master beside our full key still adopts our landed
+        /// claim; a claim of hash-only keys never adopts, since anyone could
+        /// have submitted the same hashes first.
+        #[tokio::test]
+        async fn should_adopt_only_through_a_full_key() {
+            let (result, _) = adopt_submitting(
+                &hash_master_keys(),
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(hash_master_keys()))),
+            )
+            .await;
+            assert!(result.is_ok(), "our full key proves the landed claim ours");
+
+            let (result, _) = adopt_submitting(
+                &all_hash_keys(),
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(all_hash_keys()))),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
         }
 
         #[tokio::test]
@@ -2166,14 +3197,35 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_report_the_rejection_when_someone_else_claimed_first() {
+        async fn should_report_a_claim_by_someone_else_first() {
             let theirs: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 9))].into();
             let (result, _) = adopt(
                 Err(consumed(out_point())),
                 Ok(Some(identity_with_keys(theirs))),
             )
             .await;
-            assert!(is_consumed(&result));
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+        }
+
+        /// An identity that shares our master key but not exactly the keys we
+        /// submitted is not adopted, and no shared key makes it ours: it is
+        /// reported as claimed.
+        #[tokio::test]
+        async fn should_report_an_identity_sharing_our_master_key_as_claimed() {
+            let changed: BTreeMap<KeyID, IdentityPublicKey> =
+                [(0, test_key(0, 1)), (1, test_key(1, 7))].into();
+            let (result, _) = adopt(
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(changed))),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
         }
 
         /// A reclaim top-up consumes the outpoint without creating the
@@ -2751,6 +3803,408 @@ mod tests {
                 "the fallback's own rejection must propagate as Sdk, got {result:?}"
             );
             assert_eq!(submitted.len(), 2, "no third submission may follow");
+        }
+    }
+
+    /// `Sdk::claim_invitation` against a mock SDK: the funding transaction
+    /// comes from Core, the preflight looks up the invitation's id and every
+    /// submitted key hash, and a refusal ends the claim before anything is
+    /// signed. The mock answers no broadcast and the signer signs nothing, so
+    /// a claim that reached the submission would fail with another error.
+    #[cfg(feature = "mocks")]
+    mod claim_through_the_sdk {
+        use super::super::{claim_key_hashes, identity_id_for_out_point, Error, InvitationError};
+        use super::{asset_lock_tx_paying_voucher_at, identity_with_keys, parsed, voucher};
+        use crate::platform::types::identity::PublicKeyHash;
+        use crate::SdkBuilder;
+        use dapi_grpc::core::v0::{GetTransactionRequest, GetTransactionResponse};
+        use dapi_grpc::platform::v0::ResponseMetadata;
+        use dpp::address_funds::AddressWitness;
+        use dpp::dashcore::consensus::Encodable;
+        use dpp::dashcore::{Network, OutPoint};
+        use dpp::identity::accessors::IdentitySettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::signer::Signer;
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use dpp::prelude::Identifier;
+        use dpp::secp256k1::{PublicKey, SecretKey};
+        use dpp::version::PlatformVersion;
+        use dpp::ProtocolError;
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct UnusedSigner;
+
+        #[async_trait::async_trait]
+        impl Signer<IdentityPublicKey> for UnusedSigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                Err(ProtocolError::Generic(
+                    "not signing in this test".to_string(),
+                ))
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                Err(ProtocolError::Generic(
+                    "not signing in this test".to_string(),
+                ))
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                true
+            }
+        }
+
+        /// Two keys with real secp256k1 points, which Platform hashes for
+        /// its unique-key index: the master key and one more.
+        fn claim_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+            [0x31u8, 0x32]
+                .into_iter()
+                .zip(0..)
+                .map(|(byte, id)| {
+                    let secret = SecretKey::from_secret_bytes([byte; 32]).expect("valid scalar");
+                    let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                        id,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: if id == 0 {
+                            SecurityLevel::MASTER
+                        } else {
+                            SecurityLevel::HIGH
+                        },
+                        contract_bounds: None,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        read_only: false,
+                        data: BinaryData::new(
+                            PublicKey::from_secret_key(&secret).serialize().to_vec(),
+                        ),
+                        disabled_at: None,
+                    });
+                    (id, key)
+                })
+                .collect()
+        }
+
+        fn identity_at(id: Identifier) -> Identity {
+            let mut identity = identity_with_keys(claim_keys());
+            identity.set_id(id);
+            identity
+        }
+
+        /// Claim a chain-locked invitation with `claim_keys()`. `by_id` answers
+        /// the lookup of the invitation's identity and `by_hash` the lookup of
+        /// each submitted key hash; it gets the invitation's id.
+        async fn claim(
+            by_id: impl FnOnce(Identifier) -> Option<Identity>,
+            by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
+        ) -> (Result<Identity, InvitationError>, Identifier) {
+            claim_with_keys(claim_keys(), by_id, by_hash).await
+        }
+
+        /// [`claim`] with the given keys, on a network whose verified answers
+        /// are signed at the latest protocol version.
+        async fn claim_with_keys(
+            keys: BTreeMap<KeyID, IdentityPublicKey>,
+            by_id: impl FnOnce(Identifier) -> Option<Identity>,
+            by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
+        ) -> (Result<Identity, InvitationError>, Identifier) {
+            claim_on(
+                None,
+                Some(PlatformVersion::latest().protocol_version),
+                keys,
+                by_id,
+                by_hash,
+            )
+            .await
+        }
+
+        /// [`claim_with_keys`] with an SDK pinned to `pinned` (else unpinned),
+        /// on a network whose verified answers are signed at `network` (else
+        /// none was verified). The mock answers without proofs, so the
+        /// network's version is recorded as a verified answer would record it.
+        async fn claim_on(
+            pinned: Option<&'static PlatformVersion>,
+            network: Option<u32>,
+            keys: BTreeMap<KeyID, IdentityPublicKey>,
+            by_id: impl FnOnce(Identifier) -> Option<Identity>,
+            by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
+        ) -> (Result<Identity, InvitationError>, Identifier) {
+            let key = voucher();
+            let tx = asset_lock_tx_paying_voucher_at(&key, 0);
+            let txid = tx.txid().to_string();
+            let invitation_id = identity_id_for_out_point(OutPoint::new(tx.txid(), 0));
+            let mut raw = Vec::new();
+            tx.consensus_encode(&mut raw)
+                .expect("encode the funding tx");
+
+            let mut builder = SdkBuilder::new_mock().with_network(Network::Testnet);
+            if let Some(version) = pinned {
+                builder = builder.with_version(version);
+            }
+            let mut sdk = builder.build().expect("mock sdk");
+            if let Some(protocol_version) = network {
+                let metadata = ResponseMetadata {
+                    protocol_version,
+                    height: 1,
+                    time_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    ..Default::default()
+                };
+                sdk.accept_verified_metadata("test", &metadata, None)
+                    .expect("fresh metadata");
+            }
+            sdk.mock()
+                .expect_request(
+                    &GetTransactionRequest { id: txid.clone() },
+                    GetTransactionResponse {
+                        transaction: raw,
+                        height: 100,
+                        is_chain_locked: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("expect the funding tx");
+            sdk.mock()
+                .expect_fetch(invitation_id, by_id(invitation_id))
+                .await
+                .expect("expect the lookup by id");
+            for hash in claim_key_hashes(&keys).expect("key hashes") {
+                sdk.mock()
+                    .expect_fetch(PublicKeyHash(hash), by_hash(hash, invitation_id))
+                    .await
+                    .expect("expect the lookup by key hash");
+            }
+
+            let result = sdk
+                .claim_invitation(parsed(key, txid, None), keys, &UnusedSigner, None)
+                .await;
+            (result, invitation_id)
+        }
+
+        #[tokio::test]
+        async fn should_stop_the_claim_at_an_identity_found_by_id() {
+            let (result, invitation_id) = claim(|id| Some(identity_at(id)), |_, _| None).await;
+            assert!(
+                matches!(
+                    result,
+                    Err(InvitationError::AlreadyClaimed { identity_id })
+                        if identity_id == invitation_id
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// The lookup of the last submitted key, not only the master key,
+        /// decides: another identity holding it stops the claim.
+        #[tokio::test]
+        async fn should_stop_the_claim_at_a_taken_key_found_by_its_hash() {
+            let foreign = Identifier::new([9; 32]);
+            let last_hash = *claim_key_hashes(&claim_keys())
+                .expect("key hashes")
+                .last()
+                .expect("a key hash");
+            let (result, _) = claim(
+                |_| None,
+                |hash, _| (hash == last_hash).then(|| identity_at(foreign)),
+            )
+            .await;
+            assert!(
+                matches!(
+                    result,
+                    Err(InvitationError::KeysAlreadyRegistered { identity_id: Some(id), rejection: None })
+                        if id == foreign
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// Keys Platform's structural validation refuses (two with the same
+        /// data) pass the preflight lookups but stop before anything is signed.
+        #[tokio::test]
+        async fn should_refuse_structurally_invalid_keys_before_signing() {
+            use dpp::identity::identity_public_key::accessors::v0::{
+                IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+            };
+
+            let mut keys = claim_keys();
+            let master_data = keys[&0].data().clone();
+            keys.get_mut(&1).expect("key 1").set_data(master_data);
+            let (result, _) = claim_with_keys(keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("Platform would refuse these identity keys")),
+                "got {result:?}"
+            );
+        }
+
+        /// A master key with a budget passes protocol version 13's structural
+        /// validation and is refused by the latest. An SDK pinned to 13 on a
+        /// network that signed its answers at the latest still refuses it
+        /// before signing; on a network at 13 the key's version 1 format,
+        /// which 13 cannot decode, refuses it before signing instead.
+        #[tokio::test]
+        async fn should_judge_keys_by_the_networks_version_on_a_pinned_sdk() {
+            use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+
+            let mut keys = claim_keys();
+            let IdentityPublicKey::V0(master) = keys[&0].clone() else {
+                panic!("claim_keys() builds V0 keys");
+            };
+            keys.insert(
+                0,
+                IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(
+                    master,
+                    Some(1_000),
+                    None,
+                )),
+            );
+            let v13 = PlatformVersion::get(13).expect("v13");
+            let latest = PlatformVersion::latest().protocol_version;
+
+            let (result, _) =
+                claim_on(Some(v13), Some(latest), keys.clone(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("Platform would refuse these identity keys")),
+                "got {result:?}"
+            );
+
+            let (result, _) = claim_on(Some(v13), Some(13), keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("the network runs protocol version 13, but these identity keys need protocol version 14")),
+                "got {result:?}"
+            );
+        }
+
+        /// On a network at protocol version 13 a claim of version 0 keys goes
+        /// on to the signer, and one carrying a version 1 key, even without a
+        /// budget or an expiry, is refused before signing: 13 cannot decode
+        /// an identity create with that key format.
+        #[tokio::test]
+        async fn should_refuse_a_key_format_the_networks_version_cannot_decode() {
+            use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+
+            let v13 = PlatformVersion::get(13).expect("v13");
+
+            let (result, _) =
+                claim_on(Some(v13), Some(13), claim_keys(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
+
+            let mut keys = claim_keys();
+            let IdentityPublicKey::V0(master) = keys[&0].clone() else {
+                panic!("claim_keys() builds V0 keys");
+            };
+            keys.insert(
+                0,
+                IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(master, None, None)),
+            );
+            let (result, _) =
+                claim_on(Some(v13), Some(13), keys.clone(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("the network runs protocol version 13, but these identity keys need protocol version 14")),
+                "got {result:?}"
+            );
+
+            // The same keys reach the signer on the latest network version.
+            let latest = PlatformVersion::latest();
+            let (result, _) = claim_on(
+                Some(latest),
+                Some(latest.protocol_version),
+                keys,
+                |_| None,
+                |_, _| None,
+            )
+            .await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// An SDK pinned to protocol version 13 builds the claim with 13's
+        /// rules even on a newer network: version 0 keys go on to the signer,
+        /// and a version 1 key without a budget or an expiry, which 13 cannot
+        /// carry, is refused before signing.
+        #[tokio::test]
+        async fn should_refuse_a_key_format_the_pinned_sdk_version_cannot_build() {
+            use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+
+            let v13 = PlatformVersion::get(13).expect("v13");
+            let latest = PlatformVersion::latest().protocol_version;
+
+            let (result, _) =
+                claim_on(Some(v13), Some(latest), claim_keys(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
+
+            let mut keys = claim_keys();
+            let IdentityPublicKey::V0(master) = keys[&0].clone() else {
+                panic!("claim_keys() builds V0 keys");
+            };
+            keys.insert(
+                0,
+                IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(master, None, None)),
+            );
+            let (result, _) = claim_on(Some(v13), Some(latest), keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("this SDK builds with protocol version 13, but these identity keys need protocol version 14")),
+                "got {result:?}"
+            );
+        }
+
+        /// Without a verified answer the network's protocol version is not
+        /// known, so the keys cannot be checked and nothing is signed.
+        #[tokio::test]
+        async fn should_refuse_when_the_networks_version_was_not_verified() {
+            let (result, _) = claim_on(None, None, claim_keys(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.contains("protocol version was not verified")),
+                "got {result:?}"
+            );
+        }
+
+        /// With nothing registered the claim goes on to the submission and
+        /// fails only at the signer: the mock answers the lookups the two
+        /// tests above stopped at.
+        #[tokio::test]
+        async fn should_reach_the_submission_when_nothing_is_registered() {
+            let (result, _) = claim(|_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
         }
     }
 }

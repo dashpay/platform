@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -22,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -47,6 +50,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.QrScanner
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
@@ -67,6 +71,9 @@ private sealed interface SearchState {
  * preview card that gates Send; sending a request the target already sent
  * *you* surfaces a collision dialog (Accept vs Continue anyway). A QR entry
  * scans a DIP-15 auto-accept code and sends the request it describes.
+ * "Send privately" sends a private request paid from the wallet's shielded
+ * balance (`sendPrivateContactRequest`) and makes the collision accept reply
+ * privately too ([CollisionAccept]).
  *
  * Deviation from Swift: the DPNS hint recorded on success is written to the
  * device-local meta store directly here (Swift funnels it through the tab's
@@ -86,7 +93,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
 
     val identity by remember(idBytes) {
         container.database.identityDao().observeByIdentityId(idBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) {
         walletId?.let { manager?.wallet(forWalletId = it) }
@@ -98,9 +105,12 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     var selectedResult by remember { mutableStateOf<DpnsSearchResult?>(null) }
     var idText by remember { mutableStateOf("") }
     var accountLabel by remember { mutableStateOf("") }
+    // Send a private contact request (protocol version 15): paid from the
+    // wallet's shielded balance, so nothing on chain names either side.
+    var sendPrivately by remember { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    // Set when an accept's private reply may have gone through (its result
+    // Set when a private send or reply may have gone through (its result
     // could not be confirmed): the screen only offers to close, never to
     // submit again, as the send screen does for an unconfirmed spend.
     var unconfirmedNotice by remember { mutableStateOf<String?>(null) }
@@ -124,7 +134,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // The automatic refreshes made since the wallet's private payments were
     // last read restored (`PrivatePaymentsRecovery.recheckDelayMs`).
     var readinessRechecks by remember { mutableStateOf(0) }
-    var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
+    // The submission the collision dialog asks about, as fixed at the tap.
+    var collisionSubmission by remember { mutableStateOf<ContactRequestSubmission?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
 
     val parsedIdentityId = remember(idText) { Base58.decodeIdentifier(idText) }
@@ -154,6 +165,13 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                 savedStateHandle[QrScanner.RESULT_KEY] = null
                 val w = wallet ?: return@collect
                 val m = manager ?: return@collect
+                // The QR send is public: never with "Send privately" on (the
+                // scan action is off then; this covers a result that arrives
+                // after the switch was turned on).
+                if (sendPrivately) {
+                    errorMessage = "A scanned QR sends a public request. Turn off Send privately to use it."
+                    return@collect
+                }
                 isSending = true
                 errorMessage = null
                 try {
@@ -259,26 +277,39 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         }
     }
 
-    fun send(recipient: ByteArray) {
+    /** Send [submission]'s request, as it was chosen at the tap. */
+    fun send(submission: ContactRequestSubmission) {
         val w = wallet ?: return
         val m = manager ?: return
+        val recipient = submission.recipient
+        val label = submission.accountLabel
         isSending = true
         errorMessage = null
         scope.launch {
+            // Records the DPNS name the recipient was found by, once a request
+            // to them went (or may have gone) out.
+            fun recordDpnsHint() {
+                submission.dpnsLabel?.let { metaStore.setDpnsHint(it, network, idBytes, recipient) }
+            }
             try {
-                val label = accountLabel.trim().ifEmpty { null }
-                w.dashpay.sendContactRequest(
-                    senderIdentityId = idBytes,
-                    recipientIdentityId = recipient,
-                    signerHandle = m.signerHandle,
-                    coreSignerHandle = m.mnemonicResolverHandle,
-                    accountLabel = label,
-                ).close()
-                if (mode == AddMode.DPNS) {
-                    selectedResult?.label?.let {
-                        metaStore.setDpnsHint(it, network, idBytes, recipient)
-                    }
+                // Both sends sign with the manager's identity signer.
+                if (submission.sendPrivately) {
+                    m.sendPrivateContactRequest(
+                        walletId = w.walletId,
+                        senderIdentityId = idBytes,
+                        recipientIdentityId = recipient,
+                        accountLabel = label,
+                    ).close()
+                } else {
+                    w.dashpay.sendContactRequest(
+                        senderIdentityId = idBytes,
+                        recipientIdentityId = recipient,
+                        signerHandle = m.signerHandle,
+                        coreSignerHandle = m.mnemonicResolverHandle,
+                        accountLabel = label,
+                    ).close()
                 }
+                recordDpnsHint()
                 kickDashPaySync(scope, m)
                 navController.popBackStack()
             } catch (e: Exception) {
@@ -300,9 +331,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     // and sending again continues the read.
                     ContactRequestSubmissionOutcome.PrivateStoreNotRead ->
                         errorMessage = ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE
+                    // Pending, not failed: the next sync settles it.
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                        recordDpnsHint()
                         kickDashPaySync(scope, m)
-                        unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                        unconfirmedNotice = submission.mayHaveGoneThroughMessage
                     }
                     is ContactRequestSubmissionOutcome.Failed -> errorMessage = outcome.message
                 }
@@ -351,11 +384,16 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         }
     }
 
-    fun acceptIncoming(recipient: ByteArray) {
+    /** The collision dialog's accept of the request [submission]'s recipient already sent. */
+    fun acceptIncoming(submission: ContactRequestSubmission) {
         val w = wallet ?: return
         val m = manager ?: return
-        // A private reply to this contact may be pending in the wallet.
+        val recipient = submission.recipient
+        // A private request to this contact may be pending in the wallet.
         if (!recipientPending.allowsSubmission(recipient.toHex())) return
+        // "Send privately" at the tap is the user's choice of a private
+        // request, so it holds for the accept too ([CollisionAccept]).
+        val accept = submission.collisionAccept
         isSending = true
         errorMessage = null
         scope.launch {
@@ -365,6 +403,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     manager = m,
                     ourIdentityId = idBytes,
                     senderId = recipient,
+                    accept = accept,
                 )
                 if (ok) {
                     kickDashPaySync(scope, m)
@@ -380,7 +419,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         // Pending, not failed: the next sync settles it.
                         kickDashPaySync(scope, m)
-                        unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                        unconfirmedNotice = submission.acceptMayHaveGoneThroughMessage
                     }
                     // Nothing was signed: the screen shows the pair being
                     // checked, with the DashPay sync, never a retry.
@@ -402,17 +441,32 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
 
     fun attemptSend() {
         val recipient = resolvedRecipient ?: return
+        if (isSending) return
+        // Fix the submission at the tap: the lookup below is asynchronous, and
+        // what the user changes on the form meanwhile must not change what
+        // goes out. Send and the switch are off until it returns.
+        val submission = ContactRequestSubmission.of(
+            recipient = recipient,
+            sendPrivately = sendPrivately,
+            accountLabel = accountLabel,
+            dpnsLabel = if (mode == AddMode.DPNS) selectedResult?.label else null,
+        )
         errorMessage = null
+        isSending = true
         scope.launch {
-            val pendingIncoming = runCatching {
-                container.database.dashpayDao().getContactRequestsByOwner(idBytes)
-                    .filter { it.contactIdentityId.contentEquals(recipient) }
-                    .let { pair -> pair.any { !it.isOutgoing } && pair.none { it.isOutgoing } }
-            }.getOrDefault(false)
+            val pendingIncoming = try {
+                runCatching {
+                    container.database.dashpayDao().getContactRequestsByOwner(idBytes)
+                        .filter { it.contactIdentityId.contentEquals(recipient) }
+                        .let { pair -> pair.any { !it.isOutgoing } && pair.none { it.isOutgoing } }
+                }.getOrDefault(false)
+            } finally {
+                isSending = false
+            }
             if (pendingIncoming) {
-                collisionRecipient = recipient
+                collisionSubmission = submission
             } else {
-                send(recipient)
+                send(submission)
             }
         }
     }
@@ -429,12 +483,22 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     ) { Text("Cancel") }
                 },
                 actions = {
+                    // A scanned QR sends a public request at once (Rust's QR
+                    // send has no private form), so it is off while "Send
+                    // privately" is on.
                     IconButton(
                         onClick = { navController.navigate(QrScanner) },
-                        enabled = !isSending,
+                        enabled = !isSending && !sendPrivately,
                         modifier = Modifier.testTag("dashpay.addViaQR"),
                     ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan QR")
+                        Icon(
+                            Icons.Default.QrCodeScanner,
+                            contentDescription = if (sendPrivately) {
+                                "Scan QR (sends a public request; turn off Send privately to use it)"
+                            } else {
+                                "Scan QR (sends a public request)"
+                            },
+                        )
                     }
                 },
             )
@@ -473,6 +537,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
             }
 
             val recipient = resolvedRecipient
+            if (recipient == null && sendPrivately) {
+                // Kept while it is on with no recipient picked, so the user can
+                // turn it off again, which Scan QR needs.
+                SendPrivatelySection(sendPrivately, enabled = !isSending) { sendPrivately = it }
+            }
             if (recipient != null) {
                 PreviewSection(
                     recipient = recipient,
@@ -489,6 +558,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         singleLine = true,
                     )
                 }
+                SendPrivatelySection(sendPrivately, enabled = !isSending) { sendPrivately = it }
                 SubmitButton(
                     text = "Send Request",
                     isLoading = isSending,
@@ -534,28 +604,36 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     errorMessage!!,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("dashpay.addContact.error"),
                 )
             }
         }
     }
 
-    val collision = collisionRecipient
+    val collision = collisionSubmission
     if (collision != null) {
+        val accept = collision.collisionAccept
         AlertDialog(
-            onDismissRequest = { collisionRecipient = null },
+            onDismissRequest = { collisionSubmission = null },
             title = { Text("Request already received") },
-            text = { Text("This person already sent you a request — accept it instead?") },
+            text = { Text(accept.message) },
             confirmButton = {
-                TextButton(onClick = {
-                    collisionRecipient = null
-                    acceptIncoming(collision)
-                }) { Text("Accept") }
+                TextButton(
+                    onClick = {
+                        collisionSubmission = null
+                        acceptIncoming(collision)
+                    },
+                    modifier = Modifier.testTag("dashpay.addContact.collision.accept"),
+                ) { Text(accept.buttonTitle) }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    collisionRecipient = null
-                    send(collision)
-                }) { Text("Continue anyway") }
+                TextButton(
+                    onClick = {
+                        collisionSubmission = null
+                        send(collision)
+                    },
+                    modifier = Modifier.testTag("dashpay.addContact.collision.continue"),
+                ) { Text("Continue anyway") }
             },
         )
     }
@@ -566,8 +644,41 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
             title = { Text("Submitted") },
             text = { Text(notice) },
             confirmButton = {
-                TextButton(onClick = { navController.popBackStack() }) { Text("Done") }
+                TextButton(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.testTag("dashpay.addContact.submitted.done"),
+                ) { Text("Done") }
             },
+        )
+    }
+}
+
+/**
+ * "Send privately", one toggleable row so TalkBack reads the label with the
+ * switch's role and state. ← Swift `AddContactView.sendPrivatelySection`.
+ */
+@Composable
+private fun SendPrivatelySection(sendPrivately: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    FormSection {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = sendPrivately,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onValueChange = onChange,
+                )
+                .testTag("dashpay.addContact.sendPrivately"),
+        ) {
+            Text("Send privately", modifier = Modifier.weight(1f))
+            Switch(checked = sendPrivately, onCheckedChange = null, enabled = enabled)
+        }
+        Text(
+            "Paid from this wallet's shielded balance, so nothing on chain names either of you.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

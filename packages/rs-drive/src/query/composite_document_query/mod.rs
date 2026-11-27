@@ -115,8 +115,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentReferenceKind, DocumentTypeRef, Index,
+    DecodedValueBudget, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentReferenceDeclaration, DocumentReferenceKind, DocumentTypeRef, Index,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -125,6 +125,7 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::{Element, PathQuery};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -133,6 +134,29 @@ use std::collections::{BTreeMap, BTreeSet};
 /// whole enrichment (quotes, four counts, reposts, profiles, names,
 /// the viewer's marks) with room to spare.
 pub const MAX_SUB_QUERIES: usize = 10;
+
+/// Maximum additional decoded [`Value`]s retained via overlapping document clones
+/// across components of one verified composite response before signature verification.
+///
+/// Distinct proved documents are each bounded proportionally to their own encoded
+/// byte length ([`Document::from_bytes_bounded`]), so non-overlapping queries never
+/// draw from this cap. Overlapping joins that clone already-decoded documents into
+/// additional components charge each extra copy here so an unauthenticated peer
+/// cannot amplify a ~300 KiB proof into >100 MiB of cloned arrays across ten joins.
+pub(crate) const MAX_COMPOSITE_CLONED_DECODED_VALUES: usize = 524_288;
+
+/// Whether composite document decoding enforces client-side decoded-value bounds
+/// and overlapping-clone guards (`Bounded`) or preserves unbounded server reads
+/// (`Unbounded`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompositeDecodeMode {
+    /// Server-side execution path (unbounded).
+    #[cfg_attr(not(feature = "server"), allow(dead_code))]
+    Unbounded,
+    /// Client-side proof verification path (per-document proportional budget plus
+    /// overlapping-clone guard).
+    Bounded,
+}
 
 /// The most values one binding can derive: a derived `IN` clause admits
 /// at most this many (`WhereClause::in_values`), so the page limit and
@@ -1499,10 +1523,13 @@ impl<'a> DriveDocumentQuery<'a> {
 
     /// Decodes the proved entries of a documents component: stored
     /// documents from item elements, indexOnly projections synthesized
-    /// from their proved positions.
+    /// from their proved positions. Under [`CompositeDecodeMode::Bounded`],
+    /// each stored document is decoded under a decoded-value budget
+    /// proportional to its encoded byte length ([`Document::from_bytes_bounded`]).
     pub(crate) fn decode_document_trios(
         query: &DriveDocumentQuery<'a>,
         trios: Vec<PresentTrio>,
+        decode_mode: CompositeDecodeMode,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
         if query.document_type.index_only() {
@@ -1529,8 +1556,19 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|(_, _, element)| {
                 let serialized = element.into_item_bytes().map_err(Error::from)?;
-                Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
-                    .map_err(|e| Error::Protocol(Box::new(e)))
+                match decode_mode {
+                    CompositeDecodeMode::Bounded => Document::from_bytes_bounded(
+                        serialized.as_slice(),
+                        query.document_type,
+                        platform_version,
+                    ),
+                    CompositeDecodeMode::Unbounded => Document::from_bytes(
+                        serialized.as_slice(),
+                        query.document_type,
+                        platform_version,
+                    ),
+                }
+                .map_err(|e| Error::Protocol(Box::new(e)))
             })
             .collect()
     }
@@ -1544,6 +1582,7 @@ impl<'a> DriveDocumentQuery<'a> {
         values: &[Identifier],
         direction: bool,
         trios: Vec<PresentTrio>,
+        decode_mode: CompositeDecodeMode,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
         let query = self.sub_query_document_query_with_direction(
@@ -1552,8 +1591,8 @@ impl<'a> DriveDocumentQuery<'a> {
             direction,
             platform_version,
         )?;
-        let documents = Self::decode_document_trios(&query, trios, platform_version)?;
-        self.assemble_documents(sub_query, values, &documents)
+        let documents = Self::decode_document_trios(&query, trios, decode_mode, platform_version)?;
+        self.assemble_documents(sub_query, values, &documents, None, None)
     }
 
     /// Decodes the proved entries of a count component: one entry per
@@ -1715,20 +1754,43 @@ impl<'a> DriveDocumentQuery<'a> {
         sub_query: &DriveSubQuery<'a>,
         values: &[Identifier],
         documents: &[Document],
+        mut claimed: Option<&mut BTreeSet<usize>>,
+        mut clone_budget: Option<&mut DecodedValueBudget>,
     ) -> Result<Vec<Document>, Error> {
+        let mut claim_and_clone =
+            |position: usize, document: &Document| -> Result<Document, Error> {
+                // The first component to claim `documents[position]` owns the cost already
+                // admitted by per-document proportional decoding. Every additional component
+                // retaining a clone charges `clone_budget` before cloning so overlapping
+                // joins cannot amplify memory unboundedly before signature verification.
+                if let Some(claimed) = claimed.as_deref_mut() {
+                    if !claimed.insert(position) {
+                        if let Some(clone_budget) = clone_budget.as_deref_mut() {
+                            clone_budget
+                                .charge_document(document)
+                                .map_err(ProtocolError::DataContractError)?;
+                        }
+                    }
+                }
+                Ok(document.clone())
+            };
         let Some(binding) = &sub_query.binding else {
-            return Ok(documents.to_vec());
+            return documents
+                .iter()
+                .enumerate()
+                .map(|(position, document)| claim_and_clone(position, document))
+                .collect();
         };
         let admitted: BTreeSet<Identifier> = values.iter().copied().collect();
         if sub_query.is_by_id_join() {
-            let mut by_id: BTreeMap<Identifier, &Document> = BTreeMap::new();
-            for document in documents {
+            let mut by_id: BTreeMap<Identifier, (usize, &Document)> = BTreeMap::new();
+            for (position, document) in documents.iter().enumerate() {
                 let id = document.id();
                 if !admitted.contains(&id) {
                     // Another join on the same type owns it.
                     continue;
                 }
-                if by_id.insert(id, document).is_some() {
+                if by_id.insert(id, (position, document)).is_some() {
                     return Err(corrupted_proof(format!(
                         "composite join results carry document {} twice",
                         id
@@ -1739,7 +1801,9 @@ impl<'a> DriveDocumentQuery<'a> {
             let mut ordered = Vec::with_capacity(values.len());
             for value in values {
                 match by_id.remove(value) {
-                    Some(document) => ordered.push(document.clone()),
+                    Some((position, document)) => {
+                        ordered.push(claim_and_clone(position, document)?);
+                    }
                     None if target_is_permanent => {
                         return Err(corrupted_proof(format!(
                             "composite join results are missing referenced document {}: a \
@@ -1757,9 +1821,11 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok(ordered);
         }
         let mut mine = Vec::new();
-        for document in documents {
+        for (position, document) in documents.iter().enumerate() {
             match document_bound_value(document, &binding.field)? {
-                Some(value) if admitted.contains(&value) => mine.push(document.clone()),
+                Some(value) if admitted.contains(&value) => {
+                    mine.push(claim_and_clone(position, document)?);
+                }
                 _ => {}
             }
         }
@@ -1805,8 +1871,15 @@ impl<'a> DriveDocumentQuery<'a> {
         removal_path_queries: &[PathQuery],
         trios: Vec<ProvedTrio>,
         sum_bearing_items_are_documents: bool,
+        decode_mode: CompositeDecodeMode,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
+        let mut clone_budget = match decode_mode {
+            CompositeDecodeMode::Bounded => {
+                Some(DecodedValueBudget::new(MAX_COMPOSITE_CLONED_DECODED_VALUES))
+            }
+            CompositeDecodeMode::Unbounded => None,
+        };
         // Group documents by base path. Counts instead route by their
         // complete terminal positions: a shared base and bound value can
         // still select different trailing equality values. A terminal may
@@ -1917,9 +1990,12 @@ impl<'a> DriveDocumentQuery<'a> {
             // Every documents member of a group addresses the same
             // type, so any member's query decodes the group.
             let documents = match documents_members[0] {
-                Component::Page => {
-                    Self::decode_document_trios(self, document_trios, platform_version)?
-                }
+                Component::Page => Self::decode_document_trios(
+                    self,
+                    document_trios,
+                    decode_mode,
+                    platform_version,
+                )?,
                 Component::Sub(index) => {
                     let query = self.sub_query_document_query_with_direction(
                         &self.sub_queries[index],
@@ -1927,7 +2003,12 @@ impl<'a> DriveDocumentQuery<'a> {
                         direction,
                         platform_version,
                     )?;
-                    Self::decode_document_trios(&query, document_trios, platform_version)?
+                    Self::decode_document_trios(
+                        &query,
+                        document_trios,
+                        decode_mode,
+                        platform_version,
+                    )?
                 }
             };
             let mut claimed: BTreeSet<usize> = BTreeSet::new();
@@ -1946,7 +2027,13 @@ impl<'a> DriveDocumentQuery<'a> {
                                 .as_ref()
                                 .is_none_or(|ids| ids.contains(&document.id()));
                             if is_mine {
-                                claimed.insert(position);
+                                if !claimed.insert(position) {
+                                    if let Some(clone_budget) = clone_budget.as_mut() {
+                                        clone_budget
+                                            .charge_document(document)
+                                            .map_err(ProtocolError::DataContractError)?;
+                                    }
+                                }
                                 mine.push(document.clone());
                             }
                         }
@@ -1954,15 +2041,13 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                     Component::Sub(index) => {
                         let sub_query = &self.sub_queries[*index];
-                        let mine =
-                            self.assemble_documents(sub_query, &derived[*index], &documents)?;
-                        let mine_ids: BTreeSet<Identifier> =
-                            mine.iter().map(|document| document.id()).collect();
-                        for (position, document) in documents.iter().enumerate() {
-                            if mine_ids.contains(&document.id()) {
-                                claimed.insert(position);
-                            }
-                        }
+                        let mine = self.assemble_documents(
+                            sub_query,
+                            &derived[*index],
+                            &documents,
+                            Some(&mut claimed),
+                            clone_budget.as_mut(),
+                        )?;
                         sub_results[*index] = Some(SubQueryResult::Documents(mine));
                     }
                 }
@@ -2144,6 +2229,7 @@ impl<'a> DriveDocumentQuery<'a> {
             return Self::decode_document_trios(
                 query,
                 results.to_path_key_elements(),
+                CompositeDecodeMode::Unbounded,
                 platform_version,
             );
         }
@@ -2212,9 +2298,9 @@ impl<'a> DriveDocumentQuery<'a> {
                     drive_operations,
                     platform_version,
                 )?;
-                Ok(SubQueryResult::Documents(
-                    self.assemble_documents(sub_query, values, &documents)?,
-                ))
+                Ok(SubQueryResult::Documents(self.assemble_documents(
+                    sub_query, values, &documents, None, None,
+                )?))
             }
             SubQueryKind::Count => {
                 let count_query =

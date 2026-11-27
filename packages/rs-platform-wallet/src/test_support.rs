@@ -53,11 +53,17 @@ use crate::changeset::{DurableCursors, PlatformWalletPersistence};
 use crate::events::PlatformEventManager;
 #[cfg(test)]
 use crate::spv::SpvRuntime;
+#[cfg(test)]
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 #[cfg(test)]
+use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+#[cfg(test)]
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+#[cfg(test)]
+use crate::wallet::PlatformAddressWallet;
 
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
@@ -338,8 +344,63 @@ pub async fn funded_wallet_manager_with_outputs(
     Arc<WalletGeneration>,
     WalletSigner,
 ) {
-    let mut ctx = TestWalletContext::new_random();
+    funded_wallet_manager_of(TestWalletContext::new_random(), account_type, outputs).await
+}
 
+/// [`funded_wallet_manager`] for the wallet of `seed`, for tests that bind its
+/// shielded side: a bind takes only the seed the wallet was created from.
+#[cfg(all(test, feature = "shielded"))]
+pub(crate) async fn funded_wallet_manager_from_seed(
+    seed: [u8; 64],
+    account_type: StandardAccountType,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    let wallet = Wallet::from_seed_bytes(
+        seed,
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("a wallet from the seed");
+    let mut managed_wallet =
+        ManagedWalletInfo::from_wallet_with_name(&wallet, "Test".to_string(), 0);
+    let xpub = wallet
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("bip44 account")
+        .account_xpub;
+    let receive_address = managed_wallet
+        .first_bip44_managed_account_mut()
+        .expect("bip44 managed account")
+        .next_receive_address(Some(&xpub))
+        .expect("bip44 receive address");
+    let ctx = TestWalletContext {
+        managed_wallet,
+        wallet,
+        receive_address,
+        xpub,
+    };
+    funded_wallet_manager_of(ctx, account_type, &[10_000_000]).await
+}
+
+/// The wallet manager [`funded_wallet_manager_with_outputs`] builds, for the wallet of
+/// `ctx`.
+async fn funded_wallet_manager_of(
+    mut ctx: TestWalletContext,
+    account_type: StandardAccountType,
+    outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
     // `new_random()` already derives a BIP44 receive address; only the
     // BIP32 arm needs a hand-rolled derivation.
     let receive_address = match account_type {
@@ -1202,6 +1263,32 @@ pub(crate) async fn platform_wallet_in(
     )
 }
 
+/// A `PlatformAddressWallet` over the wallet `wallet_id` that `wallet_manager`
+/// holds, on `sdk`, with no persistence. The address provider is left
+/// uninitialised, so it suits operations that read only the SDK and the
+/// wallet manager (input planning, address enumeration, history queries).
+#[cfg(test)]
+pub(crate) fn platform_address_wallet_in(
+    sdk: Arc<dash_sdk::Sdk>,
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+) -> PlatformAddressWallet {
+    let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+    let spv = Arc::new(SpvRuntime::new(
+        Arc::clone(&wallet_manager),
+        Arc::new(PlatformEventManager::new(Vec::new())),
+    ));
+    let asset_locks = Arc::new(AssetLockManager::new(
+        Arc::clone(&sdk),
+        Arc::clone(&wallet_manager),
+        wallet_id,
+        Arc::new(Notify::new()),
+        Arc::new(SpvBroadcaster::new(spv)),
+        persister.clone(),
+    ));
+    PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
+}
+
 /// A valid Orchard payment address, deterministic in `seed_byte`, for tests
 /// that need a recipient without a shielded key set: the external address
 /// at diversifier index 0 of the spending key whose 32 bytes all equal
@@ -1232,11 +1319,27 @@ pub(crate) mod tracing_capture {
     /// Level and message of every event recorded while registered as the
     /// current thread's active recorder (see [`RecordingGuard`]).
     #[derive(Clone, Default)]
-    pub(crate) struct RecordedEvents(Arc<Mutex<Vec<(Level, String)>>>);
+    pub(crate) struct RecordedEvents {
+        events: Arc<Mutex<Vec<(Level, String)>>>,
+        on_event: Option<EventHook>,
+    }
+
+    /// What runs, inline on the emitting thread, for every recorded event's message.
+    type EventHook = Arc<dyn Fn(&str) + Send + Sync>;
 
     impl RecordedEvents {
+        /// A recorder that also runs `hook` with the message of every event, the moment it
+        /// is emitted: for a test that needs the world to change at a chosen point of the
+        /// code under test.
+        pub(crate) fn with_hook(hook: impl Fn(&str) + Send + Sync + 'static) -> Self {
+            Self {
+                events: Arc::default(),
+                on_event: Some(Arc::new(hook)),
+            }
+        }
+
         pub(crate) fn entries(&self) -> Vec<(Level, String)> {
-            self.0.lock().expect("recorded events mutex").clone()
+            self.events.lock().expect("recorded events mutex").clone()
         }
 
         fn record(&self, event: &tracing::Event<'_>) {
@@ -1250,7 +1353,10 @@ pub(crate) mod tracing_capture {
             }
             let mut visitor = MessageVisitor(String::new());
             event.record(&mut visitor);
-            self.0
+            if let Some(hook) = &self.on_event {
+                hook(&visitor.0);
+            }
+            self.events
                 .lock()
                 .expect("recorded events mutex")
                 .push((*event.metadata().level(), visitor.0));

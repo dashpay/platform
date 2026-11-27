@@ -7,6 +7,8 @@ use crate::version::system_limits::SystemLimits;
 /// the bare asset-unlock transaction fee and too low a minimum for a Core `TxOut`.
 pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_document_revisions_erased_per_transition: None,
+    max_enum_violation_listed_values: None,
+    max_enum_violation_listed_bytes: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
@@ -17,6 +19,9 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_index_property_name_bytes: 255,
     max_contract_schema_patterns: 32,
     max_schema_pattern_compiled_size: 131_072,
+    max_schema_pattern_bytes: 256,
+    max_contract_schema_pattern_bytes: 4096,
+    max_schema_pattern_case_folded_code_points: 4096,
     max_compiled_contract_size: None,
     max_private_document_entry_size: None,
     private_document_store_target_chunk_bytes: None,
@@ -82,6 +87,8 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    shielded_action_wire_size: 2_681, // measured, see SystemLimits; client-side only
+    shielded_transition_fixed_wire_size: 3_000, // measured, see SystemLimits; client-side only
     max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
@@ -92,9 +99,12 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 0,
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
     max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_summed_value_magnitude_without_type_total: None, // read from protocol version 15
+    max_summed_value_magnitude_in_64_bit_sums: None, // read from protocol version 15
     max_indexed_array_items: None,
     max_windowed_indexed_array_items: None,
     max_index_entries_per_document: None,
     max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
     max_rekey_batch_moves: None,        // read only by the protocol version 14 upgrade
+    max_history_migration_batch_operations: None, // read only by the protocol version 15 upgrade
 };

@@ -48,6 +48,10 @@ extension PlatformWalletManager {
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId must be exactly 32 bytes")
         }
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedIdentityDebitRecoveryRecords")
+        defer { finishNativeOp() }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) {
             try walletId.withUnsafeBytes { raw in
@@ -74,6 +78,12 @@ extension PlatformWalletManager {
     /// may be an additional debit, even if the original nonce is still usable.
     /// Obtain the user's informed acknowledgement before passing true. The
     /// acknowledgement is required, has no default, and false is rejected.
+    ///
+    /// Admitted as an async native operation until it returns: `shutdown()`
+    /// waits for it, `deleteWallet` throws `invalidHandle` while it runs, and
+    /// a call made once a shutdown has begun throws `invalidHandle`. It
+    /// queues behind an asset-lock funding on the same wallet, with the
+    /// shutdown caveat of `shieldedShield` (#6003).
     public func abandonShieldedIdentityDebit(
         walletId: Data,
         accountIndex: UInt32,
@@ -86,11 +96,13 @@ extension PlatformWalletManager {
         guard walletId.count == 32, activityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId and activityId must be exactly 32 bytes")
         }
-        let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        // It rewrites the wallet's durable debit record, so it is admitted
+        // through the call and the result delivery like the spends.
+        let calls = nativeShieldedSpendCalls
+        try await withAdmittedNativeOperation("abandonShieldedIdentityDebit") { handle -> Void in
             try walletId.withUnsafeBytes { wallet in
                 try activityId.withUnsafeBytes { activity in
-                    try platform_wallet_manager_abandon_shielded_identity_debit(
+                    try calls.abandonIdentityDebit(
                         handle,
                         wallet.baseAddress!.assumingMemoryBound(to: UInt8.self),
                         accountIndex,
@@ -99,6 +111,6 @@ extension PlatformWalletManager {
                     ).check()
                 }
             }
-        }.value
+        }
     }
 }

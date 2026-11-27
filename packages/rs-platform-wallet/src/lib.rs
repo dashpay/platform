@@ -29,7 +29,7 @@ pub mod wallet;
 #[cfg(feature = "spv-context")]
 pub mod spv_context_provider;
 
-pub use error::PlatformWalletError;
+pub use error::{PlatformWalletError, ShieldedFreshSelection};
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 // Surface the upstream `DerivedAddress` event payload through this
@@ -75,25 +75,42 @@ pub use wallet::signed_payment_registry::{
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
+pub use dash_sdk::platform::private_document_seal::PrivateDocumentSenderAuth;
 pub use masternode::{
     aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
     MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
 };
 pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
+pub use wallet::identity::network::TokenConfigUpdateOutcome;
 pub use wallet::identity::network::{
-    derive_identity_auth_keypair, fetch_identity_public_keys, AutoAcceptProofSource,
-    ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
-    FetchedIdentityPublicKeys, PaymentStarted, PreparedDashPayPayment, PrivateContactReadiness,
-    PrivateContactSyncReport, PrivateDocumentKeyPaths, SeedBindingVerification, IDENTITY_GAP_LIMIT,
-    MASTER_KEY_INDEX,
+    contract_fee_claim_eligibility, contract_moderation_offer, derive_identity_auth_keypair,
+    fetch_identity_public_keys, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
+    ContactInfoPublishOutcome, ContactInfoSealed, ContractDocumentDeletion,
+    ContractDocumentRestore, ContractFeeClaimEligibility, ContractModerationOffer,
+    ContractModeratorRole, ContractUserModerationKind, DocumentTypeModerationOffer,
+    FetchedIdentityPublicKeys, IdentityKeyLimitsUpdatePreview, IdentityModerationOffer,
+    ModeratorsPotTeam, OpenedPrivateDocument, PaymentStarted, PreparedDashPayPayment,
+    PrivateContactReadiness, PrivateContactSyncReport, PrivateDocumentCursor,
+    PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
+    SeedBindingVerification, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
+pub use wallet::identity::network::{
+    private_document_create_fee, private_document_create_fee_for,
+    private_document_recipient_key_choices, NewPrivateDocumentEntry, PrivateDocumentEntryCreated,
+    PrivateDocumentRecipientKey, SealedPrivateDocumentEntry,
+    PRIVATE_DOCUMENT_CREATE_FEE_PREVIEW_ACTIONS,
+};
+pub use wallet::identity::types::dashpay::profile::{
+    valid_transparent_payment_address, validated_shielded_address,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
-    unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
-    DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo, EstablishedContact, IdentityLocation,
-    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateContact, PrivateKeyData,
-    ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    derive_contact_payment_addresses, derive_contact_xpub, normalize_persisted_profile,
+    pubkey_binds_expected_key_data, unmask_account_reference, BlockTime, ContactProfileEntry,
+    ContactRequest, ContactXpubData, DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo,
+    EstablishedContact, IdentityLocation, IdentityManager, IdentityStatus, KeyStorage,
+    ManagedIdentity, PaymentAddressUpdate, PrivateContact, PrivateKeyData, ProfileUpdate,
+    RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
@@ -128,3 +145,19 @@ pub use key_wallet_manager;
 // the crate can pass it to `ManagedIdentity` mutation methods
 // (`set_dashpay_profile`, `record_dashpay_payment`, `add_identity`, …).
 pub use wallet::persister::WalletPersister;
+
+pub use wallet::identity::types::dashpay::payment_address::{
+    profile_payment_address_from_string, profile_payment_address_to_string,
+    ProfilePaymentAddressKind, ProfilePaymentAddressSupport,
+};
+
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::tip_payment::{
+    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipAdmission, ShieldedTipRecipient,
+    ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
+    SHIELDED_IDENTITY_BALANCE_WAIT,
+};
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::tips::{
+    is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
+};

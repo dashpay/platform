@@ -45,6 +45,10 @@ export const MIN_BLOCKS_BEFORE_DKG = 6;
 export const PACKAGE_ROOT_DIR = path.join(url.fileURLToPath(import.meta.url), '../..');
 export const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
+// The service files a command that changes Platform options only writes: all
+// but Core's, which read no Platform option.
+export const PLATFORM_ONLY_RENDER_SCOPE = { skipDirectories: ['core'] };
+
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
 export const DASHMATE_VERSION = version;

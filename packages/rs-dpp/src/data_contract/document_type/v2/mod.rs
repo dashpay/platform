@@ -144,6 +144,16 @@ pub struct DocumentTypeV2 {
     /// [`Self::documents_summable`] is `Some` — enforced by
     /// [`crate::data_contract::document_type::accessors::DocumentTypeV2Setters::set_range_summable`].
     pub(in crate::data_contract) range_summable: bool,
+    /// Whether every tree holding a sum of this type's summed property keeps a 128-bit total
+    /// rather than a 64-bit one: the primary key tree of a `documentsSummable` type and the
+    /// trees of its summing indexes (which carry the same fact as
+    /// [`IndexLevelTypeInfo::big_sums`]). Set by the document type parser from the bounds the
+    /// summed property declares (`SystemLimits::max_summed_value_magnitude_in_64_bit_sums`);
+    /// `false` on a type that sums nothing and on every type parsed under a protocol version
+    /// before 15.
+    ///
+    /// [`IndexLevelTypeInfo::big_sums`]: crate::data_contract::document_type::IndexLevelTypeInfo::big_sums
+    pub(in crate::data_contract) big_sums: bool,
     /// When true, documents of this type are **indexOnly**: nothing is
     /// written to primary storage (there is no `[0]` primary-key tree at
     /// all) — the index entries are the rows, each terminating in an `Item`
@@ -384,6 +394,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            big_sums: false,
             index_only: false,
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
@@ -449,6 +460,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            big_sums: false,
             index_only: false,
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,

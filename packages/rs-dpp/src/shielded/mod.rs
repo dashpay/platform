@@ -3,12 +3,16 @@ pub mod builder;
 
 mod compute_minimum_shielded_fee;
 mod identity_create_denomination;
+mod max_actions_per_transition;
 pub mod memo;
 #[cfg(feature = "state-transitions")]
 mod sighash;
 
 use crate::util::hash::hash_single;
 pub use identity_create_denomination::is_allowed_identity_create_denomination;
+pub use max_actions_per_transition::{
+    max_shield_from_asset_lock_actions, max_shielded_actions_per_transition,
+};
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -78,6 +82,8 @@ pub use sighash::{
     token_burn_from_pool_extra_sighash_data, token_burn_from_pool_extra_sighash_data_v0,
     token_pool_fee_bundle_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data_v0,
     token_pool_output_only_extra_sighash_data, token_pool_output_only_extra_sighash_data_v0,
+    token_pool_paid_fee_binding_extra_sighash_data,
+    token_pool_paid_fee_binding_extra_sighash_data_v0,
     token_purchase_from_shielded_pool_extra_sighash_data,
     token_purchase_from_shielded_pool_extra_sighash_data_v0,
     token_shielded_transfer_extra_sighash_data, token_shielded_transfer_extra_sighash_data_v0,

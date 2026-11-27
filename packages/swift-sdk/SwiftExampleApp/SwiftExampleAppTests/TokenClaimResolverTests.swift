@@ -40,18 +40,33 @@ final class TokenClaimResolverTests: XCTestCase {
         return identity
     }
 
+    /// The stored `distributionRecipient` string for a perpetual distribution
+    /// that pays `identity`, in the shape `DataContractParser` writes.
+    private func identityRecipient(_ identity: PersistentIdentity) -> String {
+        TokenDistributionRecipient.identity(identity.identityIdBase58)
+    }
+
     /// Persist a contract whose single token declares the requested
     /// distributions, and hand back the token row.
     ///
-    /// `perpetualRecipient` becomes the pinned `newTokensDestinationIdentity`
-    /// the perpetual rules key off; `preProgrammedRecipients` are written as
-    /// scheduled payout recipients. `oncePerIdentityAmount` goes into the
-    /// contract JSON, since that is the only place the derived kind is read
-    /// from.
+    /// `perpetualRecipient`, when set, gives the token a perpetual
+    /// distribution whose stored `distributionRecipient` is that string
+    /// (`identityRecipient(_:)`, `"ContractOwner"`, ...), which is what the
+    /// perpetual claim rules key off. `mintDestination` and
+    /// `allowsChoosingDestination` are the minting settings, kept separate
+    /// so tests can show they do not decide who claims. `contractOwner`
+    /// becomes the contract's `ownerId`, and `withContract: false` leaves
+    /// the token with no `dataContract` at all (which also means no
+    /// once-per-identity kind, since that is derived from the contract).
+    /// `preProgrammedRecipients` are written as scheduled payout recipients.
+    /// `oncePerIdentityAmount` goes into the contract JSON, since that is
+    /// the only place the derived kind is read from.
     private func makeToken(
         oncePerIdentityAmount: String? = nil,
-        perpetual: Bool = false,
-        perpetualRecipient: PersistentIdentity? = nil,
+        perpetualRecipient: String? = nil,
+        mintDestination: PersistentIdentity? = nil,
+        contractOwner: PersistentIdentity? = nil,
+        withContract: Bool = true,
         preProgrammedRecipients: [PersistentIdentity] = [],
         allowsChoosingDestination: Bool = true,
         in context: ModelContext
@@ -82,9 +97,12 @@ final class TokenClaimResolverTests: XCTestCase {
                 withJSONObject: contractData,
                 options: []
             ),
+            ownerId: contractOwner?.identityId,
             network: .testnet
         )
-        context.insert(contract)
+        if withContract {
+            context.insert(contract)
+        }
 
         let token = PersistentToken(
             contractId: contractId,
@@ -92,13 +110,17 @@ final class TokenClaimResolverTests: XCTestCase {
             name: "Fixture Token",
             baseSupply: "0"
         )
-        token.dataContract = contract
-        token.mintingAllowChoosingDestination = allowsChoosingDestination
-        if perpetual {
-            token.perpetualDistribution = TokenPerpetualDistribution()
+        if withContract {
+            token.dataContract = contract
         }
+        token.mintingAllowChoosingDestination = allowsChoosingDestination
         if let perpetualRecipient {
-            token.newTokensDestinationIdentity = perpetualRecipient.identityId
+            token.perpetualDistribution = TokenPerpetualDistribution(
+                distributionRecipient: perpetualRecipient
+            )
+        }
+        if let mintDestination {
+            token.newTokensDestinationIdentity = mintDestination.identityId
         }
         if !preProgrammedRecipients.isEmpty {
             var distribution = TokenPreProgrammedDistribution()
@@ -186,8 +208,7 @@ final class TokenClaimResolverTests: XCTestCase {
         let stranger = makeIdentity(byte: 0x04, in: context)
         let token = try makeToken(
             oncePerIdentityAmount: "5000",
-            perpetual: true,
-            perpetualRecipient: owner,
+            perpetualRecipient: identityRecipient(owner),
             in: context
         )
         let claims = StubClaimStore()
@@ -203,7 +224,7 @@ final class TokenClaimResolverTests: XCTestCase {
                 claims: claims
             ),
             [.oncePerIdentity],
-            "the perpetual payout is pinned to the owner, so it is not on offer here"
+            "the perpetual payout goes to the owner, so it is not on offer here"
         )
         XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
@@ -215,15 +236,14 @@ final class TokenClaimResolverTests: XCTestCase {
         )
     }
 
-    /// The pinned recipient is eligible for both kinds and keeps Drive's
-    /// ordering: perpetual first.
+    /// The designated perpetual recipient is eligible for both kinds and
+    /// keeps Drive's ordering: perpetual first.
     func testDesignatedRecipientPrefersPerpetual() throws {
         let context = try makeContext()
         let owner = makeIdentity(byte: 0x05, in: context)
         let token = try makeToken(
             oncePerIdentityAmount: "5000",
-            perpetual: true,
-            perpetualRecipient: owner,
+            perpetualRecipient: identityRecipient(owner),
             in: context
         )
         let claims = StubClaimStore()
@@ -315,6 +335,27 @@ final class TokenClaimResolverTests: XCTestCase {
         )
     }
 
+    /// With only a pre-programmed distribution and no once-per-identity one,
+    /// an identity the schedule does not name has nothing to claim: the row
+    /// says so, the form offers nothing and starts on no kind.
+    func testUnlistedIdentityOnPreProgrammedOnlyTokenIsDenied() throws {
+        let context = try makeContext()
+        let recipient = makeIdentity(byte: 0x2A, in: context)
+        let stranger = makeIdentity(byte: 0x2B, in: context)
+        let token = try makeToken(
+            preProgrammedRecipients: [recipient],
+            in: context
+        )
+
+        assertClaim(
+            token: token,
+            identity: stranger,
+            claims: StubClaimStore(),
+            resolves: .denied(reason: "Not a recipient of any pre-programmed release"),
+            offers: []
+        )
+    }
+
     // MARK: - Already claimed
 
     func testAlreadyClaimedOncePerIdentityAloneIsDenied() throws {
@@ -385,8 +426,7 @@ final class TokenClaimResolverTests: XCTestCase {
         let owner = makeIdentity(byte: 0x0C, in: context)
         let token = try makeToken(
             oncePerIdentityAmount: "5000",
-            perpetual: true,
-            perpetualRecipient: owner,
+            perpetualRecipient: identityRecipient(owner),
             in: context
         )
         let claims = StubClaimStore()
@@ -418,16 +458,15 @@ final class TokenClaimResolverTests: XCTestCase {
     /// had: nothing is left to offer, and the denial names the kind rather
     /// than falling through to the perpetual kind's "not the designated
     /// recipient" reason. Offering the perpetual kind as a fallback would
-    /// send a claim that pays the pinned recipient, which Drive rejects at
-    /// this identity's expense.
+    /// send a claim that pays the designated recipient, which Drive rejects
+    /// at this identity's expense.
     func testAlreadyClaimedStrangerIsDeniedEvenWithPerpetualPresent() throws {
         let context = try makeContext()
         let owner = makeIdentity(byte: 0x0D, in: context)
         let stranger = makeIdentity(byte: 0x0E, in: context)
         let token = try makeToken(
             oncePerIdentityAmount: "5000",
-            perpetual: true,
-            perpetualRecipient: owner,
+            perpetualRecipient: identityRecipient(owner),
             allowsChoosingDestination: false,
             in: context
         )
@@ -445,7 +484,7 @@ final class TokenClaimResolverTests: XCTestCase {
                 claims: claims
             ),
             [],
-            "the perpetual kind is not a fallback: it pays the pinned recipient"
+            "the perpetual kind is not a fallback: it pays the designated recipient"
         )
         XCTAssertNil(
             TokenActionResolver.preferredClaimDistribution(
@@ -453,6 +492,239 @@ final class TokenClaimResolverTests: XCTestCase {
                 identity: stranger,
                 claims: claims
             )
+        )
+    }
+
+    // MARK: - Perpetual recipient is the distribution's, not minting's
+
+    /// Asserts that `resolveClaim`, `claimableDistributions` and
+    /// `preferredClaimDistribution` agree for one identity.
+    private func assertClaim(
+        token: PersistentToken,
+        identity: PersistentIdentity,
+        claims: StubClaimStore,
+        resolves expected: TokenActionPermission,
+        offers expectedKinds: [TokenDistributionType],
+        _ message: String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            TokenActionResolver.resolveClaim(token: token, identity: identity, claims: claims),
+            expected,
+            message,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: identity,
+                claims: claims
+            ),
+            expectedKinds,
+            message,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            TokenActionResolver.preferredClaimDistribution(
+                token: token,
+                identity: identity,
+                claims: claims
+            ),
+            expectedKinds.first,
+            message,
+            file: file,
+            line: line
+        )
+    }
+
+    /// Drive compares the claimant against the perpetual distribution's
+    /// recipient only, so the recipient may claim even when minting goes to
+    /// someone else and the contract forbids choosing a destination.
+    func testPerpetualRecipientIdentityMayClaimWhateverTheMintDestination() throws {
+        let context = try makeContext()
+        let recipient = makeIdentity(byte: 0x20, in: context)
+        let minter = makeIdentity(byte: 0x21, in: context)
+        let token = try makeToken(
+            perpetualRecipient: identityRecipient(recipient),
+            mintDestination: minter,
+            allowsChoosingDestination: false,
+            in: context
+        )
+
+        assertClaim(
+            token: token,
+            identity: recipient,
+            claims: StubClaimStore(),
+            resolves: .allowed,
+            offers: [.perpetual]
+        )
+    }
+
+    /// Being the minting destination is not being the perpetual recipient,
+    /// whether or not the contract lets minters choose a destination.
+    func testMintDestinationAloneMayNotClaimPerpetual() throws {
+        let context = try makeContext()
+        let recipient = makeIdentity(byte: 0x22, in: context)
+        let minter = makeIdentity(byte: 0x23, in: context)
+
+        for allowsChoosing in [true, false] {
+            let token = try makeToken(
+                perpetualRecipient: identityRecipient(recipient),
+                mintDestination: minter,
+                allowsChoosingDestination: allowsChoosing,
+                in: context
+            )
+            assertClaim(
+                token: token,
+                identity: minter,
+                claims: StubClaimStore(),
+                resolves: .denied(reason: "Not the designated distribution recipient"),
+                offers: [],
+                "allowsChoosingDestination = \(allowsChoosing)"
+            )
+        }
+    }
+
+    /// A contract-owner recipient pays the contract's owner and nobody else.
+    func testContractOwnerRecipientAllowsOnlyTheOwner() throws {
+        let context = try makeContext()
+        let owner = makeIdentity(byte: 0x24, in: context)
+        let other = makeIdentity(byte: 0x25, in: context)
+        let token = try makeToken(
+            perpetualRecipient: TokenDistributionRecipient.contractOwner.rawValue,
+            mintDestination: other,
+            contractOwner: owner,
+            in: context
+        )
+        let claims = StubClaimStore()
+
+        assertClaim(
+            token: token,
+            identity: owner,
+            claims: claims,
+            resolves: .allowed,
+            offers: [.perpetual]
+        )
+        assertClaim(
+            token: token,
+            identity: other,
+            claims: claims,
+            resolves: .denied(reason: "Not the designated distribution recipient"),
+            offers: [],
+            "the mint destination is not the contract owner"
+        )
+    }
+
+    /// With no owner on record the app cannot tell who a contract-owner
+    /// recipient is, so it offers nothing rather than guess.
+    func testContractOwnerRecipientWithUnknownOwnerIsDenied() throws {
+        let context = try makeContext()
+        let identity = makeIdentity(byte: 0x26, in: context)
+        let unknownReason = "Distribution recipient (contract owner) unknown locally"
+
+        let ownerMissing = try makeToken(
+            perpetualRecipient: TokenDistributionRecipient.contractOwner.rawValue,
+            in: context
+        )
+        assertClaim(
+            token: ownerMissing,
+            identity: identity,
+            claims: StubClaimStore(),
+            resolves: .denied(reason: unknownReason),
+            offers: [],
+            "contract loaded without an ownerId"
+        )
+
+        let contractMissing = try makeToken(
+            perpetualRecipient: TokenDistributionRecipient.contractOwner.rawValue,
+            withContract: false,
+            in: context
+        )
+        assertClaim(
+            token: contractMissing,
+            identity: identity,
+            claims: StubClaimStore(),
+            resolves: .denied(reason: unknownReason),
+            offers: [],
+            "token with no contract row"
+        )
+    }
+
+    /// Evonode payouts depend on chain state this app does not prove, so
+    /// the claim is never offered, whoever asks.
+    func testEvonodesByParticipationRecipientIsDenied() throws {
+        let context = try makeContext()
+        let identity = makeIdentity(byte: 0x27, in: context)
+        let token = try makeToken(
+            perpetualRecipient: TokenDistributionRecipient.evonodesByParticipation.rawValue,
+            mintDestination: identity,
+            in: context
+        )
+
+        assertClaim(
+            token: token,
+            identity: identity,
+            claims: StubClaimStore(),
+            resolves: .denied(
+                reason: "Distribution pays evonodes by participation; eligibility not evaluated by this app"
+            ),
+            offers: []
+        )
+    }
+
+    /// A recipient this app does not know, the pre-#4824 placeholder, and an
+    /// `Identity:` value with no id are all refused with their own reason.
+    func testUnrecognisedLegacyAndEmptyIdentityRecipientsAreDenied() throws {
+        let context = try makeContext()
+        let identity = makeIdentity(byte: 0x28, in: context)
+        let cases: [(recipient: String, reason: String)] = [
+            ("futureVariant", "Distribution recipient 'futureVariant' not recognised by this app"),
+            (
+                "AllEqualShare",
+                "Distribution recipient not recorded; delete the contract and load it again "
+                    + "(this also clears its locally saved documents)"
+            ),
+            (TokenDistributionRecipient.identity(""), "Not the designated distribution recipient")
+        ]
+
+        for (recipient, reason) in cases {
+            let token = try makeToken(
+                perpetualRecipient: recipient,
+                mintDestination: identity,
+                contractOwner: identity,
+                in: context
+            )
+            assertClaim(
+                token: token,
+                identity: identity,
+                claims: StubClaimStore(),
+                resolves: .denied(reason: reason),
+                offers: [],
+                "recipient '\(recipient)'"
+            )
+        }
+    }
+
+    /// A perpetual kind the identity cannot claim does not hide the
+    /// once-per-identity kind it can.
+    func testStrangerGetsOncePerIdentityBesideEvonodePerpetual() throws {
+        let context = try makeContext()
+        let stranger = makeIdentity(byte: 0x29, in: context)
+        let token = try makeToken(
+            oncePerIdentityAmount: "5000",
+            perpetualRecipient: TokenDistributionRecipient.evonodesByParticipation.rawValue,
+            in: context
+        )
+
+        assertClaim(
+            token: token,
+            identity: stranger,
+            claims: StubClaimStore(),
+            resolves: .allowed,
+            offers: [.oncePerIdentity]
         )
     }
 

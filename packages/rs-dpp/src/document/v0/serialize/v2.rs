@@ -4,7 +4,7 @@
 //! trading — introduced so the original creator survives ownership changes.
 //! Shipped consensus code: this file must never change.
 
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{
@@ -268,6 +268,18 @@ impl DocumentV0 {
     pub(super) fn from_bytes_v2(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DataContractError> {
+        Self::from_bytes_v2_with_budget(serialized_document, document_type, None, platform_version)
+    }
+
+    /// Format-2 reader parameterized by an optional client-side [`DecodedValueBudget`].
+    /// Consensus calls [`Self::from_bytes_v2`], which passes `None` and is output-identical
+    /// at every protocol version.
+    pub(super) fn from_bytes_v2_with_budget(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        mut budget: Option<&mut DecodedValueBudget>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DataContractError> {
         let mut buf = BufReader::new(serialized_document);
@@ -470,9 +482,10 @@ impl DocumentV0 {
                         None
                     };
                 }
-                let read_value = property.property_type.read_optionally_from(
+                let read_value = property.property_type.read_optionally_from_with_budget(
                     &mut buf,
                     property.always_required() & !property.transient,
+                    budget.as_deref_mut(),
                 );
 
                 match read_value {

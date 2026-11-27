@@ -20,17 +20,21 @@
 //! node's unproven wire by the SDK if it chooses, but the canonical
 //! path proves.
 
-use crate::error::MapGroveDbError;
-use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof, MapProvedBudgetError};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
+use dpp::data_contract::errors::DataContractError;
 use dpp::document::Document;
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use drive::query::{DriveDocumentQuery, SubQueryResult};
 use drive::verify::RootHash;
+use std::collections::BTreeMap;
 
 /// The verified result of a composite document query.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -54,6 +58,68 @@ pub struct CompositeDocuments {
     /// in first-appearance order; empty for every other sub-query. There a
     /// derived id with neither a document nor a record is an invalid proof.
     pub sub_result_removals: Vec<Vec<ContractDocumentRemovalEntry>>,
+}
+
+impl CompositeDocuments {
+    /// Decodes the kept field values of every removal record across every
+    /// sub-query, enforcing a decoded-value budget proportional to each removal
+    /// record's encoded `kept_fields` length.
+    ///
+    /// `sub_query_document_type(index)` supplies the document type of sub-query
+    /// `index` whenever `self.sub_result_removals[index]` is non-empty.
+    pub fn decode_sub_result_removal_kept_values<'a>(
+        &self,
+        mut sub_query_document_type: impl FnMut(usize) -> Result<DocumentTypeRef<'a>, DataContractError>,
+    ) -> Result<Vec<Vec<BTreeMap<String, Value>>>, ProtocolError> {
+        self.sub_result_removals
+            .iter()
+            .enumerate()
+            .map(|(index, removals)| {
+                if removals.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let document_type =
+                    sub_query_document_type(index).map_err(ProtocolError::DataContractError)?;
+                removals
+                    .iter()
+                    .map(|entry| entry.removal.kept_values_with_default_budget(document_type))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Like [`Self::decode_sub_result_removal_kept_values`], charging every
+    /// retained document and decoded kept field across the entire composite
+    /// response against a shared `budget`.
+    pub fn decode_sub_result_removal_kept_values_with_budget<'a>(
+        &self,
+        mut sub_query_document_type: impl FnMut(usize) -> Result<DocumentTypeRef<'a>, DataContractError>,
+        budget: &mut DecodedValueBudget,
+    ) -> Result<Vec<Vec<BTreeMap<String, Value>>>, ProtocolError> {
+        budget
+            .charge_documents(&self.page_documents)
+            .map_err(ProtocolError::DataContractError)?;
+        for sub_result in &self.sub_results {
+            budget
+                .charge_documents(sub_result.documents())
+                .map_err(ProtocolError::DataContractError)?;
+        }
+        self.sub_result_removals
+            .iter()
+            .enumerate()
+            .map(|(index, removals)| {
+                if removals.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let document_type =
+                    sub_query_document_type(index).map_err(ProtocolError::DataContractError)?;
+                removals
+                    .iter()
+                    .map(|entry| entry.removal.kept_values_with_budget(document_type, budget))
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 /// Verify a composite query's single merged proof and bind its root
@@ -83,7 +149,7 @@ pub fn verify_composite_documents_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_budget_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -140,5 +206,126 @@ where
         // as Some(empty) rather than None so callers can tell it apart
         // from a missing object.
         Ok((Some(composite), mtd.clone(), proof.clone()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractDocumentRemoval, ContractModerationConfig, ContractModerators,
+    };
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::document::DocumentV0;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::platform_value;
+
+    #[test]
+    fn should_share_decoded_value_budget_across_page_subqueries_and_multiple_removal_groups() {
+        let pv = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(pv)
+            .expect("default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let post_type = DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "tags": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": { "type": "string", "maxLength": 16 },
+                        "position": 0,
+                    },
+                },
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["tags"],
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            pv,
+        )
+        .expect("post type parses");
+
+        let make_doc = |seed: u8, n: usize| {
+            Document::V0(DocumentV0 {
+                id: Identifier::new([seed; 32]),
+                owner_id: Identifier::new([2; 32]),
+                properties: BTreeMap::from([(
+                    "tags".to_string(),
+                    Value::Array((0..n).map(|i| Value::Text(format!("t{i}"))).collect()),
+                )]),
+                ..Default::default()
+            })
+        };
+
+        // Page doc: 1 array + 4 tags = 5 values.
+        // Sub-query 0 live doc: 1 array + 4 tags = 5 values, plus 1 removal keeping 1 + 9 = 10 values.
+        // Sub-query 1 removal: keeping 1 + 9 = 10 values.
+        // Total across the entire composite response = 30 values.
+        let page_doc = make_doc(10, 4);
+        let sub0_doc = make_doc(11, 4);
+        let kept_fields =
+            encode_kept_fields(&make_doc(12, 9), post_type.as_ref()).expect("encodes");
+        let removal_entry = |seed: u8| ContractDocumentRemovalEntry {
+            document_id: Identifier::new([seed; 32]),
+            removal: ContractDocumentRemoval {
+                kept_fields: kept_fields.clone(),
+                ..Default::default()
+            },
+        };
+
+        let composite = CompositeDocuments {
+            page_documents: vec![page_doc],
+            sub_results: vec![
+                SubQueryResult::Documents(vec![sub0_doc]),
+                SubQueryResult::Documents(vec![]),
+            ],
+            sub_result_missing_ids: vec![vec![], vec![]],
+            sub_result_removals: vec![vec![removal_entry(20)], vec![removal_entry(21)]],
+        };
+
+        let mut exact = DecodedValueBudget::new(30);
+        let decoded = composite
+            .decode_sub_result_removal_kept_values_with_budget(
+                |_| Ok(post_type.as_ref()),
+                &mut exact,
+            )
+            .expect("combined page + subqueries + multiple removal groups fit exact budget");
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].len(), 1);
+        assert_eq!(decoded[1].len(), 1);
+        assert_eq!(exact.remaining(), 0);
+
+        let mut tight = DecodedValueBudget::new(29);
+        let error = composite
+            .decode_sub_result_removal_kept_values_with_budget(
+                |_| Ok(post_type.as_ref()),
+                &mut tight,
+            )
+            .expect_err("second subquery removal exceeding shared response budget must fail");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "unexpected error: {error}"
+        );
     }
 }

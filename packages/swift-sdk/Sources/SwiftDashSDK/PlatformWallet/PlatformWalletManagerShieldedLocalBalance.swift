@@ -88,11 +88,24 @@ struct PlatformWalletNativeShieldedLocalBalanceCalls: Sendable {
 }
 
 extension PlatformWalletManager {
-    /// Clear can purge notes before a later storage error is returned.
-    /// Invalidate before entering native code, including its failure path.
+    /// Clear can purge notes before a later storage error is returned, so
+    /// both its success and its failure invalidate queued delivery. The bump
+    /// follows the native call in the same synchronous MainActor turn, so no
+    /// snapshot delivery can be checked in between. A Clear Rust refused
+    /// because a shielded operation is in flight changed nothing, so it
+    /// leaves queued delivery valid.
     func withShieldedLocalBalanceMutation<T>(_ body: () throws -> T) rethrows -> T {
-        shieldedLocalBalanceGeneration.bump()
-        return try body()
+        do {
+            let result = try body()
+            shieldedLocalBalanceGeneration.bump()
+            return result
+        } catch {
+            if case PlatformWalletError.shieldedOperationInProgress(_) = error {
+                throw error
+            }
+            shieldedLocalBalanceGeneration.bump()
+            throw error
+        }
     }
 
     /// Native bind does not report whether it preserved or changed the
@@ -114,11 +127,11 @@ extension PlatformWalletManager {
     /// Reads one coherent local balance snapshot after shielded binding.
     /// This performs no network requests. Call it before starting network
     /// sync during launch. Native lock waits have a 100 ms deadline. A scan
-    /// holds the store write lock throughout its streamed download, which
-    /// may take minutes; reads can return `PlatformWalletError.walletOperation`
-    /// (busy) for that entire period. Repeated immediate reads do not bypass
-    /// the scan. Retain the last usable balance, allow network sync to continue,
-    /// and consume its completion event or request a fresh read after it ends.
+    /// does not hold the store lock across its network I/O, so reads normally
+    /// succeed while it runs; they can still return
+    /// `PlatformWalletError.walletOperation` (busy) if they contend with a
+    /// scan's tree appends or final commit, a restore, or Clear. On busy,
+    /// retain the last usable balance and request a fresh read later.
     ///
     /// Each invocation performs one native read. A successful bind overlapping
     /// delivery throws `ShieldedLocalBalanceReadError.bindingChanged`; the host

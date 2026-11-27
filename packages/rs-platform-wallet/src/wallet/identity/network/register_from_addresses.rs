@@ -14,6 +14,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::manager::NewIdentityKeyOrigin;
 
 use super::*;
 
@@ -148,29 +149,22 @@ impl IdentityWallet {
         // suppress the `(identity, address_infos)` return the caller
         // needs to reconcile the spent funding-address balances, leaving
         // them stale even though the identity exists on chain. A missed
-        // local add self-heals on the next identity re-sync. This mirrors
+        // local add is not restored by a routine re-sync; see
+        // `IdentityManager::record_new_identity`. This mirrors
         // the sibling `transfer_credits_to_addresses` / top-up flows,
         // which likewise treat post-acceptance local bookkeeping as
         // best-effort.
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity.clone(),
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            error = %e,
-                            identity_id = %identity.id(),
-                            "register_from_addresses: identity registered on Platform but \
-                             local add_identity failed; returning the registered identity \
-                             anyway so address balances can reconcile"
-                        );
-                    }
-                }
+                Some(info) => info.identity_manager.record_new_identity(
+                    identity.clone(),
+                    identity_index,
+                    self.wallet_id,
+                    NewIdentityKeyOrigin::Unrecorded,
+                    "register_from_addresses",
+                    &self.persister,
+                ),
                 None => {
                     tracing::warn!(
                         identity_id = %identity.id(),

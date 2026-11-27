@@ -1,0 +1,182 @@
+[
+  {
+    "type": "Evo",
+    "proTxHash": "e505e0d250c688f7287ad50743a22f5030a7dce71f31acdb9f390afd2840c186",
+    "collateralHash": "e505e0d250c688f7287ad50743a22f5030a7dce71f31acdb9f390afd2840c186",
+    "collateralIndex": 1,
+    "collateralAddress": "yMEE5rLobEWdA5PxwLxTYLp7vsiRYfaNXX",
+    "operatorReward": 0,
+    "state": {
+      "version": 3,
+      "service": "1.2.3.6:20001",
+      "addresses": {
+        "core_p2p": [
+          "1.2.3.6:20001"
+        ],
+        "platform_p2p": [
+          "1.2.3.6:26666"
+        ],
+        "platform_https": [
+          "1.2.3.6:1444"
+        ]
+      },
+      "registeredHeight": 1305,
+      "lastPaidHeight": 0,
+      "consecutivePayments": 0,
+      "PoSePenalty": 0,
+      "PoSeRevivedHeight": -1,
+      "PoSeBanHeight": -1,
+      "revocationReason": 0,
+      "ownerAddress": "yjapWVzr1yFd31nNVi3niGmem4vGExitDn",
+      "votingAddress": "yjapWVzr1yFd31nNVi3niGmem4vGExitDn",
+      "platformNodeID": "83aa0a21d10788e23606b9e554b60f8a6cce5622",
+      "platformP2PPort": 26666,
+      "platformHTTPPort": 1444,
+      "payouts": [
+        {
+          "address": "yjJT9TYwwW7x4kT8F7DKnMF65Aaeqq9Dkx",
+          "script": "76a914fc1ab9b4aef201a4143518c26247528063bca37788ac",
+          "reward": 10000
+        }
+      ],
+      "pubKeyOperator": "94336da5a3873bf86e22272de73c17cfe9b4c14f876ca4c8a0a4a7ca8a632bd30f8f7d99d34b845d2a295a6c8a768a55"
+    },
+    "confirmations": 2,
+    "wallet": {
+      "hasOwnerKey": true,
+      "hasOperatorKey": false,
+      "hasVotingKey": true,
+      "ownsCollateral": true,
+      "ownsPayeeScript": true,
+      "ownsOperatorRewardScript": false
+    },
+    "metaInfo": {
+      "lastDSQ": 0,
+      "mixingTxCount": 0,
+      "outboundAttemptCount": 0,
+      "lastOutboundAttempt": 0,
+      "lastOutboundAttemptElapsed": 1795676198,
+      "lastOutboundSuccess": 0,
+      "lastOutboundSuccessElapsed": 1795676198,
+      "is_platform_banned": false,
+      "platform_ban_height_updated": 0
+    }
+  },
+  {
+    "type": "Evo",
+    "proTxHash": "d01f12613a758e772b5e319940a742fb6a659ad41c3f858fec3e94cf8447c707",
+    "collateralHash": "d01f12613a758e772b5e319940a742fb6a659ad41c3f858fec3e94cf8447c707",
+    "collateralIndex": 0,
+    "collateralAddress": "yWtw59ZijcTYSUwysbAmjs5jjTpymJo2WV",
+    "operatorReward": 0,
+    "state": {
+      "version": 3,
+      "service": "1.2.3.4:20001",
+      "addresses": {
+        "core_p2p": [
+          "1.2.3.4:20001"
+        ],
+        "platform_p2p": [
+          "1.2.3.4:26656"
+        ],
+        "platform_https": [
+          "1.2.3.4:1443"
+        ]
+      },
+      "registeredHeight": 1302,
+      "lastPaidHeight": 1305,
+      "consecutivePayments": 0,
+      "PoSePenalty": 0,
+      "PoSeRevivedHeight": -1,
+      "PoSeBanHeight": -1,
+      "revocationReason": 0,
+      "ownerAddress": "ybdBydj9UZS9WvcBK1dS1BxWKX2U16JBuL",
+      "votingAddress": "ybdBydj9UZS9WvcBK1dS1BxWKX2U16JBuL",
+      "platformNodeID": "29ecf89b23e4aa13d8b89bd286aa3cd1cb586cc4",
+      "platformP2PPort": 26656,
+      "platformHTTPPort": 1443,
+      "payouts": [
+        {
+          "address": "yZxPwvGgceHqj7svtaAM3GbiGNc9jXfJf2",
+          "script": "76a91495969a90c28ff9426f61b3f9e6a073b49c13336788ac",
+          "reward": 10000
+        }
+      ],
+      "pubKeyOperator": "a847dca38d98890c3c44e7d50bf4c654533b8c502169f406d7f2171b49494ed64998f2f555eced068ae3ce4551c476e9"
+    },
+    "confirmations": 5,
+    "wallet": {
+      "hasOwnerKey": true,
+      "hasOperatorKey": false,
+      "hasVotingKey": true,
+      "ownsCollateral": true,
+      "ownsPayeeScript": true,
+      "ownsOperatorRewardScript": false
+    },
+    "metaInfo": {
+      "lastDSQ": 0,
+      "mixingTxCount": 0,
+      "outboundAttemptCount": 0,
+      "lastOutboundAttempt": 0,
+      "lastOutboundAttemptElapsed": 1795676198,
+      "lastOutboundSuccess": 0,
+      "lastOutboundSuccessElapsed": 1795676198,
+      "is_platform_banned": false,
+      "platform_ban_height_updated": 0
+    }
+  },
+  {
+    "type": "Regular",
+    "proTxHash": "c9a5afb205e08ce54577e48cd618be86d43735e1fc6125606fc7918927b5337c",
+    "collateralHash": "c9a5afb205e08ce54577e48cd618be86d43735e1fc6125606fc7918927b5337c",
+    "collateralIndex": 0,
+    "collateralAddress": "yfyQJ9cFrBuT1twTFKVrAS7Kw5qFSsagSF",
+    "operatorReward": 0,
+    "state": {
+      "version": 3,
+      "service": "1.2.3.5:20001",
+      "addresses": {
+        "core_p2p": [
+          "1.2.3.5:20001"
+        ]
+      },
+      "registeredHeight": 1302,
+      "lastPaidHeight": 1306,
+      "consecutivePayments": 0,
+      "PoSePenalty": 0,
+      "PoSeRevivedHeight": -1,
+      "PoSeBanHeight": -1,
+      "revocationReason": 0,
+      "ownerAddress": "yeLA5Ktf38HZLmsn8et3f4MC27cYdAiPoG",
+      "votingAddress": "yeLA5Ktf38HZLmsn8et3f4MC27cYdAiPoG",
+      "payouts": [
+        {
+          "address": "ybUCqfo7phEuAoQCs8L1WYqQMjcWXzzSch",
+          "script": "76a914a631efa5e3790f4f47e73a1118b781e64b397fbd88ac",
+          "reward": 10000
+        }
+      ],
+      "pubKeyOperator": "a1723ffdabe190ac7e615bf8084bbde6b2bc458650306d7ab3ed01533dc2a3e3fb64c90ec1215f941fa388207f5a2397"
+    },
+    "confirmations": 5,
+    "wallet": {
+      "hasOwnerKey": true,
+      "hasOperatorKey": false,
+      "hasVotingKey": true,
+      "ownsCollateral": true,
+      "ownsPayeeScript": true,
+      "ownsOperatorRewardScript": false
+    },
+    "metaInfo": {
+      "lastDSQ": 0,
+      "mixingTxCount": 0,
+      "outboundAttemptCount": 0,
+      "lastOutboundAttempt": 0,
+      "lastOutboundAttemptElapsed": 1795676198,
+      "lastOutboundSuccess": 0,
+      "lastOutboundSuccessElapsed": 1795676198,
+      "is_platform_banned": false,
+      "platform_ban_height_updated": 0
+    }
+  }
+]

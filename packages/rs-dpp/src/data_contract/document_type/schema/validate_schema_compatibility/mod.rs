@@ -4,6 +4,7 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 mod v1;
+mod v2;
 
 #[cfg(test)]
 mod byte_array_widen_accepted_tests;
@@ -30,9 +31,10 @@ pub fn validate_schema_compatibility(
     {
         0 => v0::validate_schema_compatibility_v0(original_schema, new_schema),
         1 => v1::validate_schema_compatibility_v1(original_schema, new_schema, platform_version),
+        2 => v2::validate_schema_compatibility_v2(original_schema, new_schema, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "validate_schema_compatibility".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         }),
     }

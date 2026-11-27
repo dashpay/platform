@@ -75,6 +75,19 @@ data class DashpayContactProfileEntity(
      * [Long].
      */
     val checkedAtMs: Long,
+    /**
+     * Published `corePaymentAddress` in storage form: a 0x00 (P2PKH) or
+     * 0x01 (P2SH) type byte, then the 20-byte HASH160. Null when the
+     * profile publishes none. Swift keeps the three addresses in the
+     * `PersistentDashpayPaymentAddresses` sidecar to leave its released
+     * SwiftData schema alone; Room migrates in place, so they ride this row
+     * and commit with the rest of the profile.
+     */
+    val corePaymentAddress: ByteArray? = null,
+    /** Published `platformPaymentAddress`, same 21-byte form; null when none. */
+    val platformPaymentAddress: ByteArray? = null,
+    /** Published `shieldedAddress`, the raw 43-byte Orchard address; null when none. */
+    val shieldedAddress: ByteArray? = null,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
 )

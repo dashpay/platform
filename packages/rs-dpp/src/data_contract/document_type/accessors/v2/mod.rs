@@ -39,6 +39,13 @@ pub trait DocumentTypeV2Getters {
     /// aggregated sums). Implies [`Self::documents_summable`] is `Some`.
     fn range_summable(&self) -> bool;
 
+    /// Returns whether the trees holding this document type's sums keep a 128-bit total
+    /// rather than a 64-bit one. True from protocol version 15 for a type whose summed
+    /// property is not declared within the bounds that keep a 64-bit sum in range
+    /// (`SystemLimits::max_summed_value_magnitude_in_64_bit_sums`); false for every type that
+    /// sums nothing and for every type parsed under an earlier protocol version.
+    fn uses_big_sums(&self) -> bool;
+
     /// Returns whether this document type is **indexOnly**: documents are
     /// never written to primary storage — the index entries are the rows,
     /// each terminating in an `Item` keyed by the index's `terminal`

@@ -1,0 +1,848 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { Listr } from 'listr2';
+import SetupCommand from '../../../src/commands/setup.js';
+import HomeDir from '../../../src/config/HomeDir.js';
+import Config from '../../../src/config/Config.js';
+import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
+import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
+import MuteOneLineError from '../../../src/oclif/errors/MuteOneLineError.js';
+import StartedContainers from '../../../src/docker/StartedContainers.js';
+import createPlatformSetupConfigs from '../../fixtures/platformSetupConfigs.js';
+import { issueCertificate } from '../../../src/test/certificateFixtures.js';
+import validateZeroSslCertificateFactory from '../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import findReusableZeroSslCertificateFactory from '../../../src/ssl/zerossl/findReusableZeroSslCertificateFactory.js';
+import Certificate from '../../../src/ssl/zerossl/Certificate.js';
+
+describe('Setup command', () => {
+  let homeDir;
+  let secretsDir;
+  let defaultConfigs;
+  let setUp;
+  let hardResetPlatform;
+  let configFile;
+  let dockerCompose;
+  let setupPlatformTask;
+  let getPlatformArtefacts;
+  let artefacts;
+  let platformContext;
+  let exitCode;
+  let nodeKey;
+  let keyFile;
+  let stderr;
+  let startedContainers;
+  let docker;
+  let getCertificate;
+
+  /**
+   * What ZeroSSL answers about the saved certificate
+   *
+   * @param {string} status
+   * @return {Certificate}
+   */
+  function zeroSslCertificate(status) {
+    const pad = (number) => String(number).padStart(2, '0');
+    const toZeroSslDate = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+      + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+    return new Certificate({
+      id: 'c'.repeat(32),
+      common_name: '1.2.3.4',
+      status,
+      created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+      expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
+    });
+  }
+
+  /**
+   * @param {Config[]} configs
+   */
+  function useConfigs(configs) {
+    configFile = new ConfigFile(configs, '5.2.0', 'abcdef12', null, null);
+  }
+
+  /**
+   * @param {Object} [args]
+   * @param {Object} [flags]
+   * @return {Promise<Error|null>}
+   */
+  async function setup(args = {}, flags = {}, setupRegularPresetTask = () => new Listr([])) {
+    try {
+      await new SetupCommand().runWithDependencies(
+        args,
+        {
+          verbose: false,
+          platform: false,
+          'non-interactive': false,
+          'accept-unmet-requirements': false,
+          ...flags,
+        },
+        configFile,
+        () => new Listr([]),
+        setupRegularPresetTask,
+        dockerCompose,
+        defaultConfigs,
+        setupPlatformTask,
+        getPlatformArtefacts,
+        homeDir,
+        startedContainers,
+        docker,
+        findReusableZeroSslCertificateFactory(
+          validateZeroSslCertificateFactory(homeDir, getCertificate),
+        ),
+      );
+    } catch (e) {
+      return e instanceof MuteOneLineError ? e.getError() : e;
+    }
+
+    return null;
+  }
+
+  /**
+   * An unattended Platform-only setup
+   *
+   * @param {Object} [flags]
+   * @param {Object} [args]
+   * @return {Promise<Error|null>}
+   */
+  function setupPlatform(flags = {}, args = { preset: 'testnet' }) {
+    return setup(args, { platform: true, 'non-interactive': true, ...flags });
+  }
+
+  /**
+   * @param {string} name
+   * @param {string} content
+   * @return {string}
+   */
+  function writeSecret(name, content) {
+    const filePath = path.join(secretsDir, name);
+    fs.writeFileSync(filePath, content, { mode: 0o600 });
+
+    return filePath;
+  }
+
+  beforeEach(async function beforeEach() {
+    homeDir = HomeDir.createTemp();
+    secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-setup-secrets-'));
+    ({ defaultConfigs, setUp, hardResetPlatform } = createPlatformSetupConfigs(homeDir));
+
+    useConfigs([
+      defaultConfigs.get('base'),
+      defaultConfigs.get('mainnet'),
+      await hardResetPlatform(setUp('testnet', { masternode: true })),
+    ]);
+
+    nodeKey = generateTenderdashNodeKey();
+    keyFile = writeSecret('node-key', `${nodeKey}\n`);
+
+    dockerCompose = { isServiceRunning: this.sinon.stub().resolves(true) };
+    startedContainers = new StartedContainers();
+    docker = { getContainer: this.sinon.stub() };
+    getCertificate = this.sinon.stub().resolves(zeroSslCertificate('issued'));
+
+    artefacts = { certificateFiles: [], dataVolumes: [], activeServices: [] };
+    getPlatformArtefacts = this.sinon.stub().callsFake(async () => artefacts);
+
+    platformContext = null;
+    setupPlatformTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => {
+        platformContext = ctx;
+      },
+    }]));
+
+    exitCode = process.exitCode;
+
+    stderr = '';
+    this.sinon.stub(process.stderr, 'write').callsFake((chunk) => {
+      stderr += chunk;
+
+      return true;
+    });
+    this.sinon.stub(console, 'error').callsFake((text) => {
+      stderr += `${text}\n`;
+    });
+  });
+
+  afterEach(() => {
+    process.exitCode = exitCode;
+    homeDir.remove();
+    fs.rmSync(secretsDir, { recursive: true, force: true });
+  });
+
+  describe('flags', () => {
+    it('should refuse the local network flags with --platform', async () => {
+      const error = await setupPlatform({ 'node-count': 4, 'enable-tor': false });
+
+      expect(error.message).to.include('--node-count, --enable-tor cannot be used with --platform');
+    });
+
+    it('should refuse the Platform-only flags without --platform', async () => {
+      const error = await setup({ preset: 'testnet' }, { 'ssl-provider': 'letsencrypt', config: 'testnet' });
+
+      expect(error.message).to.include('--config, --ssl-provider work only with --platform');
+    });
+
+    it('should take --config as the preset', async () => {
+      const error = await setupPlatform(
+        { config: 'testnet', 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile },
+        {},
+      );
+
+      expect(error).to.be.null();
+      expect(platformContext.preset).to.equal('testnet');
+    });
+
+    it('should refuse a preset and --config that name different configs', async () => {
+      const error = await setupPlatform({ config: 'mainnet' });
+
+      expect(error.message).to.include('name different configs');
+    });
+
+    // Its identities, ports, chain and peers belong to the whole group, and
+    // the seed node's wallet registers them. The group's reset removes every
+    // config whose group is local, and `setup local` builds its configs again
+    // by name, wherever they are now, so neither is advised.
+    it('should refuse the local group without advising a reset or a setup', async () => {
+      const members = ['local_1', 'local_2', 'local_3', 'local_seed'].map((name) => {
+        const config = new Config(name, defaultConfigs.get('local').getStoredOptions());
+        config.set('group', 'local');
+
+        return config;
+      });
+      useConfigs([defaultConfigs.get('base'), ...members]);
+
+      const error = await setupPlatform({}, { preset: 'local' });
+
+      expect(error.message).to.include('Platform-only setup does not support the local group');
+      expect(error.message).to.not.include('reset')
+        .and.not.include('dashmate setup');
+      expect(getPlatformArtefacts).to.not.have.been.called();
+    });
+
+    it('should need the preset when nothing names it and nobody can be asked', async () => {
+      const error = await setupPlatform({}, {});
+
+      expect(error.message).to.include('Name the preset');
+    });
+
+    // Reading stdin twice cannot give both answers.
+    it('should let only one flag read stdin', async () => {
+      const error = await setupPlatform({
+        'platform-node-key-file': '-',
+        'ssl-provider': 'zerossl',
+        'zerossl-api-key-file': '-',
+      });
+
+      expect(error.message).to.include('Only one flag can read stdin');
+    });
+  });
+
+  describe('preconditions, checked before anything runs', () => {
+    it('should send a preset that was never set up to full setup', async () => {
+      useConfigs([defaultConfigs.get('base'), defaultConfigs.get('testnet')]);
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('dashmate setup testnet');
+      expect(getPlatformArtefacts).to.not.have.been.called();
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    it('should refuse a node whose Platform was configured, listing paths only', async () => {
+      useConfigs([setUp('testnet', { masternode: true })]);
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('platform.drive.tenderdash.node.key')
+        .and.include('dashmate reset --platform --hard --config testnet');
+      expect(error.message).to.not.include(configFile.getConfig('testnet').get('platform.drive.tenderdash.node.key'));
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    it('should refuse after a reset that kept Platform data', async () => {
+      artefacts.dataVolumes = ['dashmate_testnet_drive_abci_data'];
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('dashmate_testnet_drive_abci_data');
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    it('should refuse while Platform services are running', async () => {
+      artefacts.activeServices = ['drive_tenderdash'];
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('drive_tenderdash')
+        .and.include('dashmate stop --platform --config testnet');
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    // oclif hard-wraps the errors it prints, which splits the commands in
+    // them, so refusals are printed as they are.
+    it('should print a refusal as it is', async () => {
+      artefacts.activeServices = ['drive_tenderdash'];
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(stderr).to.equal(`${error.message}\n`);
+    });
+
+    // "Nothing running" would be a guess.
+    it('should refuse when Docker cannot be asked', async () => {
+      getPlatformArtefacts.rejects(new Error('Docker is not running'));
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('Docker is not running');
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+  });
+
+  describe('answers given in advance', () => {
+    it('should name every missing answer before Core is started or a provider contacted', async () => {
+      const error = await setupPlatform();
+
+      expect(error.message).to.include('--ssl-provider').and.include('--platform-node-key-file');
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    it('should need the ZeroSSL API key file for ZeroSSL', async () => {
+      const error = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('--zerossl-api-key-file');
+    });
+
+    // update refuses a self-signed certificate on any masternode.
+    it('should refuse a self-signed certificate for a masternode', async () => {
+      const error = await setupPlatform({ 'ssl-provider': 'self-signed', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('self-signed');
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    it('should refuse a malformed key file without quoting it', async () => {
+      const junk = `${nodeKey.slice(0, 20)}!${nodeKey.slice(20)}`;
+
+      const error = await setupPlatform({
+        'ssl-provider': 'letsencrypt',
+        'platform-node-key-file': writeSecret('junk-key', junk),
+      });
+
+      expect(error.message).to.include('--platform-node-key-file');
+      expect(error.message).to.not.include(nodeKey.slice(0, 8));
+    });
+
+    // Whatever the file holds is sent to ZeroSSL.
+    it('should refuse a ZeroSSL key file that does not hold an API key', async () => {
+      const error = await setupPlatform({
+        'ssl-provider': 'zerossl',
+        'platform-node-key-file': writeSecret('node-key-2', nodeKey),
+        'zerossl-api-key-file': keyFile,
+      });
+
+      expect(error.message).to.include('--zerossl-api-key-file does not hold a ZeroSSL API key');
+      expect(error.message).to.not.include(nodeKey.slice(0, 8));
+    });
+
+    it('should refuse fullnode ports that collide before anything runs', async () => {
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      useConfigs([fullnode]);
+
+      const error = await setupPlatform({
+        'ssl-provider': 'self-signed',
+        'platform-p2p-port': fullnode.get('platform.gateway.listeners.dapiAndDrive.port'),
+      });
+
+      expect(error.message).to.include('the Platform P2P and HTTP ports are both');
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    it('should refuse an external IP that is not the node\'s', async () => {
+      const error = await setupPlatform({
+        'ssl-provider': 'letsencrypt',
+        'platform-node-key-file': keyFile,
+        'external-ip': '9.9.9.9',
+      });
+
+      expect(error.message).to.include('9.9.9.9').and.include('1.2.3.4');
+    });
+
+    it('should hold file certificate flags to what the prompt accepts', async () => {
+      const error = await setupPlatform({
+        'ssl-provider': 'file',
+        'platform-node-key-file': keyFile,
+        'ssl-chain-file': path.join(secretsDir, 'missing.crt'),
+        'ssl-private-key-file': path.join(secretsDir, 'missing.key'),
+      });
+
+      expect(error.message).to.include('certificate chain file path is not valid');
+    });
+
+    it('should refuse a chain file that holds a private key before anything runs', async function it() {
+      this.timeout(30000);
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      useConfigs([fullnode]);
+      const { pem, keyPem } = issueCertificate({ ip: '1.2.3.4' });
+
+      const error = await setupPlatform({
+        'ssl-provider': 'file',
+        'ssl-chain-file': writeSecret('combined.pem', `${pem}${keyPem}`),
+        'ssl-private-key-file': writeSecret('key.pem', keyPem),
+      });
+
+      expect(error.message).to.include('--ssl-chain-file')
+        .and.include('the certificate chain file holds a private key');
+      expect(error.message).to.not.include(keyPem.split('\n')[1]);
+      expect(setupPlatformTask).to.not.have.been.called();
+    });
+
+    // The certificate is installed after Core has synced, hours later: what
+    // is installed then is what was checked now.
+    it('should hand the file certificate it checked to the task, not its paths alone', async function it() {
+      this.timeout(30000);
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      useConfigs([fullnode]);
+      const { pem, keyPem } = issueCertificate({ ip: '1.2.3.4' });
+      const chainFile = writeSecret('chain.pem', pem);
+      const privateKeyFile = writeSecret('key.pem', keyPem);
+
+      const error = await setupPlatform({
+        'ssl-provider': 'file',
+        'ssl-chain-file': chainFile,
+        'ssl-private-key-file': privateKeyFile,
+      });
+
+      expect(error).to.be.null();
+      const { certificateFile, privateKeyFile: key } = platformContext.validatedCertificatePair;
+      expect(certificateFile.toString()).to.equal(pem);
+      expect(key.toString()).to.equal(keyPem);
+    });
+
+    it('should hand a complete set of answers to the task without prompting', async () => {
+      const error = await setupPlatform({
+        'ssl-provider': 'letsencrypt',
+        'platform-node-key-file': keyFile,
+        'platform-p2p-port': 36656,
+      });
+
+      expect(error).to.be.null();
+      expect(process.exitCode).to.equal(0);
+      expect(platformContext).to.include({
+        preset: 'testnet',
+        isMasternode: true,
+        interactive: false,
+        certificateProvider: 'letsencrypt',
+        platformP2PPort: 36656,
+        certificateRetryCommand: 'dashmate setup --platform --config testnet',
+      });
+      expect(platformContext.platformNodeKey).to.deep.equal({
+        key: nodeKey,
+        id: deriveTenderdashNodeId(nodeKey),
+      });
+
+      // Answers go to a copy, so a failed run cannot leave them behind.
+      expect(platformContext.config).to.not.equal(configFile.getConfig('testnet'));
+      expect(platformContext.config.get('platform.drive.tenderdash.mode')).to.equal('validator');
+      expect(configFile.getConfig('testnet').get('platform.drive.tenderdash.mode')).to.equal('full');
+    });
+
+    it('should not need a key or an IP for a fullnode', async () => {
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      fullnode.set('externalIp', '1.2.3.4');
+      useConfigs([fullnode]);
+
+      const error = await setupPlatform({ 'ssl-provider': 'self-signed' });
+
+      expect(error).to.be.null();
+      expect(platformContext.isMasternode).to.be.false();
+    });
+
+    it('should need an IP for a fullnode that has none', async () => {
+      const fullnode = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      fullnode.set('externalIp', null);
+      useConfigs([fullnode]);
+
+      const error = await setupPlatform({ 'ssl-provider': 'self-signed' });
+
+      expect(error.message).to.include('--external-ip');
+    });
+
+    it('should keep a mainnet fullnode on the mainnet ports', async () => {
+      const fullnode = await hardResetPlatform(setUp('mainnet', { masternode: false }));
+      useConfigs([fullnode]);
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-http-port': 1443 }, { preset: 'mainnet' });
+
+      expect(error.message).to.include('a mainnet fullnode uses port 443');
+    });
+  });
+
+  // Full setup asks at every step and cannot run unattended. Its steps read
+  // this to decide whether they may prompt, and must not assume it.
+  it('should state that full setup is interactive', async function it() {
+    this.sinon.stub(console, 'log');
+    let fullSetupContext;
+
+    const error = await setup({ preset: 'mainnet' }, {}, () => new Listr([{
+      task: (ctx) => {
+        fullSetupContext = ctx;
+      },
+    }]));
+
+    expect(error).to.be.null();
+    expect(fullSetupContext.interactive).to.be.true();
+  });
+
+  // listr2's verbose renderer has no prompt area: it logs every redraw of a
+  // prompt as a line of its own, so the question is lost among them.
+  describe('the renderer of Platform-only setup', () => {
+    let renderers;
+
+    beforeEach(function beforeEach() {
+      renderers = [];
+      this.sinon.stub(Listr.prototype, 'run').callsFake(function run() {
+        renderers.push(this.options.renderer);
+
+        return Promise.resolve();
+      });
+    });
+
+    it('should keep the default renderer under --verbose when it can prompt', async function it() {
+      const env = { ...process.env, CI: '0' };
+      delete env.DASHMATE_NON_INTERACTIVE;
+      this.sinon.stub(process, 'env').value(env);
+
+      // A stream that is not a terminal has no isTTY property at all, so it
+      // is assigned rather than stubbed.
+      const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
+      process.stdin.isTTY = true;
+      process.stdout.isTTY = true;
+
+      let error;
+      try {
+        error = await setup({ preset: 'testnet' }, {
+          platform: true,
+          verbose: true,
+          'ssl-provider': 'letsencrypt',
+          'platform-node-key-file': keyFile,
+        });
+      } finally {
+        process.stdin.isTTY = restore.stdin;
+        process.stdout.isTTY = restore.stdout;
+      }
+
+      expect(error).to.be.null();
+      expect(renderers[0]).to.equal('default');
+    });
+
+    it('should use the verbose renderer under --verbose when it cannot prompt', async () => {
+      const error = await setupPlatform({
+        verbose: true,
+        'ssl-provider': 'letsencrypt',
+        'platform-node-key-file': keyFile,
+      });
+
+      expect(error).to.be.null();
+      expect(renderers[0]).to.equal('verbose');
+    });
+  });
+
+  // The command's cleanup on exit force-removes the containers it started.
+  // The Core setup started runs on the node's chain database, so everything
+  // setup started is stopped first the way `dashmate stop` stops it, with the
+  // grace period of its service.
+  describe('the containers setup started', () => {
+    let core;
+
+    /**
+     * @param {Error} [failure]
+     */
+    function startCoreInTask(failure = undefined) {
+      setupPlatformTask.callsFake(() => new Listr([{
+        task: () => {
+          // What Compose does on `run core`, before Core is asked anything
+          startedContainers.addContainer('dashmate_testnet-core-run-1');
+
+          if (failure) {
+            throw failure;
+          }
+        },
+      }], { renderer: 'silent' }));
+    }
+
+    beforeEach(function beforeEach() {
+      core = {
+        inspect: this.sinon.stub().resolves({ State: { Running: true } }),
+        stop: this.sinon.stub().resolves(),
+        kill: this.sinon.stub().resolves(),
+        remove: this.sinon.stub().resolves(),
+      };
+      docker.getContainer.withArgs('dashmate_testnet-core-run-1').returns(core);
+    });
+
+    it('should stop a Core it started gracefully when setup succeeds', async () => {
+      startCoreInTask();
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error).to.be.null();
+      expect(core.stop).to.have.been.calledOnceWithExactly();
+      expect(core.kill).to.not.have.been.called();
+    });
+
+    it('should stop a Core it started gracefully when setup fails', async () => {
+      startCoreInTask(new Error('wrong key'));
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.equal('wrong key');
+      expect(core.stop).to.have.been.calledOnceWithExactly();
+    });
+
+    // Compose created the container, and then Core never answered: setup has
+    // no handle on Core yet, but the container is the command's.
+    it('should stop gracefully a Core whose start failed after its container was created', async () => {
+      startCoreInTask(new Error('Core did not start in time'));
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.equal('Core did not start in time');
+      expect(core.stop).to.have.been.calledOnceWithExactly();
+    });
+
+    it('should leave containers that already stopped, and a Core it did not start, alone', async () => {
+      core.inspect.resolves({ State: { Running: false } });
+      startCoreInTask();
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error).to.be.null();
+      expect(core.stop).to.not.have.been.called();
+      expect(docker.getContainer).to.have.been.calledOnceWith('dashmate_testnet-core-run-1');
+    });
+  });
+
+  describe('a run that fails', () => {
+    let sslDir;
+    let pair;
+
+    before(function before() {
+      // RSA key generation is slow in pure JS.
+      this.timeout(30000);
+      pair = issueCertificate({ ip: '1.2.3.4' });
+    });
+
+    /**
+     * Make the setup task install a certificate, as a provider does, and fail
+     * after it
+     *
+     * @param {Object} [ctxFields]
+     */
+    function failAfterInstalling({
+      failure = new Error('Platform services were started while setup ran'),
+      files = { 'bundle.crt': 'certificate', 'private.key': 'key' },
+      recordsZeroSsl = false,
+      ...ctxFields
+    } = {}) {
+      setupPlatformTask.callsFake(() => new Listr([{
+        task: (ctx) => {
+          // What ZeroSSL's mid-run save records.
+          if (recordsZeroSsl) {
+            ctx.config.set('platform.gateway.ssl.provider', 'zerossl');
+            ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+            ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+          }
+
+          Object.assign(ctx, { isCertificateStepStarted: true }, ctxFields);
+          fs.mkdirSync(sslDir, { recursive: true });
+          Object.entries(files)
+            .forEach(([fileName, content]) => fs.writeFileSync(path.join(sslDir, fileName), content));
+
+          throw failure;
+        },
+      }], { renderer: 'silent' }));
+    }
+
+    beforeEach(() => {
+      sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+    });
+
+    // No option refers to them, so a second run would refuse over them.
+    it('should remove the certificate files it installed, so it can run again', async () => {
+      failAfterInstalling();
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('started while setup ran');
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+      expect(fs.existsSync(path.join(sslDir, 'private.key'))).to.be.false();
+      expect(stderr).to.include('were removed')
+        .and.include('dashmate setup --platform --config testnet')
+        .and.include('Let\'s Encrypt certificate already issued');
+    });
+
+    // No option refers to the certificate yet, so the next run would refuse it.
+    it('should remove the certificate files when config.json could not be written, so a retry is accepted', async () => {
+      failAfterInstalling({ failure: new Error('ENOSPC: no space left on device') });
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('ENOSPC');
+      expect(process.exitCode).to.equal(1);
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+      expect(stderr).to.include('nothing was saved');
+
+      setupPlatformTask.callsFake(() => new Listr([]));
+      expect(await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile })).to.be.null();
+    });
+
+    // config.json refers to the certificate now: removing it would leave a
+    // configured node without one.
+    it('should keep the certificate when config.json was saved and rendering failed, and say how to render', async () => {
+      failAfterInstalling({ isConfigSaved: true, failure: new Error('EACCES: permission denied') });
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('EACCES');
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.true();
+      expect(stderr).to.include('dashmate config render --config testnet')
+        .and.not.include('nothing was saved')
+        .and.not.include('were removed');
+    });
+
+    // config.json could not be written, so nothing records the certificate.
+    it('should say a ZeroSSL certificate it could not record needs cancelling', async () => {
+      failAfterInstalling({ createdCertificate: true, certificate: { id: 'f'.repeat(32) } });
+
+      await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(stderr).to.include('nothing was saved')
+        .and.include(`ZeroSSL created certificate ${'f'.repeat(32)}`);
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+    });
+
+    // ZeroSSL recorded its certificate in config.json, and its files are what
+    // finishing needs.
+    it('should keep a ZeroSSL certificate and say how to finish without a new one', async () => {
+      failAfterInstalling({
+        createdCertificate: true,
+        isZeroSslCertificateRecorded: true,
+        files: { 'bundle.crt': pair.pem, 'private.key': pair.keyPem },
+      });
+
+      await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.true();
+      expect(stderr).to.include('dashmate ssl obtain --config testnet');
+      expect(stderr).to.not.include('--force');
+    });
+
+    // A disk that filled while ZeroSSL's bundle was written leaves part of it
+    // next to an intact key. ZeroSSL issued the certificate, and a plain
+    // obtain downloads it again.
+    it('should not call a truncated ZeroSSL bundle installed, and install the issued certificate again', async () => {
+      failAfterInstalling({
+        createdCertificate: true,
+        isZeroSslCertificateRecorded: true,
+        recordsZeroSsl: true,
+        failure: new Error('ENOSPC: no space left on device'),
+        files: { 'bundle.crt': pair.pem.slice(0, pair.pem.length / 2), 'private.key': pair.keyPem },
+      });
+
+      await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(stderr).to.include('ZeroSSL issued its certificate')
+        .and.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+      expect(getCertificate).to.have.been.calledWith('k'.repeat(32), 'c'.repeat(32));
+    });
+
+    it('should advise a new certificate when ZeroSSL reports the one it recorded cancelled', async () => {
+      getCertificate.resolves(zeroSslCertificate('cancelled'));
+      failAfterInstalling({
+        createdCertificate: true,
+        isZeroSslCertificateRecorded: true,
+        recordsZeroSsl: true,
+        failure: new Error('ENOSPC: no space left on device'),
+        files: { 'bundle.crt': pair.pem.slice(0, pair.pem.length / 2), 'private.key': pair.keyPem },
+      });
+
+      await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(stderr).to.include('dashmate ssl obtain --force --config testnet')
+        .and.include('ZeroSSL reports it cancelled');
+    });
+
+    // The next run refuses the interrupted setup, and its advice has to be
+    // the same.
+    it('should give a retry over a truncated ZeroSSL bundle the command that installs the issued certificate again', async () => {
+      const config = configFile.getConfig('testnet');
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), pair.pem.slice(0, pair.pem.length / 2));
+      fs.writeFileSync(path.join(sslDir, 'private.key'), pair.keyPem);
+
+      const error = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('ZeroSSL issued its certificate')
+        .and.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+
+      getCertificate.resolves(zeroSslCertificate('expired'));
+
+      expect((await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile })).message)
+        .to.include('dashmate ssl obtain --force --config testnet');
+
+      fs.writeFileSync(path.join(sslDir, 'bundle.crt'), pair.pem);
+
+      const retried = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(retried.message).to.include('dashmate ssl obtain --config testnet')
+        .and.not.include('--force');
+    });
+
+    // Compose creates a missing bind-mount source as a directory. ssl obtain
+    // --force would create a certificate and then fail to write a file there.
+    it('should tell a retry to remove directories where the certificate files go, before obtaining', async () => {
+      const config = configFile.getConfig('testnet');
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+      fs.mkdirSync(path.join(sslDir, 'bundle.crt'), { recursive: true });
+      fs.mkdirSync(path.join(sslDir, 'private.key'));
+
+      const { message } = await setupPlatform({ 'ssl-provider': 'zerossl', 'platform-node-key-file': keyFile });
+
+      expect(message).to.include(`rmdir ${path.join(sslDir, 'bundle.crt')}`)
+        .and.include(`rmdir ${path.join(sslDir, 'private.key')}`)
+        .and.include('dashmate ssl obtain --force --config testnet');
+      expect(message.indexOf('rmdir')).to.be.below(message.indexOf('ssl obtain'));
+    });
+  });
+
+  describe('full setup of a preset already set up', () => {
+    // Before, it suggested `reset --hard`, which takes the Core part too.
+    // A Regular masternode or a Core-only fullnode looks the same, so the
+    // usual advice stays and Platform-only setup is offered next to it.
+    it('should also offer setup --platform for a node whose Platform is not set up', () => {
+      const text = SetupCommand.renderAlreadyConfigured(configFile.getConfig('testnet'), defaultConfigs);
+
+      expect(text).to.include('dashmate setup --platform --config testnet')
+        .and.include('dashmate reset --config testnet --hard');
+    });
+
+    it('should not offer setup --platform for a node whose Platform is configured', () => {
+      const text = SetupCommand.renderAlreadyConfigured(setUp('testnet', { masternode: true }), defaultConfigs);
+
+      expect(text).to.include('dashmate reset --config testnet --hard');
+      expect(text).to.not.include('setup --platform');
+    });
+  });
+});

@@ -41,6 +41,21 @@ public enum AddressTransformer {
         return nil
     }
 
+    /// The 32-byte identity id typed or pasted as `input`: an optional
+    /// leading `id:` or `0x`, then 64 hex characters or Base58
+    /// (``normalizeIdentityId(_:)``). A prefix anywhere else is not removed,
+    /// so damaged input is refused rather than silently repaired.
+    /// - Returns: The id, or `nil` when `input` is not one.
+    public static func identityId(fromInput input: String) -> Data? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("id:") {
+            // Space after `id:` is allowed, also before a `0x`.
+            text = String(text.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if text.hasPrefix("0x") { text = String(text.dropFirst(2)) }
+        return normalizeIdentityId(text)
+    }
+
     /// Parses a bech32m Platform address to its raw storage/FFI address bytes.
     /// - Parameter address: Bech32m address string (dash1... or tdash1...).
     /// - Returns: Storage-form address bytes (21 bytes, type byte 0x00/0x01) if

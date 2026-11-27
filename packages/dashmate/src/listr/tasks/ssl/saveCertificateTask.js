@@ -90,7 +90,10 @@ export default function saveCertificateTaskFactory(homeDir, renewalRecordReposit
               + 'Asking for another spends a second one, so check free space and the\n'
               + 'permissions on this directory first. Then, if the files are still\n'
               + 'wrong:\n'
-              + `    dashmate ssl obtain ${renderConfigFlag(config.getName())} --force`);
+              // Platform setup gives its own: `ssl obtain` would record a
+              // provider behind its back, and setup would then refuse.
+              + `    ${ctx.certificateRetryCommand
+                ?? `dashmate ssl obtain ${renderConfigFlag(config.getName())} --force`}`);
           }
 
           config.set('platform.gateway.ssl.enabled', true);

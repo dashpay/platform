@@ -602,10 +602,15 @@ the fees of documents whose type declares a [`ttl`](../data-model/document-ttl.m
 and the budget of a [`chooseFirst`](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)
 competitor scan (`choose_first_credits_per_candidate`, 100,000 credits a
 candidate, times `SystemLimits::max_choose_first_candidates`), which check tx
-reserves on top of a reveal's estimated fee, and the processing fee of a
+reserves on top of a reveal's estimated fee, the processing fee of a
 [`where` entry comparing typed arrays](../contract-keywords/refers-to.md#typed-arrays)
 (`where_list_credits_per_element`, 100 credits for each list element it reads,
-billed before it compares them). Platform states store only
+billed before it compares them), and what check tx reserves for each `refersTo`
+lookup query a create's references may make (`lookup_query_credits_reserved`,
+12,000,000 credits; a block bills the query at what it reads). Check tx holds a
+signer to its reservations, and leaves out of the gas it reports a transition
+as wanting those that only bound what a block may bill: the query allowance, the
+competitor scan's budget and its competitors' hashes. Platform states store only
 `fee_version_number`, so neither group touches a stored format.
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The

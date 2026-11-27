@@ -81,6 +81,19 @@ pub enum ShieldedActivityStatus {
 /// upserts by [`ShieldedActivityEntry::id`], so re-emitting the same id
 /// with a sharper `kind` updates the existing row rather than
 /// duplicating it.
+///
+/// Kinds are only ever appended. What a build that predates a kind does
+/// with a stored row of that kind depends on how the host stores it:
+/// - by the numeric tag ([`Self::tag`] / [`Self::from_tag`], the FFI's way):
+///   the older build loads the row as [`Self::ShieldedSpend`], and the next
+///   time it re-emits the row (a status change) the host stores that tag
+///   over the original one. The kind is then lost for good, as the scan
+///   cannot recover it;
+/// - by this enum's `serde` derive (the `serde` feature): the older build
+///   does not deserialize a row of a kind it does not know.
+///
+/// The enum is not `non_exhaustive`: an exhaustive `match` outside this
+/// crate needs an arm for every kind added.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ShieldedActivityKind {
@@ -118,6 +131,50 @@ pub enum ShieldedActivityKind {
     /// path. Carries `fee: None` because the exact fee is underivable
     /// from scan data alone.
     ShieldedSpend,
+    /// Type 28: shielded pool → a token bought at its direct purchase
+    /// price, minted as a note in the token's shielded pool. The amount is
+    /// the price paid; the entry's counterparty is the 32-byte token id.
+    /// Recorded only by the live path: the scan sees the credit pool
+    /// change alone and derives [`Self::ShieldedSpend`].
+    TokenPurchase,
+    /// Type 26: tokens sent from the wallet's notes in a token's shielded
+    /// pool to an Orchard address there, the fee paid from the credit pool.
+    /// The amount is the tokens sent, in the token's smallest unit; the
+    /// entry's counterparty is the 32-byte token id. Recorded only by the
+    /// live path, keyed by the fee bundle's credit pool change, as
+    /// [`Self::TokenPurchase`] is.
+    TokenShieldedTransfer,
+    /// Type 27: tokens moved from the wallet's notes in a token's shielded
+    /// pool into an identity's token balance, the fee paid from the credit
+    /// pool. The amount is the tokens moved; the entry's counterparty is the
+    /// 32-byte token id. Recorded only by the live path, as
+    /// [`Self::TokenPurchase`] is.
+    TokenUnshield {
+        /// The credited identity's id (32 bytes); `None` for a row restored
+        /// without it, which is still a token unshield, settled from its
+        /// token notes, with its recipient unknown.
+        identity_id: Option<[u8; 32]>,
+    },
+    /// Type 29: an entry appended to a private document type's store, paid
+    /// for from the shielded pool. Nothing but the fee leaves the pool, so
+    /// the amount is the fee, the same number as the entry's `fee`; the
+    /// entry's counterparty is the 32-byte data contract id. Recorded only
+    /// by the live path: the scan sees the credit pool change alone and
+    /// derives [`Self::ShieldedSpend`].
+    PrivateDocumentCreate,
+    /// Type 29 for a DashPay private contact request, or the request sent
+    /// back to accept one. The amount is the fee, as for
+    /// [`Self::PrivateDocumentCreate`]; the entry's counterparty is the
+    /// 32-byte id of the identity the request is to. Recorded only by the
+    /// live path, as [`Self::PrivateDocumentCreate`] is.
+    ///
+    /// The entry is recorded before the payment is broadcast, so it stands
+    /// for an attempt: one that is refused keeps its entry, as `Failed`,
+    /// with the recipient's id, even though no contact request to that
+    /// identity was sent or stored. `Confirmed` says the payment's notes
+    /// read spent on chain, not that the request was read back: the send
+    /// reports that on its own.
+    PrivateContactRequest,
 }
 
 impl ShieldedActivityKind {
@@ -137,6 +194,45 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::ShieldedSpend => 7,
             ShieldedActivityKind::ShieldFromIdentity { .. } => 8,
             ShieldedActivityKind::IdentityTopUp { .. } => 9,
+            ShieldedActivityKind::TokenPurchase => 10,
+            ShieldedActivityKind::TokenShieldedTransfer => 11,
+            ShieldedActivityKind::TokenUnshield { .. } => 12,
+            ShieldedActivityKind::PrivateDocumentCreate => 13,
+            ShieldedActivityKind::PrivateContactRequest => 14,
+        }
+    }
+
+    /// The kind a stored [`Self::tag`] stands for, the inverse of
+    /// [`Self::tag`], for a host handing its rows back.
+    ///
+    /// `identity_id` is the identity the row names, read only for the kinds
+    /// that carry one. A token unshield (tag 12) takes it only when
+    /// `has_identity` says the row carries one: without it the row is still
+    /// a token unshield, with its recipient unknown, never an unshield to an
+    /// all-zero identity that would read as a real one.
+    ///
+    /// Tag 7 and any tag this build does not know are the residual
+    /// [`Self::ShieldedSpend`]: a row written by a newer build still loads
+    /// rather than being dropped (see the type's docs for what that costs).
+    pub fn from_tag(tag: u8, identity_id: [u8; 32], has_identity: bool) -> Self {
+        match tag {
+            0 => ShieldedActivityKind::Shield,
+            1 => ShieldedActivityKind::ShieldFromAssetLock,
+            2 => ShieldedActivityKind::Received,
+            3 => ShieldedActivityKind::Sent,
+            4 => ShieldedActivityKind::Unshield,
+            5 => ShieldedActivityKind::Withdrawal,
+            6 => ShieldedActivityKind::IdentityCreate { identity_id },
+            8 => ShieldedActivityKind::ShieldFromIdentity { identity_id },
+            9 => ShieldedActivityKind::IdentityTopUp { identity_id },
+            10 => ShieldedActivityKind::TokenPurchase,
+            11 => ShieldedActivityKind::TokenShieldedTransfer,
+            12 => ShieldedActivityKind::TokenUnshield {
+                identity_id: has_identity.then_some(identity_id),
+            },
+            13 => ShieldedActivityKind::PrivateDocumentCreate,
+            14 => ShieldedActivityKind::PrivateContactRequest,
+            _ => ShieldedActivityKind::ShieldedSpend,
         }
     }
 }
@@ -159,7 +255,9 @@ pub struct ShieldedActivityEntry {
     /// Display amount in credits: the operation principal, excluding
     /// self-change outputs and zero-value fillers. For a send this is the
     /// value paid to the counterparty; for a receive/shield the value
-    /// received.
+    /// received. A spend that moves nothing but its fee (a private document
+    /// create or a private contact request) has no principal: its amount is
+    /// the fee, so a host that shows the amount shows what left the pool.
     pub amount: u64,
     /// Exact fee in credits when derivable (live entries:
     /// `spent − outputs − change`); `None` when underivable (restored
@@ -169,6 +267,11 @@ pub struct ShieldedActivityEntry {
     /// - `Sent`: 43-byte raw Orchard address.
     /// - `Unshield`: 21-byte serialized `PlatformAddress`.
     /// - `Withdrawal`: Core output script / address bytes.
+    /// - `TokenPurchase` / `TokenShieldedTransfer` / `TokenUnshield`: the
+    ///   32-byte token id.
+    /// - `PrivateDocumentCreate`: the 32-byte data contract id.
+    /// - `PrivateContactRequest`: the 32-byte id of the recipient identity.
+    ///
     /// `None` for self / receive / shield kinds.
     pub counterparty: Option<Vec<u8>>,
     /// 36-byte `DashMemo` when present and non-zero; `None` otherwise.
@@ -1179,29 +1282,132 @@ mod tests {
         }
     }
 
-    #[test]
-    fn kind_tags_are_stable_and_distinct() {
-        use std::collections::BTreeSet as Set;
-        let kinds = [
-            ShieldedActivityKind::Shield,
-            ShieldedActivityKind::ShieldFromAssetLock,
-            ShieldedActivityKind::Received,
-            ShieldedActivityKind::Sent,
-            ShieldedActivityKind::Unshield,
-            ShieldedActivityKind::Withdrawal,
-            ShieldedActivityKind::IdentityCreate {
-                identity_id: [0u8; 32],
-            },
-            ShieldedActivityKind::ShieldedSpend,
-            ShieldedActivityKind::ShieldFromIdentity {
-                identity_id: [0u8; 32],
-            },
-            ShieldedActivityKind::IdentityTopUp {
-                identity_id: [0u8; 32],
-            },
+    /// The identity the identity-bearing fixtures carry.
+    const FIXTURE_IDENTITY: [u8; 32] = [0x5A; 32];
+
+    /// Every kind with the tag hosts have stored for it, written out as
+    /// literals: the tags are persisted, so the table is the record of what
+    /// each stored byte means, not something to derive from `tag()`. A token
+    /// unshield is listed with and without its identity; both store tag 12.
+    ///
+    /// The `match` below has no wildcard arm, so adding a kind to the enum
+    /// stops this compiling: it is a reminder to add the kind's row here,
+    /// not a guarantee that the row was added. What does enforce it is
+    /// `should_read_every_stored_tag_as_the_kind_it_was_written_for`, which
+    /// fails for a tag the decoder knows and this table does not list.
+    fn stored_kinds() -> Vec<(u8, ShieldedActivityKind)> {
+        let identity_id = FIXTURE_IDENTITY;
+        let kinds = vec![
+            (0, ShieldedActivityKind::Shield),
+            (1, ShieldedActivityKind::ShieldFromAssetLock),
+            (2, ShieldedActivityKind::Received),
+            (3, ShieldedActivityKind::Sent),
+            (4, ShieldedActivityKind::Unshield),
+            (5, ShieldedActivityKind::Withdrawal),
+            (6, ShieldedActivityKind::IdentityCreate { identity_id }),
+            (7, ShieldedActivityKind::ShieldedSpend),
+            (8, ShieldedActivityKind::ShieldFromIdentity { identity_id }),
+            (9, ShieldedActivityKind::IdentityTopUp { identity_id }),
+            (10, ShieldedActivityKind::TokenPurchase),
+            (11, ShieldedActivityKind::TokenShieldedTransfer),
+            (
+                12,
+                ShieldedActivityKind::TokenUnshield {
+                    identity_id: Some(identity_id),
+                },
+            ),
+            (
+                12,
+                ShieldedActivityKind::TokenUnshield { identity_id: None },
+            ),
+            (13, ShieldedActivityKind::PrivateDocumentCreate),
+            (14, ShieldedActivityKind::PrivateContactRequest),
         ];
-        let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();
-        assert_eq!(tags.len(), kinds.len(), "every kind tag must be distinct");
+        for (_, kind) in &kinds {
+            match kind {
+                ShieldedActivityKind::Shield
+                | ShieldedActivityKind::ShieldFromAssetLock
+                | ShieldedActivityKind::Received
+                | ShieldedActivityKind::Sent
+                | ShieldedActivityKind::Unshield
+                | ShieldedActivityKind::Withdrawal
+                | ShieldedActivityKind::IdentityCreate { .. }
+                | ShieldedActivityKind::ShieldFromIdentity { .. }
+                | ShieldedActivityKind::IdentityTopUp { .. }
+                | ShieldedActivityKind::ShieldedSpend
+                | ShieldedActivityKind::TokenPurchase
+                | ShieldedActivityKind::TokenShieldedTransfer
+                | ShieldedActivityKind::TokenUnshield { .. }
+                | ShieldedActivityKind::PrivateDocumentCreate
+                | ShieldedActivityKind::PrivateContactRequest => {}
+            }
+        }
+        kinds
+    }
+
+    /// The identity a kind carries and whether it carries one, as a host
+    /// stores them beside the tag.
+    fn stored_identity(kind: &ShieldedActivityKind) -> ([u8; 32], bool) {
+        match kind {
+            ShieldedActivityKind::IdentityCreate { identity_id }
+            | ShieldedActivityKind::ShieldFromIdentity { identity_id }
+            | ShieldedActivityKind::IdentityTopUp { identity_id }
+            | ShieldedActivityKind::TokenUnshield {
+                identity_id: Some(identity_id),
+            } => (*identity_id, true),
+            _ => ([0u8; 32], false),
+        }
+    }
+
+    /// Each kind writes the tag hosts already store for it: a kind that
+    /// changed its tag, or two that swapped theirs, would hand existing rows
+    /// back as another operation.
+    #[test]
+    fn should_write_the_stored_tag_of_every_kind() {
+        for (stored_tag, kind) in stored_kinds() {
+            assert_eq!(kind.tag(), stored_tag, "{kind:?}");
+        }
+    }
+
+    /// Every one of the 256 possible stored bytes reads as the kind it was
+    /// written for. A tag the table lists reads as that kind, so a row a host
+    /// hands back keeps its kind and a status change does not store the
+    /// residual kind over it. A tag the table does not list reads as the
+    /// residual kind instead of being dropped; a decoder that knows a tag the
+    /// table does not list fails here until the table lists it.
+    #[test]
+    fn should_read_every_stored_tag_as_the_kind_it_was_written_for() {
+        let stored = stored_kinds();
+        for (stored_tag, kind) in &stored {
+            let (identity_id, has_identity) = stored_identity(kind);
+            assert_eq!(
+                &ShieldedActivityKind::from_tag(*stored_tag, identity_id, has_identity),
+                kind,
+                "tag {stored_tag}"
+            );
+        }
+        for tag in 0..=u8::MAX {
+            if stored.iter().any(|(stored_tag, _)| *stored_tag == tag) {
+                continue;
+            }
+            for has_identity in [false, true] {
+                assert_eq!(
+                    ShieldedActivityKind::from_tag(tag, FIXTURE_IDENTITY, has_identity),
+                    ShieldedActivityKind::ShieldedSpend,
+                    "tag {tag} has no row in the table"
+                );
+            }
+        }
+    }
+
+    /// A token unshield stored without its identity does not take the bytes
+    /// in the identity field, which a host leaves all-zero.
+    #[test]
+    fn should_read_a_token_unshield_without_an_identity_as_recipient_unknown() {
+        assert_eq!(
+            ShieldedActivityKind::from_tag(12, [9u8; 32], false),
+            ShieldedActivityKind::TokenUnshield { identity_id: None }
+        );
     }
 
     // ── rho linkage (restore-path spend identification) ───────────

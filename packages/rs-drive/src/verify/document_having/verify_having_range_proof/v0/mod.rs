@@ -64,12 +64,12 @@ impl DriveDocumentHavingQuery<'_> {
             // version reads and presents exactly as before.
             let read_bounds = self.read_bounds();
             let axis = read_bounds.axis();
-            let (lo, hi) = read_bounds.inclusive_bounds_i128();
+            let (index_axis, lo, hi) = self.index_axis_and_bounds();
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys.clone(),
                 suffix,
-                AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending),
+                AxisQuery::bounded(index_axis, lo, hi, self.limit, self.descending),
             );
             let verified = GroveDb::verify_path_query(
                 proof,
@@ -101,7 +101,7 @@ impl DriveDocumentHavingQuery<'_> {
                     // `IN` element.
                     let entries = match entries {
                         None => Vec::new(),
-                        Some(entries) => axis_entries_to_ranked(axis, entries)?,
+                        Some(entries) => axis_entries_to_ranked(axis, entries, root_hash)?,
                     };
                     if entries.len() > self.limit as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -143,9 +143,9 @@ impl DriveDocumentHavingQuery<'_> {
         // version reads and presents exactly as before.
         let read_bounds = self.read_bounds();
         let axis = read_bounds.axis();
-        let (lo, hi) = read_bounds.inclusive_bounds_i128();
+        let (index_axis, lo, hi) = self.index_axis_and_bounds();
         let path_query =
-            PathQuery::new_axis_bounded(path, axis.into(), lo, hi, self.limit, self.descending);
+            PathQuery::new_axis_bounded(path, index_axis, lo, hi, self.limit, self.descending);
         let verified =
             GroveDb::verify_path_query(proof, &path_query, &platform_version.drive.grove_version)
                 .map_err(|e| Error::GroveDB(Box::new(e)))?;
@@ -159,7 +159,7 @@ impl DriveDocumentHavingQuery<'_> {
                 "a having range proof verified to a different shape".to_string(),
             )));
         };
-        let entries = axis_entries_to_ranked(axis, entries)?;
+        let entries = axis_entries_to_ranked(axis, entries, root_hash)?;
         if entries.len() > self.limit as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                 "having range proof verified to {} entries for limit = {}",

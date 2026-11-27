@@ -83,6 +83,19 @@ struct TransitionInputView: View {
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
 
+    /// `text` inputs that hold prose. They keep autocorrection and auto
+    /// capitalization; every other `text` input holds an id, an amount, an
+    /// index value or a list and gets `.machineTextEntry()`.
+    private static let proseTextInputNames: Set<String> = [
+        "description", "keywords", "note", "publicNote",
+    ]
+
+    /// `text` inputs that can hold JSON (a price schedule map). They use
+    /// `PlainTextField` so a typed quote is not turned into a curly one. It
+    /// stays single-line: a Return in a multi-line editor would put a
+    /// newline into a single price and make it unparseable.
+    private static let jsonTextInputNames: Set<String> = ["priceData"]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if input.type != "button" && input.type != "checkbox" {
@@ -98,12 +111,24 @@ struct TransitionInputView: View {
             }
 
             switch input.type {
+            case "text" where Self.jsonTextInputNames.contains(input.name):
+                PlainTextField(
+                    placeholder: input.placeholder ?? "",
+                    text: $value,
+                    textStyle: .body,
+                    monospaced: false,
+                    borderStyle: .roundedRect
+                )
+
             case "text":
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .machineTextEntry(!Self.proseTextInputNames.contains(input.name))
 
             case "textarea":
-                TextEditor(text: $value)
+                // Every textarea input holds machine text (seed phrase,
+                // asset lock proof, public keys).
+                PlainTextEditor(text: $value, monospaced: false)
                     .frame(minHeight: 100)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
@@ -144,8 +169,7 @@ struct TransitionInputView: View {
                 }
 
             case "json":
-                TextEditor(text: $value)
-                    .font(.system(.caption, design: .monospaced))
+                PlainTextEditor(text: $value, textStyle: .caption1)
                     .frame(minHeight: 150)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
@@ -186,6 +210,7 @@ struct TransitionInputView: View {
             default:
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .machineTextEntry(!Self.proseTextInputNames.contains(input.name))
             }
 
             if let help = input.help {
@@ -260,13 +285,16 @@ struct TransitionInputView: View {
         let isEraseOperation = input.action?.contains("documentErase") == true
         let isMarketplaceOperation = isPurchaseOperation || isSetPriceOperation
 
-        // Filter contracts based on operation type
+        // Filter contracts based on operation type. A private type (protocol
+        // version 15) holds no ordinary document, so no document operation
+        // offers it; it can leave `documentsMutable` / `documentsCanBeDeleted`
+        // at the model's `true` defaults when the contract defaults are false.
         let availableContracts: [PersistentDataContract] = {
             if isTransferOperation {
                 // Only show contracts that have transferable document types
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
-                        return docTypes.contains { $0.documentsTransferable }
+                        return docTypes.contains { $0.documentsTransferable && !$0.isPrivate }
                     }
                     return false
                 }
@@ -274,7 +302,7 @@ struct TransitionInputView: View {
                 // Only show contracts that have tradeable document types (tradeMode = 1)
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
-                        return docTypes.contains { $0.tradeMode == 1 }
+                        return docTypes.contains { $0.tradeMode == 1 && !$0.isPrivate }
                     }
                     return false
                 }
@@ -283,7 +311,9 @@ struct TransitionInputView: View {
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
                         return docTypes.contains { docType in
-                            docType.creationRestrictionMode <= 1  // 0 = anyone, 1 = owner only
+                            // 0 = anyone, 1 = owner only; a private type
+                            // takes no ordinary document
+                            docType.creationRestrictionMode <= 1 && !docType.isPrivate
                         }
                     }
                     return false
@@ -292,7 +322,7 @@ struct TransitionInputView: View {
                 // For document replace, only show contracts with mutable document types
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
-                        return docTypes.contains { $0.documentsMutable }
+                        return docTypes.contains { $0.documentsMutable && !$0.isPrivate }
                     }
                     return false
                 }
@@ -300,7 +330,7 @@ struct TransitionInputView: View {
                 // For document delete, only show contracts with deletable document types
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
-                        return docTypes.contains { $0.documentsCanBeDeleted }
+                        return docTypes.contains { $0.documentsCanBeDeleted && !$0.isPrivate }
                     }
                     return false
                 }
@@ -309,7 +339,7 @@ struct TransitionInputView: View {
                 // read from the stored schema JSON) can be erased.
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
-                        return docTypes.contains { ($0.schema?["canBeErased"] as? Bool) == true }
+                        return docTypes.contains { ($0.schema?["canBeErased"] as? Bool) == true && !$0.isPrivate }
                     }
                     return false
                 }
@@ -414,25 +444,28 @@ struct TransitionInputView: View {
                 .cornerRadius(8)
         } else if let contract = dataContracts.first(where: { $0.idBase58 == contractId }) {
             if let docTypes = contract.documentTypes, !docTypes.isEmpty {
-                // Filter document types based on operation type
+                // Filter document types based on operation type; private types
+                // take no document operation (see `contractPicker`)
                 let availableDocTypes: [PersistentDocumentType] = {
                     if isTransferOperation {
-                        return docTypes.filter { $0.documentsTransferable }
+                        return docTypes.filter { $0.documentsTransferable && !$0.isPrivate }
                     } else if isMarketplaceOperation {
                         // For marketplace operations, only show document types with tradeMode = 1
-                        return docTypes.filter { $0.tradeMode == 1 }
+                        return docTypes.filter { $0.tradeMode == 1 && !$0.isPrivate }
                     } else if isCreateOperation {
                         // For document creation, exclude types with creationRestrictionMode = 2 (system only)
-                        return docTypes.filter { $0.creationRestrictionMode <= 1 }
+                        // and private types (protocol version 15), which take no
+                        // ordinary document
+                        return docTypes.filter { $0.creationRestrictionMode <= 1 && !$0.isPrivate }
                     } else if isReplaceOperation {
                         // For document replace, only show mutable document types
-                        return docTypes.filter { $0.documentsMutable }
+                        return docTypes.filter { $0.documentsMutable && !$0.isPrivate }
                     } else if isDeleteOperation {
                         // For document delete, only show deletable document types
-                        return docTypes.filter { $0.documentsCanBeDeleted }
+                        return docTypes.filter { $0.documentsCanBeDeleted && !$0.isPrivate }
                     } else if isEraseOperation {
                         // Only types whose schema sets `canBeErased`
-                        return docTypes.filter { ($0.schema?["canBeErased"] as? Bool) == true }
+                        return docTypes.filter { ($0.schema?["canBeErased"] as? Bool) == true && !$0.isPrivate }
                     } else {
                         return Array(docTypes)
                     }
@@ -583,7 +616,11 @@ struct TransitionInputView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Get the sender identity from the parent's selectedIdentityId
             let senderIdentityId = input.placeholder ?? ""
-            let identities = persistedIdentities.filter { $0.identityIdBase58 != senderIdentityId }
+            // A masternode's voter identity holds only a voting key, so
+            // credits or tokens sent to it could not be spent: never offered.
+            let identities = persistedIdentities.filter {
+                $0.identityIdBase58 != senderIdentityId && !$0.isVotingOnlyIdentity
+            }
 
             if !useManualEntry {
                 if identities.isEmpty {
@@ -637,6 +674,7 @@ struct TransitionInputView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Enter recipient identity ID", text: $value)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .machineTextEntry()
 
                     if !identities.isEmpty {
                         Button(action: {
@@ -657,6 +695,7 @@ struct TransitionInputView: View {
     private func documentPicker() -> some View {
         TextField(input.placeholder ?? "Enter document ID", text: $value)
             .textFieldStyle(RoundedBorderTextFieldStyle())
+            .machineTextEntry()
     }
 
     @ViewBuilder

@@ -257,6 +257,28 @@ impl DataContract {
         }
     }
 
+    /// Holds every private document type of the contract to the largest entry a private type
+    /// may declare, refusing a larger one with the error registration refuses it with.
+    /// Registration parses with full validation, which holds the types to it there. A parse
+    /// that does not validate, as check tx's, skips it, and a fee estimate would then price a
+    /// store for entries GroveDB refuses. Nothing for a contract without a private type, which
+    /// is every contract before protocol version 15.
+    pub fn ensure_private_entry_sizes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        self.document_types()
+            .iter()
+            .filter_map(|(name, document_type)| {
+                document_type
+                    .private_document()
+                    .map(|private_document| (name, private_document))
+            })
+            .try_for_each(|(name, private_document)| {
+                private_document.ensure_entry_size_within_limit(name, platform_version)
+            })
+    }
+
     /// [`Self::serialize_to_storage_bytes`], with the length of the contract's bytes in the
     /// format state transitions carry (`contract_serialization_version`), the bytes the
     /// protocol caps. Stored compiled, a contract holds those bytes' fields as its base, so

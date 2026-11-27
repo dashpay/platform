@@ -8,20 +8,25 @@
 //! [`PutVote`] entry point. Nothing is stitched together here that the SDK
 //! does not already expose as a single call.
 //!
-//! Turning the voting private key and pro_tx_hash into the signer, the voting
-//! key and the voter identity, the pro_tx_hash byte order, and the deferred
-//! diagnosis of a refused voting key are shared with the decision proposal
-//! vote and documented in [`crate::voting::masternode_vote`].
+//! Two entry points share one body: [`dash_sdk_contested_resource_cast_vote`]
+//! signs with the raw voting private key, and
+//! [`dash_sdk_contested_resource_cast_vote_with_signer`] with the host's signer
+//! over the voting key its voting address names. Turning either into the signer,
+//! the voting key and the voter identity, the pro_tx_hash byte order, and the
+//! deferred diagnosis of a refused voting key are shared with the decision
+//! proposal votes and documented in [`crate::voting::masternode_vote`].
 //!
 //! [`MasternodeVoteTransition`]: dash_sdk::dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition
 //! [`PutVote`]: dash_sdk::platform::transition::vote::PutVote
 
-use crate::contested_resource::parse_index_value;
+use crate::contested_resource::parse_index_values_json;
 use crate::sdk::SDKWrapper;
-use crate::types::{FFINetwork, SDKHandle};
+use crate::types::{FFINetwork, SDKHandle, SignerHandle};
 use crate::voting::masternode_vote::MasternodeVoter;
 use crate::{DashSDKResult, FFIError};
+use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::{Identifier, Value};
+use dash_sdk::dpp::prelude::IdentityPublicKey;
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
@@ -73,10 +78,13 @@ pub enum ContestedResourceVoteChoiceFFI {
 /// * `document_type_name` — contested document type (e.g. `"domain"`).
 /// * `index_name` — contested index name (e.g. `"parentNameAndLabel"`).
 /// * `index_values_json` — JSON array of index values. Each element is decoded
-///   via an explicit type tag: a `"0x"`-prefixed string is hex-decoded to
-///   `Value::Bytes`, and any other string is taken verbatim as `Value::Text`.
-///   DPNS index values are text labels, so typical callers pass plain text
-///   (no `0x`). This matches the parsing used by the vote-state query FFI.
+///   via an explicit type tag: an element starting with a backslash is
+///   `Value::Text` with that one backslash removed; otherwise a
+///   `"0x"`-prefixed string is hex-decoded to `Value::Bytes`; otherwise the
+///   string is taken verbatim as `Value::Text`. To pass text that itself
+///   starts with `"0x"` or a backslash (the DPNS label "oxford" normalizes
+///   to `"0xf0rd"`), prepend one backslash. This matches the parsing used by
+///   the vote-state query FFI.
 /// * `vote_choice` — discriminant byte matching
 ///   [`ContestedResourceVoteChoiceFFI`]: `TowardsIdentity` (`0`), `Abstain`
 ///   (`1`) or `Lock` (`2`). Any other value is rejected with
@@ -137,17 +145,55 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_cast_vote(
         index_values_json,
         vote_choice,
         contender_identity_id,
-        voter_pro_tx_hash,
-        voting_private_key,
-        network,
+        || MasternodeVoter::from_raw(voter_pro_tx_hash, voting_private_key, network),
     ) {
         Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
         Err(e) => DashSDKResult::error(e.into()),
     }
 }
 
+/// Cast a masternode contested-resource vote signed by the host's signer and
+/// wait for the response.
+///
+/// Builds the same `ResourceVote` as [`dash_sdk_contested_resource_cast_vote`]
+/// from the same poll and choice arguments, read the same way. Instead of a raw
+/// voting private key it takes the masternode's voting address: Rust builds the
+/// voting key from it (key id 0, purpose `VOTING`, type `ECDSA_HASH160`, data the
+/// 20-byte address) and asks `signer_handle` to sign the transition with that
+/// key, so the signer's callback receives the voting address as the key data.
+/// The private key stays with the host.
+///
+/// # Parameters
+/// * `sdk_handle`, `contract_id`, `document_type_name`, `index_name`,
+///   `index_values_json`, `vote_choice`, `contender_identity_id` - as in
+///   [`dash_sdk_contested_resource_cast_vote`].
+/// * `voter_pro_tx_hash` - pointer to the masternode's 32-byte pro_tx_hash in
+///   **wire order**, exactly as [`dash_sdk_contested_resource_cast_vote`] takes
+///   it (NOT the byte order of the hex Core displays, which is its reverse).
+///   The bytes are reversed here.
+/// * `voting_address` - pointer to the masternode's 20-byte voting address: the
+///   hash160 of the compressed voting public key
+///   (`dash_sdk_masternode_voting_address_from_private_key` forms it from the
+///   private key).
+/// * `signer_handle` - the signer that signs with the voting key.
+///
+/// # Returns
+/// `DashSDKResult` with no data on success, or an error. Every argument is read
+/// before anything reaches the network. A signer that cannot sign with the
+/// voting key fails the call with the signer's error.
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized
+///   `SDKHandle`.
+/// - `contract_id`, `document_type_name`, `index_name`, `index_values_json`
+///   must be valid NUL-terminated C strings for the duration of the call.
+/// - `contender_identity_id` may be null unless `vote_choice == 0`.
+/// - `voter_pro_tx_hash` must point to 32 readable bytes and `voting_address`
+///   to 20 readable bytes for the duration of the call.
+/// - `signer_handle` must be a valid signer handle that outlives the call.
+#[no_mangle]
 #[allow(clippy::too_many_arguments)]
-unsafe fn cast_vote_inner(
+pub unsafe extern "C" fn dash_sdk_contested_resource_cast_vote_with_signer(
     sdk_handle: *const SDKHandle,
     contract_id: *const c_char,
     document_type_name: *const c_char,
@@ -156,9 +202,43 @@ unsafe fn cast_vote_inner(
     vote_choice: u8,
     contender_identity_id: *const c_char,
     voter_pro_tx_hash: *const u8,
-    voting_private_key: *const u8,
-    network: FFINetwork,
-) -> Result<(), FFIError> {
+    voting_address: *const u8,
+    signer_handle: *const SignerHandle,
+) -> DashSDKResult {
+    match cast_vote_inner(
+        sdk_handle,
+        contract_id,
+        document_type_name,
+        index_name,
+        index_values_json,
+        vote_choice,
+        contender_identity_id,
+        || MasternodeVoter::from_signer_handle(voter_pro_tx_hash, voting_address, signer_handle),
+    ) {
+        Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
+        Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+/// The body both entry points share. `read_voter` reads the masternode's
+/// arguments (see `crate::voting::masternode_vote`); it is called after the
+/// null checks and before the poll strings are parsed, like every other read,
+/// before anything reaches the network.
+#[allow(clippy::too_many_arguments)]
+unsafe fn cast_vote_inner<S, F>(
+    sdk_handle: *const SDKHandle,
+    contract_id: *const c_char,
+    document_type_name: *const c_char,
+    index_name: *const c_char,
+    index_values_json: *const c_char,
+    vote_choice: u8,
+    contender_identity_id: *const c_char,
+    read_voter: F,
+) -> Result<(), FFIError>
+where
+    S: Signer<IdentityPublicKey>,
+    F: FnOnce() -> Result<MasternodeVoter<S>, FFIError>,
+{
     // ---- Null checks ---------------------------------------------------------
     if sdk_handle.is_null() {
         return Err(invalid("SDK handle is null"));
@@ -177,7 +257,7 @@ unsafe fn cast_vote_inner(
     // The pro_tx_hash arrives in wire order and the shared reader reverses it to
     // the order Platform names masternodes by, for both the voter identity and
     // the transition. See `crate::voting::masternode_vote`.
-    let voter = MasternodeVoter::from_raw(voter_pro_tx_hash, voting_private_key, network)?;
+    let voter = read_voter()?;
 
     // ---- Parse the vote poll strings ----------------------------------------
     let contract_id_str = cstr(contract_id, "contract_id")?;
@@ -194,20 +274,16 @@ unsafe fn cast_vote_inner(
     let contract_identifier = Identifier::new(contract_id_arr);
 
     // Same index-value parsing as the vote-state query FFI, via the shared
-    // `parse_index_value` helper: a `"0x"`-prefixed value is hex-decoded to
+    // `parse_index_values_json` helper: a `"\\"`-prefixed value is text with
+    // that backslash removed, else a `"0x"`-prefixed value is hex-decoded to
     // `Value::Bytes`, anything else is taken verbatim as `Value::Text`. Using
     // the single shared helper keeps the read and write paths in lockstep, so a
     // poll a caller can read with `get_vote_state` is the same poll it votes on
     // here. An explicit `0x` tag is required (rather than guessing by content)
     // because this is a signing surface: a legit DPNS text label that happens
     // to be even-length all-hex must not be silently re-encoded as bytes.
-    let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
-        .map_err(|e| invalid(&format!("Failed to parse index_values JSON: {}", e)))?;
-    let index_values: Vec<Value> = index_values_array
-        .into_iter()
-        .map(parse_index_value)
-        .collect::<Result<Vec<Value>, String>>()
-        .map_err(|e| invalid(&e))?;
+    let index_values: Vec<Value> =
+        parse_index_values_json(index_values_str).map_err(|e| invalid(&e))?;
 
     let vote_poll =
         VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
@@ -274,8 +350,11 @@ unsafe fn cstr<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signer::{dash_sdk_signer_destroy, signer_handle_from_single_key};
     use crate::test_utils::test_utils::create_mock_sdk_handle;
+    use crate::types::Network;
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
+    use simple_signer::SingleKeySigner;
     use std::ffi::CString;
 
     /// Real base58 DPNS data-contract id (32 bytes). Using the genuine id
@@ -347,6 +426,116 @@ mod tests {
             // after the last use of `err`; models the caller contract and keeps
             // leak sanitizers happy.
             dash_sdk_error_free(result.error);
+            crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    /// The signer form reads every argument, the voting address and the signer
+    /// included, before anything reaches the network.
+    #[test]
+    fn should_refuse_a_vote_with_a_signer_with_unreadable_arguments() {
+        let handle = create_mock_sdk_handle();
+        let signer = signer_handle_from_single_key(
+            SingleKeySigner::new_from_slice(&[2u8; 32], Network::Testnet).expect("a valid key"),
+        );
+        let contract_id = CString::new(DPNS_CONTRACT_ID).unwrap();
+        let not_base58 = CString::new("0OIl").unwrap();
+        let document_type_name = CString::new("domain").unwrap();
+        let index_name = CString::new("parentNameAndLabel").unwrap();
+        let index_values = CString::new(r#"["dash","alice"]"#).unwrap();
+        let pro_tx = [1u8; 32];
+        let voting_address = [3u8; 20];
+        let sdk_handle: *const SDKHandle = handle;
+        let signer_handle: *const SignerHandle = signer;
+        let abstain = ContestedResourceVoteChoiceFFI::Abstain as u8;
+        let towards = ContestedResourceVoteChoiceFFI::TowardsIdentity as u8;
+        unsafe {
+            for (sdk, contract, choice, pro_tx_hash, address, signer_arg) in [
+                (
+                    std::ptr::null(),
+                    contract_id.as_ptr(),
+                    abstain,
+                    pro_tx.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_handle,
+                ),
+                (
+                    sdk_handle,
+                    std::ptr::null(),
+                    abstain,
+                    pro_tx.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_handle,
+                ),
+                (
+                    sdk_handle,
+                    not_base58.as_ptr(),
+                    abstain,
+                    pro_tx.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_handle,
+                ),
+                (
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    99,
+                    pro_tx.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_handle,
+                ),
+                // A vote for a contender names one
+                (
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    towards,
+                    pro_tx.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_handle,
+                ),
+                (
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    abstain,
+                    std::ptr::null(),
+                    voting_address.as_ptr(),
+                    signer_handle,
+                ),
+                (
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    abstain,
+                    pro_tx.as_ptr(),
+                    std::ptr::null(),
+                    signer_handle,
+                ),
+                (
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    abstain,
+                    pro_tx.as_ptr(),
+                    voting_address.as_ptr(),
+                    std::ptr::null(),
+                ),
+            ] {
+                let result = dash_sdk_contested_resource_cast_vote_with_signer(
+                    sdk,
+                    contract,
+                    document_type_name.as_ptr(),
+                    index_name.as_ptr(),
+                    index_values.as_ptr(),
+                    choice,
+                    std::ptr::null(),
+                    pro_tx_hash,
+                    address,
+                    signer_arg,
+                );
+                assert!(result.data.is_null());
+                assert!(!result.error.is_null(), "expected an error");
+                let code = (*result.error).code;
+                dash_sdk_error_free(result.error);
+                assert_eq!(code, DashSDKErrorCode::InvalidParameter);
+            }
+            dash_sdk_signer_destroy(signer);
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
     }

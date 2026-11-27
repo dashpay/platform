@@ -17,7 +17,7 @@ impl DriveDocumentSumQuery<'_> {
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, u64, i64)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, u64, i128)>), Error> {
         let verified = self.verify_carrier_aggregate_count_and_sum_proof_v0(
             proof,
             limit,

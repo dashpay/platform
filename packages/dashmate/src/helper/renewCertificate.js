@@ -15,7 +15,9 @@
  *   recording the success it just achieved
  * @param {ConfigFileJsonRepository} options.configFileRepository
  * @param {writeConfigTemplates} options.writeConfigTemplates
- * @return {Promise<{config: Config, renewed: boolean}>}
+ * @return {Promise<{config: Config, renewed: boolean, isGatewayRestartRequired: boolean}>}
+ *  isGatewayRestartRequired - the obtain replaced the bundle file the running
+ *  gateway has mounted, so a signal cannot load the new certificate
  */
 
 import ConfigurationLockLostError from '../ssl/errors/ConfigurationLockLostError.js';
@@ -46,12 +48,14 @@ export default async function renewCertificate({
       onCertificateCreated: () => configFileRepository.write(configFile),
     });
 
+    const context = {
+      expirationDays,
+      noRetry: true,
+      renewalGeneration: generation,
+    };
+
     try {
-      await tasks.run({
-        expirationDays,
-        noRetry: true,
-        renewalGeneration: generation,
-      });
+      await tasks.run(context);
     } catch (e) {
       if (config.isChanged()) {
         // Preserve recoverable provider state before propagating a failed renewal.
@@ -79,7 +83,11 @@ export default async function renewCertificate({
       writeConfigTemplates(config);
     }
 
-    return { config, renewed: true };
+    return {
+      config,
+      renewed: true,
+      isGatewayRestartRequired: context.isGatewayRestartRequired === true,
+    };
   } finally {
     configFileRepository.release();
   }

@@ -180,7 +180,13 @@ pub struct SumEntry {
     /// matched keys; `None` for keys proven absent (the dispatcher
     /// emits `None`-sum entries when
     /// `absence_proofs_for_non_existing_searched_keys` is configured).
-    pub sum: Option<i64>,
+    ///
+    /// 128 bits wide, the width a type that keeps big sums
+    /// (`DocumentTypeV2Getters::uses_big_sums`) sums in, so a proved
+    /// sum past 64 bits is carried whole. A sum read without a proof
+    /// still fits 64 bits: the unproven executors refuse a wider one
+    /// (`crate::query::sum_width`), since the response carries 64 bits.
+    pub sum: Option<i128>,
 }
 
 /// Server-side request input for the sum dispatcher. Mirrors

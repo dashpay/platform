@@ -333,6 +333,28 @@ pub(crate) fn build_spend_bundle_with<P: OrchardProver, F>(
 where
     F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
 {
+    let builder = spend_builder(spends, recipient, output_amount, memo, fvk, anchor)?;
+
+    prove_and_sign_bundle_with(
+        builder,
+        prover,
+        std::slice::from_ref(ask),
+        extra_sighash_data,
+    )
+}
+
+/// The Orchard builder of a spend bundle: `spends` against `anchor`, and one output of
+/// `output_amount` to `recipient` whose `out_ciphertext` is encrypted under `fvk`'s
+/// External-scope OVK, so the spender can recover it. [`build_spend_bundle_with`] proves and
+/// signs what it builds.
+pub(crate) fn spend_builder(
+    spends: Vec<SpendableNote>,
+    recipient: &OrchardAddress,
+    output_amount: u64,
+    memo: [u8; 36],
+    fvk: &FullViewingKey,
+    anchor: Anchor,
+) -> Result<Builder<DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
 
     let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
@@ -354,12 +376,7 @@ where
         )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle_with(
-        builder,
-        prover,
-        std::slice::from_ref(ask),
-        extra_sighash_data,
-    )
+    Ok(builder)
 }
 
 /// Takes a configured Builder, generates the proof, computes the platform
@@ -561,6 +578,9 @@ pub(crate) mod test_helpers {
         SpendableNote { note, merkle_path }
     }
 }
+
+#[cfg(test)]
+mod max_actions_tests;
 
 #[cfg(test)]
 mod mod_tests {

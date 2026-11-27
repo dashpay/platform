@@ -1,0 +1,74 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "node_info": {
+      "protocol_version": {
+        "p2p": "11",
+        "block": "14",
+        "app": "1"
+      },
+      "id": "546ca9901acd8a3e704abeca8bc968d8f9340e59",
+      "listen_addr": "tcp://0.0.0.0:26656",
+      "ProTxHash": "3CA3228F83F91E76736ABB55BC7667B306FB1A577860C0C1D4FD9E752D114C97",
+      "network": "test-chain-SPqAva",
+      "version": "2.0.0-dev.3",
+      "channels": [
+        0,
+        32,
+        33,
+        34,
+        35,
+        48,
+        56,
+        64,
+        96,
+        97,
+        98,
+        99
+      ],
+      "moniker": "84b50fa9fbb4",
+      "other": {
+        "tx_index": "off",
+        "rpc_address": "tcp://127.0.0.1:26657"
+      }
+    },
+    "application_info": {
+      "version": "1"
+    },
+    "sync_info": {
+      "latest_block_hash": "D2F6865E3FE6D2A52060E8CF80E115176E3B0611F3BB735FA6B1E436DA9DE46A",
+      "latest_app_hash": "DFC479BE17687D0DDD1152C94EE2DD8F46BB70C99AE496A41E897AD5FCF8369E",
+      "latest_block_height": "232",
+      "latest_block_time": "2026-11-26T05:56:46.993Z",
+      "earliest_block_hash": "3F931FFA38B4AA452866D5E5A3D6A8998ECE30819F40E9349709A2E90E3D1833",
+      "earliest_app_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "earliest_block_height": "1",
+      "earliest_block_time": "2026-11-26T05:56:32.021Z",
+      "max_peer_block_height": "0",
+      "catching_up": false,
+      "total_synced_time": "0",
+      "remaining_time": "0",
+      "total_snapshots": "0",
+      "chunk_process_avg_time": "0",
+      "snapshot_height": "0",
+      "snapshot_chunks_count": "0",
+      "backfilled_blocks": "0",
+      "backfill_blocks_total": "0"
+    },
+    "validator_info": {
+      "pro_tx_hash": "3CA3228F83F91E76736ABB55BC7667B306FB1A577860C0C1D4FD9E752D114C97",
+      "voting_power": 100
+    },
+    "light_client_info": {
+      "primaryID": "",
+      "witnessesID": null,
+      "number_of_peers": "0",
+      "last_trusted_height": "0",
+      "last_trusted_hash": "",
+      "latest_block_time": "0001-01-01T00:00:00Z",
+      "trusting_period": "",
+      "trusted_block_expired": false
+    }
+  }
+}

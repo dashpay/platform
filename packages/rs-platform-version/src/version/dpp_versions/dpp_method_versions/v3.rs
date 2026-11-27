@@ -14,4 +14,5 @@ pub const DPP_METHOD_VERSIONS_V3: DPPMethodVersions = DPPMethodVersions {
     shielded_extra_sighash_data: 0,
     core_credit_pool_unlock_limit: Some(0),
     credit_pool_bundle_binding: Some(0),
+    token_pool_paid_fee_binding: None,
 };

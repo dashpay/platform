@@ -2,9 +2,9 @@
 
 use std::time::Duration;
 
-use super::create_channel;
 #[cfg(not(target_arch = "wasm32"))]
 use super::proxy::is_proxy_failure;
+use super::{create_channel, new_core_client, new_platform_client};
 use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use super::{CoreGrpcClient, PlatformGrpcClient};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
@@ -23,7 +23,7 @@ impl TransportClient for PlatformGrpcClient {
         Ok(pool
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
                 match create_channel(uri.clone(), None) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => Ok(new_platform_client(channel).into()),
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "channel creation failed: {}",
                         e
@@ -50,7 +50,7 @@ impl TransportClient for PlatformGrpcClient {
             pool.get_or_create_with_generation(PoolPrefix::Platform, &uri, Some(settings), || {
                 match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
-                        let mut client = Self::new(channel);
+                        let mut client = new_platform_client(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
                             client = client.max_decoding_message_size(max_size);
                         }
@@ -75,7 +75,7 @@ impl TransportClient for CoreGrpcClient {
         Ok(pool
             .get_or_create(PoolPrefix::Core, &uri, None, || {
                 match create_channel(uri.clone(), None) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => Ok(new_core_client(channel).into()),
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
@@ -102,7 +102,7 @@ impl TransportClient for CoreGrpcClient {
             pool.get_or_create_with_generation(PoolPrefix::Core, &uri, Some(settings), || {
                 match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
-                        let mut client = Self::new(channel);
+                        let mut client = new_core_client(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
                             client = client.max_decoding_message_size(max_size);
                         }
@@ -130,6 +130,53 @@ const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
     "proved path queries can not be for limit 0",
 ];
 
+/// A node's refusal of a query version older than the ones it serves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OlderQueryVersionRefusal<'a> {
+    /// The query's name, as Drive names it: `document_history`.
+    pub query: &'a str,
+    /// The request version the node refused.
+    pub given: u32,
+}
+
+/// Read `status` as a node refusing a query version older than the ones it serves (Drive's
+/// `QueryError::UnsupportedQueryVersion`): an UNKNOWN status whose whole message is
+/// "unsupported version for query: {name}, currently supporting versions {min} to {max} on
+/// platform protocol {n}, given {given}", with `min` to `max` in order and `given` below
+/// `min`. A message that only resembles it is not read as one.
+///
+/// The network has moved past that request version, so every node in step with it refuses
+/// the request the same way: the node is not at fault, and the caller must choose a newer
+/// version. Such a status is not retryable ([`CanRetry`]), so the node is neither banned nor
+/// passed over. A version above `max` is the opposite case, a node behind the network: it
+/// is `None` here and stays retryable on another node.
+pub fn older_query_version_refusal(
+    status: &dapi_grpc::tonic::Status,
+) -> Option<OlderQueryVersionRefusal<'_>> {
+    if status.code() != dapi_grpc::tonic::Code::Unknown {
+        return None;
+    }
+    let rest = status
+        .message()
+        .strip_prefix("unsupported version for query: ")?;
+    let (query, rest) = rest.split_once(", currently supporting versions ")?;
+    let (min, rest) = rest.split_once(" to ")?;
+    let (max, rest) = rest.split_once(" on platform protocol ")?;
+    let (protocol, given) = rest.split_once(", given ")?;
+    let number = |text: &str| text.parse::<u32>().ok();
+    let (min, max, given) = (number(min)?, number(max)?, number(given)?);
+    number(protocol)?;
+    (!query.is_empty() && min <= max && given < min)
+        .then_some(OlderQueryVersionRefusal { query, given })
+}
+
+/// Start of the status tonic returns when a compressed response decompresses past the
+/// client's `max_decoding_message_size`. The limit is the client's own, so every node
+/// would fail the same way: this must not ban nodes like other `ResourceExhausted`
+/// statuses (an uncompressed oversized response is `OutOfRange`, also not retried).
+/// The text comes from tonic 0.14's `codec::decode`; re-check it on tonic upgrades.
+const DECOMPRESS_LIMIT_ERROR: &str = "Error decompressing: size limit";
+
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
         // A failing SOCKS5 proxy fails every node alike: retrying elsewhere
@@ -143,11 +190,18 @@ impl CanRetry for dapi_grpc::tonic::Status {
 
         use dapi_grpc::tonic::Code::*;
 
+        if code == ResourceExhausted && self.message().starts_with(DECOMPRESS_LIMIT_ERROR) {
+            return false;
+        }
+
         if matches!(code, Unknown | Internal)
             && OLDER_NODE_REQUEST_REFUSALS
                 .iter()
                 .any(|refusal| self.message().contains(refusal))
         {
+            return false;
+        }
+        if older_query_version_refusal(self).is_some() {
             return false;
         }
 

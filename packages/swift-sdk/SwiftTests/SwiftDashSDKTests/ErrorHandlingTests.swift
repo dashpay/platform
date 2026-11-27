@@ -439,6 +439,86 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(keyMessage, detail)
     }
 
+    /// The invitation claim's outcomes keep pinned raw values and typed
+    /// cases, so the app branches on codes rather than on error text.
+    func testShouldPreserveInvitationClaimOutcomesFromFFI() {
+        let codes: [(PlatformWalletFFIResultCode, PlatformWalletResultCode, Int32)] = [
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_KEYS_ALREADY_REGISTERED,
+             .errorInvitationKeysAlreadyRegistered, 63),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_CLAIMED_BY_THIS_WALLET,
+             .errorInvitationClaimedByThisWallet, 64),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_NOT_READY,
+             .errorInvitationNotReady, 65),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_CHAIN_LOCKED,
+             .errorAssetLockNotChainLocked, 66),
+        ]
+        for (ffi, code, raw) in codes {
+            XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), code)
+            XCTAssertEqual(code.rawValue, raw)
+        }
+
+        let id = "8eTDkBhpQjHeqgbVeriwLeZr1tCa6yBGw76SckvD1cwc"
+        // Found by the claim's own lookup: nothing was broadcast, so there is
+        // no refusal to carry.
+        let found = PlatformWalletError(
+            code: .errorInvitationKeysAlreadyRegistered, message: "{\"identityId\":\"\(id)\"}"
+        )
+        guard case .invitationKeysAlreadyRegistered(let owner, nil) = found
+        else { return XCTFail("lost typed keys-already-registered error") }
+        XCTAssertEqual(owner, id)
+        XCTAssertNil(found.consensusError)
+        // Refused by Platform after the broadcast: the typed case keeps the
+        // refusal, before and after protocol v11.
+        for refusal in [
+            PlatformConsensusError(code: 40207, kind: .state),
+            PlatformConsensusError(code: 10501, kind: .basic),
+        ] {
+            let refused = PlatformWalletError(
+                code: .errorInvitationKeysAlreadyRegistered,
+                message: "{\"identityId\":null}",
+                consensus: refusal
+            )
+            guard case .invitationKeysAlreadyRegistered(nil, refusal) = refused
+            else { return XCTFail("lost the refusal behind keys-already-registered") }
+            XCTAssertEqual(refused.consensusError, refusal)
+        }
+        guard case .invitationClaimedByThisWallet(let claimed) = PlatformWalletError(
+            code: .errorInvitationClaimedByThisWallet, message: "{\"identityId\":\"\(id)\"}"
+        ) else { return XCTFail("lost typed claimed-by-this-wallet error") }
+        XCTAssertEqual(claimed, id)
+        guard case .invitationNotReady = PlatformWalletError(
+            code: .errorInvitationNotReady, message: "quorum not verified"
+        ) else { return XCTFail("lost typed not-ready error") }
+        guard case .assetLockNotChainLocked = PlatformWalletError(
+            code: .errorAssetLockNotChainLocked, message: "retry later"
+        ) else { return XCTFail("lost typed not-chain-locked error") }
+    }
+
+    /// 64 always names its identity; a payload without one degrades to
+    /// `.unknown` instead of inventing an id.
+    func testShouldDegradeAnUndecodableInvitationDetailToUnknown() {
+        guard case .unknown = PlatformWalletError(
+            code: .errorInvitationClaimedByThisWallet, message: "{\"identityId\":null}"
+        ) else { return XCTFail("a claim with no identity must not be typed") }
+        guard case .unknown = PlatformWalletError(
+            code: .errorInvitationKeysAlreadyRegistered, message: "not json"
+        ) else { return XCTFail("a prose payload must not be typed") }
+    }
+
+    /// The FFI tri-state maps to `false` / `true` / `nil`.
+    func testShouldDecodeWhoseInvitationClaimItWas() {
+        func status(claimed: Bool, by: UInt8) -> ManagedPlatformWallet.InvitationClaimStatus {
+            var ffi = InvitationClaimStatusFFI()
+            ffi.already_claimed = claimed
+            ffi.claimed_by_this_wallet = by
+            return ManagedPlatformWallet.InvitationClaimStatus(ffi)
+        }
+        XCTAssertEqual(status(claimed: true, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO)).claimedByThisWallet, false)
+        XCTAssertEqual(status(claimed: true, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_YES)).claimedByThisWallet, true)
+        XCTAssertNil(status(claimed: true, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN)).claimedByThisWallet)
+        XCTAssertEqual(status(claimed: false, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO)).claimedByThisWallet, false)
+    }
+
     func testShouldPreserveSpvProcessRestartRequiredFromFFI() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SPV_PROCESS_RESTART_REQUIRED
@@ -604,6 +684,88 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A spend run against a plan whose notes moved since keeps its own code
+    /// and typed case, apart from an unconfirmed spend (18): nothing was sent.
+    func testShouldReportAChangedShieldedPlanByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_PLAN_CHANGED
+        )
+        XCTAssertEqual(code, .errorShieldedPlanChanged)
+        XCTAssertEqual(code.rawValue, 77)
+        let detail = "the shielded spend no longer selects the planned notes"
+        guard case .shieldedPlanChanged(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed plan-changed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A spend the notes cover only with more notes than one transition spends
+    /// keeps its own code and typed case, apart from a balance shortfall (41).
+    func testShouldReportAShieldedSpendOfTooManyNotesByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_TOO_MANY_NOTES
+        )
+        XCTAssertEqual(code, .errorShieldedSpendTooManyNotes)
+        XCTAssertEqual(code.rawValue, 78)
+        let detail = "Shielded spend needs 17 notes, more than the 16 one transition can spend"
+        guard case .shieldedSpendTooManyNotes(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed too-many-notes error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A withdrawal amount outside the protocol bounds keeps its own code and
+    /// typed case, apart from a balance shortfall (41).
+    func testShouldReportAWithdrawalAmountOutOfRangeByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_WITHDRAWAL_AMOUNT_OUT_OF_RANGE
+        )
+        XCTAssertEqual(code, .errorShieldedWithdrawalAmountOutOfRange)
+        XCTAssertEqual(code.rawValue, 79)
+        let detail = "Shielded withdrawal amount 1 is outside the allowed range 1000000 to 50000000000000"
+        guard case .shieldedWithdrawalAmountOutOfRange(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed withdrawal-out-of-range error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A network on a protocol version this SDK has no tables for keeps its
+    /// own code and typed case, apart from a generic shielded build error, so
+    /// a host can ask for an app update.
+    func testShouldReportAnUnsupportedNetworkProtocolVersionByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NETWORK_PROTOCOL_VERSION_UNSUPPORTED
+        )
+        XCTAssertEqual(code, .errorNetworkProtocolVersionUnsupported)
+        XCTAssertEqual(code.rawValue, 81)
+        let detail = "The network runs protocol version 16, which this SDK does not support (it supports up to 15); update the app"
+        guard case .networkProtocolVersionUnsupported(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed unsupported-network-version error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A note the local tree cannot witness yet is refused before the proof
+    /// and the broadcast: it has its own code and typed case, apart from the
+    /// generic wallet failure a host reads as possibly sent.
+    func testShouldReportAnUnavailableMerkleWitnessByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE
+        )
+        XCTAssertEqual(code, .errorShieldedMerkleWitnessUnavailable)
+        XCTAssertEqual(code.rawValue, 88)
+        let detail = "shielded withdraw failed: Shielded Merkle witness unavailable: position 7"
+        guard case .shieldedMerkleWitnessUnavailable(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed merkle-witness-unavailable error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     /// A failed identity lookup, which sent nothing, has its own code and
     /// typed case, apart from the unmapped SDK errors a host reads as possibly
     /// delivered.
@@ -617,6 +779,90 @@ final class ErrorHandlingTests: XCTestCase {
         guard case .identityLookupFailed(let message) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed identity-lookup-failed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A balance history read that could not reach consistent heights keeps
+    /// its own code and typed case, not the unknown error.
+    func testShouldReportInconsistentBalanceHistoryHeightsByTheirOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS
+        )
+        XCTAssertEqual(code, .errorBalanceHistoryInconsistentHeights)
+        XCTAssertEqual(code.rawValue, 83)
+        let detail = "all 3 attempts to read a page were below the required height 12"
+        guard case .balanceHistoryInconsistentHeights(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed balance history height error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A shielded Clear refused while an operation is in flight keeps its own
+    /// code and typed case, so the host can keep its rows and offer a retry
+    /// instead of treating it as a failed reset.
+    func testShouldReportAClearRefusedDuringAShieldedOperationByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS
+        )
+        XCTAssertEqual(code, .errorShieldedOperationInProgress)
+        XCTAssertEqual(code.rawValue, 84)
+        let detail = "A shielded operation is in progress; clear the shielded state once it has finished"
+        guard case .shieldedOperationInProgress(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded operation in progress error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A shielded tip refused while an earlier payment to its recipient is
+    /// unresolved keeps its own code and typed case, not the unknown error
+    /// and not the unconfirmed spend.
+    func testShouldReportAPendingShieldedTipByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING
+        )
+        XCTAssertEqual(code, .errorShieldedTipPending)
+        XCTAssertEqual(code.rawValue, 85)
+        let detail = "A shielded payment to this recipient is still being sent or is unresolved"
+        guard case .shieldedTipPending(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded tip pending error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A shielded tip refused because the name belongs to another identity
+    /// than the contact it was started from keeps its own code and typed
+    /// case, not the unknown error.
+    func testShouldReportAShieldedTipRecipientMismatchByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH
+        )
+        XCTAssertEqual(code, .errorShieldedTipRecipientMismatch)
+        XCTAssertEqual(code.rawValue, 86)
+        let detail = "This username now belongs to identity"
+        guard case .shieldedTipRecipientMismatch(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded tip recipient mismatch error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A busy local shielded balance read keeps its own code and typed case,
+    /// not the generic wallet operation error: it is the only error of that
+    /// read that means keep the last state and read again.
+    func testShouldReportABusyShieldedBalanceByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BALANCE_BUSY
+        )
+        XCTAssertEqual(code, .errorShieldedBalanceBusy)
+        XCTAssertEqual(code.rawValue, 87)
+        let detail = "shielded identity balance busy; retry after sync releases its locks"
+        guard case .shieldedBalanceBusy(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded balance busy error")
         }
         XCTAssertEqual(message, detail)
     }

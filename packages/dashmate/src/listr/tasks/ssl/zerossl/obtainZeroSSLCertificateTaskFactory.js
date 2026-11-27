@@ -1,12 +1,113 @@
 import { Listr } from 'listr2';
 
 import chalk from 'chalk';
+import crypto from 'crypto';
 import fs from 'fs';
+import path from 'path';
 import lodash from 'lodash';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
-import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
+import {
+  ERRORS,
+  isSavedCertificateNotFound,
+} from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import VerificationServerUnreachableError from '../../../../ssl/errors/VerificationServerUnreachableError.js';
+import findCertificatePairProblem, {
+  findCertificateFilesProblem,
+} from '../../../../ssl/findCertificatePairProblem.js';
+import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../../ssl/selectLeafCertificate.js';
+
+/**
+ * Write the bundle in place, into the file the gateway has mounted
+ *
+ * @param {string} bundleFilePath
+ * @param {Buffer} content
+ * @return {boolean} false when what is there is not a regular file of its own
+ *  by the time it is opened
+ */
+function writeBundleInPlace(bundleFilePath, content) {
+  let fd;
+  try {
+    // Neither follows a link nor truncates: what is opened is checked first.
+    // Windows has no O_NOFOLLOW; the link was looked for before.
+    // eslint-disable-next-line no-bitwise
+    fd = fs.openSync(bundleFilePath, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0)
+      | fs.constants.O_NONBLOCK);
+  } catch (e) {
+    // Replaced by a symbolic link, or removed, since it was looked at
+    if (e.code === 'ELOOP' || e.code === 'ENOENT') {
+      return false;
+    }
+
+    throw e;
+  }
+
+  try {
+    const stats = fs.fstatSync(fd);
+
+    if (!stats.isFile() || stats.nlink !== 1) {
+      return false;
+    }
+
+    // In place, never by a rename: the gateway's bind mount pins this inode,
+    // and renewal reaches a running gateway only through it.
+    for (let offset = 0; offset < content.length;) {
+      offset += fs.writeSync(fd, content, offset, content.length - offset, offset);
+    }
+
+    // A shorter certificate leaves no tail of the previous one.
+    fs.ftruncateSync(fd, content.length);
+    fs.fsyncSync(fd);
+
+    return true;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Install the bundle the gateway serves
+ *
+ * Compose bind-mounts bundle.crt into the gateway by itself, which pins the
+ * file's inode, and renewal only signals the gateway to load its files again.
+ * So a bundle that is a regular file with no other name is written in place:
+ * replaced by a rename, it would leave the running gateway serving the
+ * certificate it loaded until it expires. Anything else is never written
+ * through: a link to the private key, or a second name of it, would
+ * overwrite the key. It is replaced by a new file, written beside it and
+ * renamed over it. A missing bundle is written as a new file the same way.
+ * The running gateway's mount sees neither.
+ *
+ * @param {string} bundleFilePath
+ * @param {string} certificateFile
+ * @return {boolean} whether it was written as a new file rather than in place
+ */
+function installBundle(bundleFilePath, certificateFile) {
+  const content = Buffer.from(certificateFile, 'utf8');
+
+  // Looked at before it is opened for writing: a hard link to a key its owner
+  // made read-only cannot be opened for writing, and is replaced all the same.
+  const stats = fs.lstatSync(bundleFilePath, { throwIfNoEntry: false });
+
+  if (stats?.isFile() && stats.nlink === 1 && writeBundleInPlace(bundleFilePath, content)) {
+    return false;
+  }
+
+  const temporaryFilePath = `${bundleFilePath}.${process.pid}.tmp`;
+
+  fs.rmSync(temporaryFilePath, { force: true });
+
+  try {
+    fs.writeFileSync(temporaryFilePath, content, { flag: 'wx' });
+    fs.renameSync(temporaryFilePath, bundleFilePath);
+  } catch (e) {
+    fs.rmSync(temporaryFilePath, { force: true });
+
+    throw e;
+  }
+
+  return true;
+}
 
 /**
  * @param {generateCsr} generateCsr
@@ -54,6 +155,43 @@ export default function obtainZeroSSLCertificateTaskFactory(
 
     const tasks = new Listr([
       {
+        title: 'Initialize configuration',
+        task: async (ctx) => {
+          // Always load configuration and paths, even under --force.
+          // The existing-certificate check below is the only step --force should
+          // skip. Skipping this init left ctx.externalIp/ctx.apiKey undefined,
+          // which propagated into generateCsr and crashed node-forge with
+          // "Attribute value not specified." See dashpay/platform#3803 / #4249.
+          ctx.apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey');
+
+          ctx.externalIp = config.get('externalIp');
+
+          if (ctx.force && !ctx.apiKey) {
+            throw new Error('ZeroSSL API key is not set. Please set it in the config file');
+          }
+
+          if (ctx.force && !ctx.externalIp) {
+            throw new Error('External IP is not set. Please set it in the config file');
+          }
+
+          ctx.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+          ctx.csrFilePath = path.join(ctx.sslConfigDir, 'csr.pem');
+          ctx.privateKeyFilePath = path.join(ctx.sslConfigDir, 'private.key');
+          ctx.bundleFilePath = path.join(ctx.sslConfigDir, 'bundle.crt');
+
+          fs.mkdirSync(ctx.sslConfigDir, { recursive: true });
+
+          if (ctx.force) {
+            // Force a clean regeneration: ignore any existing keypair, CSR, bundle,
+            // or certificate state so the generate/create/save tasks all run.
+            ctx.isCsrFilePresent = false;
+            ctx.isPrivateKeyFilePresent = false;
+            ctx.isBundleFilePresent = false;
+            ctx.certificate = null;
+          }
+        },
+      },
+      {
         title: 'Check if certificate already exists and not expiring soon',
         // Skips the check if force flag is set
         skip: (ctx) => ctx.force,
@@ -84,7 +222,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
             case ERRORS.PRIVATE_KEY_IS_NOT_PRESENT:
               // If certificate exists but private key does not, then we can't set up TLS connection
               // In this case we need to regenerate certificate or put back this private key
-              throw new Error(`Certificate private key file not found in ${ctx.privateKeyFilePath}.\n`
+              throw new Error(`Certificate private key file ${ctx.privateKeyFilePath} is missing or cannot be loaded.\n`
                 + 'Please regenerate the certificate using the obtain'
                 + ' command with the --force flag and revoke the previous certificate in'
                 + ' the ZeroSSL dashboard');
@@ -94,7 +232,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
                 + ' using the obtain command with the --force flag and revoke the previous'
                 + ' certificate in the ZeroSSL dashboard');
             case ERRORS.CSR_FILE_IS_NOT_PRESENT:
-              throw new Error(`Certificate request file not found in ${ctx.csrFilePath}.\n`
+              throw new Error(`Certificate request file ${ctx.csrFilePath} is missing or cannot be used.\n`
                 + 'To renew certificate please use the obtain'
                 + ' command with the --force flag, and revoke the previous certificate in'
                 + ' the ZeroSSL dashboard');
@@ -117,6 +255,11 @@ export default function obtainZeroSSLCertificateTaskFactory(
               ctx.certificate = null;
               break;
             case ERRORS.ZERO_SSL_API_ERROR:
+              if (isSavedCertificateNotFound(error, data)) {
+                throw new Error(`ZeroSSL has no certificate with the saved ID ${config.get('platform.gateway.ssl.providerConfigs.zerossl.id')}: ${ctx.error.message}.\n`
+                  + 'Please obtain a new certificate using the obtain command with the --force flag');
+              }
+
               throw ctx.error;
             default:
               throw new Error(`Unknown error: ${error}`);
@@ -126,8 +269,27 @@ export default function obtainZeroSSLCertificateTaskFactory(
       {
         title: 'Generate a keypair',
         enabled: (ctx) => !ctx.isCsrFilePresent,
-        task: async (ctx) => {
-          ctx.keyPair = await generateKeyPair();
+        task: async (ctx, task) => {
+          // A saved certificate was requested with the key on disk, and
+          // renewal requests the next one with the request written here: one
+          // for a new key would be issued for a key this node does not keep.
+          // Its public key comes from the private key itself: given the file,
+          // Node would read a certificate that follows the key instead.
+          if (ctx.isPrivateKeyFilePresent) {
+            const privateKey = fs.readFileSync(ctx.privateKeyFilePath, 'utf8');
+
+            ctx.keyPair = {
+              privateKey,
+              publicKey: crypto.createPublicKey(crypto.createPrivateKey(privateKey))
+                .export({ type: 'spki', format: 'pem' }),
+            };
+
+            // eslint-disable-next-line no-param-reassign
+            task.title = 'Use the private key on disk';
+          } else {
+            ctx.keyPair = await generateKeyPair();
+          }
+
           ctx.privateKeyFile = ctx.keyPair.privateKey;
         },
       },
@@ -309,7 +471,21 @@ and all Dash service ports listed above.`);
         title: 'Save certificate request file',
         enabled: (ctx) => !ctx.isCsrFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.csrFilePath, ctx.csr, 'utf8');
+          // Written beside it and renamed over it: a link where the request
+          // goes is replaced rather than written through, so one that points
+          // at the private key cannot overwrite the key.
+          const temporaryFilePath = `${ctx.csrFilePath}.${process.pid}.tmp`;
+
+          fs.rmSync(temporaryFilePath, { force: true });
+
+          try {
+            fs.writeFileSync(temporaryFilePath, ctx.csr, { encoding: 'utf8', flag: 'wx' });
+            fs.renameSync(temporaryFilePath, ctx.csrFilePath);
+          } catch (e) {
+            fs.rmSync(temporaryFilePath, { force: true });
+
+            throw e;
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.csrFilePath;
@@ -319,10 +495,58 @@ and all Dash service ports listed above.`);
         title: 'Save certificate file',
         skip: (ctx) => ctx.isBundleFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.bundleFilePath, ctx.certificateFile, 'utf8');
+          // Checked before the file is replaced: renewal writes over a bundle
+          // the gateway is serving.
+          const privateKeyPem = fs.readFileSync(ctx.privateKeyFilePath, 'utf8');
+
+          const { error, detail } = selectLeafCertificate(ctx.certificateFile, privateKeyPem);
+
+          // A response cut short or out of order says nothing about the
+          // certificate, and the next obtain downloads it again.
+          if (error === LEAF_SELECTION_ERRORS.KEY_MISMATCH
+            || error === LEAF_SELECTION_ERRORS.KEY_UNUSABLE) {
+            throw new Error(`The certificate ZeroSSL sent does not belong to the private key in ${ctx.privateKeyFilePath}: ${detail}.\n`
+              + `${ctx.bundleFilePath} was left as it was.`
+              + ' Please obtain a new certificate using the obtain command with the --force flag,'
+              + ' and revoke the previous certificate in the ZeroSSL dashboard');
+          }
+
+          const problem = findCertificatePairProblem(ctx.certificateFile, privateKeyPem);
+
+          if (problem !== null) {
+            throw new Error(`The certificate ZeroSSL sent cannot be served: ${problem}.\n`
+              + `${ctx.bundleFilePath} was left as it was. Fix the cause and run the obtain`
+              + ' command again: it downloads the certificate again');
+          }
+
+          if (installBundle(ctx.bundleFilePath, ctx.certificateFile)) {
+            ctx.isGatewayRestartRequired = true;
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = `${ctx.bundleFilePath} was missing or a link, so it was written as a new`
+              + ' file. A running gateway keeps serving the certificate it loaded until it is'
+              + ' restarted';
+
+            return;
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.bundleFilePath;
+        },
+      },
+      {
+        // The gateway serves TLS from these files, and a write can stop short
+        // of what was checked. The certificate stays issued, and the next
+        // obtain downloads a bundle it cannot serve again.
+        title: 'Check certificate files',
+        task: async (ctx) => {
+          const problem = findCertificateFilesProblem(ctx.bundleFilePath, ctx.privateKeyFilePath);
+
+          if (problem !== null) {
+            throw new Error(`The certificate files in ${ctx.sslConfigDir} cannot be served: ${problem}.\n`
+              + 'Fix the cause and run the obtain command again: it downloads the certificate'
+              + ' again without creating a new one');
+          }
         },
       },
       {

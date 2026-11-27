@@ -16,6 +16,7 @@ pub mod data_contracts_by_range;
 pub mod data_contracts_latest_versions;
 pub mod decision_proposals;
 mod delegate;
+pub mod document_history;
 pub mod documents;
 pub mod dpns_usernames;
 pub mod encrypted_for;
@@ -26,11 +27,13 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod identity_keys_remaining_budgets;
+pub mod identity_withdrawals;
 pub mod moderation_charters;
 pub mod private_document_entries;
 #[cfg(test)]
 mod private_document_envelope_tests;
 pub mod private_document_scan;
+pub mod private_document_seal;
 pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]

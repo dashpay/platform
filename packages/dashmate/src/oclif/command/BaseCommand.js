@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import createDIContainer from '../../createDIContainer.js';
 import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
 import getFunctionParams from '../../util/getFunctionParams.js';
+import killContainersSynchronously from '../../docker/killContainersSynchronously.js';
 
 /**
  * @abstract
@@ -112,6 +113,12 @@ export default class BaseCommand extends Command {
       process.on('unhandledRejection', () => {});
       process.on('uncaughtException', () => {});
 
+      // listr2 exits the process on SIGINT straight after this returns, before
+      // the request below is sent, so the containers are killed synchronously
+      // first. Otherwise a Core started for the command (setup starts one to
+      // read a masternode's registration) is left running after Ctrl-C.
+      killContainersSynchronously(startedContainers.getContainers());
+
       // stop and remove all started containers
       await stopAllContainers(startedContainers.getContainers());
     });
@@ -189,11 +196,15 @@ export default class BaseCommand extends Command {
              */
             const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
 
+            // A command that changes only part of the options can leave the
+            // service files that read none of them as they are.
+            const renderScope = this.constructor.getRenderScope?.(this.parsedFlags);
+
             // JSON is authoritative. If rendering fails or the process is killed
             // next, an explicit config render repairs the stale service files.
             configFileRepository.write(configFile);
 
-            changedConfigs.forEach(writeConfigTemplates);
+            changedConfigs.forEach((config) => writeConfigTemplates(config, renderScope));
           }
         }
       } catch (e) {

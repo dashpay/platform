@@ -61,7 +61,7 @@ impl Drive {
 
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-        let mut merged: std::collections::BTreeMap<Vec<u8>, i64> =
+        let mut merged: std::collections::BTreeMap<Vec<u8>, i128> =
             std::collections::BTreeMap::new();
         for value in in_values.iter() {
             let key_bytes = document_type.serialize_value_for_key(
