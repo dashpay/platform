@@ -11,10 +11,12 @@ use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
     FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn, LoadAssetLockIdentityRecipientFn,
-    LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
+    LoadAssetLockOperationIdFn, LoadAssetLockPlatformAddressRecipientsFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
     LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn,
     LoadWalletLockedOutpointsFn, PersistAssetLockIdentityRecipientFn,
-    PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockPlatformAddressRecipientsFn,
+    PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetOutpointLocksFn, PersistWalletChangesetSweepsFn,
@@ -429,6 +431,14 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_identity_recipient: slot!(
             on_load_asset_lock_identity_recipient_fn,
             LoadAssetLockIdentityRecipientFn
+        ),
+        persist_asset_lock_platform_address_recipients: slot!(
+            on_persist_asset_lock_platform_address_recipients_fn,
+            PersistAssetLockPlatformAddressRecipientsFn
+        ),
+        load_asset_lock_platform_address_recipients: slot!(
+            on_load_asset_lock_platform_address_recipients_fn,
+            LoadAssetLockPlatformAddressRecipientsFn
         ),
     }
 }

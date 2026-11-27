@@ -171,6 +171,10 @@ pub struct TrackedAssetLockSnapshot {
     /// acknowledgement that Platform may already have used it
     /// (`TrackedAssetLock::is_unassigned_identity_top_up`).
     pub identity_recipient_unassigned: bool,
+    /// An external Platform-address funding (lock type 4) that recorded the
+    /// addresses it pays; a resume pays exactly those and refuses any other
+    /// (`TrackedAssetLock::platform_address_recipients`).
+    pub has_platform_address_recipients: bool,
 }
 
 /// Snapshot of the per-account metadata for a single account.
@@ -1082,6 +1086,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     chain_lock_height,
                     identity_recipient: lock.identity_recipient,
                     identity_recipient_unassigned: lock.is_unassigned_identity_top_up(),
+                    has_platform_address_recipients: lock.platform_address_recipients.is_some(),
                 }
             })
             .collect()

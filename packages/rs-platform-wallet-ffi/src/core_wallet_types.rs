@@ -987,6 +987,10 @@ pub struct TrackedAssetLockEntryFFI {
     /// assigned with the acknowledgement; a host that offers it must say the
     /// funds may already be spent.
     pub identity_recipient_unassigned: bool,
+    /// An external Platform-address funding (lock type 4) that recorded the
+    /// addresses it pays: a resume pays exactly those and refuses anything
+    /// else, an owned funding included.
+    pub has_platform_address_recipients: bool,
 }
 
 /// Snapshot of the per-account metadata for one account. Strings are

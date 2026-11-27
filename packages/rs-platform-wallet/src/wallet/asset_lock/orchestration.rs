@@ -34,7 +34,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::changeset::AssetLockRecipient;
+use crate::changeset::{AssetLockRecipient, PlatformAddressRecipients};
 use dashcore::OutPoint;
 use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::DerivationPath;
@@ -513,6 +513,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// the lock recorded: a different one is refused with
     /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`], and a lock
     /// that records none with [`PlatformWalletError::AssetLockRecipientUnknown`].
+    /// For an existing Platform-address lock that recorded the addresses it
+    /// pays it must be exactly those: anything else, an owned funding naming
+    /// none included, is
+    /// [`PlatformWalletError::AssetLockPlatformAddressRecipientMismatch`].
     ///
     /// `on_built` receives the outpoint of a newly built lock; see
     /// [`AssetLockBuiltObserver`].
@@ -550,6 +554,66 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         destination_index: u32,
         recipient: Option<AssetLockRecipient>,
+        asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_out_point: impl FnOnce(OutPoint) + Send,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
+        self.resolve_funding_checked(
+            funding,
+            funding_type,
+            destination_index,
+            recipient,
+            false,
+            asset_lock_signer,
+            on_built,
+            on_out_point,
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_with_is_timeout_fallback`] for a resume to the
+    /// Platform-address recipients the caller read from the lock's own row.
+    /// Unlike an external funding that names its own payees, the row the
+    /// resume claims must still record exactly these recipients: a row
+    /// recreated at the outpoint by an owned funding records none, and its
+    /// funds must not go to the old payees.
+    pub(crate) async fn resolve_funding_to_recorded_recipients<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        recipient: Option<AssetLockRecipient>,
+        asset_lock_signer: &AS,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
+        self.resolve_funding_checked(
+            funding,
+            funding_type,
+            0,
+            recipient,
+            true,
+            asset_lock_signer,
+            None,
+            |_| {},
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_observing_out_point`], where
+    /// `platform_addresses_must_be_recorded` refuses an existing
+    /// Platform-address lock whose row records no recipients.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn resolve_funding_checked<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        recipient: Option<AssetLockRecipient>,
+        platform_addresses_must_be_recorded: bool,
         asset_lock_signer: &AS,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
         on_out_point: impl FnOnce(OutPoint) + Send,
@@ -670,6 +734,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     identity_index: actual_identity_index,
                     status,
                     identity_recipient: recorded_identity,
+                    platform_address_recipients: recorded_platform_addresses,
                 } = self
                     .tracked_resume_metadata(&out_point)
                     .await
@@ -688,8 +753,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     funding_type,
                     consume_invitation_voucher,
                 );
-                let requested_identity = match recipient {
-                    Some(AssetLockRecipient::Identity(identity)) => Some(identity),
+                let requested_identity = match &recipient {
+                    Some(AssetLockRecipient::Identity(identity)) => Some(*identity),
+                    _ => None,
+                };
+                let requested_platform_addresses = match &recipient {
+                    Some(AssetLockRecipient::PlatformAddresses(recipients)) => Some(recipients),
                     _ => None,
                 };
                 if !invitation_reclaim {
@@ -697,10 +766,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         out_point,
                         funding_type,
                         destination_index,
-                        requested_identity,
+                        RecipientCheck {
+                            requested_identity,
+                            recorded_identity,
+                            requested_platform_addresses,
+                            recorded_platform_addresses: recorded_platform_addresses.as_ref(),
+                            platform_addresses_must_be_recorded,
+                        },
                         actual_funding_type,
                         actual_identity_index,
-                        recorded_identity,
                     )?;
                 }
                 // Checked again on the row the resume claims, under the same
@@ -722,10 +796,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         out_point,
                         funding_type,
                         destination_index,
-                        requested_identity,
+                        RecipientCheck {
+                            requested_identity,
+                            recorded_identity: current.identity_recipient,
+                            requested_platform_addresses,
+                            recorded_platform_addresses: current
+                                .platform_address_recipients
+                                .as_ref(),
+                            platform_addresses_must_be_recorded,
+                        },
                         current.funding_type,
                         current.identity_index,
-                        current.identity_recipient,
                     )
                 };
                 on_out_point(out_point);
@@ -777,6 +858,19 @@ fn authorized_invitation_reclaim(
         )
 }
 
+/// Who an operation pays and who an existing lock recorded, for
+/// [`validate_existing_asset_lock_role`].
+#[derive(Default)]
+struct RecipientCheck<'a> {
+    requested_identity: Option<Identifier>,
+    recorded_identity: Option<Identifier>,
+    requested_platform_addresses: Option<&'a PlatformAddressRecipients>,
+    recorded_platform_addresses: Option<&'a PlatformAddressRecipients>,
+    /// A resume to the recipients the caller read from the row: the row must
+    /// still record them, so a row that records none is refused too.
+    platform_addresses_must_be_recorded: bool,
+}
+
 /// Authorize a tracked one-shot output for the operation that is about to
 /// consume it. Identity registration and bound top-up paths must match their
 /// identity index. An unbound top-up may serve a top-up, but only of the
@@ -784,18 +878,31 @@ fn authorized_invitation_reclaim(
 /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`], and a lock that
 /// records none (rebuilt from the chain, its credit output naming no identity)
 /// is [`PlatformWalletError::AssetLockRecipientUnknown`] until a recipient is
-/// assigned. Invitation vouchers never pass this generic validator—the
+/// assigned. A Platform-address lock that recorded the addresses it pays (an
+/// external funding) serves only a funding to exactly those addresses:
+/// anything else is
+/// [`PlatformWalletError::AssetLockPlatformAddressRecipientMismatch`]. One
+/// that records none serves any Platform-address funding that names its own
+/// payees: it is an owned funding or an external one tracked before
+/// recipients were recorded, which the wallet cannot tell apart, so the host
+/// picks the payees. A resume to the recipients read from the row
+/// (`platform_addresses_must_be_recorded`) refuses it. Invitation vouchers never pass this generic validator—the
 /// explicit reclaim authorization above is the only bypass.
-#[allow(clippy::too_many_arguments)]
 fn validate_existing_asset_lock_role(
     out_point: OutPoint,
     expected_funding_type: AssetLockFundingType,
     expected_identity_index: u32,
-    requested_identity: Option<Identifier>,
+    recipients: RecipientCheck<'_>,
     actual_funding_type: AssetLockFundingType,
     actual_identity_index: u32,
-    recorded_identity: Option<Identifier>,
 ) -> Result<(), PlatformWalletError> {
+    let RecipientCheck {
+        requested_identity,
+        recorded_identity,
+        requested_platform_addresses,
+        recorded_platform_addresses,
+        platform_addresses_must_be_recorded,
+    } = recipients;
     let eligible = match expected_funding_type {
         AssetLockFundingType::IdentityRegistration => {
             actual_funding_type == AssetLockFundingType::IdentityRegistration
@@ -817,6 +924,24 @@ fn validate_existing_asset_lock_role(
     };
     if !eligible {
         return Err(mismatch);
+    }
+    if actual_funding_type == AssetLockFundingType::AssetLockAddressTopUp {
+        return match recorded_platform_addresses {
+            None if platform_addresses_must_be_recorded => {
+                Err(PlatformWalletError::InvalidParameter(format!(
+                    "asset lock {out_point} no longer records the recipients it was resumed \
+                     to: the row was recreated by another funding, so nothing was paid"
+                )))
+            }
+            None => Ok(()),
+            Some(recorded) if requested_platform_addresses == Some(recorded) => Ok(()),
+            Some(recorded) => Err(
+                PlatformWalletError::AssetLockPlatformAddressRecipientMismatch {
+                    out_point,
+                    recorded: Box::new(recorded.clone()),
+                },
+            ),
+        };
     }
     if actual_funding_type != AssetLockFundingType::IdentityTopUpNotBound {
         return Ok(());
@@ -852,10 +977,9 @@ mod tests {
                 out_point,
                 expected,
                 expected_index,
-                None,
+                RecipientCheck::default(),
                 actual,
                 actual_index,
-                None,
             )
         };
 
@@ -920,10 +1044,13 @@ mod tests {
                 out_point,
                 expected,
                 11,
-                requested,
+                RecipientCheck {
+                    requested_identity: requested,
+                    recorded_identity: recorded,
+                    ..Default::default()
+                },
                 AssetLockFundingType::IdentityTopUpNotBound,
                 999,
-                recorded,
             )
         };
 
@@ -965,6 +1092,68 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 Some(recorded),
                 Some(recorded)
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn should_resume_an_external_address_funding_lock_only_to_the_recipients_it_recorded() {
+        use dpp::address_funds::PlatformAddress;
+
+        let out_point = OutPoint::null();
+        let recipients = |payee: u8| {
+            PlatformAddressRecipients::new(
+                [
+                    (PlatformAddress::P2pkh([payee; 20]), Some(1_000)),
+                    (PlatformAddress::P2pkh([0x01; 20]), None),
+                ]
+                .into(),
+            )
+            .unwrap()
+        };
+        let (recorded, other) = (recipients(0x41), recipients(0x42));
+        let validate = |requested, recorded| {
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                RecipientCheck {
+                    requested_platform_addresses: requested,
+                    recorded_platform_addresses: recorded,
+                    ..Default::default()
+                },
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+            )
+        };
+
+        // The recorded recipients resume it.
+        assert!(validate(Some(&recorded), Some(&recorded)).is_ok());
+        // Other recipients, or an owned funding naming none, are refused.
+        for requested in [Some(&other), None] {
+            assert!(matches!(
+                validate(requested, Some(&recorded)),
+                Err(PlatformWalletError::AssetLockPlatformAddressRecipientMismatch {
+                    out_point: o,
+                    recorded: r,
+                }) if o == out_point && *r == recorded
+            ));
+        }
+        // A lock that records none (owned, or tracked before recipients were
+        // recorded) is not refused: any funding resumes it.
+        for requested in [Some(&other), None] {
+            assert!(validate(requested, None).is_ok());
+        }
+        // Another operation cannot take an address-funding lock at all.
+        assert!(matches!(
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                RecipientCheck::default(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
             ),
             Err(PlatformWalletError::AssetLockFundingMismatch { .. })
         ));
@@ -1143,6 +1332,7 @@ mod tests {
                         operation_id: None,
                         shielded_recipient: None,
                         identity_recipient: None,
+                        platform_address_recipients: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,
