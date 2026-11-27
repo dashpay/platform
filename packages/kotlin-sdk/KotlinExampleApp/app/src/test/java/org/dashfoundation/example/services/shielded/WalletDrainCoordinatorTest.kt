@@ -237,8 +237,11 @@ class WalletDrainCoordinatorTest {
         advanceUntilIdle()
 
         val failed = controller.phase.value as Phase.Failed
-        assertTrue(failed.message.startsWith("proof wait timed out"))
-        assertTrue(failed.message.contains("do not start a new Max"))
+        // The drain's own text is the failure's detail; the class's text
+        // comes before it in the shown message.
+        assertTrue(failed.failure.detail.startsWith("proof wait timed out"))
+        assertTrue(failed.failure.detail.contains("do not start a new Max"))
+        assertTrue(failed.failure.holdsSlot)
 
         val entry = f.coordinator.entries.value.single()
         assertEquals(WalletDrainStatusRead.Reported(State.Pending), entry.lastRead)
@@ -517,7 +520,7 @@ class WalletDrainCoordinatorTest {
         advanceUntilIdle()
 
         val failed = (result as StartFundingResult.Started).controller.phase.value as Phase.Failed
-        assertEquals(WalletDrainCoordinator.ASSET_LOCK_NOT_TRACKED_MESSAGE, failed.message)
+        assertEquals(WalletDrainCoordinator.ASSET_LOCK_NOT_TRACKED_MESSAGE, failed.failure.detail)
         assertEquals("the id is kept", 1, f.store.rows.size)
     }
 

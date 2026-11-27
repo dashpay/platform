@@ -29,7 +29,9 @@ use jni::sys::{
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::{DashPayProfileFFI, PaymentAddressUpdateFFI};
-use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
+use platform_wallet_ffi::error::{
+    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::invitation::InvitationPreviewFFI;
@@ -1145,12 +1147,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             // Success with no link is a broken invariant, not an empty
             // result: the funded voucher is recorded (persistence callback)
             // and reclaimable from the Sent list, but there is nothing to
-            // share — fail loudly instead of returning "".
-            crate::support::throw_sdk_exception(
-                env,
-                99,
+            // share — fail loudly instead of returning "". Only the wallet
+            // knows whether the voucher's lock is still resumable, and this
+            // binding cannot ask it: the wallet's class for a payment whose
+            // result could not be handed back (`MaybeSent`, not retryable),
+            // never a held lock (← Swift `createInvitation`).
+            let failure = PlatformWalletFFIResult::handback_failure(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
                 "create succeeded but returned no link; the voucher is recorded and reclaimable",
             );
+            crate::support::throw_pwffi_result(env, &failure);
             return ptr::null_mut();
         };
         new_jstring(env, value)

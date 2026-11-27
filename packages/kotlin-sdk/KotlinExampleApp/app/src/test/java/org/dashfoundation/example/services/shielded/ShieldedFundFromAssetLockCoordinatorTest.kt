@@ -15,6 +15,9 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.dashfoundation.example.util.PaymentFailure
 import org.junit.Test
 
 /**
@@ -30,6 +33,15 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ShieldedFundFromAssetLockCoordinatorTest {
+
+    /** A wallet error carrying the native class (delivery discriminant, retry, held lock). */
+    private fun walletError(delivery: Int, retryable: Boolean, held: ByteArray? = null) =
+        DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 6, "boom", 0, 0, delivery, retryable, held),
+        )
+
+    private val heldRaw = ByteArray(32) { 7 } + byteArrayOf(1, 0, 0, 0)
+
 
     private val walletA = ByteArray(32) { 0xAA.toByte() }
     private val walletB = ByteArray(32) { 0xBB.toByte() }
@@ -77,7 +89,8 @@ class ShieldedFundFromAssetLockCoordinatorTest {
 
         val phase = controller.phase.value
         assertTrue(phase is Phase.Failed)
-        assertEquals("proof build failed", (phase as Phase.Failed).message)
+        assertEquals("proof build failed", (phase as Phase.Failed).failure.detail)
+        assertEquals(PaymentFailure.Action.Wait, phase.failure.action)
         assertFalse(phase.isActive)
     }
 
@@ -172,18 +185,92 @@ class ShieldedFundFromAssetLockCoordinatorTest {
     }
 
     @Test
-    fun `dismiss removes a failed controller`() = runTest {
+    fun `a failure restarts only as its payment class allows`() = runTest {
         val coordinator = coordinator()
-        val gate = CompletableDeferred<Unit>()
-
-        coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }
-        gate.completeExceptionally(RuntimeException("nope"))
+        var invocations = 0
+        val controller = coordinator.startFunding(walletA, recipientX, "shield:1") {
+            invocations++; throw walletError(delivery = 3, retryable = false, held = heldRaw)
+        }.controller()
         advanceUntilIdle()
-        assertEquals(1, coordinator.controllers.value.size)
+        val outPoint = PaymentFailure.outPoint(ByteArray(32) { 7 }, 1)
+        assertEquals(
+            PaymentFailure.Action.Resume(outPoint),
+            (controller.phase.value as Phase.Failed).failure.action,
+        )
 
-        coordinator.dismiss(walletA, recipientX)
-        assertTrue(coordinator.controllers.value.isEmpty())
-        assertNull(coordinator.controller(walletA, recipientX))
+        coordinator.startFunding(walletA, recipientX, "shield:2") { invocations++ }
+        advanceUntilIdle()
+        assertEquals("no fresh shield while a lock is held", 1, invocations)
+
+        coordinator.startFunding(walletA, recipientX, "resume:held", resuming = outPoint) { invocations++ }
+        advanceUntilIdle()
+        assertEquals(2, invocations)
+        assertEquals(Phase.Completed, controller.phase.value)
+    }
+
+    /**
+     * Dismiss drops a failed controller only when its failure releases the
+     * slot (any NOT_SENT); a failure that may have left, holds a lock, or
+     * has no class keeps it, and a fresh shield to the recipient does not
+     * run (← Swift `testShieldedFundingFailureIsDismissedOnlyWhenNothingWasSent`).
+     */
+    @Test
+    fun `dismiss removes a failed controller only when its payment was not sent`() = runTest {
+        val coordinator = coordinator()
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(delivery = 1, retryable = true) to true,
+            walletError(delivery = 1, retryable = false) to true,
+            walletError(delivery = 3, retryable = false, held = heldRaw) to false,
+            walletError(delivery = 2, retryable = false) to false,
+            RuntimeException("unclassified") to false,
+        ).forEachIndexed { index, (error, dismissable) ->
+            val recipient = ByteArray(43) { index.toByte() }
+            val controller = coordinator.startFunding(walletA, recipient, "shield:$index") { throw error }.controller()
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
+
+            assertEquals(error.toString(), dismissable, coordinator.dismiss(walletA, recipient))
+            assertEquals(dismissable, coordinator.controller(walletA, recipient) == null)
+
+            var ran = false
+            coordinator.startFunding(walletA, recipient, "shield:$index:2") { ran = true }
+            advanceUntilIdle()
+            assertEquals("a fresh shield runs only after a released slot", dismissable, ran)
+        }
+    }
+
+    /**
+     * Release drops a failed controller only when its failure holds the slot
+     * without a lock (may have left, or no class), after which a fresh
+     * payment runs; it refuses a held lock (resumed instead) and a NOT_SENT
+     * failure, keeping the controller (← Swift
+     * `testCoordinatorsReleaseOnlyAHoldWithoutALock`).
+     */
+    @Test
+    fun `release removes a failed controller only when it holds its slot without a lock`() = runTest {
+        val coordinator = coordinator()
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(delivery = 1, retryable = true) to false,
+            walletError(delivery = 3, retryable = false, held = heldRaw) to false,
+            walletError(delivery = 2, retryable = false) to true,
+            RuntimeException("unclassified") to true,
+        ).forEachIndexed { index, (error, releasable) ->
+            val recipient = ByteArray(43) { index.toByte() }
+            val controller = coordinator.startFunding(walletA, recipient, "release:$index") { throw error }.controller()
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
+
+            assertEquals(error.toString(), releasable, coordinator.release(walletA, recipient))
+            if (!releasable) {
+                assertSame(controller, coordinator.controller(walletA, recipient))
+                return@forEachIndexed
+            }
+            assertNull(coordinator.controller(walletA, recipient))
+            var ran = false
+            coordinator.startFunding(walletA, recipient, "release:$index:2") { ran = true }
+            advanceUntilIdle()
+            assertTrue("a fresh shield runs after a release", ran)
+        }
     }
 
     // ------------------------------------------------------------------

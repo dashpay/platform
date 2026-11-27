@@ -41,6 +41,7 @@ import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -77,7 +78,11 @@ fun SeedShieldedPoolScreen(walletIdHex: String, navController: NavHostController
         val target = targetText.toLongOrNull()
         val batches = target?.let { (it + 5) / 6 } // ceil(target / MAX_ACTIONS_PER_BATCH)
         val inFlight = phase is SeedPhase.InFlight
-        val canSubmit = manager != null && target != null && target > 0 && !inFlight
+        // A seeding that failed in the SDK runs again only when its failure
+        // releases the slot (PaymentFailure.holdsSlot): one that may have
+        // left or holds a lock could fund a second one.
+        val canSubmit = manager != null && target != null && target > 0 && !inFlight &&
+            (phase as? SeedPhase.Failed)?.holdsSlot != true
 
         Scaffold(
             topBar = {
@@ -164,7 +169,7 @@ fun SeedShieldedPoolScreen(walletIdHex: String, navController: NavHostController
                             modifier = Modifier.testTag("seedShieldedPool.completed"),
                         )
                     }
-                    is SeedPhase.Failed -> FormSection(title = "Failed") {
+                    is SeedPhase.Failed -> FormSection(title = p.title) {
                         Text(
                             p.message,
                             color = MaterialTheme.colorScheme.error,
@@ -202,7 +207,9 @@ fun SeedShieldedPoolScreen(walletIdHex: String, navController: NavHostController
                             }
                             phase = SeedPhase.Completed
                         } catch (e: Exception) {
-                            phase = SeedPhase.Failed(e.message ?: "Seeding failed")
+                            phase = PaymentFailure.ofPayment(e)
+                                ?.let { SeedPhase.Failed(it.message, it.title, it.holdsSlot) }
+                                ?: SeedPhase.Failed(e.message ?: "Seeding failed")
                         }
                     }
                 }
@@ -216,7 +223,12 @@ private sealed interface SeedPhase {
     data object Idle : SeedPhase
     data object InFlight : SeedPhase
     data object Completed : SeedPhase
-    data class Failed(val message: String) : SeedPhase
+    /** [title] and [message] come from [PaymentFailure] for an SDK failure. */
+    data class Failed(
+        val message: String,
+        val title: String = "Failed",
+        val holdsSlot: Boolean = false,
+    ) : SeedPhase
 }
 
 /** One progress tick from the seed-pool FFI callback. */

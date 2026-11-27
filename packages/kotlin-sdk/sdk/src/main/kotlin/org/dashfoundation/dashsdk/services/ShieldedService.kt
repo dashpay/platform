@@ -25,6 +25,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceUpdate
@@ -162,9 +163,17 @@ class ShieldedService(private val database: DashDatabase) {
      */
     internal suspend fun <T> withLedgerLifecycleForClear(step: suspend () -> T): T {
         if (!ledgerLifecycle.tryLock()) {
+            val message = "A shielded bind or another clear is in progress; clear the " +
+                "shielded state once it has finished"
+            // Raised here, before Rust is asked: it carries the code-84
+            // diagnostic but no payment class and no retry decision, which
+            // only Rust gives (`delivery` is null, `isRetryable` false).
             throw DashSdkError.PlatformWallet.ShieldedOperationInProgress(
-                "A shielded bind or another clear is in progress; clear the shielded state " +
-                    "once it has finished",
+                message,
+                DashSDKException(
+                    DashSdkError.PLATFORM_WALLET_CODE_OFFSET + SHIELDED_OPERATION_IN_PROGRESS_CODE,
+                    message,
+                ),
             )
         }
         try {
@@ -863,6 +872,9 @@ class ShieldedService(private val database: DashDatabase) {
 
         /** Times a Clear re-reads the binding when a bind slips in before its re-bind. */
         const val CLEAR_REBIND_ATTEMPTS = 3
+
+        /** `ErrorShieldedOperationInProgress`, the code Rust gives this refusal. */
+        const val SHIELDED_OPERATION_IN_PROGRESS_CODE = 84
 
         /**
          * The accounts a Clear registers a wallet with when Rust holds none

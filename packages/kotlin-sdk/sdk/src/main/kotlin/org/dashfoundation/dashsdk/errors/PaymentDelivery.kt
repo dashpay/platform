@@ -1,0 +1,48 @@
+package org.dashfoundation.dashsdk.errors
+
+/**
+ * Whether a failed payment may have left the wallet, as the native layer
+ * classified it. Decide "retry", "wait" or "resume" from this, never from
+ * lists of error types or codes: the Rust wallet owns the classification.
+ *
+ * Read it from [DashSdkError.delivery]. Values mirror
+ * `PlatformWalletFFIPaymentDelivery` in `rs-platform-wallet-ffi/src/error.rs`.
+ */
+enum class PaymentDelivery {
+    /**
+     * The payment never left the wallet and can never execute. A retry may be
+     * offered only where [DashSdkError.isRetryable] allows it; otherwise the
+     * request cannot go through as it is, for the reason the error states.
+     */
+    NOT_SENT,
+
+    /**
+     * The payment may have left the wallet, and may execute or already has:
+     * wait for sync to settle it and do not offer a second payment.
+     */
+    MAYBE_SENT,
+
+    /**
+     * The payment holds a tracked asset lock, named by
+     * [DashSdkError.heldAssetLock]: it may be on the network and its funds
+     * left the spendable balance. Resume that lock; never fund a new one.
+     */
+    LOCK_HELD,
+    ;
+
+    internal companion object {
+        /**
+         * `null` for the native `None` (0), which only a success carries, and
+         * `Unknown` (4), a failure no native wallet error classified: neither
+         * says whether a payment left the wallet. A value this SDK build does
+         * not know reads as [MAYBE_SENT], the class that never invites a
+         * second payment.
+         */
+        fun fromNative(value: Int): PaymentDelivery? = when (value) {
+            0, 4 -> null
+            1 -> NOT_SENT
+            3 -> LOCK_HELD
+            else -> MAYBE_SENT
+        }
+    }
+}

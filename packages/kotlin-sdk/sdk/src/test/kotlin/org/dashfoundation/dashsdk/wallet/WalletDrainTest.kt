@@ -1,8 +1,12 @@
 package org.dashfoundation.dashsdk.wallet
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
+import org.dashfoundation.dashsdk.ffi.WalletDrainNative
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -31,6 +35,9 @@ class WalletDrainTest {
         errorCode: Int = 0,
         consensusCode: Int = 0,
         consensusKind: Int = 0,
+        paymentDelivery: Int = 0,
+        retryable: Boolean = false,
+        heldAssetLock: ByteArray? = null,
         message: String = "",
     ): ByteArray {
         val text = message.toByteArray(Charsets.UTF_8)
@@ -43,6 +50,10 @@ class WalletDrainTest {
             .putInt(errorCode)
             .putInt(consensusCode)
             .putInt(consensusKind)
+            .putInt(paymentDelivery)
+            .put(if (retryable) 1 else 0)
+            .put(if (heldAssetLock != null) 1 else 0)
+            .put(heldAssetLock ?: ByteArray(36))
             .put(text)
             .array()
     }
@@ -74,6 +85,57 @@ class WalletDrainTest {
             "the message is read as UTF-8: ${outcome.error!!.message}",
             outcome.error!!.message!!.startsWith("résumé: unresolved"),
         )
+    }
+
+    /**
+     * A failed drain's error keeps Rust's payment class, as a thrown
+     * exception would: its delivery, the wallet's retry and the held lock.
+     */
+    @Test
+    fun shouldKeepThePaymentClassOfTheErrorBesideTheOutcome() {
+        val held = ByteArray(36) { if (it < 32) 5 else 0 }.also { it[32] = 2 }
+        // 1006: ErrorWalletOperation (6); delivery 3: LockHeld.
+        val lockHeld = WalletDrainOutcome.decode(
+            packedOutcome(
+                state = 1,
+                hasOutpoint = true,
+                errorCode = 1006,
+                paymentDelivery = 3,
+                retryable = true,
+                heldAssetLock = held,
+                message = "proof wait timed out",
+            ),
+        ).error!!
+        assertEquals(PaymentDelivery.LOCK_HELD, lockHeld.delivery)
+        assertTrue(lockHeld.isRetryable)
+        assertEquals(AssetLockBuiltOutPoint.fromRawBytes(held), lockHeld.heldAssetLock)
+
+        // delivery 2: MaybeSent; no held lock, no retry.
+        val maybeSent = WalletDrainOutcome.decode(
+            packedOutcome(state = 1, hasOutpoint = true, errorCode = 1006, paymentDelivery = 2),
+        ).error!!
+        assertEquals(PaymentDelivery.MAYBE_SENT, maybeSent.delivery)
+        assertFalse(maybeSent.isRetryable)
+        assertNull(maybeSent.heldAssetLock)
+    }
+
+    /**
+     * The packed-outcome layout is named by its JNI entry points: a native
+     * library that still packs the 50-byte header exports no `...V2`, so this
+     * SDK fails to link it before a drain runs instead of decoding the old
+     * bytes after funds moved. Renaming back to the unversioned names would
+     * reopen that gap; change the suffix with the layout.
+     */
+    @Test
+    fun shouldReachTheDrainThroughTheEntryPointsThatNameItsLayout() {
+        val natives = WalletDrainNative::class.java.declaredMethods
+            .filter { java.lang.reflect.Modifier.isNative(it.modifiers) }
+            .map { it.name }
+            .toSet()
+        assertTrue(natives.containsAll(setOf("fundFromWalletDrainV2", "statusV2")))
+        assertFalse("fundFromWalletDrain" in natives)
+        assertFalse("status" in natives)
+        assertEquals(92, WalletDrainOutcome.HEADER_SIZE)
     }
 
     @Test

@@ -56,6 +56,7 @@ import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
+import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
@@ -68,6 +69,7 @@ import org.dashfoundation.example.ui.shielded.ShieldedTopUpMessages
 import org.dashfoundation.example.ui.shielded.ShieldedPaymentOutcome
 import org.dashfoundation.example.ui.wallet.formatCreditsExact
 import org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.parseDashToCredits
@@ -133,9 +135,13 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    // The last failed top-up, presented by its payment class; the button
+    // stays off while it holds its slot (PaymentFailure.holdsSlot).
+    var failure by remember { mutableStateOf<PaymentFailure?>(null) }
     // The top-up may have been broadcast and its outcome is not confirmed
-    // (code 20): shown as pending, and the same top-up cannot be sent again.
-    var pending by remember { mutableStateOf(false) }
+    // (Rust classes it MAYBE_SENT): shown as pending, and the same top-up
+    // cannot be sent again.
+    val pending = failure?.recovery == PaymentRecovery.Reconcile
     var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
     var isChecking by remember { mutableStateOf(false) }
 
@@ -205,7 +211,8 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     val shieldedAmount = parseDashToCredits(shieldedAmountText)
     val canSubmit = when (funding) {
         TopUpFunding.PLATFORM_ADDRESSES ->
-            wallet != null && manager != null && amount != null && amount > 0
+            wallet != null && manager != null && amount != null && amount > 0 &&
+                failure?.holdsSlot != true
         TopUpFunding.SHIELDED ->
             identityWalletId != null && manager != null && offersShielded &&
                 shieldedAmount != null && shieldedTopUpFee != null
@@ -442,12 +449,14 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                                     signerHandle = mgr.signerHandle,
                                 )
                                 done = true
-                            } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
-                                // Not a failure: the top-up may still execute, so no
-                                // retry is offered.
-                                pending = true
                             } catch (e: Exception) {
-                                error = e.message ?: "Top up failed"
+                                // A top-up that may have left (MAYBE_SENT) is pending,
+                                // not a failure: no alert, and the button stays off.
+                                val paymentFailure = PaymentFailure.ofPayment(e)
+                                failure = paymentFailure
+                                if (paymentFailure?.recovery != PaymentRecovery.Reconcile) {
+                                    error = paymentFailure?.message ?: e.message ?: "Top up failed"
+                                }
                             } finally {
                                 isSubmitting = false
                             }

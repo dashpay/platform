@@ -80,8 +80,10 @@ suspend fun PlatformWalletManager.shieldedWalletDrainPreview(
  * Never throws for a failed drain: the returned outcome carries the state,
  * the asset lock if one exists and the error together, and a failure that
  * happens before Rust is reached is returned as pending, because it cannot
- * show that an earlier call under the same id sent nothing. Blocks for the
- * asset-lock proof wait and the Halo 2 proof.
+ * show that an earlier call under the same id sent nothing. A native library
+ * that lacks this entry point is a packaging error, not a failed drain: the
+ * JVM's `UnsatisfiedLinkError` is not caught, and nothing has run by then.
+ * Blocks for the asset-lock proof wait and the Halo 2 proof.
  */
 suspend fun PlatformWalletManager.shieldedFundFromWalletDrain(
     walletId: ByteArray,
@@ -103,7 +105,7 @@ suspend fun PlatformWalletManager.shieldedFundFromWalletDrain(
             }
             WalletDrainOutcome.decode(
                 mapNativeErrors {
-                    WalletDrainNative.fundFromWalletDrain(
+                    WalletDrainNative.fundFromWalletDrainV2(
                         managerHandle,
                         walletId,
                         operationId.toWalletDrainOperationIdBytes(),
@@ -119,7 +121,7 @@ suspend fun PlatformWalletManager.shieldedFundFromWalletDrain(
     } catch (e: DashSdkError) {
         return WalletDrainOutcome.unresolved(e)
     } catch (e: Exception) {
-        // A closed manager, a rejected argument, a missing native library.
+        // A closed manager or a rejected argument.
         return WalletDrainOutcome.unresolved(
             DashSdkError.InvalidState(e.message ?: e.toString(), e),
         )
@@ -147,7 +149,7 @@ suspend fun PlatformWalletManager.shieldedWalletDrainStatus(
         require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
         val outcome = WalletDrainOutcome.decode(
             mapNativeErrors {
-                WalletDrainNative.status(
+                WalletDrainNative.statusV2(
                     managerHandle,
                     walletId,
                     operationId.toWalletDrainOperationIdBytes(),

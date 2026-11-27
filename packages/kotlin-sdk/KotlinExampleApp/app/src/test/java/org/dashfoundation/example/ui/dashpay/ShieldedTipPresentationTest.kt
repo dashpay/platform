@@ -23,6 +23,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.dashfoundation.example.testing.spendUnconfirmed
+import org.dashfoundation.example.testing.broadcastUnconfirmed
 
 /**
  * How KotlinExampleApp reports a shielded tip to a DashPay username, and
@@ -47,8 +49,8 @@ class ShieldedTipPresentationTest {
     @Test
     fun `should not offer a resend for a tip that may have gone through`() {
         for (error in listOf(
-            DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
-            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("not confirmed"),
+            spendUnconfirmed("not proved"),
+            broadcastUnconfirmed("not confirmed"),
             DashSdkError.StateTransitionResultUnconfirmed("result lost"),
         )) {
             assertEquals(ShieldedPaymentOutcome.MayHaveGoneThrough, ShieldedTipMessages.outcome(error))
@@ -225,7 +227,7 @@ class ShieldedTipPresentationTest {
         // A shield or top-up of the same identity is its own slot.
         assertTrue(coordinator.start(Key(Kind.TOP_UP_FROM_POOL, "aa", "bb"), 1) { ShieldedPaymentOutcome.Submitted })
 
-        proof.complete(ShieldedTipMessages.outcome(DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("lost")))
+        proof.complete(ShieldedTipMessages.outcome(spendUnconfirmed("lost")))
         assertEquals(State.Done(5, ShieldedPaymentOutcome.MayHaveGoneThrough), coordinator.states.value[key])
         // An outcome not shown yet still blocks a new tip.
         assertFalse(coordinator.start(key, 5) { sends++; ShieldedPaymentOutcome.Submitted })

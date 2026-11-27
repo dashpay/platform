@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
+import org.dashfoundation.example.util.PaymentFailure
 
 /**
  * Per-slot state for a single "shield funds from an asset lock" attempt —
@@ -43,8 +45,14 @@ class ShieldedFundFromAssetLockController(
         /** Shielded; the note arrives via the next shielded sync pass. */
         data object Completed : Phase
 
-        /** Failure terminal state; the message is shown inline. Stays until dismissed. */
-        data class Failed(val message: String) : Phase
+        /**
+         * Failure terminal state, presented by [PaymentFailure] from the
+         * native wallet's class; its action says what may run again (a
+         * retry, or only the resume of the held lock). Stays until dismissed.
+         */
+        data class Failed(val failure: PaymentFailure) : Phase {
+            val message: String get() = failure.message
+        }
 
         /**
          * Whether the controller is currently holding its slot. Only
@@ -53,6 +61,17 @@ class ShieldedFundFromAssetLockController(
          */
         val isActive: Boolean
             get() = this is InFlight
+
+        /**
+         * Whether an operation resuming [resuming] (null for a fresh
+         * shield) may start from this phase: from [Idle], and from
+         * [Failed] only as its class allows. ← Swift `permitsSubmit`.
+         */
+        fun permitsSubmit(resuming: AssetLockBuiltOutPoint?): Boolean = when (this) {
+            is Idle -> true
+            is Failed -> failure.permitsRestart(resuming)
+            is InFlight, is Completed -> false
+        }
     }
 
     private val _phase = MutableStateFlow<Phase>(Phase.Idle)
@@ -81,18 +100,20 @@ class ShieldedFundFromAssetLockController(
         get() = walletId.toHex() + "-" + recipientRaw43.toHex()
 
     /**
-     * Submit the funding. Defensively rejects [Phase.InFlight] and
-     * [Phase.Completed]; [Phase.Idle] / [Phase.Failed] are allowed
-     * restarts. [operationId] names the operation the body performs (see
-     * [operationId]); [body] performs the FFI shield call (returns
+     * Submit the funding. Defensively rejects [Phase.InFlight],
+     * [Phase.Completed], and a [Phase.Failed] whose class does not allow
+     * this operation ([Phase.permitsSubmit]). [operationId] names the
+     * operation the body performs (see [operationId]), [resuming] the lock
+     * it resumes (null for a fresh shield); [body] performs the FFI shield call (returns
      * nothing) or throws; it runs on its own dispatcher, the terminal
      * flip hops back to [scope]. ← Swift `submit`.
      */
-    fun submit(operationId: String, body: suspend () -> Unit) {
-        when (_phase.value) {
-            is Phase.Idle, is Phase.Failed -> Unit
-            is Phase.InFlight, is Phase.Completed -> return
-        }
+    fun submit(
+        operationId: String,
+        body: suspend () -> Unit,
+        resuming: AssetLockBuiltOutPoint? = null,
+    ) {
+        if (!_phase.value.permitsSubmit(resuming)) return
         this.operationId = operationId
         _phase.value = Phase.InFlight
         lastSubmittedAt = now()
@@ -101,7 +122,7 @@ class ShieldedFundFromAssetLockController(
                 body()
                 _phase.value = Phase.Completed
             } catch (e: Throwable) {
-                _phase.value = Phase.Failed(e.message ?: "Shield failed")
+                _phase.value = Phase.Failed(PaymentFailure.of(e))
             }
         }
     }

@@ -42,6 +42,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.WalletDrainRules
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -57,6 +58,7 @@ import org.dashfoundation.example.ui.funding.canFundIdentity
 import org.dashfoundation.example.ui.funding.parseOutPoint
 import org.dashfoundation.example.ui.funding.shortOutPointDisplay
 import org.dashfoundation.example.ui.funding.statusLabel
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 import java.util.UUID
@@ -505,6 +507,9 @@ fun ShieldedFundScreen(
                     // this form and shielding again is always a new
                     // operation ("resume:<outpoint>" stays stable so a
                     // re-tap of the SAME lock still rebinds).
+                    // The lock a resume names, so a slot whose failure holds
+                    // it may restart through it (and only it).
+                    var resuming: AssetLockBuiltOutPoint? = null
                     val (operationId, submitBody) = if (isResume) {
                         val lock = resumeLock ?: return@SubmitButton
                         val parsed = parseOutPoint(lock.outPointHex)
@@ -521,6 +526,7 @@ fun ShieldedFundScreen(
                                 recipientRaw43 = recipientBytes,
                             )
                         }
+                        resuming = PaymentFailure.outPoint(txid, vout)
                         "resume:${lock.outPointHex}" to body
                     } else {
                         val amountDuffs = amount ?: return@SubmitButton
@@ -546,6 +552,7 @@ fun ShieldedFundScreen(
                         recipientRaw43 = recipientBytes,
                         operationId = operationId,
                         body = submitBody,
+                        resuming = resuming,
                     )
                     when (result) {
                         is StartFundingResult.Started -> {

@@ -412,9 +412,17 @@ class FfiSmokeTest {
     @Test
     fun syncFaultDetectedSymbolBindsAndRejectsInvalidHandle() {
         NativeLoader.ensureLoaded()
-        assertThrows(DashSDKException::class.java) {
+        val thrown = assertThrows(DashSDKException::class.java) {
             WalletManagerNative.syncFaultDetected(0L)
         }
+        // A platform-wallet failure is built through the
+        // `(ILjava/lang/String;IIIZ[B)V` constructor `throw_pwffi_result`
+        // names; had the descriptor not resolved, the JNI would have fallen
+        // back to a plain RuntimeException. An invalid handle has no wallet
+        // error behind it, so it carries no class and no retry.
+        assertNull(thrown.paymentDelivery)
+        assertNull(thrown.heldAssetLock)
+        assertFalse(thrown.retryable)
     }
 
     /**

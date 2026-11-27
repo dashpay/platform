@@ -9,6 +9,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.dashfoundation.example.testing.spendUnconfirmed
+import org.dashfoundation.example.testing.broadcastUnconfirmed
 
 /**
  * How the app reports a shield from an identity's balance (type 21) and a
@@ -30,8 +32,8 @@ class ShieldedIdentityFlowsTest {
     @Test
     fun `should not offer a retry for an identity shield that may have gone through`() {
         for (error in listOf(
-            DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
-            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("not confirmed"),
+            spendUnconfirmed("not proved"),
+            broadcastUnconfirmed("not confirmed"),
         )) {
             assertEquals(ShieldedPaymentOutcome.MayHaveGoneThrough, IdentityShieldMessages.outcome(error))
         }
@@ -179,7 +181,7 @@ class ShieldedIdentityFlowsTest {
     @Test
     fun `should not offer a retry for a shielded top-up that may have gone through`() {
         val outcome = ShieldedTopUpMessages.outcome(
-            DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
+            spendUnconfirmed("not proved"),
         )
         assertEquals(ShieldedPaymentOutcome.MayHaveGoneThrough, outcome)
 

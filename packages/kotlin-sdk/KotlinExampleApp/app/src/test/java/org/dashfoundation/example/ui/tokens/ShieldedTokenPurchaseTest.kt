@@ -15,6 +15,8 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.dashfoundation.example.testing.spendUnconfirmed
+import org.dashfoundation.example.testing.broadcastUnconfirmed
 
 /**
  * What the Direct Purchase form shows and reports when paying from the
@@ -98,8 +100,8 @@ class ShieldedTokenPurchaseTest {
     @Test
     fun `reports a purchase that may have reached a node without inviting a retry`() = runTest {
         for (unconfirmed in listOf(
-            DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("result not proved"),
-            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("no answer"),
+            spendUnconfirmed("result not proved"),
+            broadcastUnconfirmed("no answer"),
         )) {
             val message = shieldedPurchaseOutcomeMessage { throw unconfirmed }
             assertSame(SHIELDED_PURCHASE_MAY_HAVE_GONE_THROUGH, message)
@@ -162,7 +164,7 @@ class ShieldedTokenPurchaseTest {
     @Test
     fun `should tell the buyer an unconfirmed purchase may have gone through`() = runTest {
         for (unconfirmed in listOf(
-            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("no result in time"),
+            broadcastUnconfirmed("no result in time"),
             DashSdkError.StateTransitionResultUnconfirmed("no result in time"),
         )) {
             val notice = identityPurchaseNotice("2.5", totalCost = 1_500_000uL) { throw unconfirmed }

@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockController.Phase
+import org.dashfoundation.example.ui.components.ReleasePaymentHoldButton
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -84,11 +85,20 @@ fun ShieldedFundProgressScreen(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.testTag("shieldedFundProgress.completed"),
                 )
-                is Phase.Failed -> Text(
-                    p.message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("shieldedFundProgress.failed"),
-                )
+                is Phase.Failed -> {
+                    Text(
+                        p.message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("shieldedFundProgress.failed"),
+                    )
+                    // A hold without a lock to resume is released only once
+                    // the user confirmed the original payment in the history;
+                    // a held lock stays on the resume path (← Swift).
+                    ReleasePaymentHoldButton(p.failure, testTagPrefix = "shieldedFundProgress") {
+                        container.shieldedFundCoordinator.release(walletId, recipient)
+                        navController.popBackStack()
+                    }
+                }
                 else -> Unit
             }
         }

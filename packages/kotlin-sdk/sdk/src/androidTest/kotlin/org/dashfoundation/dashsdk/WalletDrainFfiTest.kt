@@ -198,16 +198,16 @@ class WalletDrainFfiTest {
         val walletId = ByteArray(32) { 1 }
         val operationId = ByteArray(16) { 2 }
         assertThrows(DashSDKException::class.java) { WalletDrainNative.preview(0L, walletId, 0) }
-        assertThrows(DashSDKException::class.java) { WalletDrainNative.status(0L, walletId, operationId) }
+        assertThrows(DashSDKException::class.java) { WalletDrainNative.statusV2(0L, walletId, operationId) }
         // Arguments of the wrong size are refused before any wallet code runs.
         assertThrows(DashSDKException::class.java) { WalletDrainNative.preview(0L, ByteArray(31), 0) }
-        assertThrows(DashSDKException::class.java) { WalletDrainNative.status(0L, walletId, ByteArray(15)) }
+        assertThrows(DashSDKException::class.java) { WalletDrainNative.statusV2(0L, walletId, ByteArray(15)) }
         assertThrows(DashSDKException::class.java) { WalletDrainNative.preview(0L, walletId, -1) }
     }
 
     @Test
     fun shouldReturnAPendingOutcomeWithItsErrorWhenTheDrainCannotReachAWallet() {
-        val packed = WalletDrainNative.fundFromWalletDrain(
+        val packed = WalletDrainNative.fundFromWalletDrainV2(
             managerHandle = 0L,
             walletId = ByteArray(32) { 1 },
             operationId = ByteArray(16) { 2 },
@@ -224,7 +224,7 @@ class WalletDrainFfiTest {
         assertNotNull(outcome.error)
 
         assertThrows(DashSDKException::class.java) {
-            WalletDrainNative.fundFromWalletDrain(0L, ByteArray(32), ByteArray(15), 0, ByteArray(43), 1L)
+            WalletDrainNative.fundFromWalletDrainV2(0L, ByteArray(32), ByteArray(15), 0, ByteArray(43), 1L)
         }
     }
 }
