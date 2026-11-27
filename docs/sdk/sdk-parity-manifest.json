@@ -5526,7 +5526,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "The wallet opens a contact request's encryptedShieldedAddress when it builds the contact's account and keeps the address on the established contact. PersistentDashpayContactRequest stores the request's ciphertext and the address the wallet read (incoming row), the restore hands both back, EstablishedContact.getShieldedAddress reads the address and ContactDetailView shows it as \"Their shielded address\". DashPayPersistenceTests cover the store and the callback marshalling; no test restarts a wallet, and DP-39 has not been run against a protocol version 15 network. Nothing pays to the address yet."
+          "reason": "The wallet opens a contact request's encryptedShieldedAddress when it builds the contact's account and keeps the address on the established contact. PersistentDashpayContactRequest stores the request's ciphertext and the address the wallet read (incoming row), the restore hands both back, EstablishedContact.getShieldedAddress reads the address and ContactDetailView shows it as \"Their shielded address\". DashPayContactPersistenceTests cover the store and the callback marshalling; no test restarts a wallet, and DP-39 has not been run against a protocol version 15 network. Nothing pays to the address yet."
         },
         "kotlin": {
           "sdk": "unsupported",
@@ -5573,7 +5573,7 @@
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DashPayPersistenceTests.swift",
           "id": "testUpsertStoresTheShieldedAddressFieldsOfAContactRequest",
-          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/DashPayPersistenceTests",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/DashPayContactPersistenceTests",
           "covers_restart": false
         },
         {
