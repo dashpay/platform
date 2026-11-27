@@ -209,6 +209,39 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// The proTxHash (32 WIRE-order bytes, as `MasternodeLocateMatch.proTxHash`)
+    /// of every masternode on the current masternode list whose voting key
+    /// hash is `votingKeyId` (hash160 of the voting public key, 20 bytes).
+    ///
+    /// An empty result means either that no masternode votes with this key
+    /// or that the list is not available yet (SPV not running, masternode
+    /// sync not finished): the FFI reports both the same way, and this
+    /// wrapper does not tell them apart. Throws
+    /// `PlatformWalletError.invalidParameter` when the manager is not
+    /// configured or `votingKeyId` is not 20 bytes. Local; no network. The
+    /// native call waits on the SPV client's lock, so it runs on a detached
+    /// task.
+    public func masternodeProTxHashes(votingKeyId: Data) async throws -> [Data] {
+        guard votingKeyId.count == 20 else {
+            throw PlatformWalletError.invalidParameter("votingKeyId must be 20 bytes")
+        }
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidParameter("Manager not configured")
+        }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> [Data] in
+            try votingKeyId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> [Data] in
+                try readIdentifierArray { array in
+                    platform_wallet_manager_masternodes_by_voting_key(
+                        handle,
+                        raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        &array
+                    )
+                }
+            }
+        }.value
+    }
+
     /// Check `key` against the `role` key of masternode `proTxHash` (32
     /// WIRE-order bytes). The reference is the list entry (voting / operator
     /// / platform node) merged with the owning wallet's record (owner /
