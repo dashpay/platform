@@ -224,8 +224,12 @@ describe('readCertificateFilePair', () => {
 
     expect(certificateFile.equals(Buffer.from(pair.pem))).to.be.true();
     expect(privateKeyFile.equals(Buffer.from(pair.keyPem))).to.be.true();
-    // eslint-disable-next-line no-bitwise
-    expect(privateKeyStats.mode & 0o777).to.equal(0o640);
+
+    // Windows reports 0666 for any writable file
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      expect(privateKeyStats.mode & 0o777).to.equal(0o640);
+    }
   });
 
   // The gateway loads every block of the bundle, so a damaged one after the
