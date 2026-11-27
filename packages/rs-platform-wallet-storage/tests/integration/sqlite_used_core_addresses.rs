@@ -957,3 +957,137 @@ fn should_restore_the_derived_address_over_a_damaged_funding_row() {
     );
     assert_eq!(pool.address_index(&expected[0].address), Some(0));
 }
+
+/// A damaged funding row that carries a key, past the initial window, comes
+/// back as the derived address with the derived key, so the next build's
+/// pool snapshot repairs the stored row instead of being refused as a key
+/// conflict on every later build.
+#[test]
+fn should_repair_a_damaged_funding_row_that_carries_a_key() {
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::address_pool::{KeySource, PublicKeyType};
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE6);
+    let (wallet, mut info, manifest) = funding_test_wallet(0x4B);
+    let xpub = wallet
+        .accounts
+        .identity_topup_not_bound
+        .as_ref()
+        .expect("unbound top-up account")
+        .account_xpub;
+    register_wallet(&persister, w, manifest, Vec::new());
+    let pool = unbound_top_up_pool(&mut info);
+    let window = pool.addresses().len() as u32;
+    pool.generate_addresses(2, &KeySource::Public(xpub))
+        .unwrap();
+    let expected: Vec<_> = pool.addresses().values().cloned().collect();
+    let Some(PublicKeyType::ECDSA(wrong_key)) = expected[0].public_key.clone() else {
+        panic!("an ECDSA key");
+    };
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    // Past the window: index 0's address and key, as a damaged typed row.
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used, public_key, key_type) \
+         VALUES (?1, 'identity_topup_unbound', 0, 0, zeroblob(32), zeroblob(32), \
+                 2, ?2, ?3, 0, ?4, 0)",
+        rusqlite::params![
+            w.as_slice(),
+            i64::from(window),
+            expected[0].address.script_pubkey().as_bytes(),
+            wrong_key,
+        ],
+    )
+    .unwrap();
+    drop(conn);
+    drop(persister);
+
+    let persister = reopen(&path);
+    let state = persister.load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    let row = &pool.addresses()[&window];
+    assert_eq!(row.address, expected[window as usize].address);
+    assert_eq!(row.public_key, expected[window as usize].public_key);
+    assert!(row.is_used());
+    // What every build stores before it broadcasts.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![AccountAddressPoolEntry {
+                    account_type: AccountType::IdentityTopUpNotBoundToIdentity,
+                    pool_type: pool.pool_type(),
+                    addresses: pool.addresses().values().cloned().collect(),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("the snapshot repairs the damaged row rather than conflicting with it");
+    drop(persister);
+
+    let state = reopen(&path).load().expect("reload");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    assert_eq!(
+        pool.addresses()[&window].address,
+        expected[window as usize].address
+    );
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let stored: Vec<u8> = conn
+        .query_row(
+            "SELECT script FROM core_address_pool WHERE wallet_id = ?1 \
+             AND account_type = 'identity_topup_unbound' AND address_index = ?2",
+            rusqlite::params![w.as_slice(), i64::from(window)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        expected[window as usize].address.script_pubkey().as_bytes(),
+        "the stored row is repaired"
+    );
+}
+
+/// Under `LoadPolicy::Recovery`, a used funding row inside the initial window
+/// whose script cannot be decoded is restored as the derived address, still
+/// used, so its key is not handed out again.
+#[test]
+fn should_keep_an_unreadable_used_funding_row_used_under_recovery() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE7);
+    let (_wallet, mut info, manifest) = funding_test_wallet(0x4C);
+    register_wallet(&persister, w, manifest, Vec::new());
+    let expected = unbound_top_up_pool(&mut info).addresses()[&1]
+        .address
+        .clone();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used) \
+         VALUES (?1, 'identity_topup_unbound', 0, 0, zeroblob(32), zeroblob(32), \
+                 2, 1, x'6a', 1)",
+        rusqlite::params![w.as_slice()],
+    )
+    .unwrap();
+    drop(conn);
+    drop(persister);
+
+    let recovery = SqlitePersister::open(
+        SqlitePersisterConfig::new(&path)
+            .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
+    )
+    .unwrap();
+    let state = recovery.load().expect("tolerated under Recovery");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    assert_eq!(pool.addresses()[&1].address, expected);
+    assert!(
+        pool.addresses()[&1].is_used(),
+        "the unreadable used row's key is not handed out again"
+    );
+}

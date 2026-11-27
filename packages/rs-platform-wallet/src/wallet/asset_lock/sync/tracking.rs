@@ -143,8 +143,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// Assign the identity an unbound identity top-up lock pays, for a lock
     /// that records none (see [`TrackedAssetLock::is_unassigned_identity_top_up`]):
-    /// one rebuilt from the chain after a restore, whose credit output names
-    /// no identity. The user chooses the identity; afterwards a resume pays it
+    /// one rebuilt from the chain after a restore or recovered from a host's
+    /// record, whose credit output names no identity. The user chooses the identity; afterwards a resume pays it
     /// and refuses any other, exactly as for a lock built with a recipient.
     /// Callers outside the crate go through
     /// `IdentityWallet::assign_identity_top_up_recipient`, which first checks
@@ -153,9 +153,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Refused on a backend that cannot keep the assignment
     /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]). Only an
     /// unbound top-up lock that is not consumed can be assigned
-    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`] otherwise). One
-    /// rebuilt from the chain ([`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain)),
-    /// which Platform may already have used, is assigned only when the caller
+    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`] otherwise). Every
+    /// build of an unbound lock records its recipient, so one without a
+    /// recipient was not built with one, and Platform may already have used
+    /// it whatever its status: it is assigned only when the caller
     /// acknowledges that (`acknowledge_unknown_consumption`), and is
     /// [`PlatformWalletError::AssetLockConsumptionUnknown`] otherwise. Platform
     /// uses an outpoint once, so a lock it already used is refused there and
@@ -877,12 +878,13 @@ fn check_identity_recipient_assignable(
         ));
     }
     // A lock that already records this identity may be assigned it again; a
-    // recipient-less one rebuilt from the chain only when the caller
-    // acknowledges that Platform may already have used it.
-    if lock.identity_recipient.is_none()
-        && lock.status == AssetLockStatus::RecoveredFromChain
-        && !acknowledge_unknown_consumption
-    {
+    // recipient-less one only when the caller acknowledges that Platform may
+    // already have used it. Every build of an unbound lock records its
+    // recipient, so a lock without one was not built here with one: it was
+    // rebuilt from the chain, recovered from a host's record, or built before
+    // recipients were recorded, and whether Platform used it is unknown
+    // whatever its status.
+    if lock.identity_recipient.is_none() && !acknowledge_unknown_consumption {
         return Err(PlatformWalletError::AssetLockConsumptionUnknown(
             lock.out_point,
         ));

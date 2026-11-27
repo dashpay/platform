@@ -479,11 +479,13 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
 /// (7) and nothing is assigned; a failed lookup is
 /// `ErrorIdentityLookupFailed` (80).
 ///
-/// A lock rebuilt from the chain (status `RecoveredFromChain`, not flagged
-/// `identity_recipient_unassigned`) may already have been used on Platform,
-/// which the wallet cannot tell. It is assigned only when
-/// `acknowledge_unknown_consumption` is `true`, after the user has been told
-/// so; with `false` it is `ErrorAssetLockConsumptionUnknown` (90). Platform
+/// A lock that records no recipient was not built with one (it was rebuilt
+/// from the chain or recovered from a host's record), so it may already have
+/// been used on Platform, which the wallet cannot tell. It is assigned only
+/// when `acknowledge_unknown_consumption` is `true`, after the user has been
+/// told so; with `false` it is `ErrorAssetLockConsumptionUnknown` (90).
+/// Assigning a lock the identity it already records needs no
+/// acknowledgement. Platform
 /// uses an outpoint once: if it already used this one, the resume is refused
 /// there and reports `ErrorAssetLockAlreadyConsumed` (24), and nothing is paid
 /// twice.

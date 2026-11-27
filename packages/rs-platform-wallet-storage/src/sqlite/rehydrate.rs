@@ -228,55 +228,66 @@ pub(crate) fn restore_asset_lock_funding_pools(
     ctx: &LoadCtx,
 ) -> Result<BTreeMap<AccountType, u32>, WalletStorageError> {
     let mut entries = Vec::new();
+    // Indices whose row could neither be read nor derived again: no key at or
+    // below them may fund a lock, as for a row the shared restore cannot reach.
+    let mut unreadable_floors: Vec<(AccountType, u32)> = Vec::new();
     for (account_type, pool_type, base_path) in funding_pools(wallet_info) {
         let rows = core_pool::load_funding_pool_rows(conn, wallet_id, &account_type, pool_type)?;
         let account = wallet.accounts.account_of_type(account_type);
+        // The address and compressed key the account derives at an index.
+        let derive = |index: u32| -> Option<(dashcore::Address, Vec<u8>)> {
+            let key = account?.derive_public_key_at(pool_type, index, None).ok()?;
+            Some((dashcore::Address::p2pkh(&key, network), key.to_bytes()))
+        };
         let mut addresses = Vec::with_capacity(rows.len());
         for (index, script, public_key, mut used) in rows {
-            let script_pubkey = dashcore::ScriptBuf::from_bytes(script);
-            let address = match dashcore::Address::from_script(&script_pubkey, network) {
-                Ok(address) => address,
-                Err(e) => {
-                    // Skipped, the restore derives the index in its place.
-                    ctx.tolerate_at(
-                        LoadSite::UndecodableAddressScript,
-                        SiteCoords {
-                            wallet_id: Some(*wallet_id),
-                            account_type: &account_type,
-                            affected: 1,
-                            detail: Some(&pool_type),
-                        },
-                        WalletStorageError::from(e),
-                    )?;
-                    continue;
-                }
-            };
             let child = ChildNumber::from_normal_idx(index).map_err(|_| {
                 WalletStorageError::blob_decode(
                     "core_address_pool.address_index is not a normal child index",
                 )
             })?;
-            // A lock is paid to the stored address and signed with the key at
-            // the index's path: a row whose address that key does not derive
-            // would fund a lock the wallet cannot spend on Platform. The
-            // account's own derivation is kept instead, used, since the key
-            // the damaged row stood for may have been handed out.
-            let (address, public_key) = match account
-                .and_then(|account| account.derive_address_at(pool_type, index, None).ok())
-            {
-                Some(derived) if derived.script_pubkey() != address.script_pubkey() => {
+            let script_pubkey = dashcore::ScriptBuf::from_bytes(script);
+            // A lock is paid to the pool's address and signed with the key at
+            // the index's path, so a row is restored as the account derives
+            // it. One that cannot be decoded, or holds an address the key
+            // does not derive, is replaced by the derivation, used: the key
+            // the damaged row stood for may have been handed out. Its derived
+            // key goes with it, so the next pool snapshot stores the row
+            // repaired (`core_pool::apply_pools`).
+            let (address, public_key) = match (
+                dashcore::Address::from_script(&script_pubkey, network),
+                derive(index),
+            ) {
+                (Ok(stored), Some((derived, _))) if stored == derived => (stored, public_key),
+                (Ok(stored), None) => (stored, public_key),
+                (decoded, derived) => {
+                    if let Err(e) = decoded {
+                        ctx.tolerate_at(
+                            LoadSite::UndecodableAddressScript,
+                            SiteCoords {
+                                wallet_id: Some(*wallet_id),
+                                account_type: &account_type,
+                                affected: 1,
+                                detail: Some(&pool_type),
+                            },
+                            WalletStorageError::from(e),
+                        )?;
+                    }
+                    let Some((derived, key)) = derived else {
+                        unreadable_floors.push((account_type, index));
+                        continue;
+                    };
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         ?account_type,
                         ?pool_type,
                         index,
-                        "load: stored funding address does not match its derivation; \
+                        "load: stored funding address is unreadable or not its derivation; \
                          restoring the derived address as used"
                     );
                     used = true;
-                    (derived, None)
+                    (derived, Some(key))
                 }
-                _ => (address, public_key),
             };
             let mut path = base_path.clone();
             path.push(child);
@@ -300,8 +311,12 @@ pub(crate) fn restore_asset_lock_funding_pools(
             });
         }
     }
-    let floors =
+    let mut floors =
         restore_account_address_pools(wallet, wallet_info, entries).funding_issuance_floors;
+    for (account_type, index) in unreadable_floors {
+        let floor = floors.entry(account_type).or_insert(index);
+        *floor = (*floor).max(index);
+    }
     let paid_on_chain = funding_scripts_on_chain(records);
     if !paid_on_chain.is_empty() {
         let pools: Vec<_> = funding_pools(wallet_info)

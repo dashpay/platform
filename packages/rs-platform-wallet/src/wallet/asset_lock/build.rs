@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crate::changeset::{AssetLockRecipient, ShieldedRecipientRaw};
 use dashcore::Address as DashAddress;
-use dashcore::{OutPoint, Transaction, TxOut};
+use dashcore::{OutPoint, ScriptBuf, Transaction, TxOut};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
@@ -92,7 +92,8 @@ struct ReleasedFundingAddress {
 ///   recipients) the callback likewise runs before the row is stored and
 ///   flushed and before the lock is tracked. If that store fails, the row's
 ///   removal is stored behind it: once that removal is durable the inputs are
-///   released and the call fails with a persistence error, and nothing was
+///   released and the call fails with
+///   [`PlatformWalletError::AssetLockAbandonedBeforeSend`], and nothing was
 ///   sent; otherwise the row may come back after a restart, the inputs stay
 ///   reserved, and the call fails with
 ///   [`PlatformWalletError::TransactionBroadcastUnconfirmed`].
@@ -462,21 +463,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // index the build consumed is handed back, as for every discarded
         // build.
         if let Some(outpoint) = info.generation.in_broadcast_conflict(&result.transaction) {
-            // The pooled build reserves in EVERY contributing account's own
-            // set under the one owner token, so the release must sweep
-            // `result.funding_accounts` — the same per-account idiom as
-            // `release_reservation_after_rejected_broadcast`; accounts that
-            // supplied nothing no-op.
-            for funding_account in &result.funding_accounts {
-                if let Some(account) = info.core_wallet.accounts.funds_account(funding_account) {
-                    match result.reservation_token {
-                        Some(token) => {
-                            account.release_reservation_if_owner(&result.transaction, token)
-                        }
-                        None => account.release_reservation(&result.transaction),
-                    }
-                }
-            }
+            Self::release_discarded_build_inputs(
+                &mut info.core_wallet,
+                &result.transaction,
+                &result.funding_accounts,
+                result.reservation_token,
+            );
             // Typed and shared with the other two choke points rather than an
             // `AssetLockTransaction` string — the condition and the correct
             // caller response are identical on all three
@@ -501,21 +493,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // wallet `build_asset_lock` path, which platform-wallet does not
         // call — defensively bail if it appears.
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockCreditKeys;
-        let path = match result.keys {
-            AssetLockCreditKeys::Public(mut keys) => {
-                let (_pubkey, path) = keys.drain(..).next().ok_or_else(|| {
-                    PlatformWalletError::AssetLockTransaction(
-                        "Builder returned no credit-output keys".to_string(),
-                    )
-                })?;
-                path
-            }
+        let (credit_key, path) = match result.keys {
+            AssetLockCreditKeys::Public(mut keys) => keys.drain(..).next().ok_or_else(|| {
+                PlatformWalletError::AssetLockTransaction(
+                    "Builder returned no credit-output keys".to_string(),
+                )
+            })?,
             AssetLockCreditKeys::Private(_) => {
                 return Err(PlatformWalletError::AssetLockTransaction(
                     "Builder returned Private keys; signer-driven path expected Public".to_string(),
                 ));
             }
         };
+
+        // The credit output pays the pool's address at the index, and the
+        // lock is consumed on Platform with the key the signer derived at
+        // that index's path. A pool entry its index does not derive (a
+        // damaged stored or host row, from any loader) would fund a lock no
+        // wallet key can spend there: refused before anything is fenced or
+        // sent, its inputs released. The index stays used, so the next build
+        // takes the one after it.
+        let signed_for = ScriptBuf::new_p2pkh(&dashcore::PublicKey::new(credit_key).pubkey_hash());
+        if signed_for != funding_address.script_pubkey() {
+            Self::release_discarded_build_inputs(
+                &mut info.core_wallet,
+                &result.transaction,
+                &result.funding_accounts,
+                result.reservation_token,
+            );
+            return Err(PlatformWalletError::AssetLockTransaction(format!(
+                "the funding address {funding_address} is not the one its derivation path \
+                 {path} derives; nothing was sent, and the next asset lock uses the next address"
+            )));
+        }
 
         // FENCE THIS SELECTION IN TURN, before the write guard drops — the
         // other half of the conflict check above. Installed here rather than
@@ -545,6 +555,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             in_broadcast_pin,
             funding_pools,
         ))
+    }
+
+    /// Release the inputs a discarded build reserved, before anything was
+    /// fenced or sent. The pooled build reserves in EVERY contributing
+    /// account's own set under the one owner token, so the release sweeps
+    /// `funding_accounts`, the same per-account idiom as
+    /// `release_reservation_after_rejected_broadcast`; accounts that supplied
+    /// nothing no-op.
+    fn release_discarded_build_inputs(
+        wallet_info: &mut ManagedWalletInfo,
+        transaction: &Transaction,
+        funding_accounts: &[AccountType],
+        reservation_token: Option<key_wallet::ReservationToken>,
+    ) {
+        for funding_account in funding_accounts {
+            if let Some(account) = wallet_info.accounts.funds_account(funding_account) {
+                match reservation_token {
+                    Some(token) => account.release_reservation_if_owner(transaction, token),
+                    None => account.release_reservation(transaction),
+                }
+            }
+        }
     }
 
     /// Peek at the next unused address from a funding account without
@@ -1790,9 +1822,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     reservation_token,
                 )
                 .await;
-                return Err(PlatformWalletError::Persistence(format!(
-                    "{kind} recipient was not made durable before dispatch: {error}"
-                )));
+                return Err(PlatformWalletError::AssetLockAbandonedBeforeSend {
+                    out_point,
+                    reason: format!(
+                        "its {kind} recipient was not made durable before dispatch: {error}"
+                    ),
+                });
             }
             self.track_asset_lock(tracked, in_broadcast_pin.generation())
                 .await;
@@ -3666,6 +3701,72 @@ mod tests {
             .await
     }
 
+    /// A funding pool entry whose address its path does not derive (a
+    /// damaged stored or host row) is refused at the builder, whichever
+    /// loader put it there: the lock would pay an output no wallet key can
+    /// spend on Platform. Nothing is sent or tracked, the inputs are released,
+    /// and the next build takes the next address.
+    #[tokio::test]
+    async fn should_refuse_a_lock_whose_funding_address_its_key_does_not_derive() {
+        use crate::changeset::AssetLockRecipient;
+
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, signer) =
+            funded_asset_lock_manager_with_persistence(Arc::clone(&broadcaster), persistence).await;
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = &mut wm
+                .get_wallet_info_mut(&manager.wallet_id)
+                .unwrap()
+                .core_wallet;
+            let foreign = info
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .expect("BIP44 account 0")
+                .managed_account_type()
+                .address_pools()[0]
+                .addresses()[&0]
+                .address
+                .clone();
+            let pool = info
+                .accounts
+                .identity_topup_not_bound
+                .as_mut()
+                .expect("unbound top-up account")
+                .managed_account_type_mut()
+                .address_pools_mut()
+                .into_iter()
+                .next()
+                .expect("one pool");
+            let mut damaged = pool.addresses()[&0].clone();
+            damaged.address = foreign;
+            pool.insert(damaged)
+                .expect("the damaged entry replaces index 0");
+        }
+        let recipient = Some(AssetLockRecipient::Identity(
+            dpp::prelude::Identifier::from([0x64; 32]),
+        ));
+
+        let refused = fund_unbound_top_up(&manager, &signer, recipient).await;
+
+        assert!(
+            matches!(refused, Err(PlatformWalletError::AssetLockTransaction(ref message))
+                if message.contains("is not the one its derivation path")),
+            "{refused:?}"
+        );
+        assert_eq!(broadcaster.calls(), 0, "nothing was sent");
+        assert!(manager.list_tracked_locks().await.is_empty());
+        fund_unbound_top_up(&manager, &signer, recipient)
+            .await
+            .expect("the inputs were released and the next address builds");
+    }
+
     /// An unbound identity top-up lock is refused before anything is built
     /// when it names no identity, names something else, or the backend
     /// cannot keep its recipient across a restart: nothing is stored and
@@ -3765,7 +3866,7 @@ mod tests {
             assert_eq!(first.status, AssetLockStatus::Built);
             if fail_flush {
                 assert!(
-                    matches!(&result, Err(PlatformWalletError::Persistence(message))
+                    matches!(&result, Err(PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. })
                         if message.contains("identity recipient was not made durable")),
                     "{:?}",
                     result.as_ref().err()
@@ -3822,7 +3923,7 @@ mod tests {
         .await;
 
         assert!(
-            matches!(&result, Err(PlatformWalletError::Persistence(message))
+            matches!(&result, Err(PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. })
                 if message.contains("identity recipient was not made durable")),
             "{result:?}"
         );
@@ -3896,7 +3997,10 @@ mod tests {
             )
             .await;
             assert!(
-                matches!(&result, Err(PlatformWalletError::Persistence(_))),
+                matches!(
+                    &result,
+                    Err(PlatformWalletError::AssetLockAbandonedBeforeSend { .. })
+                ),
                 "{result:?}"
             );
         }
@@ -4105,7 +4209,7 @@ mod tests {
         });
         let result = fund(Arc::clone(&row_flush_fails)).await;
         assert!(
-            matches!(&result, Err(PlatformWalletError::Persistence(message))
+            matches!(&result, Err(PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. })
                 if message.contains("identity recipient was not made durable")
                     && !message.contains("stay reserved")),
             "{result:?}"
@@ -4136,7 +4240,7 @@ mod tests {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let result = fund(Arc::clone(&row_store_fails)).await;
         assert!(
-            matches!(&result, Err(PlatformWalletError::Persistence(message))
+            matches!(&result, Err(PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. })
                 if !message.contains("stay reserved")),
             "{result:?}"
         );
@@ -4226,7 +4330,7 @@ mod tests {
                 .generation,
         );
         manager
-            .assign_identity_top_up_recipient(out_point, identity, false, &generation)
+            .assign_identity_top_up_recipient(out_point, identity, true, &generation)
             .await
     }
 
@@ -4351,7 +4455,7 @@ mod tests {
         let stores_before = persistence.stored.lock().unwrap().len();
 
         let result = manager
-            .assign_identity_top_up_recipient(&out_point, assigned, false, &stale)
+            .assign_identity_top_up_recipient(&out_point, assigned, true, &stale)
             .await;
 
         assert!(
@@ -4948,55 +5052,79 @@ mod tests {
         );
     }
 
-    /// A lock rebuilt from the chain may already have been used on Platform,
-    /// which the wallet cannot tell: it is assigned only when the caller
-    /// acknowledges that, and refused as of unknown consumption otherwise.
-    /// Platform uses an outpoint once, so the acknowledgement cannot pay
-    /// twice; it lets the user recover a lock that is genuinely unused.
+    /// Every build of an unbound lock records its recipient, so one without a
+    /// recipient was rebuilt from the chain or recovered from a host's record
+    /// (whose status is whatever the record or proof says), and whether
+    /// Platform used it is unknown whatever its status: assigning it needs the
+    /// acknowledgement. Platform uses an outpoint once, so the acknowledgement
+    /// cannot pay twice; it lets the user recover a lock that is genuinely
+    /// unused.
     #[tokio::test]
-    async fn should_assign_a_lock_rebuilt_from_the_chain_only_when_acknowledged() {
+    async fn should_assign_a_recipient_less_lock_only_when_acknowledged() {
         let identity = dpp::prelude::Identifier::from([0x5f; 32]);
-        let persistence = Arc::new(CapturingPersistence {
-            records_identity_recipients: true,
-            commits_inline: true,
-            ..Default::default()
-        });
-        let (manager, out_point) = unassigned_top_up_lock(
-            Arc::clone(&persistence),
+        for status in [
+            AssetLockStatus::Built,
+            AssetLockStatus::Broadcast,
+            AssetLockStatus::InstantSendLocked,
+            AssetLockStatus::ChainLocked,
             AssetLockStatus::RecoveredFromChain,
-        )
-        .await;
-        let generation = Arc::clone(
-            &manager
-                .wallet_manager
-                .read()
+        ] {
+            let persistence = Arc::new(CapturingPersistence {
+                records_identity_recipients: true,
+                commits_inline: true,
+                ..Default::default()
+            });
+            let (manager, out_point) =
+                unassigned_top_up_lock(Arc::clone(&persistence), status.clone()).await;
+            let generation = Arc::clone(
+                &manager
+                    .wallet_manager
+                    .read()
+                    .await
+                    .get_wallet_info(&manager.wallet_id)
+                    .expect("wallet info")
+                    .generation,
+            );
+
+            let refused = manager
+                .assign_identity_top_up_recipient(&out_point, identity, false, &generation)
+                .await;
+            assert!(
+                matches!(refused, Err(PlatformWalletError::AssetLockConsumptionUnknown(op)) if op == out_point),
+                "{status:?}: {refused:?}"
+            );
+            assert!(
+                persistence.assigned.lock().unwrap().is_empty(),
+                "{status:?}"
+            );
+            assert_eq!(
+                manager.list_tracked_locks().await[0].identity_recipient,
+                None,
+                "{status:?}"
+            );
+
+            manager
+                .assign_identity_top_up_recipient(&out_point, identity, true, &generation)
                 .await
-                .get_wallet_info(&manager.wallet_id)
-                .expect("wallet info")
-                .generation,
-        );
+                .expect("an acknowledged assignment is recorded");
+            assert_eq!(
+                *persistence.assigned.lock().unwrap(),
+                vec![(out_point, identity)],
+                "{status:?}"
+            );
+            assert_eq!(
+                manager.list_tracked_locks().await[0].identity_recipient,
+                Some(identity),
+                "{status:?}"
+            );
 
-        let refused = manager
-            .assign_identity_top_up_recipient(&out_point, identity, false, &generation)
-            .await;
-        assert!(
-            matches!(refused, Err(PlatformWalletError::AssetLockConsumptionUnknown(op)) if op == out_point),
-            "{refused:?}"
-        );
-        assert!(persistence.assigned.lock().unwrap().is_empty());
-
-        manager
-            .assign_identity_top_up_recipient(&out_point, identity, true, &generation)
-            .await
-            .expect("an acknowledged assignment of a recovered lock is recorded");
-        assert_eq!(
-            *persistence.assigned.lock().unwrap(),
-            vec![(out_point, identity)]
-        );
-        assert_eq!(
-            manager.list_tracked_locks().await[0].identity_recipient,
-            Some(identity)
-        );
+            // The recorded identity may be assigned again without the
+            // acknowledgement: the lock records it now.
+            manager
+                .assign_identity_top_up_recipient(&out_point, identity, false, &generation)
+                .await
+                .expect("assigning the recorded identity again is a no-op");
+        }
     }
 
     /// On a backend that commits inline the assignment is a committed round
@@ -5187,17 +5315,19 @@ mod tests {
         );
     }
 
-    /// A recipient-less lock whose Platform consumption is unknown (rebuilt
-    /// from a finalized transaction after a restore) is not listed as
-    /// unassigned and cannot be assigned: Platform may have consumed it long
-    /// ago, and nothing can check. A consumed lock is refused as consumed.
-    /// Nothing is recorded or stored either way.
+    /// A recipient-less lock rebuilt from a finalized transaction after a
+    /// restore is not listed as unassigned: Platform has most likely consumed
+    /// it long ago, and nothing can check (it may still be assigned with the
+    /// acknowledgement, see
+    /// `should_assign_a_recipient_less_lock_only_when_acknowledged`). A
+    /// consumed lock is refused as consumed even with the acknowledgement, and
+    /// nothing is recorded or stored.
     #[tokio::test]
-    async fn should_refuse_to_assign_a_lock_whose_consumption_is_unknown_or_known() {
+    async fn should_refuse_to_assign_a_consumed_lock_and_not_list_a_recovered_one() {
         let identity = dpp::prelude::Identifier::from([0x5e; 32]);
-        for (status, consumed) in [
-            (AssetLockStatus::RecoveredFromChain, false),
-            (AssetLockStatus::Consumed, true),
+        for status in [
+            AssetLockStatus::RecoveredFromChain,
+            AssetLockStatus::Consumed,
         ] {
             let persistence = Arc::new(CapturingPersistence {
                 records_identity_recipients: true,
@@ -5208,23 +5338,18 @@ mod tests {
                 unassigned_top_up_lock(Arc::clone(&persistence), status.clone()).await;
             let tracked = manager.list_tracked_locks().await;
             assert!(!tracked[0].is_unassigned_identity_top_up(), "{status:?}");
+            if status != AssetLockStatus::Consumed {
+                continue;
+            }
             let stores_before = persistence.stored.lock().unwrap().len();
 
             let result = assign_on_current_generation(&manager, &out_point, identity).await;
 
-            if consumed {
-                assert!(
-                    matches!(result, Err(PlatformWalletError::AssetLockAlreadyConsumed(o))
-                        if o == out_point),
-                    "{result:?}"
-                );
-            } else {
-                assert!(
-                    matches!(result, Err(PlatformWalletError::AssetLockConsumptionUnknown(o))
-                        if o == out_point),
-                    "{result:?}"
-                );
-            }
+            assert!(
+                matches!(result, Err(PlatformWalletError::AssetLockAlreadyConsumed(o))
+                    if o == out_point),
+                "{result:?}"
+            );
             assert_eq!(
                 manager.list_tracked_locks().await[0].identity_recipient,
                 None
@@ -6278,7 +6403,7 @@ mod tests {
 
         let refused = fund().await;
         assert!(
-            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+            matches!(&refused, Err(PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. })
                 if message.contains("shielded recipient was not made durable before dispatch")),
             "{refused:?}"
         );
@@ -6348,7 +6473,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+            matches!(&refused, Err(PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. })
                 if message.contains("shielded recipient was not made durable before dispatch")
                     && !message.contains("restart")),
             "{refused:?}"

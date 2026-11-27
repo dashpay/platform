@@ -78,6 +78,22 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
           AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
     )";
 
+/// [`TYPED_POOL_CONFLICT_SQL`] for an asset-lock funding account: only a row
+/// that stores the same address (`?11`) conflicts. A stored address that is
+/// not the incoming one is a damaged row the load replaced by the account's
+/// derivation (`restore_asset_lock_funding_pools`), and the snapshot repairs
+/// it, key and address together. Funding keys derive from the account xpub,
+/// so the snapshot's are the authoritative ones.
+const FUNDING_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
+        SELECT 1 FROM core_address_pool \
+        WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+          AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+          AND pool_type = ?7 AND address_index = ?8 \
+          AND key_type IS NOT NULL AND public_key IS NOT NULL \
+          AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
+          AND script = ?11 \
+    )";
+
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
@@ -109,6 +125,7 @@ pub fn apply_pools(
         return Ok(());
     }
     let mut conflict_stmt = tx.prepare_cached(TYPED_POOL_CONFLICT_SQL)?;
+    let mut funding_conflict_stmt = tx.prepare_cached(FUNDING_POOL_CONFLICT_SQL)?;
     let mut upsert_stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
     for entry in pools {
         // `account_type` discriminates accounts that collapse to the same
@@ -156,21 +173,40 @@ pub fn apply_pools(
                     "core_address_pool.public_key has the wrong length for key_type",
                 )?;
             }
-            let conflicts = conflict_stmt.query_row(
-                params![
-                    wallet_id.as_slice(),
-                    account_type,
-                    account_index,
-                    key_class,
-                    user_identity_id.as_slice(),
-                    friend_identity_id.as_slice(),
-                    pool_type,
-                    i64::from(info.index),
-                    public_key,
-                    key_type,
-                ],
-                |row| row.get::<_, bool>(0),
-            )?;
+            let conflicts = if is_asset_lock_funding_account(&entry.account_type) {
+                funding_conflict_stmt.query_row(
+                    params![
+                        wallet_id.as_slice(),
+                        account_type,
+                        account_index,
+                        key_class,
+                        user_identity_id.as_slice(),
+                        friend_identity_id.as_slice(),
+                        pool_type,
+                        i64::from(info.index),
+                        public_key,
+                        key_type,
+                        script_pubkey.as_bytes(),
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )?
+            } else {
+                conflict_stmt.query_row(
+                    params![
+                        wallet_id.as_slice(),
+                        account_type,
+                        account_index,
+                        key_class,
+                        user_identity_id.as_slice(),
+                        friend_identity_id.as_slice(),
+                        pool_type,
+                        i64::from(info.index),
+                        public_key,
+                        key_type,
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )?
+            };
             if conflicts {
                 return Err(WalletStorageError::TypedPoolKeyConflict {
                     account_type,

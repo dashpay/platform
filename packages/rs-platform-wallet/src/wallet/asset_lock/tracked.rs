@@ -158,30 +158,30 @@ pub struct TrackedAssetLock {
     /// assigned later by the user to a lock that had none; immutable once
     /// set. A resume pays this identity and refuses any other. `None` for
     /// every other funding type, and for an unbound lock nothing recorded a
-    /// recipient for (one rebuilt from the chain after a restore): such a
-    /// lock is resumable only once a recipient is assigned, since its credit
-    /// output names no identity and it may have been meant for someone else,
-    /// and it can be assigned one only while it is unassigned (see
-    /// [`Self::is_unassigned_identity_top_up`]), not while its Platform
-    /// consumption is unknown.
+    /// recipient for (one rebuilt from the chain after a restore, or recovered
+    /// from a host's record): such a lock is resumable only once a recipient
+    /// is assigned, since its credit output names no identity and it may have
+    /// been meant for someone else, and the assignment needs the caller's
+    /// acknowledgement that Platform may already have used it.
     pub identity_recipient: Option<Identifier>,
 }
 
 impl TrackedAssetLock {
-    /// An unbound identity top-up with no recorded recipient that the wallet
-    /// knows is not consumed: its funds are recoverable (the wallet holds the
-    /// credit output's key), but the identity it was meant to pay is unknown,
-    /// so no resume pays it until the user assigns one.
+    /// An unbound identity top-up with no recorded recipient and a live
+    /// status: its funds may be recoverable (the wallet holds the credit
+    /// output's key), but the identity it was meant to pay is unknown, so no
+    /// resume pays it until the user assigns one. It was not built with a
+    /// recipient, so the assignment needs the caller's acknowledgement that
+    /// Platform may already have used it
+    /// ([`PlatformWalletError::AssetLockConsumptionUnknown`](crate::error::PlatformWalletError::AssetLockConsumptionUnknown)
+    /// otherwise).
     ///
     /// A [`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain) lock is
-    /// excluded: Platform may have consumed it long ago (every past top-up
-    /// rebuilt from the chain after a restore from the seed lands there), and
-    /// the wallet has no query that tells whether Platform used an asset-lock
-    /// outpoint. Offering it would ask the user to bind spent locks, so
-    /// assignment refuses it too
-    /// ([`PlatformWalletError::AssetLockConsumptionUnknown`](crate::error::PlatformWalletError::AssetLockConsumptionUnknown)).
-    /// The price is that a genuinely unspent restored lock stays stranded
-    /// until such a query exists; its key stays with the wallet.
+    /// excluded: Platform has most likely consumed it long ago (every past
+    /// top-up rebuilt from the chain after a restore from the seed lands
+    /// there), and the wallet has no query that tells whether Platform used an
+    /// asset-lock outpoint, so listing it would mostly offer spent locks. It
+    /// may still be assigned with the acknowledgement.
     pub fn is_unassigned_identity_top_up(&self) -> bool {
         self.funding_type == AssetLockFundingType::IdentityTopUpNotBound
             && self.identity_recipient.is_none()

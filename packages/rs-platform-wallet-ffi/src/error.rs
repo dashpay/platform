@@ -903,24 +903,29 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
     /// identity top-up lock records no identity to pay (it was rebuilt from
-    /// the chain, for example after a restore from the seed, and its credit
-    /// output names none), so no resume pays it: it may have been meant for
-    /// someone else's identity. Nothing was submitted or paid. Not retryable
-    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
-    /// is recoverable once the user assigns it a recipient
-    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
-    /// resume to that identity proceeds. One whose Platform consumption is
-    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
-    /// is refused with [`Self::ErrorAssetLockConsumptionUnknown`] (90).
+    /// the chain or recovered from a host's record, and its credit output
+    /// names none), so no resume pays it: it may have been meant for someone
+    /// else's identity. Nothing was submitted or paid. Not retryable as is.
+    /// The lock may be recoverable once the user assigns it a recipient
+    /// (`platform_wallet_assign_identity_top_up_recipient` with
+    /// `acknowledge_unknown_consumption` set, after telling the user Platform
+    /// may already have used it; without it the assignment is
+    /// [`Self::ErrorAssetLockConsumptionUnknown`] (90)), after which a resume
+    /// to that identity proceeds. The tracked-lock lists flag the likely
+    /// candidates `identity_recipient_unassigned`; a lock with status 5
+    /// (`RecoveredFromChain`) is not flagged but may be assigned the same way.
     ErrorAssetLockRecipientUnknown = 89,
     /// Maps `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
-    /// identity top-up lock that records no recipient and whose Platform
-    /// consumption is unknown (rebuilt from the chain after a restore, status
-    /// `RecoveredFromChain`) cannot be assigned a recipient, since Platform
-    /// may already have used it. Nothing was assigned; the lock stays
-    /// tracked. Distinct from [`Self::ErrorAssetLockAlreadyConsumed`] (24),
-    /// a confirmed use: this one is unknown, and the funds may still be
-    /// unspent on Platform.
+    /// identity top-up lock that records no recipient was assigned one
+    /// without `acknowledge_unknown_consumption`. Such a lock was not built
+    /// with a recipient (it was rebuilt from the chain or recovered from a
+    /// host's record), so whether Platform already used it is unknown.
+    /// Nothing was assigned; the lock stays tracked. Retryable with the
+    /// acknowledgement, once the user has been told the lock may be spent:
+    /// Platform uses an outpoint once, so a spent lock is refused there
+    /// (24 on the resume) and nothing is paid twice. Distinct from
+    /// [`Self::ErrorAssetLockAlreadyConsumed`] (24), a confirmed use: this
+    /// one is unknown, and the funds may still be unspent on Platform.
     ErrorAssetLockConsumptionUnknown = 90,
 
     /// The named thing does not exist.

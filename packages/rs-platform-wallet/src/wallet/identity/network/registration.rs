@@ -494,8 +494,10 @@ impl IdentityWallet {
     /// ([`PlatformWalletError::AssetLockAlreadyConsumed`]), and for a lock
     /// recording another identity
     /// ([`PlatformWalletError::AssetLockIdentityRecipientMismatch`]). A lock
-    /// rebuilt from the chain, which Platform may already have used, is
-    /// assigned only with `acknowledge_unknown_consumption`, and is
+    /// that records no recipient was not built with one (it was rebuilt from
+    /// the chain or recovered from a host's record), so Platform may already
+    /// have used it: it is assigned only with `acknowledge_unknown_consumption`,
+    /// and is
     /// [`PlatformWalletError::AssetLockConsumptionUnknown`] otherwise: Platform
     /// uses an outpoint once, so if it already used this one the resume is
     /// refused there and reports the lock consumed, and nothing is paid twice.

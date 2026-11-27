@@ -960,7 +960,9 @@ pub struct TrackedAssetLockEntryFFI {
     /// 3=IdentityInvitation, 4=AssetLockAddressTopUp,
     /// 5=AssetLockShieldedAddressTopUp.
     pub lock_type: u8,
-    /// 0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked.
+    /// 0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
+    /// 4=Consumed, 5=RecoveredFromChain (final on Core, Platform-side use
+    /// unknown), 6=DrainCompleted.
     pub status: u8,
     pub registration_index: u32,
     pub instant_lock_present: bool,
@@ -971,11 +973,19 @@ pub struct TrackedAssetLockEntryFFI {
     pub has_identity_recipient: bool,
     /// Valid only when `has_identity_recipient` is true (all zero otherwise).
     pub identity_recipient: [u8; 32],
-    /// An unbound identity top-up, not consumed, recording no identity
-    /// (rebuilt from the chain, for example after a restore from the seed).
-    /// No resume pays it; a host lists it for the user, who assigns a
-    /// recipient with `platform_wallet_assign_identity_top_up_recipient`,
-    /// rather than resuming it into one of the host's identities.
+    /// An unbound identity top-up recording no identity, with a live status
+    /// (0–3: recovered from a host's record or built before recipients were
+    /// recorded). No resume pays it; a host lists it for the user, who
+    /// assigns a recipient with `platform_wallet_assign_identity_top_up_recipient`,
+    /// rather than resuming it into one of the host's identities. The
+    /// assignment needs `acknowledge_unknown_consumption`, since Platform may
+    /// already have used the lock (90 without it).
+    ///
+    /// False for a recipient-less lock with status 5 (`RecoveredFromChain`),
+    /// which every past top-up rebuilt from the chain after a restore from the
+    /// seed carries and which Platform has most likely used. It may still be
+    /// assigned with the acknowledgement; a host that offers it must say the
+    /// funds may already be spent.
     pub identity_recipient_unassigned: bool,
 }
 

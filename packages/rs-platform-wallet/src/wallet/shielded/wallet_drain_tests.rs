@@ -1214,7 +1214,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         switch.store(true, Ordering::SeqCst);
         let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
-            matches!(&error, PlatformWalletError::Persistence(message)
+            matches!(&error, PlatformWalletError::AssetLockAbandonedBeforeSend { reason: message, .. }
                 if message.contains("shielded recipient was not made durable")),
             "fail_flush={fail_flush}: {error}"
         );

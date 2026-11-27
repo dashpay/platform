@@ -165,9 +165,10 @@ pub struct TrackedAssetLockSnapshot {
     /// The identity an unbound identity top-up (lock type 2) pays; a resume
     /// pays it and refuses any other (`TrackedAssetLock::identity_recipient`).
     pub identity_recipient: Option<dpp::prelude::Identifier>,
-    /// An unbound top-up that records no identity and is known not to be
-    /// consumed (never `RecoveredFromChain`, whose consumption is unknown):
-    /// no resume pays it until the user assigns a recipient
+    /// An unbound top-up that records no identity and has a live status
+    /// (never `RecoveredFromChain`, which Platform has most likely used): no
+    /// resume pays it until the user assigns a recipient, with the
+    /// acknowledgement that Platform may already have used it
     /// (`TrackedAssetLock::is_unassigned_identity_top_up`).
     pub identity_recipient_unassigned: bool,
 }

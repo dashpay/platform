@@ -174,6 +174,17 @@ pub enum PlatformWalletError {
     /// reporting a success that didn't reach disk.
     Persistence(String),
 
+    /// An asset lock was built, and its outpoint handed to the caller, but its
+    /// row could not be made durable before the broadcast. The row's removal
+    /// then was, and its inputs were released: nothing was sent, nothing can
+    /// send it, and a new call is safe. Unlike [`Self::Persistence`], which
+    /// leaves the outcome of a write open, this one is settled.
+    #[error("asset lock {out_point} was not sent and its row was removed: {reason}")]
+    AssetLockAbandonedBeforeSend {
+        out_point: dashcore::OutPoint,
+        reason: String,
+    },
+
     #[error("Contact request not found: {0}")]
     ContactRequestNotFound(Identifier),
 
@@ -530,19 +541,21 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
-    /// An unbound identity top-up lock that records no recipient cannot be
-    /// assigned one, because whether Platform already consumed it is unknown
-    /// ([`AssetLockStatus::RecoveredFromChain`](crate::wallet::asset_lock::tracked::AssetLockStatus::RecoveredFromChain)):
-    /// a lock rebuilt from a finalized transaction after a restore, which may
-    /// have topped up an identity long ago. Assigning is permanent, and no
-    /// query tells the wallet whether Platform has used an asset-lock
-    /// outpoint, so binding it could ask the user to pay an identity from a
-    /// lock that is already spent. Nothing was assigned. The FFI reports it
-    /// with the same code as [`Self::AssetLockAlreadyConsumed`]: this lock
-    /// cannot be used here.
+    /// An unbound identity top-up lock that records no recipient was assigned
+    /// one without `acknowledge_unknown_consumption`. Every build of an
+    /// unbound lock records its recipient, so one without a recipient was
+    /// rebuilt from the chain (status
+    /// [`RecoveredFromChain`](crate::wallet::asset_lock::tracked::AssetLockStatus::RecoveredFromChain)
+    /// after a restore), recovered from a host's record, or built before
+    /// recipients were recorded: whether Platform already used it is unknown,
+    /// and no query tells the wallet. Assigning is permanent, so the caller
+    /// must acknowledge that the lock may be spent; assigning again with the
+    /// acknowledgement proceeds. Platform uses an outpoint once, so a spent
+    /// lock is refused there and nothing is paid twice. Nothing was assigned.
+    /// The FFI reports it as `ErrorAssetLockConsumptionUnknown` (90).
     #[error(
         "Asset lock {0} may already have been consumed on Platform; it records no identity \
-         and cannot be assigned one"
+         and is assigned one only with the acknowledgement that it may be spent"
     )]
     AssetLockConsumptionUnknown(dashcore::OutPoint),
 
@@ -763,13 +776,13 @@ pub enum PlatformWalletError {
     },
 
     /// An unbound identity top-up lock records no recipient (it was rebuilt
-    /// from the chain, for example after a restore from the seed, and its
-    /// credit output names no identity), so no resume pays it: it may have
-    /// been meant for someone else's identity. Nothing was submitted or paid.
-    /// The funds stay recoverable: assign the lock a recipient the user
-    /// chooses, then resume it. That holds while the wallet knows the lock is
-    /// unconsumed; one whose Platform consumption is unknown cannot be
-    /// assigned ([`Self::AssetLockConsumptionUnknown`]).
+    /// from the chain or recovered from a host's record, and its credit
+    /// output names no identity), so no resume pays it: it may have been
+    /// meant for someone else's identity. Nothing was submitted or paid. The
+    /// funds may be recoverable: assign the lock a recipient the user chooses,
+    /// acknowledging that Platform may already have used it
+    /// ([`Self::AssetLockConsumptionUnknown`] without the acknowledgement),
+    /// then resume it.
     #[error("Asset lock {0} records no identity to top up; assign a recipient before resuming it")]
     AssetLockRecipientUnknown(dashcore::OutPoint),
 

@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::Identifier;
-use platform_wallet::AssetLockFunding;
+use platform_wallet::{AssetLockFunding, PlatformWalletError};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -487,7 +487,9 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 ///
 /// `out_asset_lock_outpoint` receives the outpoint of the lock this call
 /// built, on success and on failure alike (a panic included), and is all zero
-/// when nothing was built. The error code alone does not tell a failure
+/// when nothing was built, or when the lock was built but its row could not
+/// be stored and was removed with its inputs released before anything was
+/// sent: then too a new call is safe. The error code alone does not tell a failure
 /// before the build from one after it (a failed lookup and a failed Platform
 /// submit can share a code); the outpoint does. Once it is non-zero:
 ///
@@ -607,6 +609,7 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
                 wallet.sdk().network,
             )
         }));
+    let reported = Arc::clone(&built);
     let result = block_on_worker(async move {
         // SAFETY: see the fn-level safety doc — the handle is pinned alive
         // for the duration of this FFI call.
@@ -620,7 +623,7 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
         // Runs before the lock's row is stored or the lock is broadcast, so
         // the outpoint is recorded for every failure after the build.
         let on_built = move |out_point: dashcore::OutPoint| {
-            *built.lock().unwrap_or_else(|e| e.into_inner()) = Some(out_point);
+            *reported.lock().unwrap_or_else(|e| e.into_inner()) = Some(out_point);
         };
         identity_wallet
             .top_up_external_identity_with_funding(
@@ -635,6 +638,12 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
             )
             .await
     });
+    // A lock built and then removed with its inputs released was never sent
+    // and cannot be: the outpoint is withdrawn, so the host reads all zero,
+    // "nothing was built, a new call is safe", not "reconcile this outpoint".
+    if let Err(PlatformWalletError::AssetLockAbandonedBeforeSend { .. }) = &result {
+        *built.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
     *out_new_balance = unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
 }
