@@ -4,8 +4,10 @@ import ConfigSetCommand from '../../../../src/commands/config/set.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
+import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
 import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
 import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
+import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
 import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
 import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
 
@@ -245,6 +247,57 @@ describe('Config set command', () => {
         id: deriveTenderdashNodeId(operatorKey),
         key: operatorKey,
       });
+    });
+
+    it('should keep refreshing stock seeds after an operator changes the identity', async function changeIdentity() {
+      const node = seedNode({ masternode: true, platform: true });
+      const keyA = generateTenderdashNodeKey();
+      const keyB = generateTenderdashNodeKey();
+      const peerA = { id: deriveTenderdashNodeId(keyA), host: '192.0.2.1', port: 26656 };
+      const peerB = { id: deriveTenderdashNodeId(keyB), host: '192.0.2.2', port: 26656 };
+      const oldSeeds = [peerA, peerB];
+      const customSeeds = [{ ...peerB, port: 27656 }];
+      const defaults = { seeds: oldSeeds, previousSeedSetHashes: [] };
+      this.sinon.stub(tenderdashSeeds, 'mainnet').value(defaults);
+
+      const configFilePath = homeDir.joinPath('config.json');
+      const readSaved = () => JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      const data = readSaved();
+      const { configs } = data;
+      configs.node1.network = 'mainnet';
+      const { tenderdash } = configs.node1.platform.drive;
+      tenderdash.node = { id: peerA.id, key: keyA };
+      tenderdash.p2p.seeds = [peerB];
+      configs.custom = structuredClone(configs.node1);
+      const customTenderdash = configs.custom.platform.drive.tenderdash;
+      customTenderdash.p2p.seeds = customSeeds;
+      fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+      const nodePath = 'platform.drive.tenderdash.node';
+      for (const name of ['node1', 'custom']) {
+        const target = name === 'node1' ? node : configFileRepository.read().getConfig(name);
+        await runOn(target, `${nodePath}.id`, peerB.id);
+        await runOn(target, `${nodePath}.key`, keyB);
+      }
+      const savedBeforeRotation = readSaved().configs;
+
+      const newPeer = { id: 'c'.repeat(40), host: '192.0.2.3', port: 26656 };
+      defaults.seeds = [...oldSeeds, newPeer];
+      defaults.previousSeedSetHashes = [seedSetHash(oldSeeds), seedSetHash([peerB], peerA.id)];
+
+      let rendered;
+      configFileRepository.readAndMigrate({}, (changedConfigs) => {
+        expect(changedConfigs.map(changed => changed.getName())).to.deep.equal(['node1']);
+        const [changed] = changedConfigs;
+        rendered = render(changed)['platform/drive/tenderdash/config.toml'];
+      });
+
+      const saved = readSaved().configs;
+      expect(saved.node1.platform.drive.tenderdash.p2p.seeds).to.deep.equal(defaults.seeds);
+      expect(savedBeforeRotation.node1.platform.drive.tenderdash.p2p.seeds).to.deep.equal(oldSeeds);
+      expect(saved.custom.platform.drive.tenderdash.p2p.seeds).to.deep.equal(customSeeds);
+      expect(rendered?.split('\n'))
+        .to.include(`bootstrap-peers = "${peerA.id}@192.0.2.1:26656,${newPeer.id}@192.0.2.3:26656"`);
     });
 
     it('should complete the identity when a platform node leaves masternode mode', async () => {

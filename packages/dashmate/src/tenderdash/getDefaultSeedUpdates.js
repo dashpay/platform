@@ -1,4 +1,5 @@
 import tenderdashSeeds from '../../configs/defaults/tenderdashSeeds.js';
+import filterTenderdashSeeds, { getTenderdashSeedNodeIds } from './filterTenderdashSeeds.js';
 import seedSetHash from './seedSetHash.js';
 
 /**
@@ -16,17 +17,19 @@ export default function getDefaultSeedUpdates(configs) {
     if (!Array.isArray(seeds) || seeds.some(seed => !seed || typeof seed !== 'object')) {
       return [];
     }
-    const defaults = tenderdashSeeds[options.network];
-    const nodeId = tenderdash.node?.id;
-    const currentSeeds = defaults.seeds.filter(seed => seed.id !== nodeId);
+    const { seeds: currentSeeds, previousSeedSetHashes } = tenderdashSeeds[options.network];
     const hash = seedSetHash(seeds);
     if (hash === seedSetHash(currentSeeds)) {
       return [];
     }
 
-    const isStock = hash === seedSetHash(defaults.seeds)
-      || defaults.previousSeedSetHashes.includes(hash)
-      || (nodeId && defaults.previousSeedSetHashes.includes(seedSetHash(seeds, nodeId)));
+    // The stored list stays full so a subsequent node key or ID change cannot
+    // make it look like a custom list. Recover older lists tied to either ID.
+    const isStock = previousSeedSetHashes.includes(hash)
+      || getTenderdashSeedNodeIds(tenderdash.node).some(nodeId => (
+        previousSeedSetHashes.includes(seedSetHash(seeds, nodeId))
+        || hash === seedSetHash(filterTenderdashSeeds(currentSeeds, nodeId))
+      ));
     return isStock ? [[name, structuredClone(currentSeeds)]] : [];
   });
 }

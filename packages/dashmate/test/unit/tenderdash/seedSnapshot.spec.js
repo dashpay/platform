@@ -64,7 +64,7 @@ describe('quorum-server Tenderdash seeds', () => {
     expect(random.callCount).to.equal(24);
   });
 
-  it('should refresh a historical stock set without self only for the omitted node', () => {
+  it('should restore full stock seeds only for the owner of a filtered historical list', () => {
     response.data = response.data.slice(0, 5);
     const first = generateSnapshot(response, 'mainnet', previous, NOW);
     const [self, ...seeds] = first.seeds;
@@ -83,7 +83,7 @@ describe('quorum-server Tenderdash seeds', () => {
         owner: config(self.id),
         other: config(seeds[0].id),
         unset: config(null),
-      })).to.deep.equal([['owner', latest.seeds.slice(1)]]);
+      })).to.deep.equal([['owner', latest.seeds]]);
     } finally {
       tenderdashSeeds.mainnet = original;
     }

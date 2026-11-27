@@ -3,7 +3,7 @@ import renderServiceTemplatesFactory from '../../../src/templates/renderServiceT
 import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.js';
 import deriveTenderdashNodeId from '../../../src/tenderdash/deriveTenderdashNodeId.js';
 import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
-import validateTenderdashNodeKey from '../../../src/listr/prompts/validators/validateTenderdashNodeKey.js';
+import validateTenderdashNodeKey from '../../../src/tenderdash/validateTenderdashNodeKey.js';
 import Config from '../../../src/config/Config.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';

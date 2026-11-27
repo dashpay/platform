@@ -59,9 +59,15 @@ tests need no live server.
 ## Existing installations
 
 Generation retains fingerprints of previous stock seed sets. On load, Dashmate
-replaces any complete historical stock set, including reordered or duplicated
-entries, with current defaults. Custom, partial, empty, and other-network lists
-remain unchanged. Keep this history so upgrades can skip releases.
+restores the full current defaults if the stored list matches a historical
+stock set or a known stock set with only the node's own entry omitted. The
+omitted entry must match the saved node ID or the ID derived from its key.
+Custom lists and other partial lists remain unchanged. Keep this history so
+upgrades can skip releases.
+
+Dashmate stores all default peers so seed updates continue after a node ID or
+key change. When rendering `bootstrap-peers`, Dashmate omits the local node from
+both default and custom lists.
 
 Updates render and save under the configuration lock; failed rendering leaves the
 old configuration on disk for retry. Installed nodes receive refreshed seeds when
