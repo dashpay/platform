@@ -2103,10 +2103,11 @@ impl ShieldedStore for FileBackedShieldedStore {
         // wallet_id — SQL before memory, so an Err return means neither
         // store was touched (fail-atomic) rather than a memory purge
         // the caller can't distinguish from a no-op.
-        // The wallet's saved spends, the recipients it confirmed for its tips
-        // and its kept identity accounts go in one transaction, and the caches
-        // follow once it committed. The token pool rows go last in their own
-        // transaction: a failure there leaves only public pool state behind.
+        // The wallet's saved spends, the recipients it confirmed for its tips,
+        // its kept identity accounts and its token pool notes go in one
+        // transaction, and the caches follow once it committed. The pools no
+        // wallet watches any more go last: a failure there leaves only public
+        // pool state behind.
         {
             let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
             let tx = conn
@@ -2129,6 +2130,9 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge identity accounts for wallet: {e}"))
             })?;
+            super::token_pool::purge_wallet(&tx, wallet_id).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
+            })?;
             tx.commit().map_err(|e| {
                 FileShieldedStoreError::Storage(format!("commit wallet purge: {e}"))
             })?;
@@ -2144,15 +2148,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         // The wallet's recovery rows, damaged ones included, are deleted above.
         self.unloaded_note_spends.remove(&Some(wallet_id));
         self.kept_identity_accounts.remove(&wallet_id);
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
-        let tx = conn
-            .transaction()
-            .map_err(|e| FileShieldedStoreError::Storage(format!("begin token pool purge: {e}")))?;
-        super::token_pool::purge_wallet(&tx, wallet_id).map_err(|e| {
-            FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
-        })?;
-        tx.commit()
-            .map_err(|e| FileShieldedStoreError::Storage(format!("commit token pool purge: {e}")))
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        super::token_pool::purge_unwatched_pools(&conn).map_err(|e| {
+            FileShieldedStoreError::Storage(format!("drop unwatched token pools: {e}"))
+        })
     }
 
     fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
@@ -3356,35 +3355,63 @@ mod tests {
             .expect("count")
     }
 
-    /// An account purge or a Clear's purge whose token pool step fails deletes
-    /// nothing. A wallet purge still deletes the removed wallet's private rows
-    /// and reports the token pool failure.
+    fn seed_wallet_rows(
+        store: &mut FileBackedShieldedStore,
+        id: SubwalletId,
+        accounts: &BTreeSet<u32>,
+    ) {
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: [0x01; 32],
+                    anchor: [0x22; 32],
+                    nullifiers: vec![[0x0C; 32]],
+                    st_bytes: vec![0xCD; 32],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    spend_context: None,
+                    anchor_height: None,
+                },
+            )
+            .expect("arm");
+        store
+            .keep_identity_accounts(id.wallet_id, accounts)
+            .expect("keep");
+        store
+            .pending_conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO shielded_token_pool_notes \
+                 (wallet_id, account_index, token_id, position, cmx, nullifier, value, \
+                  note_data, block_height) \
+                 VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 10)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    [0x7Au8; 32].as_slice(),
+                    [0x01u8; 32].as_slice(),
+                    [0x0Du8; 32].as_slice(),
+                    500u64.to_le_bytes().as_slice(),
+                    [0u8; 115].as_slice(),
+                ],
+            )
+            .expect("token note");
+    }
+
+    /// A purge whose own deletes fail deletes nothing: the recovery row and
+    /// kept identity accounts stay on disk and in memory, for an account
+    /// purge, a wallet purge and a Clear's purge of every wallet.
     #[test]
-    fn should_keep_account_rows_on_a_failed_purge_and_drop_a_removed_wallets_private_rows() {
+    fn should_keep_every_recovery_row_when_a_purge_fails_part_way() {
         let path = temp_tree_path("purge_fails_part_way");
         let id = SubwalletId::new([0xC3; 32], 0);
         let identity_accounts = BTreeSet::from([0x4000_0002]);
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
-            store
-                .arm_redrive(
-                    id,
-                    PendingRedrive {
-                        activity_id: [0x01; 32],
-                        anchor: [0x22; 32],
-                        nullifiers: vec![[0x0C; 32]],
-                        st_bytes: vec![0xCD; 32],
-                        attempts: 0,
-                        identity_nonce_finalized: false,
-                        identity_user_abandoned: false,
-                        spend_context: None,
-                        anchor_height: None,
-                    },
-                )
-                .expect("arm");
-            store
-                .keep_identity_accounts(id.wallet_id, &identity_accounts)
-                .expect("keep");
+            seed_wallet_rows(&mut store, id, &identity_accounts);
             store
                 .pending_conn
                 .lock()
@@ -3393,6 +3420,7 @@ mod tests {
                 .expect("drop");
 
             assert!(store.purge_subwallet(id).is_err());
+            assert!(store.purge_wallet(id.wallet_id).is_err());
             assert!(store.purge_all_subwallets().is_err());
             assert_eq!(store.pending_redrives(id).expect("redrives").len(), 1);
             assert_eq!(
@@ -3401,13 +3429,38 @@ mod tests {
             );
             assert_eq!(count_rows(&store, "shielded_pending_spends"), 1);
             assert_eq!(count_rows(&store, "shielded_identity_accounts"), 1);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A wallet purge whose cleanup of the pools no wallet watches fails still
+    /// deletes the removed wallet's private rows, its token notes included,
+    /// and reports the failure.
+    #[test]
+    fn should_drop_a_removed_wallets_private_rows_when_the_pool_cleanup_fails() {
+        let path = temp_tree_path("purge_pool_cleanup_fails");
+        let id = SubwalletId::new([0xC4; 32], 0);
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            seed_wallet_rows(&mut store, id, &BTreeSet::from([0x4000_0002]));
+            assert_eq!(count_rows(&store, "shielded_token_pool_notes"), 1);
+            store
+                .pending_conn
+                .lock()
+                .unwrap()
+                .execute("DROP TABLE shielded_token_pool_leaves", [])
+                .expect("drop");
 
             assert!(store.purge_wallet(id.wallet_id).is_err());
             assert!(store.pending_redrives(id).expect("redrives").is_empty());
             assert_eq!(store.kept_identity_accounts().get(&id.wallet_id), None);
         }
         let conn = rusqlite::Connection::open(&path).expect("reopen");
-        for table in ["shielded_pending_spends", "shielded_identity_accounts"] {
+        for table in [
+            "shielded_pending_spends",
+            "shielded_identity_accounts",
+            "shielded_token_pool_notes",
+        ] {
             let rows: i64 = conn
                 .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                     row.get(0)

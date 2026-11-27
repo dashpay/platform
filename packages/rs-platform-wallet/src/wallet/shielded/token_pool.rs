@@ -415,8 +415,13 @@ pub(super) fn remove_watch(
     Ok(())
 }
 
-/// Drop the leaves and scan state of every pool no wallet watches.
 fn drop_unwatched_pools(conn: &Connection) -> Result<(), PlatformWalletError> {
+    purge_unwatched_pools(conn).map_err(storage("drop unwatched pools"))
+}
+
+/// Drop the leaves and scan state of every pool no wallet watches. These are
+/// public pool state, shared by every wallet watching the pool.
+pub(super) fn purge_unwatched_pools(conn: &Connection) -> rusqlite::Result<()> {
     for table in ["shielded_token_pool_scans", "shielded_token_pool_leaves"] {
         conn.execute(
             &format!(
@@ -424,13 +429,13 @@ fn drop_unwatched_pools(conn: &Connection) -> Result<(), PlatformWalletError> {
                  (SELECT token_id FROM shielded_token_pool_watches)"
             ),
             [],
-        )
-        .map_err(storage("drop unwatched pools"))?;
+        )?;
     }
     Ok(())
 }
 
-/// Drop everything kept for `wallet_id`, as its removal does.
+/// Drop the watches, watermarks and notes kept for `wallet_id`, as its
+/// removal does. [`purge_unwatched_pools`] then drops the pools it left.
 pub(super) fn purge_wallet(tx: &Transaction<'_>, wallet_id: WalletId) -> rusqlite::Result<()> {
     for table in [
         "shielded_token_pool_watches",
@@ -440,15 +445,6 @@ pub(super) fn purge_wallet(tx: &Transaction<'_>, wallet_id: WalletId) -> rusqlit
         tx.execute(
             &format!("DELETE FROM {table} WHERE wallet_id = ?1"),
             params![wallet_id.as_slice()],
-        )?;
-    }
-    for table in ["shielded_token_pool_scans", "shielded_token_pool_leaves"] {
-        tx.execute(
-            &format!(
-                "DELETE FROM {table} WHERE token_id NOT IN \
-                 (SELECT token_id FROM shielded_token_pool_watches)"
-            ),
-            [],
         )?;
     }
     Ok(())
