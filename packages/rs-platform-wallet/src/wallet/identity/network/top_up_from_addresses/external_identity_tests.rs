@@ -1168,8 +1168,11 @@ async fn should_keep_an_unpromoted_sdk_error_typed() {
 
     let error = fixture.top_up().await.expect_err("the address is short");
 
+    // Refused while signing, before any dispatch: `NotSent`, the diagnostic
+    // kept.
+    assert_eq!(error.payment_delivery(), crate::PaymentDelivery::NotSent);
     assert!(
-        matches!(&error, PlatformWalletError::Sdk(e) if matches!(
+        matches!(error.dispatched_source(), PlatformWalletError::Sdk(e) if matches!(
             e.consensus_error(),
             Some(ConsensusError::StateError(StateError::AddressNotEnoughFundsError(_)))
         )),
@@ -1234,10 +1237,16 @@ async fn should_refuse_an_oversized_top_up_as_not_sent_on_every_route() {
                 .await
         };
 
+        let error = result.expect_err("the signed top-up is oversized");
+        assert_eq!(
+            error.payment_delivery(),
+            crate::PaymentDelivery::NotSent,
+            "managed {managed}"
+        );
         assert!(
-            matches!(&result, Err(PlatformWalletError::Sdk(e))
+            matches!(error.dispatched_source(), PlatformWalletError::Sdk(e)
                 if as_state_transition_max_size_exceeded(e).is_some()),
-            "managed {managed}: got {result:?}"
+            "managed {managed}: got {error:?}"
         );
         assert_eq!(signer.0.load(Ordering::SeqCst), 1, "managed {managed}");
         let recipient = if managed {

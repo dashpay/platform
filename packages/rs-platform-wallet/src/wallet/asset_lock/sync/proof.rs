@@ -2516,6 +2516,20 @@ mod chain_lock_wait_tests {
         type Outcome = Result<(Result<u32, dash_sdk::Error>, AssetLockProof), PlatformWalletError>;
 
         async fn run(script: Vec<Result<u32, dash_sdk::Error>>) -> (Ctx, Outcome, Vec<Call>) {
+            run_within(script, Duration::from_secs(5), |ctx| {
+                ctx.instant_proof.clone()
+            })
+            .await
+        }
+
+        /// [`run`] with `bound` on the (paused) time the call may take (the
+        /// ChainLock height retry sleeps between its attempts), starting from
+        /// the proof `first` gives for the tracked outpoint.
+        async fn run_within(
+            script: Vec<Result<u32, dash_sdk::Error>>,
+            bound: Duration,
+            first: impl FnOnce(&Ctx) -> AssetLockProof,
+        ) -> (Ctx, Outcome, Vec<Call>) {
             let locator = ScriptedLocator::new(vec![mined(100)]);
             let store = Arc::new(FakeRecordStore::with_records([]));
             let ctx = ctx_with_persister(
@@ -2534,6 +2548,7 @@ mod chain_lock_wait_tests {
             let script = Mutex::new(VecDeque::from(script));
             let calls: Mutex<Vec<Call>> = Mutex::new(Vec::new());
             let out_point = ctx.out_point;
+            let first = first(&ctx);
             let submit = |proof: AssetLockProof, _settings: Option<PutSettings>| {
                 let stored_chain_locked = store
                     .stored
@@ -2552,14 +2567,9 @@ mod chain_lock_wait_tests {
                 async move { result }
             };
             let result = tokio::time::timeout(
-                Duration::from_secs(5),
-                ctx.manager.submit_with_chain_lock_fallback(
-                    ctx.instant_proof.clone(),
-                    None,
-                    None,
-                    "test",
-                    submit,
-                ),
+                bound,
+                ctx.manager
+                    .submit_with_chain_lock_fallback(first, None, None, "test", submit),
             )
             .await
             .expect("resolves without waiting");
@@ -2587,6 +2597,121 @@ mod chain_lock_wait_tests {
                 "the ChainLock row is stored before the resubmit"
             );
             assert_eq!(effective, calls[1].0);
+        }
+
+        /// After the InstantSend attempt, a resubmit the SDK refuses as never
+        /// sent (the signer's key missing) is reported as the unconfirmed
+        /// outcome of the earlier attempt: `MaybeSent`, so the funded-lock
+        /// seam names no held lock for a lock that attempt may have spent.
+        #[tokio::test(start_paused = true)]
+        async fn should_report_a_never_sent_resubmit_as_the_earlier_attempts_unconfirmed_outcome() {
+            let key_unavailable = || {
+                dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                    "{}no key",
+                    crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+                )))
+            };
+            assert_eq!(
+                PlatformWalletError::Sdk(key_unavailable()).payment_delivery(),
+                crate::PaymentDelivery::NotSent
+            );
+            let (_ctx, result, calls) = run(vec![Err(oversized()), Err(key_unavailable())]).await;
+
+            assert_eq!(calls.len(), 2);
+            let (submitted, _) = result.expect("no local error");
+            let error = submitted.expect_err("the resubmit is refused");
+            assert!(error.is_state_transition_result_unconfirmed(), "{error:?}");
+            let error = PlatformWalletError::Sdk(error);
+            assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
+            let out_point =
+                crate::wallet::asset_lock::orchestration::out_point_from_proof(&calls[0].0);
+            assert_eq!(
+                crate::wallet::asset_lock::orchestration::hold_resumable_lock(
+                    error,
+                    Some(out_point)
+                )
+                .held_asset_lock(),
+                None
+            );
+        }
+
+        fn key_unavailable() -> dash_sdk::Error {
+            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                "{}no key",
+                crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+            )))
+        }
+
+        /// Platform's refusal of the proof's ChainLock height (10506), which
+        /// the SDK retries re-signed.
+        fn cl_height_too_low() -> dash_sdk::Error {
+            use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
+            use dpp::consensus::basic::BasicError;
+            dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+                ConsensusError::BasicError(BasicError::InvalidAssetLockProofCoreChainHeightError(
+                    InvalidAssetLockProofCoreChainHeightError::new(100, 99),
+                )),
+            )))
+        }
+
+        /// The held lock a funded flow would report for `error`.
+        fn held_lock(error: dash_sdk::Error, calls: &[Call]) -> Option<OutPoint> {
+            let out_point =
+                crate::wallet::asset_lock::orchestration::out_point_from_proof(&calls[0].0);
+            crate::wallet::asset_lock::orchestration::hold_resumable_lock(
+                PlatformWalletError::Sdk(error),
+                Some(out_point),
+            )
+            .held_asset_lock()
+        }
+
+        /// The rule holds for the ChainLock height retry as for the fallback:
+        /// after Platform refused one signed attempt (10506), a re-signed
+        /// attempt the signer refuses is that attempt's unconfirmed outcome,
+        /// and no held lock is named. Platform raises 10506 for a ChainLock
+        /// proof above its committed Core height, so the funding starts from
+        /// one, and the retry resubmits that same proof.
+        #[tokio::test(start_paused = true)]
+        async fn should_report_a_never_sent_height_retry_as_the_refused_attempts_unconfirmed_outcome(
+        ) {
+            let (ctx, result, calls) = run_within(
+                vec![Err(cl_height_too_low()), Err(key_unavailable())],
+                Duration::from_secs(600),
+                |ctx| chain_proof_at(ctx, 140),
+            )
+            .await;
+
+            assert_eq!(calls.len(), 2);
+            let chain_proof = chain_proof_at(&ctx, 140);
+            assert_eq!(
+                calls[0].0, chain_proof,
+                "the first attempt carries the ChainLock proof"
+            );
+            assert_eq!(calls[1].0, chain_proof, "the height retry resubmits it");
+            let error = result
+                .expect("no local error")
+                .0
+                .expect_err("the re-signed attempt is refused");
+            assert!(error.is_state_transition_result_unconfirmed(), "{error:?}");
+            assert_eq!(held_lock(error, &calls), None);
+        }
+
+        /// A call whose only attempt the SDK refused as never sent keeps that
+        /// class, so the funded-lock seam still names the lock as held.
+        #[tokio::test(start_paused = true)]
+        async fn should_keep_a_never_sent_first_attempt_resumable() {
+            let (_ctx, result, calls) = run(vec![Err(key_unavailable())]).await;
+
+            assert_eq!(calls.len(), 1);
+            let error = result
+                .expect("no local error")
+                .0
+                .expect_err("the attempt is refused");
+            assert!(!error.is_state_transition_result_unconfirmed(), "{error:?}");
+            assert_eq!(
+                held_lock(error, &calls),
+                Some(crate::wallet::asset_lock::orchestration::out_point_from_proof(&calls[0].0))
+            );
         }
 
         /// A failed resubmit leaves the lock tracked at `ChainLocked` with the

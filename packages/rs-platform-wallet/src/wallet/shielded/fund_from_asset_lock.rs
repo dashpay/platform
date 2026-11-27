@@ -56,6 +56,7 @@ use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
+use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::asset_lock::AssetLockOperationState;
 
 use std::future::Future;
@@ -110,6 +111,16 @@ pub(crate) fn ensure_shield_batch_fits(
     Ok(())
 }
 
+/// What the funded phase of [`PlatformWallet::shielded_fund_from_asset_lock`]
+/// hands to the bookkeeping that follows Platform's acceptance.
+struct FundedShield<T> {
+    landed: T,
+    drain_operation_id: Option<[u8; 16]>,
+    proof_out_point: OutPoint,
+    asset_lock_value_credits: Credits,
+    pool_fee_credits: Credits,
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
     ///
@@ -130,7 +141,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<Option<T>, PlatformWalletError> {
         if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
             if is_asset_lock_already_consumed(error, out_point) {
-                self.complete_wallet_drain(*out_point, operation_id).await?;
+                // Platform consumed the lock: whatever fails while recording
+                // that is never `NotSent`, and the lock is not the way on.
+                self.complete_wallet_drain(*out_point, operation_id)
+                    .await
+                    .map_err(|e| e.after_dispatch().without_held_lock())?;
                 return Ok(None);
             }
         }
@@ -212,6 +227,14 @@ impl PlatformWallet {
     /// * `on_asset_lock_built` — Receives the outpoint of a newly built
     ///   asset lock before its row is persisted or it is broadcast; see
     ///   [`AssetLockBuiltObserver`]. Not called on resume.
+    ///
+    /// A batch no proof can carry is refused before anything is funded. On a
+    /// fresh lock (wallet balance, account or wallet drain) that refusal is
+    /// `NotSent` and arrives wrapped in
+    /// [`PlatformWalletError::RefusedBeforeDispatch`]: match the diagnostic on
+    /// [`PlatformWalletError::dispatched_source`], and read delivery and retry
+    /// from the outer error. On a resumed lock it keeps its own class, since
+    /// an earlier attempt may have used the lock.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
@@ -269,15 +292,29 @@ impl PlatformWallet {
             .await;
         if let Some(operation) = operation {
             let snapshot = operation.snapshot();
-            if result.is_ok() {
-                operation.set(AssetLockOperationState::Completed, snapshot.out_point);
-            } else if snapshot.out_point.is_none() {
-                // Every possibly durable or dispatched lock records its
-                // outpoint first. A returned pre-build error proves no send.
-                operation.set(AssetLockOperationState::NotSent, None);
+            match result {
+                Ok(()) => {
+                    operation.set(AssetLockOperationState::Completed, snapshot.out_point);
+                    Ok(())
+                }
+                Err(error) if snapshot.out_point.is_none() => {
+                    // Every possibly durable or dispatched lock records its
+                    // outpoint first. A returned pre-build error proves no send.
+                    operation.set(AssetLockOperationState::NotSent, None);
+                    Err(error)
+                }
+                // The operation stays Pending on its lock, so its error is
+                // never `NotSent`: the lock is named as held only for a
+                // refusal that proves nothing reached Platform while it is
+                // resumable, `MaybeSent` otherwise.
+                Err(error) => Err(self
+                    .asset_locks
+                    .funded_lock_error(error, snapshot.out_point)
+                    .await),
             }
+        } else {
+            result
         }
-        result
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -304,7 +341,16 @@ impl PlatformWallet {
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         // A batch no proof can carry is refused first: on every funding path (wallet balance,
         // account or wallet drain, resume) nothing is funded, reserved or awaited for it.
-        ensure_shield_batch_fits(num_actions, self.sdk.version())?;
+        // For a fresh lock that proves nothing was sent; a resumed lock may have been used
+        // by an earlier attempt, so its refusal keeps the conservative class.
+        ensure_shield_batch_fits(num_actions, self.sdk.version()).map_err(
+            |error| match &funding {
+                AssetLockFunding::FromWalletBalance { .. }
+                | AssetLockFunding::DrainWalletBalance { .. }
+                | AssetLockFunding::DrainAccountBalance { .. } => error.before_dispatch(),
+                AssetLockFunding::FromExistingAssetLock { .. } => error,
+            },
+        )?;
         // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
         // SAME flat fee consensus charges (`transform_into_action` Step 3b).
         // The initial protocol-version snapshot sizes a fresh lock and prices
@@ -330,8 +376,20 @@ impl PlatformWallet {
         // the caller's, as before.
         let recipient = match &funding {
             AssetLockFunding::FromExistingAssetLock { out_point, .. } => {
-                let recorded = self.asset_locks.tracked_shielded_recipient(out_point).await;
-                resume_recipient(*out_point, recorded, requested_recipient)?
+                // Status and recipient from one snapshot: a consumed row is
+                // refused as consumed, and a mismatch names the lock as held
+                // only while the status says a resume can take it on.
+                let status = self
+                    .asset_locks
+                    .tracked_resume_metadata(out_point)
+                    .await
+                    .map(|(_, _, status, recipient)| (status, recipient));
+                match status {
+                    Some((status, recorded)) => {
+                        resume_recipient(*out_point, &status, recorded, requested_recipient)?
+                    }
+                    None => requested_recipient,
+                }
             }
             _ => requested_recipient,
         };
@@ -350,21 +408,18 @@ impl PlatformWallet {
         // resume path, where the lock is already on-chain and the
         // sizing decision was made by a prior caller. Here we only
         // protect the fresh-build path.
+        //
+        // Nothing is built yet, so the refusal is `NotSent`: the requested
+        // amount is below the smallest whole-duff lock whose value clears the
+        // pool fee (the floor the drain paths below use), compared in duffs so
+        // no credits conversion can overflow. It is a refusal of the requested
+        // amount, not a coin-selection shortfall: no funds were measured.
         if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
-            let lock_credits = (*amount_duffs)
-                .checked_mul(CREDITS_PER_DUFF)
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "asset lock amount overflows credits conversion ({amount_duffs} duffs * \
-                     {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
-                    ))
-                })?;
-            if lock_credits <= pool_fee_credits {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
-                     below the ShieldFromAssetLock pool fee ({pool_fee_credits} credits = \
-                     shielded fee + asset_lock_base_cost) — refusing to broadcast a single-use \
-                     L1 outpoint that would be unrecoverable on resume"
+            let required = pool_fee_credits / CREDITS_PER_DUFF + 1;
+            if *amount_duffs < required {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "shield amount {amount_duffs} duffs is below the minimum {required} duffs \
+                     that covers the ShieldFromAssetLock pool fee"
                 )));
             }
         }
@@ -449,9 +504,19 @@ impl PlatformWallet {
         // Halo 2 work never occupy an async worker. Dropping the handle on
         // any exit cancels a proof that is still queued; a running one can't
         // be interrupted, and its result is dropped.
+        #[cfg(test)]
+        let fail_proof = Arc::clone(&self.fail_shield_from_asset_lock_proof);
         let spawn_proof = |out_point, shield_amount, platform_version: &'static PlatformVersion| {
             let sender_ovk = sender_ovk.clone();
+            #[cfg(test)]
+            let fail_proof = Arc::clone(&fail_proof);
             AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                #[cfg(test)]
+                if fail_proof.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err(ProtocolError::Generic(
+                        "simulated Orchard proving failure".into(),
+                    ));
+                }
                 ProvedShieldFromAssetLockBundle::prove(
                     &recipient,
                     shield_amount,
@@ -496,6 +561,10 @@ impl PlatformWallet {
                 spawn_proof(out_point, shield_amount, platform_version),
             ))
         };
+        // Only a lock this call builds is known never to have been submitted
+        // to Platform; a resumed one (a drain retried under its operation id
+        // arrives here as a resume too) may have been by an earlier call.
+        let fresh_lock = !matches!(funding, AssetLockFunding::FromExistingAssetLock { .. });
         let resolve = self.asset_locks.resolve_funding_observing_out_point(
             funding,
             AssetLockFundingType::AssetLockShieldedAddressTopUp,
@@ -537,272 +606,306 @@ impl PlatformWallet {
             }
         };
 
-        // Step 3: derive `shield_amount` from the asset-lock value.
+        // Steps 3–4 run with the Core lock in hand (broadcast by the
+        // resolution, or resumed), so every failure until Platform accepts
+        // goes through the funded-lock seam: never `NotSent`. That covers the
+        // sizing checks below too, which refuse after the lock exists; a lock
+        // too small for the fee is `MaybeSent` and names no lock, as a resume
+        // of the same outpoint would refuse again.
         //
-        // Unlike Type 14 (where Platform deducts the fee inside the
-        // transition via `AddressFundsFeeStrategy`), Type 18 bakes
-        // the Orchard `value_balance` into the Halo 2 proof at build
-        // time — someone *has* to know the precise number before
-        // signing. The wallet is the right place: it already has the
-        // lock value (from the IS proof's TxOut, or from the asset-
-        // lock manager's tracked row for CL-only paths) and the
-        // protocol min-fee constant (from `PlatformVersion`). Deriving
-        // `shield_amount = lock_value − pool_fee` reserves room for the
-        // fee and pins the consensus surplus to exactly zero.
-        //
-        // Single-recipient + `None` semantics today: the recipient
-        // receives `lock_value - pool_fee`. Future multi-recipient
-        // would honor `Some(_)` values explicitly and route the
-        // residual to the (sole) `None` bucket; the preflight will
-        // change in lockstep with the DPP-side multi-output bundle
-        // builder.
-        //
-        // The batch, and with it the fee and the recipient's payout, is the one the caller
-        // asked for, whichever proof carries it: a resume of this lock that starts from a
-        // saved ChainLock proof pays what an uninterrupted call pays. An InstantSend proof of
-        // a funding transaction with many inputs can leave no room for the batch; it then
-        // gives way to the lock's ChainLock proof before anything is built, through the same
-        // persisted upgrade the submit's IS→ChainLock fallback uses. The value is read from
-        // the proof the funding resolved with, before any upgrade.
-        let asset_lock_value_credits =
-            lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
-
-        // The SDK can learn a newer protocol version while the lock's
-        // InstantSend / ChainLock proof is resolving. The lock is already on
-        // chain by this point, so do not strand it by rejecting a bundle
-        // priced under the earlier snapshot: refresh the fee schedule before
-        // deriving the shield amount. A new fee changes the amount, so the
-        // reuse guard below re-proves; a new binding is caught by the first
-        // attempt, which re-proves a bundle no longer bound to the lock.
-        let current_platform_version = self.sdk.version();
-        let version_changed =
-            current_platform_version.protocol_version != platform_version.protocol_version;
-        if version_changed {
-            platform_version = current_platform_version;
-            pool_fee_credits =
-                Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
-        }
-        let proof = if instant_proof_cannot_carry_batch(dummy_outputs, &proof, platform_version) {
-            tracing::warn!(
-                "IS-lock proof leaves no room for {} actions in shielded fund-from-asset-lock \
-                 (tx {}); using the ChainLock proof",
-                num_actions,
-                out_point_from_proof(&proof).txid
-            );
-            self.asset_locks
-                .upgrade_to_persisted_chain_lock_proof(&out_point_from_proof(&proof), cl_wait)
-                .await?
-        } else {
-            proof
-        };
-        let shield_amount = shield_amount_after_fee(asset_lock_value_credits, pool_fee_credits)?;
-
-        // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
-        // pool_fee`), so `None` is always consensus-valid. Defensively assert the cap invariant
-        // and surface a clear error rather than building a transition consensus would reject —
-        // this guards future code paths that might leave a non-zero residual.
-        let surplus = asset_lock_value_credits
-            .checked_sub(shield_amount)
-            .and_then(|v| v.checked_sub(pool_fee_credits))
-            .unwrap_or(0);
-        if surplus_output.is_none() {
-            let implicit_fee_cap = platform_version
-                .drive_abci
-                .validation_and_processing
-                .event_constants
-                .shielded_implicit_fee_cap;
-            if surplus > implicit_fee_cap {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "ShieldFromAssetLock surplus ({surplus} credits) exceeds the implicit fee cap \
-                     ({implicit_fee_cap} credits) and no surplus_output address was supplied — \
-                     consensus would reject this transition; pass a surplus_output to receive the \
-                     remainder"
-                )));
-            }
-        }
-
-        // Step 4: submit. Two Platform-side fallback layers — matching
-        // the address-funding sibling: CL-height-too-low retries bump
-        // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
-        // cache) and an unusable IS proof (rejected, or too large)
-        // triggers an IS→CL upgrade on the same outpoint.
-        //
-        // Every attempt — the first, each CL-height retry, the IS→CL
-        // fallback — re-signs the one proved bundle: none of them changes
-        // the outpoint or the amount the proof commits to.
-        //
-        // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
-        // is a no-op, so the wrapper's bump cannot diversify the ST hash
-        // here the way it does for address-funding. Retries still avoid
-        // Tenderdash's invalid-tx cache because every assembly re-signs the
-        // bundle with randomized RedPallas signatures. If that signing is
-        // ever made deterministic, retries need another diversifier.
-        let proof_out_point = out_point_from_proof(&proof);
-        let proving = match speculative {
-            // Kept across a protocol-version change: only the fee (already in
-            // `shield_amount`) and the binding (checked per attempt) depend on it.
-            Some((out_point, amount, proving))
-                if out_point == proof_out_point && amount == shield_amount =>
-            {
-                proving
-            }
-            // Made for other inputs: dropping it cancels it if still queued.
-            // `_` would leave it owned by `speculative` until the end of the
-            // function, so move it out and drop it before the replacement.
-            stale => {
-                drop(stale);
-                spawn_proof(proof_out_point, shield_amount, platform_version)
-            }
-        };
-        let bundle = join_proof(proving).await?;
-        let bundle_state = Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
-            bundle,
-            platform_version,
-            pool_fee_credits,
-            shield_amount,
-        }));
-        let sdk = self.sdk.clone();
-        let recipient_for_retry = recipient;
-        let sender_ovk_for_retry = sender_ovk.clone();
-        let prover_for_retry = prover;
-        let asset_lock_value_for_retry = asset_lock_value_credits;
-        let num_actions_for_retry = num_actions;
-        let bundle_state_for_submit = Arc::clone(&bundle_state);
-        let path_for_retry = path.clone();
-        // Serialized actions of the bundle that actually landed — fed to
-        // the live activity recorder below. Each attempt re-signs the
-        // bundle, so only the landed attempt's actions (signatures
-        // included) are the ones on chain; `build_and_broadcast_shielded`
-        // returns them on success, with the proof's verdict on the lock.
-        let (submit_result, effective_proof) = self
+        // Boxed: the proved bundle, its retry closure and the submit together
+        // make a future too large to keep on a caller's stack.
+        let funded = self
             .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                cl_wait,
-                "shielded fund-from-asset-lock",
-                move |proof, s| {
-                    let bundle_state = Arc::clone(&bundle_state_for_submit);
-                    let sdk = sdk.clone();
-                    let sender_ovk_for_retry = sender_ovk_for_retry.clone();
-                    let path = path_for_retry.clone();
-                    async move {
-                        let mut version_retry = false;
-                        loop {
-                            let mut state = bundle_state.lock().await;
-                            let current_platform_version = sdk.version();
-                            let current_pool_fee = Self::shield_from_asset_lock_pool_fee(
-                                num_actions_for_retry,
-                                current_platform_version,
-                            )
-                            .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
-                            let still_bound =
-                                state.bundle.is_bound_to(&proof, current_platform_version)?;
-                            if current_pool_fee != state.pool_fee_credits || !still_bound {
-                                let shield_amount = shield_amount_after_fee(
-                                    asset_lock_value_for_retry,
-                                    current_pool_fee,
-                                )
-                                .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
-                                let out_point = out_point_from_proof(&proof);
-                                let sender_ovk = sender_ovk_for_retry.clone();
-                                state.bundle = join_proof(AbortOnDropHandle::new(
-                                    tokio::task::spawn_blocking(move || {
-                                        ProvedShieldFromAssetLockBundle::prove(
-                                            &recipient_for_retry,
-                                            shield_amount,
-                                            out_point,
-                                            &prover_for_retry,
-                                            [0u8; 36],
-                                            sender_ovk,
-                                            dummy_outputs,
-                                            current_platform_version,
-                                        )
-                                    }),
-                                ))
-                                .await
-                                .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
-                                state.pool_fee_credits = current_pool_fee;
-                                state.shield_amount = shield_amount;
-                            }
-                            state.platform_version = current_platform_version;
-                            let result = build_and_broadcast_shielded(
-                                sdk.clone(),
-                                &state.bundle,
-                                proof.clone(),
-                                path.clone(),
-                                asset_lock_signer,
-                                surplus_output,
-                                s,
-                                state.shield_amount,
-                                state.platform_version,
-                            )
-                            .await;
-                            drop(state);
-                            match result {
-                                // The SDK moved on while this attempt was being
-                                // signed: refresh the bundle and try once more.
-                                Err(ShieldAttemptError::VersionMoved { .. }) if !version_retry => {
-                                    version_retry = true;
-                                }
-                                result => return result.map_err(dash_sdk::Error::from),
-                            }
-                        }
+            .with_funded_lock(tracked_out_point, Box::pin(async {
+                // Step 3: derive `shield_amount` from the asset-lock value.
+                //
+                // Unlike Type 14 (where Platform deducts the fee inside the
+                // transition via `AddressFundsFeeStrategy`), Type 18 bakes
+                // the Orchard `value_balance` into the Halo 2 proof at build
+                // time — someone *has* to know the precise number before
+                // signing. The wallet is the right place: it already has the
+                // lock value (from the IS proof's TxOut, or from the asset-
+                // lock manager's tracked row for CL-only paths) and the
+                // protocol min-fee constant (from `PlatformVersion`). Deriving
+                // `shield_amount = lock_value − pool_fee` reserves room for the
+                // fee and pins the consensus surplus to exactly zero.
+                //
+                // Single-recipient + `None` semantics today: the recipient
+                // receives `lock_value - pool_fee`. Future multi-recipient
+                // would honor `Some(_)` values explicitly and route the
+                // residual to the (sole) `None` bucket; the preflight will
+                // change in lockstep with the DPP-side multi-output bundle
+                // builder.
+                //
+                // The batch, and with it the fee and the recipient's payout, is the one the
+                // caller asked for, whichever proof carries it: a resume of this lock that
+                // starts from a saved ChainLock proof pays what an uninterrupted call pays. An
+                // InstantSend proof of a funding transaction with many inputs can leave no room
+                // for the batch; it then gives way to the lock's ChainLock proof before anything
+                // is built, through the same persisted upgrade the submit's IS→ChainLock fallback
+                // uses. The value is read from the proof the funding resolved with, before any
+                // upgrade.
+                let asset_lock_value_credits =
+                    lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
+
+                // The SDK can learn a newer protocol version while the lock's
+                // InstantSend / ChainLock proof is resolving. The lock is already on
+                // chain by this point, so do not strand it by rejecting a bundle
+                // priced under the earlier snapshot: refresh the fee schedule before
+                // deriving the shield amount. A new fee changes the amount, so the
+                // reuse guard below re-proves; a new binding is caught by the first
+                // attempt, which re-proves a bundle no longer bound to the lock.
+                let current_platform_version = self.sdk.version();
+                let version_changed =
+                    current_platform_version.protocol_version != platform_version.protocol_version;
+                if version_changed {
+                    platform_version = current_platform_version;
+                    pool_fee_credits =
+                        Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
+                }
+                let proof = if instant_proof_cannot_carry_batch(dummy_outputs, &proof, platform_version)
+                {
+                    tracing::warn!(
+                        "IS-lock proof leaves no room for {} actions in shielded \
+                         fund-from-asset-lock (tx {}); using the ChainLock proof",
+                        num_actions,
+                        out_point_from_proof(&proof).txid
+                    );
+                    self.asset_locks
+                        .upgrade_to_persisted_chain_lock_proof(&out_point_from_proof(&proof), cl_wait)
+                        .await?
+                } else {
+                    proof
+                };
+                let shield_amount = shield_amount_after_fee(asset_lock_value_credits, pool_fee_credits)?;
+
+                // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
+                // pool_fee`), so `None` is always consensus-valid. Defensively assert the cap invariant
+                // and surface a clear error rather than building a transition consensus would reject —
+                // this guards future code paths that might leave a non-zero residual.
+                let surplus = asset_lock_value_credits
+                    .checked_sub(shield_amount)
+                    .and_then(|v| v.checked_sub(pool_fee_credits))
+                    .unwrap_or(0);
+                if surplus_output.is_none() {
+                    let implicit_fee_cap = platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .event_constants
+                        .shielded_implicit_fee_cap;
+                    if surplus > implicit_fee_cap {
+                        return Err(PlatformWalletError::ShieldedBuildError(format!(
+                            "ShieldFromAssetLock surplus ({surplus} credits) exceeds the implicit fee cap \
+                             ({implicit_fee_cap} credits) and no surplus_output address was supplied — \
+                             consensus would reject this transition; pass a surplus_output to receive the \
+                             remainder"
+                        )));
                     }
-                },
-            )
-            .await?;
-        // An attempt re-prices the bundle when the fee schedule moved, so the
-        // fee the landed attempt paid can differ from Step 3's.
-        let submitted_pool_fee_credits = bundle_state.lock().await.pool_fee_credits;
-        // Release the proved bundle's signing secrets
-        // (`ProvedShieldFromAssetLockBundle`) before the reconciliation
-        // awaits below.
-        drop(bundle_state);
+                }
 
-        // Platform's verdict settles the lock. For a wallet drain, an
-        // exact-outpoint "already consumed" rejection means an earlier attempt
-        // for the same lock landed: the drain completes with no landed bundle
-        // to record (the scan surfaces the note).
-        let drain_operation_id = self
-            .asset_locks
-            .tracked_operation_id(&proof_out_point)
-            .await;
-        let Some(landed) = self
-            .asset_locks
-            .settle_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                cl_wait,
-                drain_operation_id,
-            )
-            .await?
+                // Step 4: submit. Two Platform-side fallback layers — matching
+                // the address-funding sibling: CL-height-too-low retries bump
+                // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
+                // cache) and an unusable IS proof (rejected, or too large)
+                // triggers an IS→CL upgrade on the same outpoint.
+                //
+                // Every attempt — the first, each CL-height retry, the IS→CL
+                // fallback — re-signs the one proved bundle: none of them changes
+                // the outpoint or the amount the proof commits to.
+                //
+                // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
+                // is a no-op, so the wrapper's bump cannot diversify the ST hash
+                // here the way it does for address-funding. Retries still avoid
+                // Tenderdash's invalid-tx cache because every assembly re-signs the
+                // bundle with randomized RedPallas signatures. If that signing is
+                // ever made deterministic, retries need another diversifier.
+                let proof_out_point = out_point_from_proof(&proof);
+                let proving = match speculative {
+                    // Kept across a protocol-version change: only the fee (already in
+                    // `shield_amount`) and the binding (checked per attempt) depend on it.
+                    Some((out_point, amount, proving))
+                        if out_point == proof_out_point && amount == shield_amount =>
+                    {
+                        proving
+                    }
+                    // Made for other inputs: dropping it cancels it if still queued.
+                    // `_` would leave it owned by `speculative` until the end of the
+                    // function, so move it out and drop it before the replacement.
+                    stale => {
+                        drop(stale);
+                        spawn_proof(proof_out_point, shield_amount, platform_version)
+                    }
+                };
+                let bundle = join_initial_proof(proving, fresh_lock).await?;
+                let bundle_state = Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
+                    bundle,
+                    platform_version,
+                    pool_fee_credits,
+                    shield_amount,
+                }));
+                let sdk = self.sdk.clone();
+                let recipient_for_retry = recipient;
+                let sender_ovk_for_retry = sender_ovk.clone();
+                let prover_for_retry = prover;
+                let asset_lock_value_for_retry = asset_lock_value_credits;
+                let num_actions_for_retry = num_actions;
+                let bundle_state_for_submit = Arc::clone(&bundle_state);
+                let path_for_retry = path.clone();
+                // Serialized actions of the bundle that actually landed — fed to
+                // the live activity recorder below. Each attempt re-signs the
+                // bundle, so only the landed attempt's actions (signatures
+                // included) are the ones on chain; `build_and_broadcast_shielded`
+                // returns them on success, with the proof's verdict on the lock.
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
+                        proof,
+                        settings,
+                        cl_wait,
+                        "shielded fund-from-asset-lock",
+                        move |proof, s| {
+                            let bundle_state = Arc::clone(&bundle_state_for_submit);
+                            let sdk = sdk.clone();
+                            let sender_ovk_for_retry = sender_ovk_for_retry.clone();
+                            let path = path_for_retry.clone();
+                            async move {
+                                let mut version_retry = false;
+                                loop {
+                                    let mut state = bundle_state.lock().await;
+                                    let current_platform_version = sdk.version();
+                                    let current_pool_fee = Self::shield_from_asset_lock_pool_fee(
+                                        num_actions_for_retry,
+                                        current_platform_version,
+                                    )
+                                    .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
+                                    let still_bound =
+                                        state.bundle.is_bound_to(&proof, current_platform_version)?;
+                                    if current_pool_fee != state.pool_fee_credits || !still_bound {
+                                        let shield_amount = shield_amount_after_fee(
+                                            asset_lock_value_for_retry,
+                                            current_pool_fee,
+                                        )
+                                        .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
+                                        let out_point = out_point_from_proof(&proof);
+                                        let sender_ovk = sender_ovk_for_retry.clone();
+                                        state.bundle = join_proof(AbortOnDropHandle::new(
+                                            tokio::task::spawn_blocking(move || {
+                                                ProvedShieldFromAssetLockBundle::prove(
+                                                    &recipient_for_retry,
+                                                    shield_amount,
+                                                    out_point,
+                                                    &prover_for_retry,
+                                                    [0u8; 36],
+                                                    sender_ovk,
+                                                    dummy_outputs,
+                                                    current_platform_version,
+                                                )
+                                            }),
+                                        ))
+                                        .await
+                                        .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
+                                        state.pool_fee_credits = current_pool_fee;
+                                        state.shield_amount = shield_amount;
+                                    }
+                                    state.platform_version = current_platform_version;
+                                    let result = build_and_broadcast_shielded(
+                                        sdk.clone(),
+                                        &state.bundle,
+                                        proof.clone(),
+                                        path.clone(),
+                                        asset_lock_signer,
+                                        surplus_output,
+                                        s,
+                                        state.shield_amount,
+                                        state.platform_version,
+                                    )
+                                    .await;
+                                    drop(state);
+                                    match result {
+                                        // The SDK moved on while this attempt was being
+                                        // signed: refresh the bundle and try once more.
+                                        Err(ShieldAttemptError::VersionMoved { .. }) if !version_retry => {
+                                            version_retry = true;
+                                        }
+                                        result => return result.map_err(dash_sdk::Error::from),
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    .await?;
+                // An attempt re-prices the bundle when the fee schedule moved, so the
+                // fee the landed attempt paid can differ from Step 3's.
+                let submitted_pool_fee_credits = bundle_state.lock().await.pool_fee_credits;
+                // Release the proved bundle's signing secrets
+                // (`ProvedShieldFromAssetLockBundle`) before the reconciliation
+                // awaits below.
+                drop(bundle_state);
+
+                // Platform's verdict settles the lock. For a wallet drain, an
+                // exact-outpoint "already consumed" rejection means an earlier attempt
+                // for the same lock landed: the drain completes with no landed bundle
+                // to record (the scan surfaces the note).
+                let drain_operation_id = self
+                    .asset_locks
+                    .tracked_operation_id(&proof_out_point)
+                    .await;
+                let Some(landed) = self
+                    .asset_locks
+                    .settle_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        cl_wait,
+                        drain_operation_id,
+                    )
+                    .await?
+                else {
+                    tracing::info!(
+                        outpoint = %proof_out_point,
+                        "wallet drain completed: Platform reports its asset lock already consumed by an earlier attempt"
+                    );
+                    return Ok(None);
+                };
+
+                // A drain completes only when the verified proof attests the lock
+                // was consumed in full. Checked before any history is written: a
+                // drain left pending must not carry a Confirmed row for a bundle a
+                // later resume may replace. The next resume completes it from
+                // Platform's verdict.
+                if drain_operation_id.is_some() && !landed.fully_consumed {
+                    tracing::warn!(
+                        outpoint = %proof_out_point,
+                        "wallet drain left pending: the landed shield's proof does not attest \
+                         full consumption of its asset lock"
+                    );
+                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                        "drain shield landed but its proof does not attest full consumption of \
+                         the asset lock; the operation stays pending"
+                            .into(),
+                    ));
+                }
+
+                Ok(Some(FundedShield {
+                    landed,
+                    drain_operation_id,
+                    proof_out_point,
+                    asset_lock_value_credits,
+                    pool_fee_credits: submitted_pool_fee_credits,
+                }))
+            }))
+            .await?;
+        let Some(FundedShield {
+            landed,
+            drain_operation_id,
+            proof_out_point,
+            asset_lock_value_credits,
+            pool_fee_credits: submitted_pool_fee_credits,
+        }) = funded
         else {
-            tracing::info!(
-                outpoint = %proof_out_point,
-                "wallet drain completed: Platform reports its asset lock already consumed by an earlier attempt"
-            );
             return Ok(());
         };
-
-        // A drain completes only when the verified proof attests the lock
-        // was consumed in full. Checked before any history is written: a
-        // drain left pending must not carry a Confirmed row for a bundle a
-        // later resume may replace. The next resume completes it from
-        // Platform's verdict.
-        if drain_operation_id.is_some() && !landed.fully_consumed {
-            tracing::warn!(
-                outpoint = %proof_out_point,
-                "wallet drain left pending: the landed shield's proof does not attest \
-                 full consumption of its asset lock"
-            );
-            return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                "drain shield landed but its proof does not attest full consumption of \
-                 the asset lock; the operation stays pending"
-                    .into(),
-            ));
-        }
 
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
@@ -828,7 +931,8 @@ impl PlatformWallet {
             (Some(operation_id), _) => {
                 self.asset_locks
                     .complete_wallet_drain(proof_out_point, operation_id)
-                    .await?;
+                    .await
+                    .map_err(|e| e.after_dispatch().without_held_lock())?;
             }
             (None, Some(out_point)) => {
                 // Platform DID accept the shield ST — propagating an Err
@@ -1107,6 +1211,27 @@ async fn join_proof(
     }
 }
 
+/// Wait for the bundle proof that precedes this call's first submit.
+/// Proving is local and signs or sends nothing. For a lock this call built
+/// (`fresh_lock`), nothing has ever been submitted for it, so the failure is
+/// a refusal before dispatch: the funded-lock seam then names the lock as
+/// held while it is resumable. A resumed lock may already have been
+/// submitted by an earlier call whose outcome was never confirmed, so its
+/// failure keeps `MaybeSent`. A re-proof inside the submit closure never
+/// uses this, as an earlier attempt of this call may have been dispatched.
+async fn join_initial_proof(
+    proving: AbortOnDropHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>,
+    fresh_lock: bool,
+) -> Result<ProvedShieldFromAssetLockBundle, PlatformWalletError> {
+    join_proof(proving).await.map_err(|error| {
+        if fresh_lock {
+            error.before_dispatch()
+        } else {
+            error
+        }
+    })
+}
+
 /// What a landed Type 18 submit returns to the orchestrator.
 struct LandedShield {
     /// The **landed** bundle's serialized Orchard actions, so the
@@ -1320,19 +1445,32 @@ fn shield_amount_after_fee(
 /// rather than paid to an address nobody holds.
 pub(super) fn resume_recipient(
     out_point: OutPoint,
+    status: &AssetLockStatus,
     recorded: Option<ShieldedRecipientRaw>,
     requested: OrchardAddress,
 ) -> Result<OrchardAddress, PlatformWalletError> {
     const _: () = assert!(SHIELDED_RECIPIENT_SIZE == ORCHARD_ADDRESS_SIZE);
-    match recorded {
-        None => Ok(requested),
-        Some(recorded) if recorded == requested.to_raw_bytes() => Ok(requested),
-        Some(recorded) => Err(PlatformWalletError::AssetLockRecipientMismatch {
+    // A consumed lock is not resumable whatever recipient it recorded: a
+    // mismatch would name it as the lock to resume (`LockHeld`).
+    if status.is_consumed() {
+        return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+    }
+    let mismatch = match recorded {
+        None => return Ok(requested),
+        Some(recorded) if recorded == requested.to_raw_bytes() => return Ok(requested),
+        Some(recorded) => PlatformWalletError::AssetLockRecipientMismatch {
             out_point,
             recorded,
             requested: requested.to_raw_bytes(),
-        }),
-    }
+        },
+    };
+    // The mismatch names the lock as held only while a resume can take it on;
+    // a consumption-unknown row keeps the diagnostic and names none.
+    Err(if status.is_resumable() {
+        mismatch
+    } else {
+        mismatch.without_held_lock()
+    })
 }
 
 pub(super) fn validate_shielded_recipients<T>(
@@ -1388,6 +1526,7 @@ mod tests {
         ClientStartState, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
+    use crate::error::PaymentDelivery;
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -1509,12 +1648,21 @@ mod tests {
         let recorded = crate::test_support::orchard_address_fixture(0x61);
         let other = crate::test_support::orchard_address_fixture(0x62);
         assert_eq!(
-            resume_recipient(out_point, Some(recorded.to_raw_bytes()), recorded).unwrap(),
+            resume_recipient(
+                out_point,
+                &AssetLockStatus::ChainLocked,
+                Some(recorded.to_raw_bytes()),
+                recorded
+            )
+            .unwrap(),
             recorded
         );
-        assert_eq!(resume_recipient(out_point, None, other).unwrap(), other);
+        assert_eq!(
+            resume_recipient(out_point, &AssetLockStatus::ChainLocked, None, other).unwrap(),
+            other
+        );
         assert!(matches!(
-            resume_recipient(out_point, Some(recorded.to_raw_bytes()), other),
+            resume_recipient(out_point, &AssetLockStatus::ChainLocked, Some(recorded.to_raw_bytes()), other),
             Err(PlatformWalletError::AssetLockRecipientMismatch {
                 out_point: o,
                 recorded: r,
@@ -1523,9 +1671,74 @@ mod tests {
         ));
         // Bytes that are not an address match nothing: refused, not paid.
         assert!(matches!(
-            resume_recipient(out_point, Some([0xff; SHIELDED_RECIPIENT_SIZE]), other),
+            resume_recipient(
+                out_point,
+                &AssetLockStatus::ChainLocked,
+                Some([0xff; SHIELDED_RECIPIENT_SIZE]),
+                other
+            ),
             Err(PlatformWalletError::AssetLockRecipientMismatch { .. })
         ));
+    }
+
+    /// A consumed lock keeps its recorded recipient on the tombstone. A
+    /// resume to another recipient is refused as consumed, so no held lock
+    /// is advertised for it.
+    #[test]
+    fn resume_recipient_refuses_a_consumed_lock_as_consumed_not_as_a_mismatch() {
+        let out_point = OutPoint::null();
+        let recorded = crate::test_support::orchard_address_fixture(0x61);
+        let other = crate::test_support::orchard_address_fixture(0x62);
+        let error = resume_recipient(
+            out_point,
+            &AssetLockStatus::Consumed,
+            Some(recorded.to_raw_bytes()),
+            other,
+        )
+        .expect_err("a consumed lock is not resumable");
+        assert!(
+            matches!(error, PlatformWalletError::AssetLockAlreadyConsumed(o) if o == out_point),
+            "{error:?}"
+        );
+        assert_eq!(error.held_asset_lock(), None);
+    }
+
+    /// A consumption-unknown row (`RecoveredFromChain`, where Platform may
+    /// already have consumed the lock) keeps the mismatch diagnostic but
+    /// names no lock to resume: only a resumable status offers one.
+    #[test]
+    fn resume_recipient_names_no_lock_for_a_mismatch_on_a_consumption_unknown_row() {
+        let out_point = OutPoint::null();
+        let recorded = crate::test_support::orchard_address_fixture(0x61);
+        let other = crate::test_support::orchard_address_fixture(0x62);
+        let unknown = resume_recipient(
+            out_point,
+            &AssetLockStatus::RecoveredFromChain,
+            Some(recorded.to_raw_bytes()),
+            other,
+        )
+        .expect_err("a mismatch is refused");
+        assert!(
+            matches!(
+                unknown.dispatched_source(),
+                PlatformWalletError::AssetLockRecipientMismatch { .. }
+            ),
+            "{unknown:?}"
+        );
+        assert_eq!(unknown.held_asset_lock(), None);
+        assert_eq!(
+            unknown.payment_delivery(),
+            crate::error::PaymentDelivery::MaybeSent
+        );
+
+        let resumable = resume_recipient(
+            out_point,
+            &AssetLockStatus::ChainLocked,
+            Some(recorded.to_raw_bytes()),
+            other,
+        )
+        .expect_err("a mismatch is refused");
+        assert_eq!(resumable.held_asset_lock(), Some(out_point));
     }
 
     #[test]
@@ -2024,6 +2237,92 @@ mod tests {
             live_lock(&ctx).await.status,
             AssetLockStatus::DrainCompleted
         );
+    }
+
+    fn failing_proof() -> AbortOnDropHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>
+    {
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(|| {
+            Err(ProtocolError::Generic(
+                "simulated Orchard proving failure".into(),
+            ))
+        }))
+    }
+
+    /// The first proof is local and precedes every submit: its failure names
+    /// the still-resumable lock as held, so the host resumes it instead of
+    /// reconciling.
+    #[tokio::test]
+    async fn should_hold_the_resumable_lock_when_the_initial_proof_fails() {
+        let ctx = consumption_report_context().await;
+        let error = ctx
+            .manager
+            .with_funded_lock(Some(ctx.out_point), async {
+                join_initial_proof(failing_proof(), true).await.map(|_| ())
+            })
+            .await
+            .expect_err("the proof failed");
+        assert_eq!(
+            error.payment_delivery(),
+            PaymentDelivery::LockHeld(ctx.out_point)
+        );
+    }
+
+    /// A lock that can no longer be resumed is not offered, even for a
+    /// failure before the first submit.
+    #[tokio::test]
+    async fn should_name_no_lock_when_the_initial_proof_fails_on_a_consumed_lock() {
+        let ctx = consumption_report_context().await;
+        ctx.wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get_mut(&ctx.out_point)
+            .expect("tracked lock")
+            .status = AssetLockStatus::Consumed;
+        let error = ctx
+            .manager
+            .with_funded_lock(Some(ctx.out_point), async {
+                join_initial_proof(failing_proof(), true).await.map(|_| ())
+            })
+            .await
+            .expect_err("the proof failed");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+    }
+
+    /// A resumed lock may already have been submitted by an earlier call
+    /// whose outcome was never confirmed: a proof failure on resume keeps
+    /// `MaybeSent` and names no lock, even while the row is resumable.
+    #[tokio::test]
+    async fn should_name_no_lock_when_the_initial_proof_of_a_resumed_lock_fails() {
+        let ctx = consumption_report_context().await;
+        let error = ctx
+            .manager
+            .with_funded_lock(Some(ctx.out_point), async {
+                join_initial_proof(failing_proof(), false).await.map(|_| ())
+            })
+            .await
+            .expect_err("the proof failed");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+    }
+
+    /// A re-proof inside the submit closure follows an attempt that may have
+    /// been dispatched: its failure, carried out as the closure carries it,
+    /// stays `MaybeSent` and names no lock.
+    #[tokio::test]
+    async fn should_name_no_lock_when_a_re_proof_after_an_attempt_fails() {
+        let ctx = consumption_report_context().await;
+        let error =
+            ctx.manager
+                .with_funded_lock(Some(ctx.out_point), async {
+                    join_proof(failing_proof()).await.map(|_| ()).map_err(|e| {
+                        PlatformWalletError::Sdk(dash_sdk::Error::Generic(e.to_string()))
+                    })
+                })
+                .await
+                .expect_err("the re-proof failed");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
     }
 
     #[tokio::test]

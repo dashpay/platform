@@ -1414,7 +1414,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvitationNotReady(..) => {
                 PlatformWalletFFIResultCode::ErrorInvitationNotReady
             }
-            PlatformWalletError::AssetLockNotChainLocked(..) => {
+            PlatformWalletError::AssetLockNotChainLocked { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
@@ -2845,7 +2845,10 @@ mod tests {
                 65,
             ),
             (
-                PlatformWalletError::AssetLockNotChainLocked("later".to_string()),
+                PlatformWalletError::AssetLockNotChainLocked {
+                    message: "later".to_string(),
+                    after_broadcast: false,
+                },
                 PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked,
                 66,
             ),

@@ -1267,18 +1267,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // input, and a fixed amount held only in many small coins selects as
         // many. An oversized lock is abandoned here rather than stranded on
         // the wire; the caller can consolidate the coins and build again.
-        let abandon = input_cap_violation(&tx, self.sdk.version()).or_else(|| match amount {
-            AssetLockBuildAmount::DrainAll {
-                minimum_lock_duffs: Some(minimum),
-            } if locked_amount_duffs < minimum => {
-                Some(PlatformWalletError::AssetLockTransaction(format!(
-                    "drained asset lock of {locked_amount_duffs} duffs is below the required \
-                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
-                     nothing was broadcast"
-                )))
-            }
-            _ => None,
-        });
+        let abandon =
+            input_cap_violation(&tx, self.sdk.version(), false).or_else(|| match amount {
+                AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(minimum),
+                } if locked_amount_duffs < minimum => {
+                    // Nothing was broadcast: `NotSent`, as a short selection.
+                    Some(PlatformWalletError::AssetLockInsufficientFunds {
+                        available: locked_amount_duffs,
+                        required: minimum,
+                    })
+                }
+                _ => None,
+            });
         if let Some(error) = abandon {
             {
                 // Nothing reached the broadcaster, so the fence has no
@@ -1724,19 +1725,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                          reservation and reporting an unknown outcome rather than a \
                          definite rejection"
                     );
-                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                        format!(
+                    // The row stays tracked; the outcome is unknown, so the
+                    // error is `MaybeSent` and names no lock.
+                    let unconfirmed =
+                        PlatformWalletError::TransactionBroadcastUnconfirmed(format!(
                             "asset lock {out_point} stays tracked and reserved: the \
-                             broadcast was rejected, but resume state excludes cleanup \
-                             of the same row, so the transaction may be on the network \
-                             or committed to dispatch: {e}"
-                        ),
-                    ));
+                         broadcast was rejected, but resume state excludes cleanup \
+                         of the same row, so the transaction may be on the network \
+                         or committed to dispatch: {e}"
+                        ));
+                    return Err(self.funded_lock_error(unconfirmed, Some(out_point)).await);
                 }
             } else {
                 // Ambiguous `MaybeSent`: the transaction may be on the network.
+                // Its row stays tracked and resumable (the tracked asset-lock
+                // list offers it); the error names no lock.
                 in_broadcast_pin.settle_pending_spend();
+                return Err(self.funded_lock_error(e.into(), Some(out_point)).await);
             }
+            // Rejected, and the row is gone with its reservation: provably
+            // never sent.
             return Err(e.into());
         }
         // Accepted. On the DAPI broadcaster nothing was injected locally, so the
@@ -1746,15 +1754,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // 4. Transition to Broadcast only if no concurrent flow advanced the
         //    row while this call awaited the network. Replacing a finalized
         //    status here would retain its proof under the weaker status.
-        if let Some(cs_broadcast) = self
-            .advance_asset_lock_status_if(
-                &out_point,
-                |current| *current == AssetLockStatus::Built,
-                AssetLockStatus::Broadcast,
-                None,
+        let advanced = self
+            .with_funded_lock(
+                Some(out_point),
+                self.advance_asset_lock_status_if(
+                    &out_point,
+                    |current| *current == AssetLockStatus::Built,
+                    AssetLockStatus::Broadcast,
+                    None,
+                ),
             )
-            .await?
-        {
+            .await?;
+        if let Some(cs_broadcast) = advanced {
             self.queue_asset_lock_changeset(cs_broadcast);
         }
 
@@ -1770,34 +1781,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         account_index: u32,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
-        // 5. Wait for proof via SPV events. The 300s bound is an
-        //    InstantSend-preference window, NOT a finality timeout: on
-        //    expiry the resolver falls back to an unbounded ChainLock wait
-        //    (`upgrade_to_chain_lock_proof(None)`), so a broadcast lock is
-        //    never surfaced as "failed" just because IS was slow.
-        let proof = self
-            .wait_for_proof(out_point, Some(Duration::from_secs(300)))
-            .await?;
+        // The lock is broadcast: every failure here leaves it held (or, once
+        // it is gone, `MaybeSent`), never `NotSent`.
+        self.with_funded_lock(Some(*out_point), async {
+            // 5. Wait for proof via SPV events. The 300s bound is an
+            //    InstantSend-preference window, NOT a finality timeout: on
+            //    expiry the resolver falls back to an unbounded ChainLock wait
+            //    (`upgrade_to_chain_lock_proof(None)`), so a broadcast lock is
+            //    never surfaced as "failed" just because IS was slow.
+            let proof = self
+                .wait_for_proof(out_point, Some(Duration::from_secs(300)))
+                .await?;
 
-        // 5b. If we got an IS-lock proof, check whether the transaction is
-        // old enough that Platform might reject it. If so, upgrade to a
-        // ChainLock proof proactively.
-        let proof = self
-            .validate_or_upgrade_proof(proof, account_index, out_point)
-            .await?;
+            // 5b. If we got an IS-lock proof, check whether the transaction is
+            // old enough that Platform might reject it. If so, upgrade to a
+            // ChainLock proof proactively.
+            let proof = self
+                .validate_or_upgrade_proof(proof, account_index, out_point)
+                .await?;
 
-        // 6. Attach proof — status matches the proof type received —
-        //    and queue the final changeset.
-        let status = match &proof {
-            dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
-            dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
-        };
-        let cs_final = self
-            .advance_asset_lock_status(out_point, status, Some(proof.clone()))
-            .await?;
-        self.queue_asset_lock_changeset(cs_final);
+            // 6. Attach proof — status matches the proof type received —
+            //    and queue the final changeset.
+            let status = match &proof {
+                dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+                dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+            };
+            let cs_final = self
+                .advance_asset_lock_status(out_point, status, Some(proof.clone()))
+                .await?;
+            self.queue_asset_lock_changeset(cs_final);
 
-        Ok(proof)
+            Ok(proof)
+        })
+        .await
     }
 }
 
@@ -1855,7 +1871,11 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
             }
         }
         AssetLockError::Builder(BuilderError::TooManyInputs { count, max }) => {
-            PlatformWalletError::AssetLockTooManyInputs { count, max }
+            PlatformWalletError::AssetLockTooManyInputs {
+                count,
+                max,
+                resumed: false,
+            }
         }
         AssetLockError::Builder(BuilderError::FundsAwaitingFinality { waiting }) => {
             PlatformWalletError::AssetLockFundsAwaitingFinality { waiting }
@@ -2746,10 +2766,18 @@ mod tests {
             )
             .await;
         let err = result.expect_err("undersized drain must be refused");
+        // Nothing was broadcast: a typed shortfall, `NotSent`.
         assert!(
-            err.to_string().contains("below the required minimum"),
-            "unexpected error for undersized drain: {err}"
+            matches!(
+                err,
+                PlatformWalletError::AssetLockInsufficientFunds {
+                    required: u64::MAX,
+                    ..
+                }
+            ),
+            "unexpected error for undersized drain: {err:?}"
         );
+        assert_eq!(err.payment_delivery(), crate::PaymentDelivery::NotSent);
         assert_eq!(
             broadcaster.calls(),
             0,
@@ -3244,13 +3272,16 @@ mod tests {
             .await;
         assert!(
             matches!(
-                result,
+                result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "ambiguous broadcast should surface as TransactionBroadcastUnconfirmed, got {result:?}"
         );
 
-        // The Built row survives for a later resume…
+        // The Built row survives for a later resume; the error, an unknown
+        // outcome, names no lock (the tracked list offers it)…
         {
             let wm = manager.wallet_manager.read().await;
             let (_, info) = wm
@@ -3259,6 +3290,10 @@ mod tests {
             assert_eq!(info.tracked_asset_locks.len(), 1);
             let lock = info.tracked_asset_locks.values().next().expect("built row");
             assert_eq!(lock.status, AssetLockStatus::Built);
+            let error = result.as_ref().expect_err("ambiguous broadcast");
+            assert_eq!(error.held_asset_lock(), None);
+            assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
+            assert!(!error.is_retryable());
         }
         // …no persisted-row deletion was queued…
         assert!(
@@ -3365,7 +3400,9 @@ mod tests {
             .await;
         assert!(
             matches!(
-                result,
+                result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "a rejection whose cleanup released nothing must surface as the \
@@ -3373,7 +3410,8 @@ mod tests {
              released reservation and a safe rebuild, got {result:?}"
         );
 
-        // The concurrently-advanced row survives the cleanup…
+        // The concurrently-advanced row survives the cleanup; the error, an
+        // unknown outcome, names no lock (the tracked list offers it)…
         {
             let wm = wallet_manager.read().await;
             let (_, info) = wm
@@ -3382,6 +3420,8 @@ mod tests {
             assert_eq!(info.tracked_asset_locks.len(), 1);
             let lock = info.tracked_asset_locks.values().next().expect("row kept");
             assert_eq!(lock.status, AssetLockStatus::Broadcast);
+            let error = result.as_ref().expect_err("kept row");
+            assert_eq!(error.held_asset_lock(), None);
         }
         // …no persisted-row deletion was queued…
         assert!(
@@ -4852,7 +4892,19 @@ mod tests {
 
         let (build_result, (out_point, resume)) = tokio::join!(build, coordinator);
 
-        let Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason)) = &build_result
+        assert_eq!(
+            build_result
+                .as_ref()
+                .err()
+                .and_then(|e| e.held_asset_lock()),
+            None,
+            "the kept row stays tracked, but an unknown outcome names no lock: \
+             {build_result:?}"
+        );
+        let _ = out_point;
+        let Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason)) = build_result
+            .as_ref()
+            .map_err(PlatformWalletError::dispatched_source)
         else {
             panic!(
                 "with a resume holding the dispatch window the cleanup cannot run, so \
@@ -4989,7 +5041,9 @@ mod tests {
                 .expect("the resume task must not panic");
             assert!(
                 matches!(
-                    resume_result,
+                    resume_result
+                        .as_ref()
+                        .map_err(PlatformWalletError::dispatched_source),
                     Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
                 ),
                 "the resume must report its pre-dispatch rejection as an unknown original \
@@ -5132,7 +5186,9 @@ mod tests {
         let (build_result, out_point) = tokio::join!(build, coordinator);
         assert!(
             matches!(
-                build_result,
+                build_result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "a cancellation after an observable send is an unknown outcome; cleanup must not \
@@ -5265,7 +5321,9 @@ mod tests {
         let (build_result, out_point) = tokio::join!(build, coordinator);
         assert!(
             matches!(
-                build_result,
+                build_result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "a cancellation after observing local finality is an unknown outcome; cleanup must \
@@ -5670,9 +5728,15 @@ mod tests {
                     result,
                     Err(PlatformWalletError::AssetLockTooManyInputs {
                         count: 101,
-                        max: 100
+                        max: 100,
+                        resumed: false,
                     })
                 ));
+                // Refused before it was tracked or sent: nothing left.
+                assert_eq!(
+                    result.as_ref().unwrap_err().payment_delivery(),
+                    crate::PaymentDelivery::NotSent
+                );
                 assert_eq!(manager.broadcaster.calls(), 0);
                 assert!(manager.list_tracked_locks().await.is_empty());
             } else {
@@ -5742,7 +5806,11 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(PlatformWalletError::AssetLockTooManyInputs { count, max: 100 }) if count > 100
+                Err(PlatformWalletError::AssetLockTooManyInputs {
+                    count,
+                    max: 100,
+                    resumed: false,
+                }) if count > 100
             ),
             "{result:?}"
         );
@@ -6731,6 +6799,108 @@ mod tests {
                 .unwrap(),
             snapshot
         );
+    }
+
+    /// A persister whose Core-record fallback answers the first read with
+    /// the lock's transaction InstantSend-locked, then fails every later read.
+    struct RecordThenFailPersistence {
+        record: Mutex<Option<TransactionRecord>>,
+    }
+
+    impl PlatformWalletPersistence for RecordThenFailPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            match self.record.lock().unwrap().take() {
+                Some(record) => Ok(Some(record)),
+                None => Err(PersistenceError::backend("simulated backend failure")),
+            }
+        }
+    }
+
+    /// The proof half runs after the lock's broadcast, so a failure inside it
+    /// goes through the funded-lock seam: here the proof wait finds the
+    /// InstantSend lock, and the proof check that follows fails to read the
+    /// record (`AssetLockProofWait`, `MaybeSent` on its own). The lock is
+    /// tracked and unconsumed, so the error names it as held. Without the
+    /// seam the error would be the bare `MaybeSent`.
+    #[tokio::test]
+    async fn should_hold_the_lock_when_the_proof_half_fails_after_the_broadcast() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+
+        let persistence = Arc::new(RecordThenFailPersistence {
+            record: Mutex::new(None),
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(AlwaysOkBroadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let (_path, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("broadcast half should succeed");
+        let transaction = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm.get_wallet_and_info(&manager.wallet_id).unwrap();
+            info.tracked_asset_locks[&out_point].transaction.clone()
+        };
+        *persistence.record.lock().unwrap() = Some(TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InstantSend(InstantLock::default()),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        ));
+
+        let error = manager
+            .wait_for_funded_asset_lock_proof(&out_point, 0)
+            .await
+            .expect_err("the proof check cannot read the record");
+
+        assert!(
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::AssetLockProofWait(_)
+            ),
+            "{error:?}"
+        );
+        // A `MaybeSent` failure after the broadcast names no lock: the
+        // tracked asset-lock list offers it.
+        assert_eq!(
+            error.payment_delivery(),
+            crate::PaymentDelivery::MaybeSent,
+            "{error:?}"
+        );
+        assert_eq!(error.held_asset_lock(), None);
+        assert!(!error.is_retryable());
     }
 
     /// An asset lock from a wallet holding a 1,000 DASH masternode collateral

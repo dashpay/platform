@@ -128,7 +128,8 @@ pub enum PlatformWalletError {
     /// it in one of its registration slots. No key the identity holds decides
     /// this. Nothing was recorded, and nothing was broadcast unless a node
     /// that lagged behind let the claim through; the host loads the identity
-    /// the way it loads any of its own.
+    /// the way it loads any of its own. The claim wraps the preflight's in
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`).
     #[error("invitation was already claimed by this wallet as identity {identity_id}")]
     InvitationClaimedByThisWallet { identity_id: Identifier },
 
@@ -137,7 +138,8 @@ pub enum PlatformWalletError {
     /// an earlier claim of this wallet whose result was lost before it was
     /// recorded (a rescan records it). No key the identity holds decides
     /// this. Nothing was broadcast unless a node that lagged behind let the
-    /// claim through.
+    /// claim through; the preflight's is wrapped in
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`).
     #[error(
         "invitation was already claimed by identity {identity_id}; if this wallet \
          submitted the claim earlier, rescan its identities to load it"
@@ -712,9 +714,15 @@ pub enum PlatformWalletError {
     /// reached peers).
     /// Reservations do not survive a restart, so after one the row's inputs
     /// are not held and may be spent elsewhere. Consolidating the coins
-    /// lets a new lock fit.
+    /// lets a new lock fit. `resumed` tells the two apart: `false` for a
+    /// fresh build that never left the wallet, `true` for a resumed tracked
+    /// row an earlier attempt may have sent.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
-    AssetLockTooManyInputs { count: usize, max: usize },
+    AssetLockTooManyInputs {
+        count: usize,
+        max: usize,
+        resumed: bool,
+    },
 
     /// A shielded funding is being resumed to a different Orchard recipient
     /// than the one its tracked asset lock recorded when it was built. The
@@ -731,6 +739,31 @@ pub enum PlatformWalletError {
         recorded: crate::changeset::ShieldedRecipientRaw,
         requested: crate::changeset::ShieldedRecipientRaw,
     },
+
+    /// `source` ended a payment that had already dispatched funds: a Core
+    /// asset lock it broadcast or resumed, a DPNS preorder, or seed batches
+    /// it committed. The diagnostic stays `source`'s, and so does the FFI
+    /// code on every path that reports it: the blanket conversion and the
+    /// typed arms of the shielded funding mapper both read
+    /// [`Self::dispatched_source`]. Only the payment class changes, so a
+    /// refusal that followed the dispatch is never reported as `NotSent`.
+    /// `held_lock` names the tracked, unconsumed asset lock the payment holds
+    /// and goes on by resuming; `None` when nothing it can resume is known.
+    #[error("{source}")]
+    PaymentAlreadyDispatched {
+        held_lock: Option<dashcore::OutPoint>,
+        source: Box<PlatformWalletError>,
+    },
+
+    /// `source` refused this payment before its first dispatch: nothing was
+    /// broadcast for it, so it is `NotSent`. For the variants that also end
+    /// a payment after its dispatch (an SDK error, a marketplace or balance
+    /// verdict, a request blocked while another payment for the same pair
+    /// settles), where only the emitter knows nothing left. The diagnostic,
+    /// the FFI code and the retry decision stay `source`'s: only the payment
+    /// class changes. See [`Self::before_dispatch`].
+    #[error("{source}")]
+    RefusedBeforeDispatch { source: Box<PlatformWalletError> },
 
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
@@ -926,13 +959,14 @@ pub enum PlatformWalletError {
 
     /// Platform rejected an address-funds transition because a spent address's
     /// provided nonce did not equal its expected next value (DPP consensus code
-    /// 40603, `AddressInvalidNonceError`) — an optimistic `fetched + 1` nonce
-    /// racing a lagging replica read. Carries Platform's `expected_nonce`
-    /// verbatim so the caller can rebuild and retry without re-fetching.
+    /// 40603, `AddressInvalidNonceError`). An endpoint verdict may follow an
+    /// earlier dispatch, so the wallet classifies this as
+    /// [`PaymentDelivery::MaybeSent`]; reconcile the original operation before
+    /// submitting another transition.
     #[error(
         "Address nonce mismatch for {address}: submitted nonce {provided_nonce}, \
-         Platform expected {expected_nonce}; retry the operation with the \
-         expected nonce"
+         Platform expected {expected_nonce}; reconcile the original operation \
+         before submitting another transition"
     )]
     AddressNonceMismatch {
         address: PlatformAddress,
@@ -1170,8 +1204,18 @@ pub enum PlatformWalletError {
     #[error("Asset lock proof expired (IS proof too old, CL not yet available): {0}")]
     AssetLockExpired(String),
 
-    #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {0}")]
-    AssetLockNotChainLocked(String),
+    /// The asset lock cannot be used yet: its transaction has not reached the
+    /// queried node, or it is not chain-locked and the operation needs a
+    /// ChainLock proof. `after_broadcast` is `false` only where no node could
+    /// have answered (retry once the lock is usable), `true` when the claim
+    /// was submitted with its islock proof and refused (a stale islock, the
+    /// input cap, or a size verdict that may be a node's): it may have been
+    /// sent, so check the invitation's identity before claiming again.
+    #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {message}")]
+    AssetLockNotChainLocked {
+        message: String,
+        after_broadcast: bool,
+    },
 
     // --- Shielded pool errors (feature-gated) ---
     #[error("No unspent shielded notes available")]
@@ -1559,9 +1603,26 @@ impl From<InvitationError> for PlatformWalletError {
             InvitationError::NetworkMismatch { invitation, wallet } => {
                 Self::InvitationNetworkMismatch { invitation, wallet }
             }
-            InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
-            InvitationError::AlreadyClaimed { identity_id } => {
-                Self::InvitationAlreadyClaimed { identity_id }
+            InvitationError::NotChainLocked {
+                message,
+                after_broadcast,
+            } => Self::AssetLockNotChainLocked {
+                message,
+                after_broadcast,
+            },
+            // The preflight found the identity before anything was signed:
+            // proven before the dispatch. One found after Platform refused
+            // the submitted claim keeps the variant's own class.
+            InvitationError::AlreadyClaimed {
+                identity_id,
+                after_broadcast,
+            } => {
+                let refusal = Self::InvitationAlreadyClaimed { identity_id };
+                if after_broadcast {
+                    refusal
+                } else {
+                    refusal.before_dispatch()
+                }
             }
             InvitationError::KeysAlreadyRegistered {
                 identity_id,
@@ -1712,6 +1773,626 @@ impl PlatformWalletError {
             _ => ContextProviderError::Generic(self.to_string()),
         }
     }
+
+    /// Whether the payment this error ended may have left the wallet.
+    ///
+    /// The answer hosts act on after a failed payment (Core asset-lock
+    /// funding, identity top-up, Platform address transfer and withdrawal,
+    /// shielded spend and shield): [`PaymentDelivery::NotSent`] offers a
+    /// retry, [`PaymentDelivery::MaybeSent`] waits for sync and never offers a
+    /// second payment, and [`PaymentDelivery::LockHeld`] names the tracked
+    /// asset lock the payment goes on from (resume it, never fund a new one).
+    /// An error raised before anything was dispatched is
+    /// `NotSent` by construction; one raised after a dispatch follows what the
+    /// dispatches proved (the crate-private `BroadcastDelivery`), so only
+    /// "never left the wallet" reads as `NotSent`. A variant whose producers do
+    /// not all prove the payment never left — a stringly catch-all reached
+    /// both before and after a broadcast, an SDK error, a consensus verdict
+    /// (no proof backs an endpoint's answer) — is `MaybeSent`.
+    ///
+    /// Defined for every variant, so a payment never ends without a class.
+    /// For an operation that moves no money the answer is still sound (such
+    /// operations raise their errors before any payment) but carries no
+    /// meaning. The match has no wildcard arm: a new variant does not compile
+    /// until it is given a class.
+    pub fn payment_delivery(&self) -> PaymentDelivery {
+        use PaymentDelivery::{LockHeld, MaybeSent, NotSent};
+
+        match self {
+            // Raised before any payment is built or dispatched.
+            Self::DocumentEraseBusy
+            | Self::WalletCreation(_)
+            | Self::AccountNotFound(_)
+            | Self::DashpayAccountBuild { .. }
+            | Self::WalletRemovedBeforeSend(_)
+            | Self::PreparedPaymentAddressTaken(_)
+            | Self::WalletAlreadyExists(_)
+            | Self::IdentityAlreadyExists(_)
+            | Self::IdentityNotFound(_)
+            | Self::IdentityBalanceUnavailable(_)
+            | Self::IdentityLookupFailed { .. }
+            | Self::NoPrimaryIdentity
+            | Self::InvitationNetworkMismatch { .. }
+            | Self::ContactRequestNotFound(_)
+            | Self::IdentityIndexNotSet(_)
+            | Self::IdentityDiscoveryIncomplete { .. }
+            | Self::DashpayReceivingAccountAlreadyExists { .. }
+            | Self::DashpayExternalAccountAlreadyExists { .. }
+            | Self::MessageSigningAddressInvalid { .. }
+            | Self::MessageSigningMessageInvalid { .. }
+            | Self::MessageSigningKeyUnavailable { .. }
+            | Self::MessageSigningFailed { .. }
+            | Self::InvalidParameter(_)
+            | Self::MasternodeListUnavailable
+            | Self::AddressNotFound(_)
+            | Self::WalletLocked
+            | Self::SeedMismatch { .. }
+            | Self::SeedBindingUnanswered { .. }
+            | Self::ContactSyncUnreachable { .. }
+            | Self::SpvAlreadyRunning
+            | Self::NoWalletsConfigured
+            | Self::SpvProcessRestartRequired(_)
+            | Self::ShutdownIncomplete(_)
+            | Self::DpnsNameNotFound { .. }
+            | Self::DecisionProposalNotFound { .. }
+            | Self::ContestedNameNotTradable { .. } => NotSent,
+            // An invitation claim's lookups refused it before the broadcast:
+            // they could not be verified yet, or found a key of the claim
+            // registered to another identity.
+            Self::InvitationNotReady(_)
+            | Self::InvitationKeysAlreadyRegistered {
+                rejection: None, ..
+            } => NotSent,
+            // Persistence that a payment completes before its broadcast (an
+            // unstored reservation is never broadcast), and the start-up
+            // reads.
+            Self::PersisterLoad(_)
+            | Self::PersisterStore(_)
+            | Self::PersisterFlush(_)
+            | Self::PersisterRestore(_) => NotSent,
+            // Selection and building, which precede the broadcast.
+            Self::TransactionBuild(_)
+            | Self::StaleReservation
+            | Self::CoreInsufficientFunds { .. }
+            | Self::CorePooledInsufficientFunds { .. }
+            | Self::NoSpendableInputs { .. }
+            | Self::OnlyOutputAddressesFunded { .. }
+            | Self::OnlyDustInputs { .. }
+            | Self::ChangeBelowMinimumOutput { .. }
+            | Self::InputSumOverflow
+            | Self::AssetLockNotTracked(_)
+            | Self::AssetLockFundingMismatch { .. }
+            | Self::AssetLockInsufficientFunds { .. }
+            | Self::AssetLockFundsAwaitingFinality { .. }
+            | Self::ShieldedNoUnspentNotes
+            | Self::ShieldedInsufficientBalance { .. }
+            | Self::ShieldedPlanChanged { .. }
+            | Self::ShieldedSpendTooManyNotes { .. }
+            | Self::ShieldedWithdrawalAmountOutOfRange { .. }
+            | Self::NetworkProtocolVersionUnsupported { .. }
+            | Self::PlatformShieldCapacityExceeded { .. }
+            | Self::ShieldedMerkleWitnessUnavailable(_)
+            | Self::ShieldedNoRecordedAnchor(_)
+            | Self::ShieldedKeyDerivation(_)
+            | Self::ShieldedNotBound => NotSent,
+            // Sync, which moves no money.
+            Self::ShieldedSyncFailed(_) | Self::ShieldedTreeUpdateFailed(_) => NotSent,
+            // The contact-request gates refuse before anything is sealed,
+            // paid or broadcast.
+            Self::PrivateContactRequestNeedsPrivateReply(_)
+            | Self::PrivateContactStoreNotRead(_)
+            | Self::PrivateContactPaymentsNotRestored
+            | Self::PrivateContactRecoveryUnsupported => NotSent,
+            // Reads that move no money: an object Platform does not have, a
+            // balance history page proved below a height already read, a
+            // shielded balance the wallet was too busy to read.
+            Self::ContractNotFound { .. }
+            | Self::DocumentNotFound { .. }
+            | Self::BalanceHistoryInconsistentHeights { .. }
+            | Self::ShieldedBalanceBusy => NotSent,
+            // Shielded refusals before anything is reserved, proved or sent:
+            // a tip whose name moved to another identity, a spend that needs
+            // more notes than one transition takes, an SDK built at another
+            // protocol version than the network runs, a token pool that does
+            // not exist, cannot be read, does not cover the amount or still
+            // holds an unsettled spend, and a Clear refused while a shielded
+            // operation runs.
+            Self::ShieldedTipRecipientMismatch { .. }
+            | Self::ShieldedTooManyNotes { .. }
+            | Self::ShieldedProtocolVersionMismatch { .. }
+            | Self::TokenShieldedPoolDisabled { .. }
+            | Self::TokenConfigurationUnavailable { .. }
+            | Self::TokenShieldedInsufficientBalance { .. }
+            | Self::TokenShieldedPoolSpendPending { .. }
+            | Self::ShieldedOperationInProgress => NotSent,
+            // Another payment blocks this tip: this call sent nothing (see
+            // [`Self::is_retryable`] for why it is not run again).
+            Self::ShieldedTipPending => NotSent,
+            // Proven never to execute: the wallet held proof, when the spend's
+            // result arrived, that another transition spent one of its notes
+            // or that its anchor was pruned. Nothing was paid, and it cannot
+            // be paid later.
+            Self::ShieldedSpendNotExecuted { .. } => NotSent,
+            // Proven never sent: Core refused the transaction before it
+            // entered the network (`BroadcastError::Rejected`), or a shielded
+            // transition was refused before its first dispatch
+            // (`BroadcastDelivery::NeverDelivered`).
+            Self::TransactionBroadcast(_) | Self::ShieldedBroadcastFailed(_) => NotSent,
+            // Can never confirm: the lock spends an input a finalized
+            // transaction took, so no peer relays it (reserved, no emitter).
+            Self::AssetLockInputConflict { .. } => NotSent,
+            // A dispatch may have reached a node, and nothing proved it never
+            // executes.
+            Self::TransactionBroadcastUnconfirmed(_)
+            | Self::ShieldedBroadcastMaybeDelivered(_)
+            | Self::ShieldedBroadcastUnconfirmed { .. }
+            | Self::ShieldedSpendUnconfirmed { .. }
+            | Self::MasternodeWithdrawalUnconfirmed { .. }
+            | Self::PublicContactRequestUnconfirmed(_) => MaybeSent,
+            // Another payment blocks this request: an earlier one for the
+            // same inputs, contact or identity is still settling, or the
+            // shielded recovery that would settle it cannot run yet. This
+            // call dispatched nothing, so it is `NotSent`; it is not
+            // retryable either (see [`Self::is_retryable`]): the host waits
+            // for the earlier payment to settle, and the earlier payment's
+            // own error carried its class.
+            Self::InputMidBroadcast { .. }
+            | Self::PrivateContactRequestPending(_)
+            | Self::ShieldedIdentityDebitPending { .. }
+            | Self::ShieldedRecoveryCorrupted { .. }
+            | Self::ShieldedRecoveryKeysRequired { .. } => NotSent,
+            // A tracked asset lock is held for the payment and named: it
+            // exists and may be on the network, its funds have left the
+            // spendable balance, and the payment goes on by resuming it
+            // (with the recorded recipient, for a recipient mismatch), never
+            // by funding a new one.
+            Self::FinalityTimeout(out_point)
+            | Self::AssetLockInputContested { out_point, .. }
+            | Self::AssetLockRecipientMismatch { out_point, .. } => LockHeld(*out_point),
+            // A fresh build over the input cap was refused before it was
+            // tracked or sent.
+            Self::AssetLockTooManyInputs { resumed: false, .. } => NotSent,
+            // An asset lock exists and may be on the network, but the error
+            // names no lock this payment can resume: consumed (Platform's
+            // completion is unconfirmed), a resumed row over the input cap (a
+            // resume is refused, and an earlier attempt may have sent it), or
+            // a proof failure that carries no outpoint.
+            Self::AssetLockProofWait(_)
+            | Self::AssetLockAlreadyConsumed(_)
+            | Self::AssetLockTooManyInputs { resumed: true, .. }
+            | Self::AssetLockExpired(_) => MaybeSent,
+            // Not usable yet: before anything was sent, nothing left; after
+            // Platform refused what was sent, the class follows the rule for
+            // a verdict after a broadcast.
+            Self::AssetLockNotChainLocked {
+                after_broadcast: false,
+                ..
+            } => NotSent,
+            Self::AssetLockNotChainLocked {
+                after_broadcast: true,
+                ..
+            } => MaybeSent,
+            // Platform's verdict after a broadcast, which no proof backs: the
+            // transition may still execute elsewhere, or may already have.
+            Self::AddressNonceMismatch { .. }
+            | Self::DocumentNotForSale { .. }
+            | Self::DocumentPriceChanged { .. }
+            | Self::InsufficientIdentityCredits { .. }
+            | Self::InvitationKeysAlreadyRegistered {
+                rejection: Some(_), ..
+            } => MaybeSent,
+            // Reached both before and after a dispatch. A wallet lookup is
+            // one of them: only [`Self::WalletRemovedBeforeSend`] says where
+            // it failed. A claimed invitation is usually found before the
+            // claim is broadcast, and otherwise from Platform's refusal of a
+            // claim a lagging node let through; the claim wraps the
+            // preflight's in [`Self::RefusedBeforeDispatch`].
+            Self::WalletNotFound(_)
+            | Self::InvitationClaimedByThisWallet { .. }
+            | Self::InvitationAlreadyClaimed { .. }
+            | Self::Persistence(_)
+            | Self::InvalidIdentityData(_)
+            | Self::AssetLockTransaction(_)
+            | Self::AddressSync(_)
+            | Self::AddressOperation(_)
+            | Self::KeyDerivation(_)
+            | Self::SpvError(_)
+            | Self::QuorumNotVerified { .. }
+            | Self::TokenError(_)
+            | Self::ShieldedBuildError(_)
+            | Self::ShieldedStoreError(_) => MaybeSent,
+            Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
+                sdk_payment_delivery(source)
+            }
+            // Funds already left: never `NotSent`, whatever ended the call.
+            Self::PaymentAlreadyDispatched { held_lock, .. } => match held_lock {
+                Some(out_point) => LockHeld(*out_point),
+                None => MaybeSent,
+            },
+            // The emitter proved nothing was dispatched for this request.
+            Self::RefusedBeforeDispatch { .. } => NotSent,
+        }
+    }
+
+    /// This error as a refusal proven before the payment's first dispatch:
+    /// a variant classed as possibly sent becomes
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`), keeping its diagnostic,
+    /// FFI code and retry decision. A `NotSent` error is kept, and so is an
+    /// error that already records a dispatch ([`Self::PaymentAlreadyDispatched`]
+    /// or a held lock): this only adds evidence of non-dispatch, it never
+    /// erases evidence of one.
+    pub(crate) fn before_dispatch(self) -> Self {
+        match (&self, self.payment_delivery()) {
+            (Self::PaymentAlreadyDispatched { .. }, _)
+            | (_, PaymentDelivery::NotSent | PaymentDelivery::LockHeld(_)) => self,
+            (_, PaymentDelivery::MaybeSent) => Self::RefusedBeforeDispatch {
+                source: Box::new(self),
+            },
+        }
+    }
+
+    /// This error as the end of a payment that already dispatched funds: a
+    /// `NotSent` refusal becomes [`Self::PaymentAlreadyDispatched`] with no
+    /// held lock (`MaybeSent`), keeping its diagnostic and FFI code; any
+    /// other class is kept. For the steps that follow a dispatch of a
+    /// multi-step payment (a DPNS domain after its preorder, a seed batch
+    /// after an earlier one) and for the bookkeeping after Platform accepted
+    /// a funded transition.
+    pub(crate) fn after_dispatch(self) -> Self {
+        match self.payment_delivery() {
+            PaymentDelivery::NotSent => Self::PaymentAlreadyDispatched {
+                held_lock: None,
+                source: Box::new(self),
+            },
+            PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => self,
+        }
+    }
+
+    /// This error with no held lock: a [`PaymentDelivery::LockHeld`] error
+    /// becomes [`Self::PaymentAlreadyDispatched`] with no held lock
+    /// (`MaybeSent`), keeping its diagnostic, FFI code and the outpoint in its
+    /// text; any other class is kept. For a lock that cannot finish this
+    /// payment: consumed or consumption-unknown, untracked, or a voucher
+    /// whose invitation row was not durably saved.
+    pub(crate) fn without_held_lock(self) -> Self {
+        match self {
+            Self::PaymentAlreadyDispatched { source, .. } => Self::PaymentAlreadyDispatched {
+                held_lock: None,
+                source,
+            },
+            error if matches!(error.payment_delivery(), PaymentDelivery::LockHeld(_)) => {
+                Self::PaymentAlreadyDispatched {
+                    held_lock: None,
+                    source: Box::new(error),
+                }
+            }
+            error => error,
+        }
+    }
+
+    /// The error that decided this one's diagnostic and FFI code: the source
+    /// of a [`Self::PaymentAlreadyDispatched`] or a
+    /// [`Self::RefusedBeforeDispatch`], or this error itself.
+    pub fn dispatched_source(&self) -> &Self {
+        match self {
+            Self::PaymentAlreadyDispatched { source, .. }
+            | Self::RefusedBeforeDispatch { source } => source.dispatched_source(),
+            other => other,
+        }
+    }
+
+    /// The outpoint whose InstantSend-lock wait timed out, when this error's
+    /// diagnostic ([`Self::dispatched_source`]) is a
+    /// [`Self::FinalityTimeout`]: the one lookup every reader of the timeout
+    /// shares, so a payment-class wrapper never hides it.
+    pub fn instant_lock_timeout(&self) -> Option<dashcore::OutPoint> {
+        match self.dispatched_source() {
+            Self::FinalityTimeout(out_point) => Some(*out_point),
+            _ => None,
+        }
+    }
+
+    /// The tracked asset lock this error leaves held, when it names one: the
+    /// lock exists and may be on the network, and the payment goes on by
+    /// resuming it rather than by funding a new one. `None` for every other
+    /// error, including the asset-lock errors whose outpoint is not a lock
+    /// held for this payment (not tracked, already consumed, tracked for
+    /// another destination) and those that carry no outpoint.
+    ///
+    /// The outpoint of [`PaymentDelivery::LockHeld`], read from
+    /// [`Self::payment_delivery`], so the two never disagree.
+    pub fn held_asset_lock(&self) -> Option<dashcore::OutPoint> {
+        match self.payment_delivery() {
+            PaymentDelivery::LockHeld(out_point) => Some(out_point),
+            PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => None,
+        }
+    }
+
+    /// Whether a host may run the failed operation again: decided here, next
+    /// to [`Self::payment_delivery`], so hosts read it instead of deriving it.
+    ///
+    /// Never where the payment may have left the wallet
+    /// ([`PaymentDelivery::MaybeSent`]). Never where it holds a tracked asset
+    /// lock ([`PaymentDelivery::LockHeld`]) either: running the operation
+    /// again would fund a second payment while the first lock stays
+    /// resumable. That payment goes on only by resuming
+    /// [`Self::held_asset_lock`], which a host reads from the delivery, not
+    /// from this flag. Where nothing left the wallet ([`PaymentDelivery::NotSent`]), only for the failures the
+    /// same call can get past by running again: a commitment tree not yet at
+    /// a recorded anchor, a shielded broadcast refused before it was sent, a
+    /// drain that ran out of budget, a private-contact store read that did
+    /// not finish, an identity read before signing that Platform did not
+    /// answer, and a persister the store calls transiently unavailable.
+    /// Never for a request another payment blocks (`NotSent`, but running
+    /// it again meets the same refusal): the host waits for the earlier
+    /// payment to settle.
+    pub fn is_retryable(&self) -> bool {
+        match self.payment_delivery() {
+            PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => false,
+            // Every variant states its decision; no wildcard arm, so a new
+            // variant does not compile until it is given one.
+            PaymentDelivery::NotSent => match self {
+                // Transient: the same call gets past it by running again
+                // (once the next shielded sync has recorded an anchor, or
+                // checkpointed the tree over the selected note).
+                Self::ShieldedNoRecordedAnchor(_)
+                | Self::ShieldedMerkleWitnessUnavailable(_)
+                // A read before anything was signed: Platform had no balance
+                // for the identity yet, or could not be asked.
+                | Self::IdentityBalanceUnavailable(_)
+                | Self::IdentityLookupFailed { .. }
+                // An invitation claim's lookups Platform could not verify
+                // yet; nothing was broadcast, and the claim gets past once
+                // the wallet has synced.
+                | Self::InvitationNotReady(_)
+                // Not usable yet, before anything was sent: the same call
+                // gets past it once the lock propagates or is chain-locked.
+                // (Only the `after_broadcast: false` one is `NotSent`.)
+                | Self::AssetLockNotChainLocked { .. }
+                | Self::ShieldedBroadcastFailed(_)
+                | Self::ShutdownIncomplete(_)
+                | Self::PrivateContactStoreNotRead(_) => true,
+                // A read or a Clear the same call gets past later: a balance
+                // history page proved below a height already read, a busy
+                // shielded balance, a shielded operation that has to finish
+                // first, a token configuration that could not be read.
+                Self::BalanceHistoryInconsistentHeights { .. }
+                | Self::ShieldedBalanceBusy
+                | Self::ShieldedOperationInProgress
+                | Self::TokenConfigurationUnavailable { .. } => true,
+                // Proven never to execute, so a new attempt cannot pay twice;
+                // it selects other notes.
+                Self::ShieldedSpendNotExecuted { .. } => true,
+                Self::PersisterLoad(source) | Self::PersisterStore(source) => source.is_transient(),
+                // Not even when transient: a transient flush leaves the
+                // operation's record buffered, and it may still commit at a
+                // later flush, so running the operation again could write a
+                // second record (a second prepared payment) next to it. The
+                // retry a transient flush allows is another flush, not the
+                // operation.
+                Self::PersisterFlush(_) => false,
+                // Only the class changed: the source's own decision stands.
+                Self::RefusedBeforeDispatch { source } => source.is_retryable(),
+                // Another payment blocks this request. Running it again only
+                // meets the same refusal until that payment settles; the host
+                // waits for it instead.
+                Self::InputMidBroadcast { .. }
+                | Self::PrivateContactRequestPending(_)
+                | Self::ShieldedIdentityDebitPending { .. }
+                | Self::ShieldedRecoveryCorrupted { .. }
+                | Self::ShieldedRecoveryKeysRequired { .. }
+                | Self::ShieldedTipPending
+                | Self::TokenShieldedPoolSpendPending { .. } => false,
+                // Refusals running the same call again does not get past:
+                // the request, the wallet's state or the network has to
+                // change first.
+                Self::DocumentEraseBusy
+                | Self::WalletCreation(_)
+                | Self::PersisterRestore(_)
+                | Self::AccountNotFound(_)
+                | Self::DashpayAccountBuild { .. }
+                | Self::WalletRemovedBeforeSend(_)
+                | Self::PreparedPaymentAddressTaken(_)
+                | Self::WalletAlreadyExists(_)
+                | Self::IdentityAlreadyExists(_)
+                | Self::IdentityNotFound(_)
+                | Self::NoPrimaryIdentity
+                | Self::InvitationNetworkMismatch { .. }
+                | Self::InvitationKeysAlreadyRegistered { .. }
+                | Self::ContactRequestNotFound(_)
+                | Self::IdentityIndexNotSet(_)
+                | Self::IdentityDiscoveryIncomplete { .. }
+                | Self::DashpayReceivingAccountAlreadyExists { .. }
+                | Self::DashpayExternalAccountAlreadyExists { .. }
+                | Self::MessageSigningAddressInvalid { .. }
+                | Self::MessageSigningMessageInvalid { .. }
+                | Self::MessageSigningKeyUnavailable { .. }
+                | Self::MessageSigningFailed { .. }
+                | Self::InvalidParameter(_)
+                | Self::MasternodeListUnavailable
+                | Self::AddressNotFound(_)
+                | Self::WalletLocked
+                | Self::SeedMismatch { .. }
+                | Self::SeedBindingUnanswered { .. }
+                | Self::ContactSyncUnreachable { .. }
+                | Self::SpvAlreadyRunning
+                | Self::NoWalletsConfigured
+                | Self::SpvProcessRestartRequired(_)
+                | Self::DpnsNameNotFound { .. }
+                | Self::DecisionProposalNotFound { .. }
+                | Self::ContestedNameNotTradable { .. }
+                | Self::ContractNotFound { .. }
+                | Self::DocumentNotFound { .. }
+                | Self::ShieldedTipRecipientMismatch { .. }
+                | Self::ShieldedTooManyNotes { .. }
+                | Self::ShieldedProtocolVersionMismatch { .. }
+                | Self::TokenShieldedPoolDisabled { .. }
+                | Self::TokenShieldedInsufficientBalance { .. }
+                | Self::TransactionBuild(_)
+                | Self::StaleReservation
+                | Self::CoreInsufficientFunds { .. }
+                | Self::CorePooledInsufficientFunds { .. }
+                | Self::NoSpendableInputs { .. }
+                | Self::OnlyOutputAddressesFunded { .. }
+                | Self::OnlyDustInputs { .. }
+                | Self::ChangeBelowMinimumOutput { .. }
+                | Self::InputSumOverflow
+                | Self::AssetLockNotTracked(_)
+                | Self::AssetLockFundingMismatch { .. }
+                | Self::AssetLockInsufficientFunds { .. }
+                | Self::AssetLockFundsAwaitingFinality { .. }
+                | Self::AssetLockTooManyInputs { .. }
+                | Self::AssetLockInputConflict { .. }
+                | Self::ShieldedNoUnspentNotes
+                | Self::ShieldedInsufficientBalance { .. }
+                // A plan to make again, an amount to change, an app to
+                // update: the same call meets the same refusal.
+                | Self::ShieldedPlanChanged { .. }
+                | Self::ShieldedSpendTooManyNotes { .. }
+                | Self::ShieldedWithdrawalAmountOutOfRange { .. }
+                | Self::NetworkProtocolVersionUnsupported { .. }
+                | Self::PlatformShieldCapacityExceeded { .. }
+                | Self::ShieldedKeyDerivation(_)
+                | Self::ShieldedNotBound
+                | Self::ShieldedSyncFailed(_)
+                | Self::ShieldedTreeUpdateFailed(_)
+                | Self::PrivateContactRequestNeedsPrivateReply(_)
+                | Self::PrivateContactPaymentsNotRestored
+                | Self::PrivateContactRecoveryUnsupported
+                | Self::TransactionBroadcast(_)
+                | Self::Sdk(_)
+                | Self::TokenOperationFailed { .. } => false,
+                // Never `NotSent` (see [`Self::payment_delivery`]), so the
+                // arm above already answered; listed to keep the match
+                // exhaustive.
+                Self::TransactionBroadcastUnconfirmed(_)
+                | Self::ShieldedBroadcastMaybeDelivered(_)
+                | Self::ShieldedBroadcastUnconfirmed { .. }
+                | Self::ShieldedSpendUnconfirmed { .. }
+                | Self::MasternodeWithdrawalUnconfirmed { .. }
+                | Self::PublicContactRequestUnconfirmed(_)
+                | Self::FinalityTimeout(_)
+                | Self::AssetLockInputContested { .. }
+                | Self::AssetLockRecipientMismatch { .. }
+                | Self::AssetLockProofWait(_)
+                | Self::AssetLockAlreadyConsumed(_)
+                | Self::AssetLockExpired(_)
+                | Self::AddressNonceMismatch { .. }
+                | Self::DocumentNotForSale { .. }
+                | Self::DocumentPriceChanged { .. }
+                | Self::InsufficientIdentityCredits { .. }
+                | Self::InvitationClaimedByThisWallet { .. }
+                | Self::InvitationAlreadyClaimed { .. }
+                | Self::WalletNotFound(_)
+                | Self::Persistence(_)
+                | Self::InvalidIdentityData(_)
+                | Self::AssetLockTransaction(_)
+                | Self::AddressSync(_)
+                | Self::AddressOperation(_)
+                | Self::KeyDerivation(_)
+                | Self::SpvError(_)
+                | Self::QuorumNotVerified { .. }
+                | Self::TokenError(_)
+                | Self::ShieldedBuildError(_)
+                | Self::ShieldedStoreError(_)
+                | Self::PaymentAlreadyDispatched { .. } => false,
+            },
+        }
+    }
+}
+
+/// Whether a failed payment may have left the wallet; see
+/// [`PlatformWalletError::payment_delivery`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaymentDelivery {
+    /// The payment never left the wallet and can never execute: safe to
+    /// offer a retry.
+    NotSent,
+    /// The payment may have left the wallet and may execute, or already has:
+    /// wait for sync to settle it and do not offer a second payment.
+    MaybeSent,
+    /// The payment holds the tracked asset lock at this outpoint: the lock
+    /// may be on the network and its funds have left the spendable balance.
+    /// The payment goes on by resuming this lock, never by funding a new
+    /// one, so the failed operation is not retryable: the resume is the way
+    /// on.
+    LockHeld(dashcore::OutPoint),
+}
+
+/// The class of a payment call — a note spend, or an asset-lock funding —
+/// that panicked instead of returning: whether it may have left the wallet
+/// and whether a retry is allowed, as [`PlatformWalletError::payment_delivery`]
+/// and [`PlatformWalletError::is_retryable`] answer for a returned error.
+///
+/// A panic can strike after the dispatch, and nothing records how far the
+/// call got, so it is [`PaymentDelivery::MaybeSent`] and never retryable: a
+/// retry could pay twice, and the next sync settles the outcome. A boundary
+/// that catches the panic reports this class; it does not choose its own.
+pub fn panicked_payment_class() -> (PaymentDelivery, bool) {
+    (PaymentDelivery::MaybeSent, false)
+}
+
+/// The class of a payment whose wallet call succeeded but whose result a
+/// boundary could not hand back (a txid that would not marshal): the payment
+/// was dispatched, so it is [`PaymentDelivery::MaybeSent`] and never
+/// retryable, since a retry would pay twice. A boundary that fails to hand a
+/// payment's result back reports this class; it does not choose its own.
+pub fn handback_failure_payment_class() -> (PaymentDelivery, bool) {
+    (PaymentDelivery::MaybeSent, false)
+}
+
+/// The class of an SDK failure that ended a payment: `NotSent` only for the
+/// refusals that precede any dispatch (the signer had no key, the SDK refused
+/// a protocol version the network does not serve), `MaybeSent` for the rest.
+///
+/// Sound for a single-dispatch SDK call only: the error alone cannot say
+/// whether an earlier step of the same operation was already dispatched. A
+/// caller of a multi-step call (a DPNS preorder then domain, a funded
+/// transition after its Core lock) classes the refusals that follow the first
+/// dispatch itself, through [`PlatformWalletError::after_dispatch`] or the
+/// asset-lock seam (`AssetLockManager::with_funded_lock`).
+pub(crate) fn sdk_payment_delivery(error: &dash_sdk::Error) -> PaymentDelivery {
+    match error {
+        dash_sdk::Error::ProtocolVersionNotActive { .. } => PaymentDelivery::NotSent,
+        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX) =>
+        {
+            PaymentDelivery::NotSent
+        }
+        // Every other SDK failure may follow a dispatch. Listed, not
+        // wildcarded: a new SDK variant must be classed here before it builds,
+        // so a pre-send refusal cannot fall into `MaybeSent` silently.
+        dash_sdk::Error::Config(_)
+        | dash_sdk::Error::InvalidRequest(_)
+        | dash_sdk::Error::Drive(_)
+        | dash_sdk::Error::DriveProofError(..)
+        | dash_sdk::Error::Protocol(_)
+        | dash_sdk::Error::Proof(_)
+        | dash_sdk::Error::InvalidProvedResponse(_)
+        | dash_sdk::Error::ExecutionNotProved(_)
+        | dash_sdk::Error::StateTransitionResultUnconfirmed(_)
+        | dash_sdk::Error::DapiClientError(_)
+        | dash_sdk::Error::DapiMocksError(_)
+        | dash_sdk::Error::CoreError(_)
+        | dash_sdk::Error::MerkleBlockError(_)
+        | dash_sdk::Error::CoreClientError(_)
+        | dash_sdk::Error::MissingDependency(..)
+        | dash_sdk::Error::TotalCreditsNotFound
+        | dash_sdk::Error::EpochNotFound
+        | dash_sdk::Error::TimeoutReached(..)
+        | dash_sdk::Error::AlreadyExists(_)
+        | dash_sdk::Error::InvalidCreditTransfer(_)
+        | dash_sdk::Error::NonceOverflow(_)
+        | dash_sdk::Error::IdentityNonceNotFound(_)
+        | dash_sdk::Error::DriveInternalError(_)
+        | dash_sdk::Error::Generic(_)
+        | dash_sdk::Error::ContextProviderError(_)
+        | dash_sdk::Error::Cancelled(_)
+        | dash_sdk::Error::StaleNode(_)
+        | dash_sdk::Error::StateTransitionBroadcastError(_)
+        | dash_sdk::Error::NoAvailableAddressesToRetry(_)
+        | dash_sdk::Error::EncryptedFor(_) => PaymentDelivery::MaybeSent,
+    }
 }
 
 /// The selection a planned spend's notes make now, when it no longer matches the plan: what a
@@ -1764,8 +2445,12 @@ pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -
 /// [`AssetLockManager::wait_for_proof`](crate::wallet::asset_lock::manager::AssetLockManager),
 /// which emits `PlatformWalletError::FinalityTimeout(Txid)` when the
 /// 300-second IS deadline elapses.
+///
+/// Reads through the payment-class wrappers
+/// ([`PlatformWalletError::instant_lock_timeout`]), as the wallet's own
+/// fallback does.
 pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
-    matches!(error, PlatformWalletError::FinalityTimeout(_))
+    error.instant_lock_timeout().is_some()
 }
 
 /// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) when
@@ -2432,8 +3117,24 @@ mod invitation_error_mapping_tests {
             PlatformWalletError::InvalidIdentityData(message) if message == "bad link"
         ));
         assert!(matches!(
-            PlatformWalletError::from(InvitationError::NotChainLocked("later".to_string())),
-            PlatformWalletError::AssetLockNotChainLocked(message) if message == "later"
+            PlatformWalletError::from(InvitationError::NotChainLocked {
+                message: "later".to_string(),
+                after_broadcast: false,
+            }),
+            PlatformWalletError::AssetLockNotChainLocked {
+                message,
+                after_broadcast: false,
+            } if message == "later"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotChainLocked {
+                message: "refused".to_string(),
+                after_broadcast: true,
+            }),
+            PlatformWalletError::AssetLockNotChainLocked {
+                after_broadcast: true,
+                ..
+            }
         ));
         assert!(matches!(
             PlatformWalletError::from(InvitationError::NetworkMismatch {
@@ -2471,10 +3172,27 @@ mod invitation_error_mapping_tests {
     #[test]
     fn should_keep_the_identity_a_preflight_outcome_names() {
         let id = Identifier::new([5; 32]);
+        // Found by the preflight: proven before the dispatch, same diagnostic.
+        let preflight = PlatformWalletError::from(InvitationError::AlreadyClaimed {
+            identity_id: id,
+            after_broadcast: false,
+        });
         assert!(matches!(
-            PlatformWalletError::from(InvitationError::AlreadyClaimed { identity_id: id }),
+            preflight.dispatched_source(),
+            PlatformWalletError::InvitationAlreadyClaimed { identity_id } if *identity_id == id
+        ));
+        assert_eq!(preflight.payment_delivery(), PaymentDelivery::NotSent);
+        assert!(!preflight.is_retryable());
+        // Found after Platform refused the submitted claim: possibly sent.
+        let after = PlatformWalletError::from(InvitationError::AlreadyClaimed {
+            identity_id: id,
+            after_broadcast: true,
+        });
+        assert!(matches!(
+            after,
             PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
         ));
+        assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
         for owner in [Some(id), None] {
             assert!(matches!(
                 PlatformWalletError::from(InvitationError::KeysAlreadyRegistered {
@@ -2594,5 +3312,1013 @@ mod unconfirmed_submission_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod payment_delivery_tests {
+    use super::*;
+    use crate::changeset::PersistenceError;
+    use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationSkipStatus;
+    use std::collections::BTreeSet;
+
+    fn out_point() -> dashcore::OutPoint {
+        dashcore::OutPoint::new(dashcore::Txid::from_byte_array([3; 32]), 1)
+    }
+
+    fn id() -> Identifier {
+        Identifier::from([1; 32])
+    }
+
+    fn persistence() -> PersistenceError {
+        PersistenceError::LockPoisoned
+    }
+
+    fn sdk_generic() -> dash_sdk::Error {
+        dash_sdk::Error::Generic("transport".into())
+    }
+
+    /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
+    const VARIANT_COUNT: usize = 130;
+
+    /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
+    /// not compile until it gets the next ordinal here (and
+    /// [`VARIANT_COUNT`] its bump), and then [`should_classify_every_variant`]
+    /// fails until the table has a row for it.
+    fn ordinal(error: &PlatformWalletError) -> usize {
+        use PlatformWalletError as E;
+        match error {
+            E::WalletCreation(_) => 0,
+            E::PersisterLoad(_) => 1,
+            E::PersisterStore(_) => 2,
+            E::PersisterFlush(_) => 3,
+            E::PersisterRestore(_) => 4,
+            E::WalletNotFound(_) => 5,
+            E::AccountNotFound(_) => 6,
+            E::WalletRemovedBeforeSend(_) => 7,
+            E::PreparedPaymentAddressTaken(_) => 8,
+            E::WalletAlreadyExists(_) => 9,
+            E::IdentityAlreadyExists(_) => 10,
+            E::IdentityNotFound(_) => 11,
+            E::IdentityBalanceUnavailable(_) => 12,
+            E::NoPrimaryIdentity => 13,
+            E::InvalidIdentityData(_) => 14,
+            E::InvitationNetworkMismatch { .. } => 15,
+            E::Persistence(_) => 16,
+            E::ContactRequestNotFound(_) => 17,
+            E::IdentityIndexNotSet(_) => 18,
+            E::IdentityDiscoveryIncomplete { .. } => 19,
+            E::DashpayReceivingAccountAlreadyExists { .. } => 20,
+            E::DashpayExternalAccountAlreadyExists { .. } => 21,
+            E::AssetLockTransaction(_) => 22,
+            E::TransactionBroadcast(_) => 23,
+            E::TransactionBroadcastUnconfirmed(_) => 24,
+            E::StaleReservation => 25,
+            E::TransactionBuild(_) => 26,
+            E::InputMidBroadcast { .. } => 27,
+            E::MessageSigningAddressInvalid { .. } => 28,
+            E::MessageSigningMessageInvalid { .. } => 29,
+            E::MessageSigningKeyUnavailable { .. } => 30,
+            E::MessageSigningFailed { .. } => 31,
+            E::CoreInsufficientFunds { .. } => 32,
+            E::CorePooledInsufficientFunds { .. } => 33,
+            E::NoSpendableInputs { .. } => 34,
+            E::AssetLockProofWait(_) => 35,
+            E::AssetLockNotTracked(_) => 36,
+            E::AssetLockAlreadyConsumed(_) => 37,
+            E::AssetLockFundingMismatch { .. } => 38,
+            E::AssetLockInputConflict { .. } => 39,
+            E::AssetLockInputContested { .. } => 40,
+            E::AssetLockInsufficientFunds { .. } => 41,
+            E::AssetLockFundsAwaitingFinality { .. } => 42,
+            E::AssetLockTooManyInputs { .. } => 43,
+            E::AssetLockRecipientMismatch { .. } => 44,
+            E::Sdk(_) => 45,
+            E::PrivateContactRequestNeedsPrivateReply(_) => 46,
+            E::PrivateContactRequestPending(_) => 47,
+            E::PublicContactRequestUnconfirmed(_) => 48,
+            E::PrivateContactStoreNotRead(_) => 49,
+            E::PrivateContactPaymentsNotRestored => 50,
+            E::PrivateContactRecoveryUnsupported => 51,
+            E::DpnsNameNotFound { .. } => 52,
+            E::DecisionProposalNotFound { .. } => 53,
+            E::DocumentNotForSale { .. } => 54,
+            E::DocumentPriceChanged { .. } => 55,
+            E::InsufficientIdentityCredits { .. } => 56,
+            E::ContestedNameNotTradable { .. } => 57,
+            E::AddressNonceMismatch { .. } => 58,
+            E::AddressSync(_) => 59,
+            E::AddressOperation(_) => 60,
+            E::InvalidParameter(_) => 61,
+            E::MasternodeListUnavailable => 62,
+            E::OnlyOutputAddressesFunded { .. } => 63,
+            E::OnlyDustInputs { .. } => 64,
+            E::ChangeBelowMinimumOutput { .. } => 65,
+            E::InputSumOverflow => 66,
+            E::AddressNotFound(_) => 67,
+            E::KeyDerivation(_) => 68,
+            E::WalletLocked => 69,
+            E::SeedMismatch { .. } => 70,
+            E::SeedBindingUnanswered { .. } => 71,
+            E::ContactSyncUnreachable { .. } => 72,
+            E::SpvAlreadyRunning => 73,
+            E::NoWalletsConfigured => 74,
+            E::SpvError(_) => 75,
+            E::QuorumNotVerified { .. } => 76,
+            E::SpvProcessRestartRequired(_) => 77,
+            E::TokenError(_) => 78,
+            E::TokenOperationFailed { .. } => 79,
+            E::FinalityTimeout(_) => 80,
+            E::AssetLockExpired(_) => 81,
+            E::AssetLockNotChainLocked { .. } => 82,
+            E::ShieldedNoUnspentNotes => 83,
+            E::ShieldedInsufficientBalance { .. } => 84,
+            E::PlatformShieldCapacityExceeded { .. } => 85,
+            E::ShieldedBuildError(_) => 86,
+            E::ShieldedBroadcastFailed(_) => 87,
+            E::ShieldedBroadcastMaybeDelivered(_) => 88,
+            E::ShieldedBroadcastUnconfirmed { .. } => 89,
+            E::ShieldedIdentityDebitPending { .. } => 90,
+            E::ShieldedRecoveryCorrupted { .. } => 91,
+            E::ShieldedRecoveryKeysRequired { .. } => 92,
+            E::ShieldedSpendUnconfirmed { .. } => 93,
+            E::MasternodeWithdrawalUnconfirmed { .. } => 94,
+            E::ShieldedSyncFailed(_) => 95,
+            E::ShutdownIncomplete(_) => 96,
+            E::ShieldedTreeUpdateFailed(_) => 97,
+            E::ShieldedStoreError(_) => 98,
+            E::ShieldedMerkleWitnessUnavailable(_) => 99,
+            E::ShieldedNoRecordedAnchor(_) => 100,
+            E::ShieldedKeyDerivation(_) => 101,
+            E::ShieldedNotBound => 102,
+            E::DocumentEraseBusy => 103,
+            E::PaymentAlreadyDispatched { .. } => 104,
+            E::IdentityLookupFailed { .. } => 105,
+            E::RefusedBeforeDispatch { .. } => 106,
+            E::DashpayAccountBuild { .. } => 107,
+            E::ContractNotFound { .. } => 108,
+            E::DocumentNotFound { .. } => 109,
+            E::BalanceHistoryInconsistentHeights { .. } => 110,
+            E::ShieldedTipPending => 111,
+            E::ShieldedBalanceBusy => 112,
+            E::ShieldedTipRecipientMismatch { .. } => 113,
+            E::ShieldedSpendNotExecuted { .. } => 114,
+            E::ShieldedTooManyNotes { .. } => 115,
+            E::ShieldedProtocolVersionMismatch { .. } => 116,
+            E::TokenShieldedPoolDisabled { .. } => 117,
+            E::TokenConfigurationUnavailable { .. } => 118,
+            E::TokenShieldedInsufficientBalance { .. } => 119,
+            E::TokenShieldedPoolSpendPending { .. } => 120,
+            E::ShieldedOperationInProgress => 121,
+            E::InvitationClaimedByThisWallet { .. } => 122,
+            E::InvitationAlreadyClaimed { .. } => 123,
+            E::InvitationKeysAlreadyRegistered { .. } => 124,
+            E::InvitationNotReady(_) => 125,
+            E::ShieldedPlanChanged { .. } => 126,
+            E::ShieldedSpendTooManyNotes { .. } => 127,
+            E::ShieldedWithdrawalAmountOutOfRange { .. } => 128,
+            E::NetworkProtocolVersionUnsupported { .. } => 129,
+        }
+    }
+
+    /// Every variant with the class hosts branch on, at least one row each
+    /// (the SDK-carrying variants have a row per SDK class). A wrong class in
+    /// any arm of [`PlatformWalletError::payment_delivery`] fails here.
+    fn table() -> Vec<(PlatformWalletError, PaymentDelivery)> {
+        use PaymentDelivery::{LockHeld, MaybeSent, NotSent};
+        use PlatformWalletError as E;
+
+        let s = || "x".to_string();
+        vec![
+            (E::WalletCreation(s()), NotSent),
+            (E::PersisterLoad(persistence()), NotSent),
+            (E::PersisterStore(persistence()), NotSent),
+            (E::PersisterFlush(persistence()), NotSent),
+            (E::PersisterRestore(Box::new(E::WalletLocked)), NotSent),
+            (E::WalletNotFound(s()), MaybeSent),
+            (E::AccountNotFound(s()), NotSent),
+            (
+                E::DashpayAccountBuild {
+                    account_type: key_wallet::AccountType::CoinJoin { index: 0 },
+                    source: key_wallet::Error::KeyError(s()),
+                },
+                NotSent,
+            ),
+            (E::WalletRemovedBeforeSend(s()), NotSent),
+            (E::PreparedPaymentAddressTaken(s()), NotSent),
+            (E::WalletAlreadyExists(s()), NotSent),
+            (E::IdentityAlreadyExists(id()), NotSent),
+            (E::IdentityNotFound(id()), NotSent),
+            (E::IdentityBalanceUnavailable(id()), NotSent),
+            (
+                E::IdentityLookupFailed {
+                    identity_id: id(),
+                    source: dash_sdk::Error::Generic("lookup".into()),
+                },
+                NotSent,
+            ),
+            (E::NoPrimaryIdentity, NotSent),
+            (E::InvalidIdentityData(s()), MaybeSent),
+            (
+                E::InvitationNetworkMismatch {
+                    invitation: Network::Testnet,
+                    wallet: Network::Mainnet,
+                },
+                NotSent,
+            ),
+            (E::Persistence(s()), MaybeSent),
+            (E::ContactRequestNotFound(id()), NotSent),
+            (E::IdentityIndexNotSet(id()), NotSent),
+            (
+                E::IdentityDiscoveryIncomplete {
+                    start_index: 0,
+                    probed: 1,
+                    failed_probes: 1,
+                    source: Box::new(sdk_generic()),
+                },
+                NotSent,
+            ),
+            (
+                E::DashpayReceivingAccountAlreadyExists {
+                    identity: id(),
+                    contact: id(),
+                    network: Network::Testnet,
+                    account_index: 0,
+                },
+                NotSent,
+            ),
+            (
+                E::DashpayExternalAccountAlreadyExists {
+                    identity: id(),
+                    contact: id(),
+                    network: Network::Testnet,
+                    account_index: 0,
+                },
+                NotSent,
+            ),
+            (E::AssetLockTransaction(s()), MaybeSent),
+            (E::TransactionBroadcast(s()), NotSent),
+            (E::TransactionBroadcastUnconfirmed(s()), MaybeSent),
+            (E::StaleReservation, NotSent),
+            (E::TransactionBuild(s()), NotSent),
+            (
+                E::InputMidBroadcast {
+                    outpoint: out_point(),
+                },
+                NotSent,
+            ),
+            (
+                E::MessageSigningAddressInvalid {
+                    address: s(),
+                    reason: s(),
+                },
+                NotSent,
+            ),
+            (
+                E::MessageSigningMessageInvalid {
+                    address: s(),
+                    reason: s(),
+                },
+                NotSent,
+            ),
+            (E::MessageSigningKeyUnavailable { address: s() }, NotSent),
+            (
+                E::MessageSigningFailed {
+                    address: s(),
+                    reason: s(),
+                },
+                NotSent,
+            ),
+            (
+                E::CoreInsufficientFunds {
+                    account_type: AccountTypePreference::BIP44,
+                    account_index: 0,
+                    available: Some(1),
+                    required: Some(2),
+                },
+                NotSent,
+            ),
+            (
+                E::CorePooledInsufficientFunds {
+                    sources: vec![AccountTypePreference::BIP44],
+                    available: None,
+                    required: None,
+                },
+                NotSent,
+            ),
+            (
+                E::NoSpendableInputs {
+                    account_type: StandardAccountType::BIP44Account,
+                    account_index: 0,
+                    context: s(),
+                },
+                NotSent,
+            ),
+            (E::AssetLockProofWait(s()), MaybeSent),
+            (E::AssetLockNotTracked(out_point()), NotSent),
+            (E::AssetLockAlreadyConsumed(out_point()), MaybeSent),
+            (
+                E::AssetLockFundingMismatch {
+                    out_point: out_point(),
+                    expected_funding_type: AssetLockFundingType::IdentityRegistration,
+                    expected_identity_index: 0,
+                    actual_funding_type: AssetLockFundingType::IdentityTopUp,
+                    actual_identity_index: 1,
+                },
+                NotSent,
+            ),
+            (
+                E::AssetLockInputConflict {
+                    out_point: out_point(),
+                    input: out_point(),
+                    spent_by: dashcore::Txid::from_byte_array([4; 32]),
+                    height: Some(5),
+                },
+                NotSent,
+            ),
+            (
+                E::AssetLockInputContested {
+                    out_point: out_point(),
+                    input: out_point(),
+                    spent_by: dashcore::Txid::from_byte_array([4; 32]),
+                    height: None,
+                },
+                LockHeld(out_point()),
+            ),
+            (
+                E::AssetLockInsufficientFunds {
+                    available: 1,
+                    required: 2,
+                },
+                NotSent,
+            ),
+            (E::AssetLockFundsAwaitingFinality { waiting: 1 }, NotSent),
+            (
+                E::AssetLockTooManyInputs {
+                    count: 101,
+                    max: 100,
+                    resumed: false,
+                },
+                NotSent,
+            ),
+            (
+                E::AssetLockTooManyInputs {
+                    count: 101,
+                    max: 100,
+                    resumed: true,
+                },
+                MaybeSent,
+            ),
+            (
+                E::PaymentAlreadyDispatched {
+                    held_lock: Some(out_point()),
+                    source: Box::new(E::Sdk(sdk_generic())),
+                },
+                LockHeld(out_point()),
+            ),
+            (
+                E::PaymentAlreadyDispatched {
+                    held_lock: None,
+                    source: Box::new(E::AssetLockInsufficientFunds {
+                        available: 1,
+                        required: 2,
+                    }),
+                },
+                MaybeSent,
+            ),
+            (
+                E::AssetLockRecipientMismatch {
+                    out_point: out_point(),
+                    recorded: [1; 43],
+                    requested: [2; 43],
+                },
+                LockHeld(out_point()),
+            ),
+            (
+                E::RefusedBeforeDispatch {
+                    source: Box::new(E::Sdk(sdk_generic())),
+                },
+                NotSent,
+            ),
+            (E::Sdk(sdk_generic()), MaybeSent),
+            (
+                E::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                    sdk_generic(),
+                ))),
+                MaybeSent,
+            ),
+            (
+                E::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(
+                    format!("{SIGNER_KEY_UNAVAILABLE_PREFIX}no key"),
+                ))),
+                NotSent,
+            ),
+            (
+                E::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                    method: "get_contract_fee_pots",
+                    required: 15,
+                    feature: None,
+                    network: 14,
+                    pinned: false,
+                    cause: None,
+                }),
+                NotSent,
+            ),
+            (E::PrivateContactRequestNeedsPrivateReply(id()), NotSent),
+            (E::PrivateContactRequestPending(id()), NotSent),
+            (E::PublicContactRequestUnconfirmed(id()), MaybeSent),
+            (E::PrivateContactStoreNotRead(id()), NotSent),
+            (E::PrivateContactPaymentsNotRestored, NotSent),
+            (E::PrivateContactRecoveryUnsupported, NotSent),
+            (E::DpnsNameNotFound { name: s() }, NotSent),
+            (E::DecisionProposalNotFound { proposal_id: id() }, NotSent),
+            (E::DocumentNotForSale { document_id: id() }, MaybeSent),
+            (
+                E::DocumentPriceChanged {
+                    document_id: id(),
+                    expected: 1,
+                    actual: 2,
+                },
+                MaybeSent,
+            ),
+            (
+                E::InsufficientIdentityCredits {
+                    identity_id: id(),
+                    required: 2,
+                    available: 1,
+                },
+                MaybeSent,
+            ),
+            (
+                E::ContestedNameNotTradable {
+                    label: s(),
+                    ends_at_ms: 0,
+                },
+                NotSent,
+            ),
+            (
+                E::AddressNonceMismatch {
+                    address: PlatformAddress::P2pkh([7; 20]),
+                    provided_nonce: 1,
+                    expected_nonce: 2,
+                },
+                MaybeSent,
+            ),
+            (E::AddressSync(s()), MaybeSent),
+            (E::AddressOperation(s()), MaybeSent),
+            (E::InvalidParameter(s()), NotSent),
+            (E::MasternodeListUnavailable, NotSent),
+            (
+                E::OnlyOutputAddressesFunded {
+                    funded_outputs: vec![PlatformAddress::P2pkh([7; 20])],
+                    sub_min_count: 1,
+                    sub_min_aggregate: 1,
+                    min_input_amount: 2,
+                },
+                NotSent,
+            ),
+            (
+                E::OnlyDustInputs {
+                    sub_min_count: 1,
+                    sub_min_aggregate: 1,
+                    min_input_amount: 2,
+                },
+                NotSent,
+            ),
+            (
+                E::ChangeBelowMinimumOutput {
+                    change_amount: 1,
+                    min_output_amount: 2,
+                },
+                NotSent,
+            ),
+            (E::InputSumOverflow, NotSent),
+            (E::AddressNotFound(s()), NotSent),
+            (E::KeyDerivation(s()), MaybeSent),
+            (E::WalletLocked, NotSent),
+            (E::SeedMismatch { wallet_id: s() }, NotSent),
+            (E::SeedBindingUnanswered { wallet_id: s() }, NotSent),
+            (E::ContactSyncUnreachable { identities: 1 }, NotSent),
+            (E::SpvAlreadyRunning, NotSent),
+            (E::NoWalletsConfigured, NotSent),
+            (E::SpvError(s()), MaybeSent),
+            (
+                E::QuorumNotVerified {
+                    quorum_type: 6,
+                    quorum_hash: [0xab; 32],
+                    status: LLMQEntryVerificationStatus::Skipped(
+                        LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+                    ),
+                },
+                MaybeSent,
+            ),
+            (E::SpvProcessRestartRequired(s()), NotSent),
+            (E::TokenError(s()), MaybeSent),
+            (
+                E::TokenOperationFailed {
+                    operation: "claim",
+                    source: sdk_generic(),
+                },
+                MaybeSent,
+            ),
+            (
+                E::TokenOperationFailed {
+                    operation: "claim",
+                    source: dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                        "{SIGNER_KEY_UNAVAILABLE_PREFIX}no key"
+                    ))),
+                },
+                NotSent,
+            ),
+            (E::FinalityTimeout(out_point()), LockHeld(out_point())),
+            (E::AssetLockExpired(s()), MaybeSent),
+            // Before the claim was sent: the funding transaction not found, a
+            // ChainLock invitation not chain-locked, an islock proof too large.
+            (
+                E::AssetLockNotChainLocked {
+                    message: s(),
+                    after_broadcast: false,
+                },
+                NotSent,
+            ),
+            // Platform refused the claim sent with the islock proof.
+            (
+                E::AssetLockNotChainLocked {
+                    message: s(),
+                    after_broadcast: true,
+                },
+                MaybeSent,
+            ),
+            (E::ShieldedNoUnspentNotes, NotSent),
+            (
+                E::ShieldedPlanChanged {
+                    fresh_selection: None,
+                },
+                NotSent,
+            ),
+            (E::ShieldedSpendTooManyNotes { needed: 20, max: 6 }, NotSent),
+            (
+                E::ShieldedWithdrawalAmountOutOfRange {
+                    amount: 1,
+                    min: 2,
+                    max: 3,
+                },
+                NotSent,
+            ),
+            (
+                E::NetworkProtocolVersionUnsupported {
+                    network: 99,
+                    latest_supported: 15,
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedInsufficientBalance {
+                    available: 1,
+                    required: 2,
+                },
+                NotSent,
+            ),
+            (
+                E::PlatformShieldCapacityExceeded {
+                    available: 1,
+                    required: 2,
+                },
+                NotSent,
+            ),
+            (E::ShieldedBuildError(s()), MaybeSent),
+            (E::ShieldedBroadcastFailed(s()), NotSent),
+            (E::ShieldedBroadcastMaybeDelivered(s()), MaybeSent),
+            (
+                E::ShieldedBroadcastUnconfirmed {
+                    identity_id: id(),
+                    reason: s(),
+                },
+                MaybeSent,
+            ),
+            (
+                E::ShieldedIdentityDebitPending {
+                    identity_id: [1; 32],
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedRecoveryCorrupted {
+                    account_index: None,
+                    reason: s(),
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedRecoveryKeysRequired {
+                    account_index: 0,
+                    reason: s(),
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedSpendUnconfirmed {
+                    operation: "transfer",
+                    reason: s(),
+                },
+                MaybeSent,
+            ),
+            (
+                E::MasternodeWithdrawalUnconfirmed {
+                    identity_id: id(),
+                    amount_credits: 5,
+                    reason: s(),
+                },
+                MaybeSent,
+            ),
+            (E::ShieldedSyncFailed(s()), NotSent),
+            (E::ShutdownIncomplete(s()), NotSent),
+            (E::ShieldedTreeUpdateFailed(s()), NotSent),
+            (E::ShieldedStoreError(s()), MaybeSent),
+            (E::ShieldedMerkleWitnessUnavailable(s()), NotSent),
+            (E::ShieldedNoRecordedAnchor(s()), NotSent),
+            (E::ShieldedKeyDerivation(s()), NotSent),
+            (E::ShieldedNotBound, NotSent),
+            (E::DocumentEraseBusy, NotSent),
+            (E::ContractNotFound { contract_id: id() }, NotSent),
+            (
+                E::DocumentNotFound {
+                    contract_id: id(),
+                    document_type_name: s(),
+                    document_id: id(),
+                },
+                NotSent,
+            ),
+            (
+                E::BalanceHistoryInconsistentHeights {
+                    attempts: 3,
+                    required_height: 10,
+                    proved_height: 9,
+                },
+                NotSent,
+            ),
+            (E::ShieldedTipPending, NotSent),
+            (E::ShieldedBalanceBusy, NotSent),
+            (
+                E::ShieldedTipRecipientMismatch {
+                    expected: id(),
+                    resolved: Identifier::from([2; 32]),
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedSpendNotExecuted {
+                    operation: "top-up",
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedTooManyNotes {
+                    required_notes: 7,
+                    max_notes: 6,
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedProtocolVersionMismatch {
+                    sdk_version: 12,
+                    network_version: 11,
+                },
+                NotSent,
+            ),
+            (E::TokenShieldedPoolDisabled { token_id: id() }, NotSent),
+            (
+                E::TokenConfigurationUnavailable {
+                    token_id: id(),
+                    reason: s(),
+                },
+                NotSent,
+            ),
+            (
+                E::TokenShieldedInsufficientBalance {
+                    token_id: id(),
+                    available: 1,
+                    required: 2,
+                },
+                NotSent,
+            ),
+            (E::TokenShieldedPoolSpendPending { token_id: id() }, NotSent),
+            (E::ShieldedOperationInProgress, NotSent),
+            (
+                E::InvitationClaimedByThisWallet { identity_id: id() },
+                MaybeSent,
+            ),
+            (E::InvitationAlreadyClaimed { identity_id: id() }, MaybeSent),
+            // Found by the claim's own lookup: nothing was broadcast.
+            (
+                E::InvitationKeysAlreadyRegistered {
+                    identity_id: Some(id()),
+                    rejection: None,
+                },
+                NotSent,
+            ),
+            // Platform's refusal of the broadcast claim.
+            (
+                E::InvitationKeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: Some(dash_sdk::Error::Generic(s())),
+                },
+                MaybeSent,
+            ),
+            (
+                E::InvitationNotReady(dash_sdk::Error::Generic(s())),
+                NotSent,
+            ),
+        ]
+    }
+
+    #[test]
+    fn should_classify_every_variant() {
+        let rows = table();
+        let covered: BTreeSet<usize> = rows.iter().map(|(error, _)| ordinal(error)).collect();
+        let missing: Vec<usize> = (0..VARIANT_COUNT)
+            .filter(|ordinal| !covered.contains(ordinal))
+            .collect();
+        assert!(missing.is_empty(), "variants without a row: {missing:?}");
+        assert!(
+            covered.iter().all(|ordinal| *ordinal < VARIANT_COUNT),
+            "an ordinal at or past VARIANT_COUNT: bump it"
+        );
+        for (error, expected) in rows {
+            assert_eq!(error.payment_delivery(), expected, "{error:?}");
+        }
+    }
+
+    #[test]
+    fn should_name_the_held_asset_lock_exactly_where_the_class_holds_one() {
+        for (error, delivery) in table() {
+            let expected = match delivery {
+                PaymentDelivery::LockHeld(out_point) => Some(out_point),
+                PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => None,
+            };
+            assert_eq!(error.held_asset_lock(), expected, "{error:?}");
+        }
+    }
+
+    /// The failures nothing left the wallet for that the same call can get
+    /// past by running again. A refusal proven before dispatch keeps its
+    /// source's decision.
+    fn retryable_when_not_sent(error: &PlatformWalletError) -> bool {
+        if let PlatformWalletError::RefusedBeforeDispatch { source } = error {
+            return source.is_retryable();
+        }
+        matches!(
+            error,
+            PlatformWalletError::ShieldedNoRecordedAnchor(_)
+                | PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)
+                | PlatformWalletError::ShieldedBroadcastFailed(_)
+                | PlatformWalletError::ShutdownIncomplete(_)
+                | PlatformWalletError::PrivateContactStoreNotRead(_)
+                | PlatformWalletError::IdentityBalanceUnavailable(_)
+                | PlatformWalletError::IdentityLookupFailed { .. }
+                | PlatformWalletError::InvitationNotReady(_)
+                | PlatformWalletError::AssetLockNotChainLocked { .. }
+                | PlatformWalletError::BalanceHistoryInconsistentHeights { .. }
+                | PlatformWalletError::ShieldedBalanceBusy
+                | PlatformWalletError::ShieldedOperationInProgress
+                | PlatformWalletError::TokenConfigurationUnavailable { .. }
+                | PlatformWalletError::ShieldedSpendNotExecuted { .. }
+        )
+    }
+
+    /// Every variant's retry follows its class: never `MaybeSent`, never
+    /// `LockHeld` (it goes on by resuming the held lock), and for `NotSent`
+    /// only the transient kinds.
+    #[test]
+    fn should_allow_a_retry_only_where_nothing_left() {
+        for (error, delivery) in table() {
+            let expected = match delivery {
+                PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => false,
+                PaymentDelivery::NotSent => retryable_when_not_sent(&error),
+            };
+            assert_eq!(error.is_retryable(), expected, "{error:?}");
+        }
+    }
+
+    /// A held asset lock is not a retry: running the failed operation again
+    /// would fund a second payment while the first lock stays resumable. The
+    /// payment goes on only by resuming the lock the error names.
+    #[test]
+    fn should_not_allow_a_retry_for_a_held_asset_lock() {
+        let held: Vec<_> = table()
+            .into_iter()
+            .filter(|(_, delivery)| matches!(delivery, PaymentDelivery::LockHeld(_)))
+            .collect();
+        assert_eq!(
+            held.len(),
+            4,
+            "FinalityTimeout, contested, recipient mismatch, a refusal after dispatch"
+        );
+        for (error, _) in held {
+            assert!(!error.is_retryable(), "{error:?}");
+            assert_eq!(error.held_asset_lock(), Some(out_point()), "{error:?}");
+        }
+    }
+
+    /// A request another payment blocks dispatched nothing (`NotSent`), and
+    /// running it again only meets the same refusal until that payment
+    /// settles, so it is not retryable: the host waits for the earlier one.
+    #[test]
+    fn should_class_a_request_blocked_by_another_payment_as_not_sent_and_not_retryable() {
+        use PlatformWalletError as E;
+        let blocked = [
+            E::InputMidBroadcast {
+                outpoint: out_point(),
+            },
+            E::PrivateContactRequestPending(id()),
+            E::ShieldedIdentityDebitPending {
+                identity_id: [1; 32],
+            },
+            E::ShieldedRecoveryCorrupted {
+                account_index: None,
+                reason: "x".into(),
+            },
+            E::ShieldedRecoveryKeysRequired {
+                account_index: 0,
+                reason: "x".into(),
+            },
+        ];
+        for error in blocked {
+            assert_eq!(
+                error.payment_delivery(),
+                PaymentDelivery::NotSent,
+                "{error:?}"
+            );
+            assert!(!error.is_retryable(), "{error:?}");
+            assert_eq!(error.held_asset_lock(), None, "{error:?}");
+        }
+    }
+
+    /// A refusal that follows a dispatch is never `NotSent`: it keeps its
+    /// diagnostic under the `MaybeSent` wrapper, and the wrapper names it as
+    /// its source. Other classes stay as they are.
+    #[test]
+    fn should_never_leave_a_refusal_after_a_dispatch_not_sent() {
+        let refusal = || PlatformWalletError::AssetLockNotTracked(out_point());
+        let after = refusal().after_dispatch();
+        assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
+        assert_eq!(after.held_asset_lock(), None);
+        assert!(!after.is_retryable());
+        assert_eq!(after.to_string(), refusal().to_string());
+        assert!(matches!(
+            after.dispatched_source(),
+            PlatformWalletError::AssetLockNotTracked(_)
+        ));
+
+        let held = PlatformWalletError::FinalityTimeout(out_point()).after_dispatch();
+        assert!(matches!(held, PlatformWalletError::FinalityTimeout(_)));
+        let maybe =
+            PlatformWalletError::TransactionBroadcastUnconfirmed("x".into()).after_dispatch();
+        assert!(matches!(
+            maybe,
+            PlatformWalletError::TransactionBroadcastUnconfirmed(_)
+        ));
+    }
+
+    /// A finality timeout reads as one through either payment-class wrapper,
+    /// for the wallet's fallback and the public predicate alike.
+    #[test]
+    fn should_find_a_finality_timeout_through_the_class_wrappers() {
+        let timeout = || PlatformWalletError::FinalityTimeout(out_point());
+        for error in [
+            timeout(),
+            timeout().without_held_lock(),
+            PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(timeout()),
+            },
+        ] {
+            assert_eq!(error.instant_lock_timeout(), Some(out_point()), "{error:?}");
+            assert!(is_instant_lock_timeout(&error), "{error:?}");
+        }
+        assert!(matches!(
+            timeout().without_held_lock(),
+            PlatformWalletError::PaymentAlreadyDispatched { .. }
+        ));
+        let other = PlatformWalletError::AssetLockNotTracked(out_point()).after_dispatch();
+        assert_eq!(other.instant_lock_timeout(), None);
+        assert!(!is_instant_lock_timeout(&other));
+    }
+
+    /// A refusal its emitter proved came before the payment's first dispatch
+    /// is `NotSent`, whatever its variant would say after a dispatch, and
+    /// keeps its diagnostic, its source (the FFI code) and its source's
+    /// retry decision. An error that already records a dispatch or holds a
+    /// lock is kept, and a refusal proven before dispatch that is then
+    /// carried past a dispatch is `MaybeSent` again.
+    #[test]
+    fn should_report_a_refusal_proven_before_dispatch_as_not_sent() {
+        use PlatformWalletError as E;
+        let verdicts = [
+            E::Sdk(sdk_generic()),
+            E::InvalidIdentityData("x".into()),
+            E::DocumentNotForSale { document_id: id() },
+            E::DocumentPriceChanged {
+                document_id: id(),
+                expected: 1,
+                actual: 2,
+            },
+            E::InsufficientIdentityCredits {
+                identity_id: id(),
+                required: 2,
+                available: 1,
+            },
+            E::PublicContactRequestUnconfirmed(id()),
+        ];
+        for verdict in verdicts {
+            let text = verdict.to_string();
+            let retryable = verdict.is_retryable();
+            let refused = verdict.before_dispatch();
+            assert_eq!(
+                refused.payment_delivery(),
+                PaymentDelivery::NotSent,
+                "{refused:?}"
+            );
+            assert_eq!(refused.is_retryable(), retryable, "{refused:?}");
+            assert_eq!(refused.held_asset_lock(), None, "{refused:?}");
+            assert_eq!(refused.to_string(), text);
+            assert!(
+                !matches!(refused.dispatched_source(), E::RefusedBeforeDispatch { .. }),
+                "{refused:?}"
+            );
+            let carried = refused.after_dispatch();
+            assert_eq!(
+                carried.payment_delivery(),
+                PaymentDelivery::MaybeSent,
+                "{carried:?}"
+            );
+        }
+
+        assert!(matches!(E::WalletLocked.before_dispatch(), E::WalletLocked));
+        assert!(matches!(
+            E::FinalityTimeout(out_point()).before_dispatch(),
+            E::FinalityTimeout(_)
+        ));
+        let dispatched = E::AssetLockNotTracked(out_point()).after_dispatch();
+        assert_eq!(
+            dispatched.before_dispatch().payment_delivery(),
+            PaymentDelivery::MaybeSent
+        );
+    }
+
+    /// A persister failure is retryable exactly when the store called it
+    /// transient.
+    #[test]
+    fn should_retry_a_persister_failure_only_when_the_store_calls_it_transient() {
+        use crate::changeset::PersistenceErrorKind as Kind;
+
+        let backend = |kind| PersistenceError::backend_with_kind(kind, std::io::Error::other("db"));
+        for (kind, expected) in [
+            (Kind::Transient, true),
+            (Kind::Fatal, false),
+            (Kind::Constraint, false),
+        ] {
+            assert_eq!(
+                PlatformWalletError::PersisterLoad(backend(kind)).is_retryable(),
+                expected,
+                "load {kind:?}"
+            );
+            assert_eq!(
+                PlatformWalletError::PersisterStore(backend(kind)).is_retryable(),
+                expected,
+                "store {kind:?}"
+            );
+        }
+        assert!(!PlatformWalletError::PersisterLoad(persistence()).is_retryable());
+    }
+
+    /// A failed flush never allows running the operation again, transient or
+    /// not: its record may still be buffered and commit later, so a retry
+    /// could write a second one.
+    #[test]
+    fn should_not_retry_an_operation_whose_flush_failed() {
+        use crate::changeset::PersistenceErrorKind as Kind;
+
+        for kind in [Kind::Transient, Kind::Fatal, Kind::Constraint] {
+            let error = PlatformWalletError::from_flush_failure(
+                PersistenceError::backend_with_kind(kind, std::io::Error::other("flush")),
+            );
+            assert!(!error.is_retryable(), "flush {kind:?}");
+        }
+    }
+
+    /// A payment call that panicked is classed as one whose dispatch may
+    /// have happened: maybe sent and never retryable, the class a returned
+    /// unconfirmed broadcast gets.
+    #[test]
+    fn should_class_a_panicked_payment_as_maybe_sent_and_not_retryable() {
+        let unconfirmed = PlatformWalletError::TransactionBroadcastUnconfirmed("panic".into());
+        assert_eq!(
+            panicked_payment_class(),
+            (PaymentDelivery::MaybeSent, false)
+        );
+        assert_eq!(
+            panicked_payment_class(),
+            (unconfirmed.payment_delivery(), unconfirmed.is_retryable())
+        );
     }
 }

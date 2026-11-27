@@ -31,6 +31,7 @@
 //! on their CL fallback or retry-budget windows.
 
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,9 +47,10 @@ pub(crate) use dash_sdk::platform::transition::asset_lock_submission::{
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
+use crate::error::{is_asset_lock_already_consumed, sdk_payment_delivery, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::AssetLockOperationContext;
+use crate::PaymentDelivery;
 
 use super::build::{AssetLockBuildAmount, AssetLockBuiltObserver};
 
@@ -300,6 +302,149 @@ pub(crate) fn out_point_from_proof(proof: &AssetLockProof) -> OutPoint {
 }
 
 // ---------------------------------------------------------------------------
+// Payment class once a lock exists
+// ---------------------------------------------------------------------------
+
+/// `error` as the end of a payment whose lock is `resumable` (`Some` only for
+/// a lock that is tracked and has no evidence of a Platform spend, see
+/// [`AssetLockStatus::is_resumable`](crate::wallet::asset_lock::tracked::AssetLockStatus::is_resumable)). The one place a funded payment's
+/// [`PaymentDelivery::LockHeld`] is decided.
+///
+/// A lock is named as held only where resuming it can finish this payment:
+/// the lock is resumable, and the error proves nothing reached Platform for
+/// it. That is a `NotSent` refusal (named through
+/// [`PlatformWalletError::PaymentAlreadyDispatched`], keeping its diagnostic
+/// and FFI code), or a held-lock error that names this same lock (a finality
+/// timeout, a contested input, a recipient mismatch). Every other error keeps
+/// its own class and names no lock: a `MaybeSent` one (an unconfirmed or
+/// failed Platform submission, a failed write of the lock's status, a
+/// Core broadcast whose outcome is unknown) may have spent the lock or may
+/// still, and the errors that say this lock is not the way on (consumed,
+/// untracked, tracked for another destination, over the input cap,
+/// unconfirmable) are refusals of the resume itself. A host finds such a lock
+/// in the tracked asset-lock list, not in the error.
+///
+/// With no resumable lock, an error that names one is demoted to
+/// `MaybeSent` ([`PlatformWalletError::without_held_lock`]).
+pub(crate) fn hold_resumable_lock(
+    error: PlatformWalletError,
+    resumable: Option<OutPoint>,
+) -> PlatformWalletError {
+    let Some(out_point) = resumable else {
+        return error.without_held_lock();
+    };
+    match error.payment_delivery() {
+        PaymentDelivery::LockHeld(held) if held == out_point => error,
+        PaymentDelivery::LockHeld(_) => error.without_held_lock(),
+        PaymentDelivery::NotSent if !refuses_resume(&error) => {
+            PlatformWalletError::PaymentAlreadyDispatched {
+                held_lock: Some(out_point),
+                source: Box::new(error),
+            }
+        }
+        PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => error,
+    }
+}
+
+/// The diagnostic of [`AssetLockManager::handoff_failure`]: `MaybeSent`, as
+/// the call built or resumed a lock, so its failure is never `NotSent`, and it
+/// names no lock (see [`hold_resumable_lock`]).
+pub fn handoff_failure_source() -> PlatformWalletError {
+    PlatformWalletError::AssetLockTransaction(
+        "the asset lock's proof could not be handed back".into(),
+    )
+}
+
+/// The errors whose own class is the answer even while the lock is tracked:
+/// resuming it is not the way on (see [`hold_resumable_lock`]).
+fn refuses_resume(error: &PlatformWalletError) -> bool {
+    matches!(
+        error,
+        PlatformWalletError::AssetLockAlreadyConsumed(_)
+            | PlatformWalletError::AssetLockNotTracked(_)
+            | PlatformWalletError::AssetLockFundingMismatch { .. }
+            | PlatformWalletError::AssetLockTooManyInputs { .. }
+            | PlatformWalletError::AssetLockInputConflict { .. }
+    )
+}
+
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Run `phase`, the part of an asset-lock-funded operation that follows
+    /// the moment its Core lock exists (broadcast by this call, or resumed)
+    /// and ends when Platform accepts the funded transition, and class its
+    /// error as [`Self::funded_lock_error`] does.
+    ///
+    /// The one seam every funded flow routes that phase through: identity
+    /// registration and top-up, platform-address and shielded funding, the
+    /// invitation voucher, the IS→CL fallback, and the build pipeline's own
+    /// steps after its broadcast.
+    pub(crate) async fn with_funded_lock<T, Fut>(
+        &self,
+        out_point: Option<OutPoint>,
+        phase: Fut,
+    ) -> Result<T, PlatformWalletError>
+    where
+        Fut: Future<Output = Result<T, PlatformWalletError>>,
+    {
+        match phase.await {
+            Ok(value) => Ok(value),
+            Err(error) => Err(self.funded_lock_error(error, out_point).await),
+        }
+    }
+
+    /// The class of an error that ended an asset-lock-funded operation after
+    /// its lock at `out_point` was broadcast or resumed: never `NotSent`.
+    /// A refusal that proves nothing reached Platform names the lock as held
+    /// while it is resumable (see [`hold_resumable_lock`]); otherwise
+    /// (a `MaybeSent` error, or the lock consumed, consumption-unknown, gone,
+    /// or no outpoint known) the error is `MaybeSent` and names no lock.
+    pub(crate) async fn funded_lock_error(
+        &self,
+        error: PlatformWalletError,
+        out_point: Option<OutPoint>,
+    ) -> PlatformWalletError {
+        let resumable = match out_point {
+            Some(out_point) => self.resumable_lock(&out_point).await,
+            None => None,
+        };
+        hold_resumable_lock(error, resumable).after_dispatch()
+    }
+
+    /// The error of a call that built or resumed the lock at `out_point` but
+    /// could not hand its result back (the proof did not encode, the
+    /// derivation path held an interior NUL), classed as
+    /// [`Self::funded_lock_error`] classes it: `MaybeSent`, naming no lock (the
+    /// host finds it in the tracked asset-lock list).
+    pub async fn handoff_failure(&self, out_point: OutPoint) -> PlatformWalletError {
+        self.funded_lock_error(handoff_failure_source(), Some(out_point))
+            .await
+    }
+
+    /// The resume's form of [`Self::funded_lock_error`]: a lock the failed
+    /// resume leaves resumable is named as held for a refusal that proves
+    /// nothing reached Platform, and every other error keeps its class (a
+    /// resume refused at its entry, the lock not tracked for one, dispatched
+    /// nothing), never naming a lock that is not resumable.
+    pub(crate) async fn resume_error(
+        &self,
+        error: PlatformWalletError,
+        out_point: &OutPoint,
+    ) -> PlatformWalletError {
+        let resumable = self.resumable_lock(out_point).await;
+        hold_resumable_lock(error, resumable)
+    }
+
+    /// `out_point` when it is a lock a resume can still take on: tracked, and
+    /// [`AssetLockStatus::is_resumable`](crate::wallet::asset_lock::tracked::AssetLockStatus::is_resumable).
+    async fn resumable_lock(&self, out_point: &OutPoint) -> Option<OutPoint> {
+        match self.tracked_resume_metadata(out_point).await {
+            Some((_, _, status, _)) if status.is_resumable() => Some(*out_point),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Resolver on AssetLockManager
 // ---------------------------------------------------------------------------
 
@@ -383,8 +528,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         if let Some(chain_proof) = chain_proof {
+            // Platform answered that this lock is consumed: a failure to
+            // record that leaves the old row live, but the lock is never the
+            // way on, whatever the failure's own class.
             self.mark_asset_lock_consumption_unknown(out_point, chain_proof)
-                .await?;
+                .await
+                .map_err(|e| e.after_dispatch().without_held_lock())?;
             tracing::warn!(
                 outpoint = %out_point,
                 "recorded unauthenticated already-consumed report as consumption unknown"
@@ -409,6 +558,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Platform places the transaction outside of comes off the row
     /// ([`invalidate_rejected_chain_proof`](Self::invalidate_rejected_chain_proof)).
     ///
+    /// Once any submission in this call may have reached a node (it failed
+    /// with an error the SDK does not class as never sent: the InstantSend
+    /// attempt the fallback replaces, or a ChainLock attempt Platform refused
+    /// for its height), no later failure proves the lock unspent: a final
+    /// refusal the SDK classes as never sent (a signer key missing for the
+    /// re-signed transition) is reported as the unconfirmed outcome of that
+    /// earlier attempt, so the funded-lock seam names no held lock.
+    ///
     /// `flow` names the operation in the log.
     pub(crate) async fn submit_with_chain_lock_fallback<F, Fut, R>(
         &self,
@@ -423,8 +580,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Fut: Future<Output = Result<R, dash_sdk::Error>>,
     {
         let out_point = out_point_from_proof(&proof);
+        let maybe_dispatched = AtomicBool::new(false);
+        let attempt = |proof: AssetLockProof, settings: Option<PutSettings>| {
+            let submitted = submit(proof, settings);
+            let maybe_dispatched = &maybe_dispatched;
+            async move {
+                let result = submitted.await;
+                if let Err(e) = &result {
+                    if !matches!(sdk_payment_delivery(e), PaymentDelivery::NotSent) {
+                        maybe_dispatched.store(true, Ordering::Relaxed);
+                    }
+                }
+                result
+            }
+        };
         let (result, effective_proof) =
-            match submit_with_cl_height_retry(settings, |s| submit(proof.clone(), s)).await {
+            match submit_with_cl_height_retry(settings, |s| attempt(proof.clone(), s)).await {
                 Ok(submitted) => (Ok(submitted), proof),
                 Err(e) if needs_chain_lock_proof(&e, &proof) => {
                     tracing::warn!(
@@ -433,11 +604,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         out_point.txid,
                         e
                     );
+                    // The InstantSend attempt may have reached a node: from
+                    // here no failure proves the lock unspent, so none names
+                    // it as held.
                     let chain_proof = self
                         .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
-                        .await?;
+                        .await
+                        .map_err(|e| e.after_dispatch().without_held_lock())?;
                     let result =
-                        submit_with_cl_height_retry(settings, |s| submit(chain_proof.clone(), s))
+                        submit_with_cl_height_retry(settings, |s| attempt(chain_proof.clone(), s))
                             .await;
                     (result, chain_proof)
                 }
@@ -447,6 +622,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             self.invalidate_rejected_chain_proof(&out_point, &effective_proof, e)
                 .await;
         }
+        let result = result.map_err(|e| {
+            if maybe_dispatched.load(Ordering::Relaxed)
+                && matches!(sdk_payment_delivery(&e), PaymentDelivery::NotSent)
+            {
+                dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(e))
+            } else {
+                e
+            }
+        });
         Ok((result, effective_proof))
     }
 
@@ -471,14 +655,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         cl_wait: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
-        let chain_proof = self
-            .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
-            .await?;
+        // The lock timed out after its broadcast (or resume): every failure
+        // from here on leaves it held, never `NotSent`.
+        self.with_funded_lock(Some(*out_point), async {
+            let chain_proof = self
+                .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
+                .await?;
 
-        // The row now carries the proof, so this resume takes the
-        // already-final arm rather than waiting for one.
-        let (_, path) = self.resume_asset_lock(out_point, cl_wait).await?;
-        Ok((chain_proof, path))
+            // The row now carries the proof, so this resume takes the
+            // already-final arm rather than waiting for one.
+            let (_, path) = self.resume_asset_lock(out_point, cl_wait).await?;
+            Ok((chain_proof, path))
+        })
+        .await
     }
 
     /// Resolve an [`AssetLockFunding`] to a concrete proof + path +
@@ -574,14 +763,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
-                        // The exact outpoint that timed out comes from
-                        // the error payload — no `find_tracked_unproven_lock`
-                        // walk needed (which would pick BTreeMap-first
-                        // on multiple unproven locks for the same key).
-                        Ok(FundingResolution::IsTimeout { out_point })
-                    }
-                    Err(e) => Err(e),
+                    // The exact outpoint that timed out comes from the error
+                    // payload, read through the class wrapper — no
+                    // `find_tracked_unproven_lock` walk needed (which would
+                    // pick BTreeMap-first on multiple unproven locks for the
+                    // same key).
+                    Err(e) => match e.instant_lock_timeout() {
+                        Some(out_point) => Ok(FundingResolution::IsTimeout { out_point }),
+                        None => Err(e),
+                    },
                 }
             }
             AssetLockFunding::DrainWalletBalance {
@@ -615,10 +805,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
-                        Ok(FundingResolution::IsTimeout { out_point })
-                    }
-                    Err(error) => Err(error),
+                    Err(error) => match error.instant_lock_timeout() {
+                        Some(out_point) => Ok(FundingResolution::IsTimeout { out_point }),
+                        None => Err(error),
+                    },
                 }
             }
             AssetLockFunding::DrainAccountBalance {
@@ -647,17 +837,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
-                        Ok(FundingResolution::IsTimeout { out_point })
-                    }
-                    Err(e) => Err(e),
+                    Err(e) => match e.instant_lock_timeout() {
+                        Some(out_point) => Ok(FundingResolution::IsTimeout { out_point }),
+                        None => Err(e),
+                    },
                 }
             }
             AssetLockFunding::FromExistingAssetLock {
                 out_point,
                 consume_invitation_voucher,
             } => {
-                let (actual_funding_type, actual_identity_index, status) = self
+                let (actual_funding_type, actual_identity_index, status, _) = self
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
@@ -698,16 +888,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         path,
                         tracked_out_point: Some(out_point),
                     })),
-                    Err(PlatformWalletError::FinalityTimeout(timed_out)) => {
-                        // Outpoint from the error (which equals
-                        // `out_point` from the variant in practice —
-                        // but we use the error payload for parity
-                        // with the FromWalletBalance arm).
-                        Ok(FundingResolution::IsTimeout {
+                    // Read through the class wrapper: the resume names no
+                    // lock for a row it cannot take on (a proofless
+                    // `RecoveredFromChain` one), but its timeout still
+                    // routes to the ChainLock fallback.
+                    Err(e) => match e.instant_lock_timeout() {
+                        // Outpoint from the error (which equals `out_point`
+                        // from the variant in practice — but we use the error
+                        // payload for parity with the FromWalletBalance arm).
+                        Some(timed_out) => Ok(FundingResolution::IsTimeout {
                             out_point: timed_out,
-                        })
-                    }
-                    Err(e) => Err(e),
+                        }),
+                        None => Err(e),
+                    },
                 }
             }
         }
@@ -1045,6 +1238,67 @@ mod tests {
             )
             .into(),
         )))
+    }
+
+    /// A matching already-consumed report whose consumption-unknown status
+    /// cannot be recorded (here the backend lacks the reconciliation
+    /// capability, so the row is left as it was) names no lock: Platform
+    /// answered that the lock is spent, so it is not the way on, though the
+    /// old row still reads as resumable. An unconfirmed submission names
+    /// none either: it may still spend the lock. Both stay `MaybeSent`
+    /// through the funded-lock seam.
+    #[tokio::test]
+    async fn should_name_no_lock_after_platform_evidence_of_a_spend() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let ctx = instant_reconciliation_context_with(Arc::new(FailingLookupPersister)).await;
+        let chain_proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 42,
+            out_point: ctx.out_point,
+        });
+        let unrecorded = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &chain_proof,
+                None,
+            )
+            .await
+            .expect_err("the consumption-unknown status cannot be recorded");
+        assert!(
+            matches!(
+                unrecorded.dispatched_source(),
+                PlatformWalletError::Persistence(_)
+            ),
+            "{unrecorded:?}"
+        );
+        let unconfirmed = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                    dash_sdk::Error::Generic("no proof".into()),
+                ))),
+                &ctx.out_point,
+                &chain_proof,
+                None,
+            )
+            .await
+            .expect_err("unconfirmed");
+
+        for error in [unrecorded, unconfirmed] {
+            let rendered = format!("{error:?}");
+            let seam = ctx
+                .manager
+                .funded_lock_error(error, Some(ctx.out_point))
+                .await;
+            assert_eq!(
+                seam.payment_delivery(),
+                crate::PaymentDelivery::MaybeSent,
+                "{rendered}"
+            );
+            assert_eq!(seam.held_asset_lock(), None, "{rendered}");
+        }
     }
 
     /// The downgrade outcome both promotion-failure shapes must share:

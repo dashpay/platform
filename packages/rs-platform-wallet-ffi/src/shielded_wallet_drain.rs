@@ -626,6 +626,7 @@ mod tests {
             platform_wallet::PlatformWalletError::AssetLockTooManyInputs {
                 count: 501,
                 max: 500,
+                resumed: false,
             }
             .into();
         assert_eq!(
