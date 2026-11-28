@@ -2,7 +2,8 @@
 use crate::{
     consensus::ConsensusError,
     identity::{
-        accessors::IdentityGettersV0, core_script::CoreScript, signer::Signer, Identity,
+        accessors::IdentityGettersV0, core_script::CoreScript,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
         IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
@@ -41,67 +42,45 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         let identity_public_key = match signing_withdrawal_key_to_use {
             Some(key) => key,
             None => {
-                let mut key: Option<&IdentityPublicKey>;
+                // The first key of `purpose` the signer holds, else the first key of `purpose`.
+                let held = |purpose: Purpose| {
+                    identity
+                        .public_keys()
+                        .values()
+                        .find(|key| key.purpose() == purpose && signer.can_sign_with(key))
+                };
+                let first = |purpose: Purpose| {
+                    identity.get_first_public_key_matching(
+                        purpose,
+                        SecurityLevel::full_range().into(),
+                        KeyType::all_key_types().into(),
+                        true,
+                    )
+                };
 
-                match preferred_key_purpose_for_signing_withdrawal {
+                let key = match preferred_key_purpose_for_signing_withdrawal {
                     PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred
                         if output_script.is_none() =>
                     {
-                        key = identity.get_first_public_key_matching(
-                            Purpose::OWNER,
-                            SecurityLevel::full_range().into(),
-                            KeyType::all_key_types().into(),
-                            true,
-                        );
-
-                        if key.is_none() || !signer.can_sign_with(key.unwrap()) {
-                            key = identity.get_first_public_key_matching(
-                                Purpose::TRANSFER,
-                                SecurityLevel::full_range().into(),
-                                KeyType::all_key_types().into(),
-                                true,
-                            );
-                        }
+                        held(Purpose::OWNER)
+                            .or_else(|| held(Purpose::TRANSFER))
+                            .or_else(|| first(Purpose::TRANSFER))
                     }
                     // An OWNER key cannot sign a withdrawal to a chosen address, so there an
                     // OWNER preference tries TRANSFER first; OWNER stays the fallback and is
                     // refused below.
                     PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred
                     | PreferredKeyPurposeForSigningWithdrawal::TransferPreferred
-                    | PreferredKeyPurposeForSigningWithdrawal::Any => {
-                        key = identity.get_first_public_key_matching(
-                            Purpose::TRANSFER,
-                            SecurityLevel::full_range().into(),
-                            KeyType::all_key_types().into(),
-                            true,
-                        );
-
-                        if key.is_none() || !signer.can_sign_with(key.unwrap()) {
-                            key = identity.get_first_public_key_matching(
-                                Purpose::OWNER,
-                                SecurityLevel::full_range().into(),
-                                KeyType::all_key_types().into(),
-                                true,
-                            );
-                        }
-                    }
+                    | PreferredKeyPurposeForSigningWithdrawal::Any => held(Purpose::TRANSFER)
+                        .or_else(|| held(Purpose::OWNER))
+                        .or_else(|| first(Purpose::OWNER)),
                     PreferredKeyPurposeForSigningWithdrawal::OwnerOnly => {
-                        key = identity.get_first_public_key_matching(
-                            Purpose::OWNER,
-                            SecurityLevel::full_range().into(),
-                            KeyType::all_key_types().into(),
-                            true,
-                        );
+                        held(Purpose::OWNER).or_else(|| first(Purpose::OWNER))
                     }
                     PreferredKeyPurposeForSigningWithdrawal::TransferOnly => {
-                        key = identity.get_first_public_key_matching(
-                            Purpose::TRANSFER,
-                            SecurityLevel::full_range().into(),
-                            KeyType::all_key_types().into(),
-                            true,
-                        );
+                        held(Purpose::TRANSFER).or_else(|| first(Purpose::TRANSFER))
                     }
-                }
+                };
 
                 key.ok_or_else(|| {
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
@@ -152,6 +131,7 @@ mod tests {
     use super::*;
     use crate::address_funds::AddressWitness;
     use crate::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
+    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
     use crate::state_transition::StateTransitionIdentitySigned;
@@ -398,6 +378,143 @@ mod tests {
         .expect_err("OWNER only cannot sign a withdrawal with an output script");
 
         assert_owner_script_refusal(error, &output_script);
+    }
+
+    /// A signer holding only the keys in `available`.
+    #[derive(Debug)]
+    struct SelectiveSigner {
+        available: Vec<u32>,
+    }
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for SelectiveSigner {
+        async fn sign(
+            &self,
+            key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            if self.can_sign_with(key) {
+                Ok(BinaryData::new(vec![0; 65]))
+            } else {
+                Err(ProtocolError::Generic(format!(
+                    "key {} is not held",
+                    key.id()
+                )))
+            }
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            panic!("identity credit withdrawals do not create an address witness");
+        }
+
+        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+            self.available.contains(&key.id())
+        }
+    }
+
+    /// OWNER keys 17 and 20, TRANSFER keys 18 and 19, all CRITICAL.
+    fn identity_with_two_keys_per_purpose(platform_version: &PlatformVersion) -> Identity {
+        let key = |id: u32, purpose: Purpose| {
+            (
+                id,
+                IdentityPublicKey::from(IdentityPublicKeyV0 {
+                    id,
+                    purpose,
+                    security_level: SecurityLevel::CRITICAL,
+                    ..Default::default()
+                }),
+            )
+        };
+        Identity::new_with_id_and_keys(
+            Identifier::default(),
+            [
+                key(17, Purpose::OWNER),
+                key(18, Purpose::TRANSFER),
+                key(19, Purpose::TRANSFER),
+                key(20, Purpose::OWNER),
+            ]
+            .into(),
+            platform_version,
+        )
+        .expect("identity")
+    }
+
+    #[tokio::test]
+    async fn should_pick_the_first_key_the_signer_holds_in_every_automatic_selection() {
+        let platform_version = PlatformVersion::latest();
+        let identity = identity_with_two_keys_per_purpose(platform_version);
+        let script = || Some(CoreScript::from_bytes(vec![0x51]));
+        for (case, (preference, output_script, available, expected)) in [
+            (
+                PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred,
+                None,
+                vec![20, 19],
+                20,
+            ),
+            (
+                PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred,
+                script(),
+                vec![17, 19],
+                19,
+            ),
+            (
+                PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
+                None,
+                vec![17, 19],
+                19,
+            ),
+            (
+                PreferredKeyPurposeForSigningWithdrawal::Any,
+                None,
+                vec![17, 19],
+                19,
+            ),
+            (
+                PreferredKeyPurposeForSigningWithdrawal::OwnerOnly,
+                None,
+                vec![18, 20],
+                20,
+            ),
+            (
+                PreferredKeyPurposeForSigningWithdrawal::TransferOnly,
+                None,
+                vec![17, 19],
+                19,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let label = format!(
+                "case {case}: script={} held={available:?}",
+                output_script.is_some()
+            );
+            let transition = IdentityCreditWithdrawalTransitionV1::try_from_identity(
+                &identity,
+                output_script,
+                1_000_000,
+                Pooling::Never,
+                1,
+                0,
+                SelectiveSigner { available },
+                None,
+                preference,
+                1,
+                platform_version,
+                None,
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+
+            let StateTransition::IdentityCreditWithdrawal(transition) = transition else {
+                panic!("{label}: expected an identity credit withdrawal, got {transition:?}");
+            };
+            assert_eq!(transition.signature_public_key_id(), expected, "{label}");
+        }
     }
 
     fn assert_owner_script_refusal(error: ProtocolError, output_script: &CoreScript) {
