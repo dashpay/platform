@@ -69,10 +69,9 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     let Some(wallet) = CORE_WALLET_STORAGE.with_item(handle, Clone::clone) else {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
         let message = "invalid core wallet handle";
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
             message,
-            &PlatformWalletError::InvalidParameter(message.to_string()),
         );
     };
     // Same generation identity the registry-token path uses: reject a caller
@@ -80,10 +79,9 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     // under the same id) before acting through the embedded originating wallet.
     if !wallet.is_same_generation(&finalized.wallet) {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "transaction was finalized by a different wallet generation",
-            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
     let local_txid = finalized.transaction.transaction().txid();
@@ -108,11 +106,10 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     });
     if !wallet_is_live {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::NotFound,
             "wallet is no longer registered in the manager (removed or re-created); the \
              transaction was NOT broadcast and its reservation was reconciled",
-            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
 

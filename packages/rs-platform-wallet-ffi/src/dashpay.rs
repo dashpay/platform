@@ -945,11 +945,10 @@ pub unsafe extern "C" fn platform_wallet_prepare_dashpay_payment(
             wallet: std::sync::Arc::clone(&wallet),
             payment,
         });
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::NotFound,
             "wallet is no longer registered in the manager (removed or re-created while the \
              payment was being signed); no payment handle was published",
-            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
     let fee = payment.fee_duffs();
@@ -1006,19 +1005,17 @@ pub unsafe extern "C" fn platform_wallet_send_prepared_dashpay_payment(
     if out_txid.is_null() {
         abandon_prepared(prepared);
         let message = "out_txid is null; the payment was NOT broadcast and was abandoned";
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorNullPointer,
             message,
-            &PlatformWalletError::InvalidParameter(message.to_string()),
         );
     }
     let Some(wallet) = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Clone::clone) else {
         abandon_prepared(prepared);
         let message = "invalid platform wallet handle";
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
             message,
-            &PlatformWalletError::InvalidParameter(message.to_string()),
         );
     };
     if !wallet
@@ -1026,10 +1023,9 @@ pub unsafe extern "C" fn platform_wallet_send_prepared_dashpay_payment(
         .is_same_generation(prepared.payment.core_wallet())
     {
         abandon_prepared(prepared);
-        return PlatformWalletFFIResult::err_from_wallet_error(
+        return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "payment was prepared by a different wallet generation",
-            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
 
@@ -2524,7 +2520,7 @@ mod tests {
         assert_eq!(fee, 7, "nothing is written on a refusal");
         assert_eq!(
             r.payment_delivery,
-            crate::error::PlatformWalletFFIPaymentDelivery::NotSent
+            crate::error::PlatformWalletFFIPaymentDelivery::Unknown
         );
         assert!(!r.retryable);
         assert_inputs_released(&core, &signer, 61);
@@ -2555,7 +2551,7 @@ mod tests {
         assert_eq!((txid, fee), ([0xAAu8; 32], 7));
         assert_eq!(
             r.payment_delivery,
-            crate::error::PlatformWalletFFIPaymentDelivery::NotSent
+            crate::error::PlatformWalletFFIPaymentDelivery::Unknown
         );
         assert!(!r.retryable);
         assert_inputs_released(&core, &signer, 63);
@@ -2601,7 +2597,7 @@ mod tests {
         assert_inputs_released(&core, &signer, 69);
         assert_eq!(
             r.payment_delivery,
-            crate::error::PlatformWalletFFIPaymentDelivery::NotSent
+            crate::error::PlatformWalletFFIPaymentDelivery::Unknown
         );
         assert!(!r.retryable);
         assert_eq!(

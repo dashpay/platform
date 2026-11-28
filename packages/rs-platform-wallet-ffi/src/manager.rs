@@ -2678,8 +2678,8 @@ mod remove_wallet_lifecycle_tests {
         );
         assert_eq!(
             result.payment_delivery,
-            crate::error::PlatformWalletFFIPaymentDelivery::NotSent,
-            "the refusal sent nothing"
+            crate::error::PlatformWalletFFIPaymentDelivery::Unknown,
+            "the FFI's own refusal carries no wallet class"
         );
         assert!(!result.retryable);
         assert!(
