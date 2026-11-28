@@ -198,9 +198,15 @@ class ShieldedFundFromAssetLockCoordinatorTest {
             (controller.phase.value as Phase.Failed).failure.action,
         )
 
-        coordinator.startFunding(walletA, recipientX, "shield:2") { invocations++ }
+        val refused = coordinator.startFunding(walletA, recipientX, "shield:2") { invocations++ }
         advanceUntilIdle()
         assertEquals("no fresh shield while a lock is held", 1, invocations)
+        // A caller that counts its running attempts undoes the count only
+        // for a body that was not scheduled.
+        assertFalse(
+            "a refused start reports its body as not scheduled",
+            (refused as StartFundingResult.Started).bodyScheduled,
+        )
 
         coordinator.startFunding(walletA, recipientX, "resume:held", resuming = outPoint) { invocations++ }
         advanceUntilIdle()

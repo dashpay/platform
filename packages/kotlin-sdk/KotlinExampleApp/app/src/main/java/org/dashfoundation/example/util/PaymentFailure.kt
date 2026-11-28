@@ -3,6 +3,7 @@ package org.dashfoundation.example.util
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
+import org.dashfoundation.example.services.shielded.WalletDrainAttemptException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -118,10 +119,11 @@ data class PaymentFailure(
         /**
          * The failure [error] stands for, with its display text as the detail.
          * [invitationVoucher] when the operation that failed created an
-         * invitation.
+         * invitation. A [WalletDrainAttemptException] carries the class of
+         * the drain outcome it was built from.
          */
         fun of(error: Throwable, invitationVoucher: Boolean = false): PaymentFailure = PaymentFailure(
-            PaymentRecovery.of(error),
+            (error as? WalletDrainAttemptException)?.recovery ?: PaymentRecovery.of(error),
             (error as? DashSdkError)?.userMessage?.takeIf { it.isNotBlank() }
                 ?: error.message
                 ?: error.javaClass.simpleName,

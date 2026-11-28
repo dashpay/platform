@@ -9,6 +9,9 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
+import org.dashfoundation.dashsdk.errors.PaymentRecovery
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutcome
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutcome.State
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutpoint
@@ -19,6 +22,8 @@ import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoo
 import org.dashfoundation.example.services.shielded.WalletDrainCoordinator.RowAction
 import org.dashfoundation.example.services.shielded.WalletDrainCoordinator.RowStatus
 import org.dashfoundation.example.services.shielded.WalletDrainCoordinator.StartResult
+import org.dashfoundation.example.testing.nativeWalletError
+import org.dashfoundation.example.util.PaymentFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -544,6 +549,145 @@ class WalletDrainCoordinatorTest {
         // Had the re-tap left a running count behind, every later not-sent
         // read would look overlapped and the id would never be forgotten.
         assertTrue(f.store.rows.isEmpty())
+    }
+
+    // ── payment class of a failed attempt ─────────────────────────────
+
+    /** The drain's outpoint as the funding coordinator names a resumed lock. */
+    private val heldLock = PaymentFailure.outPoint(outpoint.txidWire, outpoint.vout)
+
+    /** A drain error Rust classed LOCK_HELD on the drain's own lock. */
+    private fun lockHeldError() = DashSdkError.fromNative(
+        DashSDKException(
+            code = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 20,
+            message = "proof wait timed out",
+            consensusError = null,
+            paymentDelivery = PaymentDelivery.LOCK_HELD,
+            heldAssetLock = heldLock,
+        ),
+    )
+
+    @Test
+    fun `a not-sent drain releases the slot`() = runTest {
+        listOf(
+            WalletDrainOutcome(
+                State.NotSent,
+                null,
+                nativeWalletError(6, "another wallet drain is pending", PaymentDelivery.NOT_SENT),
+            ),
+            // Rust's state alone says nothing was sent.
+            WalletDrainOutcome(State.NotSent, null),
+        ).forEach { outcome ->
+            val f = fixture()
+            f.wallet.drain = { outcome }
+
+            val controller = (f.start() as StartResult.Started).controller
+            advanceUntilIdle()
+
+            val failure = (controller.phase.value as Phase.Failed).failure
+            assertEquals(PaymentRecovery.Wait, failure.recovery)
+            assertFalse(failure.holdsSlot)
+            assertTrue(f.funding.dismiss(walletA, recipient))
+            var ran = false
+            f.funding.startFunding(walletA, recipient, "shield:fresh") { ran = true }
+            advanceUntilIdle()
+            assertTrue("a fresh shield to the recipient runs", ran)
+        }
+    }
+
+    @Test
+    fun `a drain error keeps Rust's class and an unclassified one holds the slot`() = runTest {
+        val f = fixture()
+        val maybeSent = nativeWalletError(20, "broadcast unconfirmed", PaymentDelivery.MAYBE_SENT)
+        assertEquals(
+            PaymentRecovery.Reconcile,
+            f.coordinator.attemptError(WalletDrainOutcome(State.Pending, outpoint, maybeSent))!!.recovery,
+        )
+        assertEquals(
+            PaymentRecovery.Resume(heldLock),
+            f.coordinator.attemptError(WalletDrainOutcome(State.Pending, outpoint, lockHeldError()))!!.recovery,
+        )
+        // No class from Rust: unresolved, never a release.
+        assertEquals(
+            PaymentRecovery.Unconfirmed,
+            f.coordinator.attemptError(WalletDrainOutcome(State.Pending, outpoint))!!.recovery,
+        )
+        assertEquals(
+            PaymentRecovery.Unconfirmed,
+            f.coordinator.attemptError(
+                WalletDrainOutcome(State.NotSent, null, DashSdkError.PlatformWallet.WalletOperation("x")),
+            )!!.recovery,
+        )
+    }
+
+    @Test
+    fun `a lock-held drain's resume runs the resume of that lock`() = runTest {
+        val f = fixture()
+        f.wallet.drain = { WalletDrainOutcome(State.Pending, outpoint, lockHeldError()) }
+        f.wallet.status = { WalletDrainOutcome(State.Pending, outpoint) }
+
+        val controller = (f.start() as StartResult.Started).controller
+        advanceUntilIdle()
+        val failure = (controller.phase.value as Phase.Failed).failure
+        assertEquals(heldLock, failure.heldLock)
+        val entry = f.coordinator.entries.value.single()
+        val action = f.coordinator.rowAction(false, entry) as RowAction.Resume
+
+        f.wallet.status = { WalletDrainOutcome(State.Completed, outpoint) }
+        val result = f.coordinator.resume(entry.record, action.outpoint, Network.TESTNET, f.wallet)
+        assertTrue((result as StartFundingResult.Started).bodyScheduled)
+        advanceUntilIdle()
+
+        assertEquals(outpoint, f.wallet.resumed.single().second)
+        assertEquals(Phase.Completed, controller.phase.value)
+        assertTrue(f.store.rows.isEmpty())
+    }
+
+    @Test
+    fun `a resume of a lock the wallet does not track keeps the error's class`() = runTest {
+        val f = fixture()
+        f.store.rows += record(1)
+        f.wallet.status = { WalletDrainOutcome(State.Pending, outpoint) }
+        f.wallet.resume = { _, _ ->
+            throw nativeWalletError(23, "asset lock is not tracked", PaymentDelivery.NOT_SENT)
+        }
+
+        val result = f.coordinator.resume(record(1), outpoint, Network.TESTNET, f.wallet)
+        advanceUntilIdle()
+
+        val failure = ((result as StartFundingResult.Started).controller.phase.value as Phase.Failed).failure
+        assertEquals(WalletDrainCoordinator.ASSET_LOCK_NOT_TRACKED_MESSAGE, failure.detail)
+        assertEquals(PaymentRecovery.Wait, failure.recovery)
+    }
+
+    /**
+     * A failure that holds the slot refuses the next start. Nothing runs, so
+     * the attempt is not counted as running (a later not-sent read is not
+     * "overlapped" and forgets the id) and a fresh Max leaves no stored id.
+     */
+    @Test
+    fun `a start a held failure refuses leaves no running attempt and no stored id`() = runTest {
+        val f = fixture()
+        f.funding.startFunding(walletA, recipient, "shield:earlier") {
+            throw nativeWalletError(20, "broadcast unconfirmed", PaymentDelivery.MAYBE_SENT)
+        }
+        advanceUntilIdle()
+
+        val started = f.start()
+        advanceUntilIdle()
+        assertTrue(started is StartResult.Started)
+        assertTrue(f.wallet.drained.isEmpty())
+        assertTrue("the unused id is removed", f.store.rows.isEmpty())
+
+        f.store.rows += record(1)
+        val refused = f.coordinator.resume(record(1), outpoint, Network.TESTNET, f.wallet)
+        advanceUntilIdle()
+        assertFalse((refused as StartFundingResult.Started).bodyScheduled)
+        assertTrue(f.wallet.resumed.isEmpty())
+
+        f.wallet.status = { WalletDrainOutcome(State.NotSent, null) }
+        f.reconcile()
+        assertTrue("the read is not overlapped, so the id is forgotten", f.store.rows.isEmpty())
     }
 
     // ── rules that cannot be asked ────────────────────────────────────

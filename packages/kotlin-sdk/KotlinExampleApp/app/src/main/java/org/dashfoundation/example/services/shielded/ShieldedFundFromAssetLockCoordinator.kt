@@ -49,7 +49,8 @@ class ShieldedFundFromAssetLockCoordinator(
         /**
          * The controller for this slot. [bodyScheduled] is false when the
          * call re-presented a controller that already runs (or just ran) the
-         * same operation, so the body passed to this call will never run.
+         * same operation, or a failed one whose class refuses this
+         * operation, so the body passed to this call will never run.
          * ← Swift `.started(controller, bodyScheduled:)`.
          */
         data class Started(
@@ -155,8 +156,11 @@ class ShieldedFundFromAssetLockCoordinator(
                 -> {
                     // The failure's class forbids this operation (the payment
                     // may have left, or it holds a lock this call does not
-                    // resume): re-present the failed state instead of paying again.
-                    if (!phase.permitsSubmit(resuming)) return StartFundingResult.Started(existing)
+                    // resume): re-present the failed state instead of paying
+                    // again. The body passed here never runs.
+                    if (!phase.permitsSubmit(resuming)) {
+                        return StartFundingResult.Started(existing, bodyScheduled = false)
+                    }
                     existing.submit(operationId, body, resuming)
                     scheduleRetentionSweep(key, existing)
                     return StartFundingResult.Started(existing)
