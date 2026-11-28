@@ -42,21 +42,31 @@ public enum GroupActionMode: Equatable, Sendable {
 /// here alongside a matching `change_item_tag` on the Rust side; the
 /// `(tag, payloadJSON)` shape lets the FFI grow without changing its
 /// parameter list.
-public enum TokenConfigChange: Sendable {
+public enum TokenConfigChange: Sendable, Equatable {
     /// MaxSupply(Option<TokenAmount>). `nil` removes the cap entirely.
     case maxSupply(newValue: UInt64?)
+
+    /// MarketplaceTradeMode(TokenTradeMode): the token's configuration for
+    /// trading through Platform. Changing it places no order. Platform
+    /// decides whether the token may become tradeable (it must be
+    /// transferable, and the network at protocol version 16 or later) and
+    /// refuses the update otherwise; setting `notTradeable` has neither
+    /// condition.
+    case marketplaceTradeMode(TokenTradeMode)
 
     /// FFI tag for `change_item_tag`. Must agree with the constants in
     /// `packages/rs-platform-wallet-ffi/src/tokens/update_config.rs`.
     public var ffiTag: UInt8 {
         switch self {
         case .maxSupply: return 0
+        case .marketplaceTradeMode: return 1
         }
     }
 
     /// JSON object the FFI parses for this variant. The shape is
-    /// per-tag; for MaxSupply the field is `newMaxSupply` (string-encoded
-    /// u64 or null).
+    /// per-tag: for MaxSupply the field is `newMaxSupply` (string-encoded
+    /// u64 or null); for MarketplaceTradeMode it is `tradeMode`, the mode's
+    /// name in a contract's JSON (`"Tradeable"` / `"NotTradeable"`).
     public func payloadJSON() -> String {
         switch self {
         case .maxSupply(let newValue):
@@ -64,6 +74,8 @@ public enum TokenConfigChange: Sendable {
                 return "{\"newMaxSupply\":\"\(v)\"}"
             }
             return "{\"newMaxSupply\":null}"
+        case .marketplaceTradeMode(let mode):
+            return "{\"tradeMode\":\"\(mode.rawValue)\"}"
         }
     }
 }
@@ -652,15 +664,23 @@ extension ManagedPlatformWallet {
     }
 
     /// Update the configuration of the token at `tokenPosition` on
-    /// `contractId`. Wave 7 only surfaces the `MaxSupply` variant via
-    /// `TokenConfigChange.maxSupply(newValue:)`; other variants will
-    /// be added as the FFI's tag table grows. `groupAction` selects
-    /// single-signer vs group-action semantics — config updates on
-    /// group-gated tokens must be proposed under the rule that
+    /// `contractId` with one `TokenConfigChange`, and report what the update
+    /// did: still pending (a group action waiting for signatures), or applied
+    /// with the contract it produced, for the host to store.
+    ///
+    /// `groupAction` selects single-signer vs group-action semantics: config
+    /// updates on group-gated tokens must be proposed under the rule that
     /// governs the specific change being made.
     ///
     /// Same signing-key resolution and lifetime contract as
     /// `tokenTransfer` / `tokenBurn`.
+    ///
+    /// - Throws: a refusal by Platform as
+    ///   `PlatformWalletError.consensusRejection`, with its consensus code
+    ///   (for making a token tradeable: 10603 on a network below protocol
+    ///   version 16, 10281 for a token that is not transferable); an update
+    ///   that was broadcast and whose outcome is unknown as
+    ///   `PlatformWalletError.transactionBroadcastUnconfirmed`.
     public func tokenUpdateConfig(
         identityId: Identifier,
         contractId: Identifier,
@@ -668,9 +688,8 @@ extension ManagedPlatformWallet {
         change: TokenConfigChange,
         publicNote: String?,
         groupAction: GroupActionMode = .none,
-        signingKeyId: UInt32 = 0,
         signer: KeychainSigner
-    ) async throws {
+    ) async throws -> TokenConfigUpdateOutcome {
         let handle = self.handle
         let signerHandle = signer.handle
         let identityBytes = identityId.toFFIByteArray()
@@ -679,33 +698,47 @@ extension ManagedPlatformWallet {
         let tag = change.ffiTag
         let payload = change.payloadJSON()
 
-        try await Task.detached(priority: .userInitiated) {
-            _ = signer
-            try identityBytes.withUnsafeBufferPointer { idBp in
-                try contractBytes.withUnsafeBufferPointer { contractBp in
-                    try payload.withCString { payloadPtr in
-                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                try platform_wallet_token_update_config(
-                                    handle,
-                                    idBp.baseAddress!,
-                                    contractBp.baseAddress!,
-                                    tokenPosition,
-                                    tag,
-                                    payloadPtr,
-                                    notePtr,
-                                    groupTuple.kind,
-                                    groupTuple.position,
-                                    actionIdPtr,
-                                    groupTuple.actionIsProposer,
-                                    signingKeyId,
-                                    signerHandle
-                                ).check()
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            var jsonPtr: UnsafeMutablePointer<CChar>? = nil
+            defer { if let p = jsonPtr { platform_wallet_string_free(p) } }
+
+            // Pin the wallet and `signer` for the whole FFI call (see
+            // `claimContractFees`).
+            let result = withExtendedLifetime((self, signer)) {
+                identityBytes.withUnsafeBufferPointer { idBp in
+                    contractBytes.withUnsafeBufferPointer { contractBp in
+                        payload.withCString { payloadPtr in
+                            ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                                ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                                    platform_wallet_token_update_config_and_refresh(
+                                        handle,
+                                        idBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        tokenPosition,
+                                        tag,
+                                        payloadPtr,
+                                        notePtr,
+                                        groupTuple.kind,
+                                        groupTuple.position,
+                                        actionIdPtr,
+                                        groupTuple.actionIsProposer,
+                                        signerHandle,
+                                        &jsonPtr
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+
+            try result.check()
+            guard let jsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "token_update_config_and_refresh returned no JSON"
+                )
+            }
+            return try TokenConfigUpdateOutcome.decode(fromJSON: String(cString: jsonPtr))
         }.value
     }
 
