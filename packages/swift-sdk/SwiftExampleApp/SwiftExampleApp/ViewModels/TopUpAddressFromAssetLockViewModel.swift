@@ -16,6 +16,14 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
   @Published var coreChainLockedHeight = ""
   @Published var outPointHex = ""
   @Published var result: PlatformAddressInfosResult?
+  /// The last top-up's failure. While it holds its slot (the asset lock
+  /// may already be consumed, or no class) no new top-up runs from this
+  /// form; `reset()` keeps it. It clears on a success, a later `.notSent`
+  /// failure, or `releasePaymentHold()`.
+  @Published var paymentFailure: PaymentFailure?
+
+  /// Whether the form may start a top-up (`PaymentFailure.permitsFreshPayment`).
+  var permitsTopUp: Bool { PaymentFailure.permitsFreshPayment(after: paymentFailure) }
 
   private var validationResult: ValidationResult {
     let proof: AssetLockProofTypeForValidation = proofType == .instant ? .instant : .chain
@@ -47,7 +55,15 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
     result = nil
   }
 
+  /// The user confirmed the held top-up in the history: release the form.
+  func releasePaymentHold() {
+    paymentFailure = nil
+    errorMessage = nil
+    showResult = false
+  }
+
   func executeTopUp(sdk: SDK) async {
+    guard permitsTopUp else { return }
     guard let outputAddressData = AddressTransformer.hexToData(outputAddressHex),
       let privateKeyData = AddressTransformer.hexToData(assetLockPrivateKeyHex)
     else {
@@ -111,15 +127,23 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
           outputs: outputs
         )
       }
+      paymentFailure = nil
       result = topUpResult
       showResult = true
     } catch {
-      // The asset lock may already be consumed: present the failure by its
-      // payment class (an SDK error with no class reads as unconfirmed, no
-      // retry); one no payment raised shows as its own message.
-      errorMessage = PaymentFailure.ofPayment(error)?.message ?? error.localizedDescription
-      showResult = true
+      applyTopUpFailure(error)
     }
     isLoading = false
+  }
+
+  /// The asset lock may already be consumed: present the failure by its
+  /// payment class (an SDK error with no class reads as unconfirmed, no
+  /// retry) and keep it, so a holding one refuses the next top-up; an error
+  /// that is not an SDK error shows as its own message and keeps any
+  /// earlier hold.
+  func applyTopUpFailure(_ error: Error) {
+    paymentFailure = PaymentFailure.keptAfter(paymentFailure, error: error)
+    errorMessage = PaymentFailure.ofPayment(error)?.message ?? error.localizedDescription
+    showResult = true
   }
 }

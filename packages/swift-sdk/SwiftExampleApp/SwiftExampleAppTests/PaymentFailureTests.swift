@@ -108,6 +108,51 @@ final class PaymentFailureTests: XCTestCase {
         XCTAssertNil(PaymentFailure.ofPayment(CocoaError(.validationNumberTooSmall)))
     }
 
+    /// A screen may start a fresh payment only when its last failure does
+    /// not hold its slot: refused after `.maybeSent`, `.lockHeld` and an
+    /// unclassified failure, allowed after any `.notSent` one and with none.
+    func testShouldPermitAFreshPaymentOnlyAfterAFailureThatReleasesItsSlot() {
+        let table: [(PlatformPaymentClass?, Bool)] = [
+            (.maybeSent, false),
+            (Self.lockHeld, false),
+            (nil, false),
+            (Self.retryable, true),
+            (Self.blocked, true),
+        ]
+        for (payment, permits) in table {
+            for voucher in [false, true] {
+                let failure = PaymentFailure(payment: payment, detail: "", invitationVoucher: voucher)
+                XCTAssertEqual(
+                    PaymentFailure.permitsFreshPayment(after: failure), permits,
+                    "\(String(describing: payment)) voucher: \(voucher)"
+                )
+            }
+        }
+        XCTAssertTrue(PaymentFailure.permitsFreshPayment(after: nil))
+    }
+
+    /// A screen keeps its failure across an error that is not an SDK error
+    /// (it says nothing about the payment), and takes any SDK error's own,
+    /// so a later `.notSent` result releases the hold (← Kotlin
+    /// `PaymentFailure.keptAfter`).
+    func testShouldKeepAHoldAcrossAnErrorThatIsNotAPaymentFailure() {
+        let held = PaymentFailure(payment: .maybeSent, detail: "d")
+        XCTAssertEqual(PaymentFailure.keptAfter(held, error: CocoaError(.validationNumberTooSmall)), held)
+        XCTAssertNil(PaymentFailure.keptAfter(nil, error: CocoaError(.validationNumberTooSmall)))
+        let notSent = PaymentFailure.keptAfter(
+            held,
+            error: PlatformWalletError.walletOperation("refused", payment: Self.retryable)
+        )
+        XCTAssertEqual(notSent?.recovery, .retry)
+        XCTAssertTrue(PaymentFailure.permitsFreshPayment(after: notSent))
+        let voucher = PaymentFailure.keptAfter(
+            nil,
+            error: PlatformWalletError.walletOperation("held", payment: Self.lockHeld),
+            invitationVoucher: true
+        )
+        XCTAssertEqual(voucher?.invitationVoucher, true)
+    }
+
     /// A failed invitation create holding its voucher lock tells the user to
     /// reclaim the voucher, not to resume the lock: the operation says it is
     /// a voucher, the class is unchanged.

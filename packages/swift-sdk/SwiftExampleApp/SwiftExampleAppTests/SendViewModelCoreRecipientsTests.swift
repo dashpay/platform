@@ -199,14 +199,32 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
 
     func test_rejectedBroadcastOutcome_doesNotShowSuccess() {
         let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+        let notSent = PlatformPaymentClass(delivery: .notSent, isRetryable: true)
 
         vm.applyCoreBroadcastOutcome(
-            .rejected(txid: "abc", reason: "mempool policy"),
+            .rejected(txid: "abc", reason: "mempool policy", payment: notSent),
             recipientCount: 1
         )
 
         XCTAssertNil(vm.successMessage)
-        XCTAssertEqual(vm.error, "Payment rejected by Dash Core: mempool policy")
+        XCTAssertTrue(vm.paymentFailure?.message.hasSuffix("Payment rejected by Dash Core: mempool policy") == true)
+        // Nothing was sent: the form is not held.
+        XCTAssertFalse(vm.isHeldByPaymentFailure)
+        XCTAssertTrue(vm.canSend)
+    }
+
+    /// A rejected broadcast is read by Rust's class like any payment
+    /// failure: one that may have left, or carries no class, holds the form.
+    func test_rejectedBroadcastOutcome_holdsTheFormByItsClass() {
+        for payment in [PlatformPaymentClass.maybeSent, nil] {
+            let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+            vm.applyCoreBroadcastOutcome(
+                .rejected(txid: "abc", reason: "mempool policy", payment: payment),
+                recipientCount: 1
+            )
+            XCTAssertTrue(vm.isHeldByPaymentFailure, "\(String(describing: payment))")
+            XCTAssertFalse(vm.canSend)
+        }
     }
 
     func test_unknownBroadcastOutcome_warnsAgainstRetry() {

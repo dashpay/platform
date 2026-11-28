@@ -85,6 +85,28 @@ final class DpnsMarketplacePresentationTests: XCTestCase {
         XCTAssertNil(DpnsMarketplaceUI.tradeFailure(CocoaError(.validationNumberTooSmall)))
     }
 
+    /// The screen keeps a trade failure that holds its slot, so every trade
+    /// (list, delist, transfer, purchase) is refused after a maybe-sent,
+    /// lock-held or unclassified failure and allowed after a not-sent one;
+    /// an error that is not an SDK error never clears the hold.
+    func testTradeFailureHoldsEveryTradeUntilNothingWasSent() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([1, 0, 0, 0]))!
+        let table: [(Error, Bool)] = [
+            (PlatformWalletError.walletOperation("x", payment: .maybeSent), false),
+            (PlatformWalletError.walletOperation("x", payment: PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false)), false),
+            (PlatformWalletError.walletOperation("x"), false),
+            (SDKError.timeout("timeout"), false),
+            (PlatformWalletError.walletOperation("x", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)), true),
+            (PlatformWalletError.notForSale("gone", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)), true),
+        ]
+        for (error, permits) in table {
+            let kept = DpnsMarketplaceUI.failureAfterTrade(nil, error: error)
+            XCTAssertEqual(PaymentFailure.permitsFreshPayment(after: kept), permits, "\(error)")
+        }
+        let hold = DpnsMarketplaceUI.failureAfterTrade(nil, error: PlatformWalletError.walletOperation("x", payment: .maybeSent))
+        XCTAssertEqual(DpnsMarketplaceUI.failureAfterTrade(hold, error: CocoaError(.validationNumberTooSmall)), hold)
+    }
+
     func testHistoryRecognizesTransferToSelfAsDelist() {
         let owner = Data(repeating: 0x22, count: 32)
         let event = DpnsNameHistoryEvent.transferred(

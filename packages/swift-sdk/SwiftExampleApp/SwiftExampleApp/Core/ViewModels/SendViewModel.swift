@@ -1290,9 +1290,15 @@ class SendViewModel: ObservableObject {
             successMessage = recipientCount > 1
                 ? "Payment sent to \(recipientCount) recipients"
                 : "Payment sent"
-        case .rejected(_, let reason, _):
+        case .rejected(_, let reason, let payment):
+            // Read by Rust's class of the result, as for any other payment
+            // failure: one that holds its slot (no class included) keeps
+            // the form refused.
             successMessage = nil
-            error = "Payment rejected by Dash Core: \(reason)"
+            paymentFailure = PaymentFailure(
+                payment: payment,
+                detail: "Payment rejected by Dash Core: \(reason)"
+            )
         case .unknown(let txid, let reason, let payment):
             // The broadcast may have reached the network. The hold follows
             // Rust's class of the result, as for any other payment failure

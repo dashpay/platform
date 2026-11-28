@@ -133,6 +133,27 @@ struct PaymentFailure: Equatable {
         }
     }
 
+    /// The failure a payment screen keeps after `error`: `error`'s own
+    /// (`ofPayment`), or `previous` when `error` is not an SDK error. Such an
+    /// error says nothing about the payment, so it never clears a hold an
+    /// earlier failure put on the screen (← Kotlin `PaymentFailure.keptAfter`).
+    static func keptAfter(
+        _ previous: PaymentFailure?,
+        error: Error,
+        invitationVoucher: Bool = false
+    ) -> PaymentFailure? {
+        ofPayment(error, invitationVoucher: invitationVoucher) ?? previous
+    }
+
+    /// Whether a screen whose last payment ended in `failure` (`nil`: none,
+    /// or it succeeded) may start a fresh payment. Every payment screen's
+    /// submit control and its action both read this: `false` while the
+    /// failure holds its slot (`holdsSlot`), until a success, a later
+    /// `.notSent` result or the user's confirmed release clears it.
+    static func permitsFreshPayment(after failure: PaymentFailure?) -> Bool {
+        failure?.permitsRestart(resuming: nil) ?? true
+    }
+
     /// Rust's class of the error, `nil` when it carries none.
     static func paymentClass(of error: Error) -> PlatformPaymentClass? {
         switch error {
