@@ -238,10 +238,32 @@ class IdentityCredits internal constructor(
      * [signerHandle]. Rust fetches the identity from Platform, never adds it
      * to the wallet, and updates the balance of an identity the wallet
      * manages, so the caller does not decide whether it is its own. Returns
-     * the identity's post-transition balance.
+     * the identity's post-transition balance. Rust owns the input rules
+     * (empty or overflowing inputs are refused there).
      *
-     * Cancellation: a top-up that completed natively still returns its
-     * balance to a cancelled caller (see `TeardownGate.opReturningCompletedResult`).
+     * Outcomes the caller must tell apart:
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]: Platform
+     *   does not know the identity; nothing was signed or sent.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed]:
+     *   the identity could not be read from Platform; nothing was signed or
+     *   sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
+     *   the top-up may have executed or may still execute. Do not submit it
+     *   again; keep it pending. Nothing in the wallet holds its inputs, so a
+     *   resubmission is signed with a fresh nonce and, if this one executed,
+     *   pays twice (dashpay/platform#4270). A nonce refusal from Platform is
+     *   reported this way too: this call never returns
+     *   `ErrorAddressNonceMismatch` (native code 21).
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.NotFound]:
+     *   the wallet was removed or re-created before anything was sent,
+     *   including while the top-up was being signed.
+     *
+     * Cancellation: the native call cannot observe it, so a top-up can finish
+     * after the caller was cancelled. Its balance is then still returned to
+     * the immediate caller (see `TeardownGate.opReturningCompletedResult`),
+     * but the calling coroutine stays cancelled: record the result before the
+     * next cancellable suspension. Cancellation alone does not mean nothing
+     * was sent.
      */
     suspend fun topUpIdentityFromAddresses(
         walletHandle: Long,
@@ -270,6 +292,13 @@ class IdentityCredits internal constructor(
      * (`IdentityNotFound`) before Platform is asked, and in reporting
      * Platform not showing the wallet's identity yet as the retryable
      * `IdentityBalanceUnavailable`.
+     *
+     * Outcomes: as for [topUpIdentityFromAddresses], except that
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.NotFound] means the
+     * wallet does not manage the identity, and Platform returning no balance
+     * for it is
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]
+     * (nothing signed or sent; retryable).
      *
      * Cancellation: as for [topUpIdentityFromAddresses].
      */

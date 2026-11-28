@@ -3,10 +3,13 @@ package org.dashfoundation.dashsdk
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
+import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.AddressHistoryNative
 import org.dashfoundation.dashsdk.ffi.AddressPrivateKeyNative
 import org.dashfoundation.dashsdk.ffi.ContractModerationNative
 import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
+import org.dashfoundation.dashsdk.ffi.CreditsNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
@@ -649,6 +652,34 @@ class FfiSmokeTest {
                 unknownManager, id, 0L, id, 0, "alice", id, address, id, 1L, "thanks",
             )
         } >= 1000)
+    }
+
+    /**
+     * Linkage and error propagation of the top-up of any identity from
+     * Platform addresses: `CreditsNative.topUpIdentityFromAddresses` binds
+     * with the descriptor Kotlin declares, its id and funding blob pass the
+     * JNI decoding, and a platform-wallet error reaches Kotlin with its code.
+     * A null signer is refused by the export's pointer check
+     * (`ErrorNullPointer`, 3, surfaced as `PLATFORM_WALLET_CODE_OFFSET + 3`)
+     * before any wallet handle is read or anything is signed.
+     *
+     * It does not prove which export JNI calls: the any-identity and the
+     * deprecated managed-only exports share the helper that makes this
+     * pointer check, so either would pass. Telling them apart needs a real
+     * signer and an identity the wallet does not manage, which is beyond a
+     * smoke test; the exports' own behaviour is covered by the
+     * platform-wallet-ffi and platform-wallet tests.
+     */
+    @Test
+    fun identityTopUpFromAddressesLinksAndPropagatesNativeErrors() {
+        NativeLoader.ensureLoaded()
+        val inputs = FundingInput.encode(
+            listOf(FundingInput(addressType = 0, hash = ByteArray(20) { 7 }, credits = 1_000)),
+        )
+        val error = assertThrows(DashSDKException::class.java) {
+            CreditsNative.topUpIdentityFromAddresses(0L, ByteArray(32) { 9 }, inputs, 0L)
+        }
+        assertEquals(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 3, error.code)
     }
 
     /**

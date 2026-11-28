@@ -75,6 +75,22 @@ class FundFromAssetLockRecipientTest {
         }
     }
 
+    @Test
+    fun shouldNotConstructARecipientWhoseAddressTypeDoesNotFitAByte() {
+        // The blob carries the type as one byte: 256 would reach Rust as 0
+        // (P2PKH) and fund an address the caller did not name. Every byte
+        // value is passed through; which ones are supported is Rust's call.
+        listOf(-1, 256, 257, Int.MAX_VALUE).forEach { type ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FundRecipient(addressType = type, hash = ByteArray(20), credits = 500)
+            }
+        }
+        val blob = encodeRecipients(
+            listOf(0, 255).map { FundRecipient(addressType = it, hash = ByteArray(20), credits = 500) },
+        )
+        assertEquals(listOf(0, 255), decode(blob).map { it.type })
+    }
+
     // ── Asset-lock-built outpoint ─────────────────────────────────────
 
     @Test
