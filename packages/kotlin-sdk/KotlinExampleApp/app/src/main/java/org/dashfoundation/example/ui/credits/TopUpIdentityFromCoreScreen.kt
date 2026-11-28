@@ -87,7 +87,7 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
     var recoveryLoadError by remember { mutableStateOf<String?>(null) }
     // The last failed top-up, presented by its payment class: it decides
     // whether anything may be submitted again (a new lock only after a
-    // retryable failure, a resume only of the lock it holds).
+    // NOT_SENT failure, a resume only of the lock it holds).
     var failure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     LaunchedEffect(manager, wallet, identity?.identityIndex, mode) {

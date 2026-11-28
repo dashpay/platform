@@ -151,7 +151,7 @@ class IdentityRegistrationController(
      * [Phase.Completed], and [Phase.Unconfirmed] (re-firing would race a
      * duplicate FFI call or re-register a live identity), and a
      * [Phase.Failed] whose class does not allow this operation
-     * ([Phase.permitsSubmit]: a fresh registration only after a retryable
+     * ([Phase.permitsSubmit]: a fresh registration only after a NOT_SENT
      * failure, a resume only of the lock it holds). [resuming] names the
      * lock [body] resumes, null for a fresh registration. ← Swift `submit`.
      *

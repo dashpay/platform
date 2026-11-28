@@ -2641,13 +2641,13 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "PlatformWalletError carries the result's PlatformPaymentClass (delivery, held outpoint under LockHeld) and the wallet's retry, read from the FFI result and never derived from the code. SwiftExampleApp's send screen presents a failure by its class; other screens still decide from error types (#6009)."
+          "reason": "PlatformWalletError carries the result's PlatformPaymentClass (delivery, held outpoint under LockHeld) and the wallet's retry, read from the FFI result and never derived from the code. SwiftExampleApp presents a payment failure by its class on Send, the funding progress screens (identity registration, address and shielded funding, the wallet drain), identity create, the identity top-up from Platform addresses, the address top-up from an asset lock, the shielded pool seed, DPNS trades and invitation create; other screens still decide from error types (#6009)."
         },
         "kotlin": {
           "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "DashSdkError.PlatformWallet exposes delivery, isRetryable and heldAssetLock from the JNI exception, including the error beside a wallet drain's packed outcome. KotlinExampleApp's funding progress screens follow the class; other screens still decide from error types (#6009)."
+          "reason": "DashSdkError.PlatformWallet exposes delivery, isRetryable and heldAssetLock from the JNI exception, including the error beside a wallet drain's packed outcome. KotlinExampleApp presents a payment failure by its class on Send, the funding progress screens (identity registration, address and shielded funding, the wallet drain), both identity top-ups (from Core and from Platform addresses), the shielded pool seed, DPNS trades, invitation create and contact requests; other screens still decide from error types (#6009)."
         }
       },
       "verification": [

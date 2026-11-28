@@ -245,7 +245,7 @@ class RegistrationCoordinatorTest {
         val retryGate = CompletableDeferred<ByteArray>()
         var invocations = 0
 
-        // Only a retryable NOT_SENT allows running it again. Thrown from the
+        // Any NOT_SENT allows running it again (here a retryable one). Thrown from the
         // body itself: a deferred's await would rethrow a recovered copy
         // without the native cause that carries the class.
         val controller = coordinator.startRegistration(
