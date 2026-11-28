@@ -11,7 +11,9 @@
 //! `platform_wallet_ffi::dashpay_profile_payment_address`; these exports
 //! only marshal.
 
-use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use crate::support::{
+    guard, net_from_ord, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError,
+};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jbooleanArray, jbyteArray, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -20,7 +22,7 @@ use platform_wallet_ffi::dashpay_profile_payment_address::{
     platform_wallet_dashpay_profile_payment_address_support, DashPayPaymentAddressSupportFFI,
 };
 use platform_wallet_ffi::handle::Handle;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
 
@@ -95,17 +97,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_payment
             throw_sdk_exception(env, 1, "text must not be null");
             return ptr::null_mut();
         }
-        let text: String = match env.get_string(&text) {
-            Ok(value) => value.into(),
-            Err(e) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, &format!("text is not a readable string: {e}"));
+        let text = match read_jcstring(env, &text) {
+            Ok(value) => value,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "text must not contain a NUL character");
                 return ptr::null_mut();
             }
-        };
-        let Ok(text) = CString::new(text) else {
-            throw_sdk_exception(env, 1, "text must not contain a NUL character");
-            return ptr::null_mut();
+            Err(e) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, &format!("text {e}"));
+                return ptr::null_mut();
+            }
         };
 
         let mut bytes: *mut u8 = ptr::null_mut();

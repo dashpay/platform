@@ -18,7 +18,9 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.DecisionProposalsNative`.
 
 use crate::results::{take_error, unwrap_string};
-use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use crate::support::{
+    guard, net_from_ord, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError,
+};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jbyte, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
@@ -55,18 +57,15 @@ pub(crate) fn read_optional_cstring(
     if s.is_null() {
         return Some(None);
     }
-    let raw: String = match env.get_string(s) {
-        Ok(js) => js.into(),
-        Err(_) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
-            return None;
-        }
-    };
-    match CString::new(raw) {
+    match read_jcstring(env, s) {
         Ok(c) => Some(Some(c)),
-        Err(_) => {
+        Err(JCStringError::InteriorNul) => {
             throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            None
+        }
+        Err(e) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             None
         }
     }

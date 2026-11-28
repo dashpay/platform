@@ -9,7 +9,7 @@
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PrivateDocumentsNative`.
 
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jcstring, take_pwffi_error, throw_sdk_exception, JCStringError};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring};
 use jni::JNIEnv;
@@ -21,7 +21,7 @@ use platform_wallet_ffi::private_documents::{
 };
 use rs_sdk_ffi::MnemonicResolverHandle;
 use serde_json::{json, Value};
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::fmt::Write;
 use std::os::raw::c_char;
 use std::ptr;
@@ -206,17 +206,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentsNativ
             throw_sdk_exception(env, 1, "documentTypeName was null");
             return ptr::null_mut();
         }
-        let name: String = match env.get_string(&document_type_name) {
-            Ok(name) => name.into(),
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "documentTypeName was not a readable string");
+        let name = match read_jcstring(env, &document_type_name) {
+            Ok(name) => name,
+            Err(JCStringError::InteriorNul) => {
+                throw_sdk_exception(env, 1, "documentTypeName holds a NUL character");
                 return ptr::null_mut();
             }
-        };
-        let Ok(name) = CString::new(name) else {
-            throw_sdk_exception(env, 1, "documentTypeName holds a NUL character");
-            return ptr::null_mut();
+            Err(e) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, &format!("documentTypeName {e}"));
+                return ptr::null_mut();
+            }
         };
         // Each fingerprint read only when given, so a missing one reaches `cursor_from_parts`
         // as absent and a wrong-length one throws here
@@ -289,6 +289,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentsNativ
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CString;
 
     fn entry() -> PrivateDocumentEntryFFI {
         PrivateDocumentEntryFFI {

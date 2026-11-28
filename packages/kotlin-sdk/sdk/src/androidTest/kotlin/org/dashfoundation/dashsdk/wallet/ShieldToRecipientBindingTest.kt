@@ -26,6 +26,9 @@ import org.junit.runner.RunWith
  *    a descriptor slot type, so a swap would hit the wrong branch;
  *  - a zero amount is not checked there (Rust owns it), so it reaches the
  *    FFI and fails at the dead handle;
+ *  - a memo with an unpaired UTF-16 surrogate is refused by the JNI
+ *    boundary (raw code 1) instead of being rewritten with U+FFFD, while a
+ *    supplementary character (a surrogate pair) crosses as its 4 UTF-8 bytes;
  *  - an over-limit memo crosses into the FFI and is rejected by Rust's
  *    `encode_memo_text` (the single owner of the 32-byte rule) as
  *    `ErrorInvalidParameter`, which the FFI checks before resolving the handle;
@@ -116,6 +119,29 @@ class ShieldToRecipientBindingTest {
         // the length; Rust's encode_memo_text rejects it inside the FFI.
         val e = callExpectingThrow(memo = "€".repeat(20))
         assertEquals("over-limit memo: ${e.message}", INVALID_PARAMETER, e.code)
+    }
+
+    @Test
+    fun shouldRejectAMemoWithAnUnpairedSurrogateBeforeTheFfi() {
+        // Lossy decoding would turn each of these into a different memo that
+        // still fits 32 bytes, so the FFI would accept it.
+        for (memo in listOf("a\uD800b", "\uDC00", "pay\uD83D")) {
+            assertJniRejection(callExpectingThrow(memo = memo), "memo")
+        }
+    }
+
+    @Test
+    fun shouldCountSupplementaryMemoCharactersAsFourUtf8Bytes() {
+        // 😀 is a surrogate pair in UTF-16 and 4 bytes in UTF-8. Eight of them
+        // are exactly 32 bytes and pass Rust's limit; one more ASCII byte must
+        // exceed it. Text shortened or replaced in transit (eight U+FFFD are
+        // 24 bytes) would pass both calls.
+        val memo = "\uD83D\uDE00".repeat(8)
+        val atLimit = callExpectingThrow(memo = memo)
+        assertEquals("32-byte supplementary memo: ${atLimit.message}", INVALID_HANDLE, atLimit.code)
+
+        val overLimit = callExpectingThrow(memo = memo + "a")
+        assertEquals("33-byte supplementary memo: ${overLimit.message}", INVALID_PARAMETER, overLimit.code)
     }
 
     @Test
