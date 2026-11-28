@@ -190,9 +190,12 @@ internal object TokensNative {
     )
 
     /**
-     * Update token configuration. [changeItemTag] selects the variant
-     * (0 = MaxSupply, the only tag wired in this release);
-     * [changeItemPayloadJson] is the per-tag JSON payload. Group-gatable.
+     * Update token configuration. [changeItemTag] selects the variant and
+     * [changeItemPayloadJson] is its JSON payload: 0 = MaxSupply
+     * (`{"newMaxSupply":"<u64>"}` or `{"newMaxSupply":null}`), 1 =
+     * MarketplaceTradeMode (`{"tradeMode":"Tradeable"}` or
+     * `{"tradeMode":"NotTradeable"}`). The typed `TokenConfigChange` offers
+     * only MaxSupply so far. Group-gatable.
      * Returns the outcome JSON (see `TokenConfigUpdateOutcome.fromJson`).
      */
     external fun tokenUpdateConfigAndRefresh(

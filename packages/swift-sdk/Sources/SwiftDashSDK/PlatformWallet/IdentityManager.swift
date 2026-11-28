@@ -36,6 +36,10 @@ public class IdentityManager {
     /// `.publicContactRequestUnconfirmed` for a public request whose outcome
     /// is not proved yet, `.privateContactPaymentsNotRestored` for payments
     /// not restored yet.
+    ///
+    /// This acts on this stand-alone manager only. To remove an identity
+    /// from the wallets the app runs, call
+    /// `PlatformWalletManager.removeIdentityFromLiveWallets(identityId:)`.
     public func removeIdentity(_ identityId: Identifier) throws {
         try identityId.withFFIBytes { idPtr in
             try identity_manager_remove_identity(handle, idPtr).check()
