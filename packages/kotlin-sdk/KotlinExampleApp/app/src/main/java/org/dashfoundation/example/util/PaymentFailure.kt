@@ -1,6 +1,7 @@
 package org.dashfoundation.example.util
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.example.services.shielded.WalletDrainAttemptException
 import java.nio.ByteBuffer
@@ -30,6 +31,13 @@ data class PaymentFailure(
      * the operation, never from the error.
      */
     val invitationVoucher: Boolean = false,
+    /**
+     * Whether the native wallet said the payment holds an asset lock
+     * (LOCK_HELD), even when it named no outpoint (then [recovery] waits like
+     * MAYBE_SENT). Such a hold is never released after reconciliation: the
+     * lock stays held whatever the history shows.
+     */
+    val lockHeld: Boolean = false,
 ) {
 
     /** The one thing a screen may offer after the failure. */
@@ -105,14 +113,14 @@ data class PaymentFailure(
         !holdsSlot || (heldLock != null && resuming == heldLock)
 
     /**
-     * Whether the failure may have left the wallet with no lock to resume
-     * ([holdsSlot] without [heldLock]), so the user releases its slot once
+     * Whether the failure may have left the wallet with no lock held
+     * ([holdsSlot] without [heldLock] or [lockHeld]), so the user releases its slot once
      * they confirmed the original payment in the history. Never released
      * automatically: only the history shows whether the payment went
      * through. ← Swift `PaymentFailure.releasableAfterReconciliation`.
      */
     val releasableAfterReconciliation: Boolean
-        get() = holdsSlot && heldLock == null
+        get() = holdsSlot && heldLock == null && !lockHeld
 
     companion object {
         /**
@@ -127,6 +135,7 @@ data class PaymentFailure(
                 ?: error.message
                 ?: error.javaClass.simpleName,
             invitationVoucher,
+            lockHeld = (error as? DashSdkError)?.delivery == PaymentDelivery.LOCK_HELD,
         )
 
         /**

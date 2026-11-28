@@ -133,6 +133,9 @@ class PaymentFailureTest {
             walletError(6, 1, true) to false,
             walletError(6, 1, false) to false,
             walletError(6, 3, false, heldRaw) to false,
+            // LOCK_HELD whose outpoint did not decode: the lock stays held
+            // whatever the history shows, so it is never released.
+            walletError(6, 3, false) to false,
             walletError(6, 2, false) to true,
             walletError(6, 4, false) to true,
             RuntimeException("unclassified") to true,
