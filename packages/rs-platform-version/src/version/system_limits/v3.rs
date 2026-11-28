@@ -44,9 +44,11 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
+    withdrawal_pooling_candidates_per_block_limit: None,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
+    daily_withdrawal_limit_floor: None,
     core_credit_pool_unlock_limit_percent: None,
     core_credit_pool_unlock_limit_floor: None,
     core_credit_pool_window_blocks: None,

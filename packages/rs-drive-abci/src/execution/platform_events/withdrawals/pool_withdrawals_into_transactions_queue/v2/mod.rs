@@ -96,6 +96,11 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    /// Version 2 is frozen: the last protocol version that selects it.
+    fn version_15() -> &'static PlatformVersion {
+        PlatformVersion::get(15).expect("expected protocol version 15")
+    }
+
     /// What `pool` pooled and asked of Core.
     struct PoolingOutcome {
         /// How many of the two withdrawals were pooled.
@@ -243,18 +248,15 @@ mod tests {
     #[test]
     fn should_pool_what_fits_both_the_daily_limit_and_cores_credit_pool() {
         // Plenty in Core's pool: both withdrawals pool.
-        assert_eq!(
-            pool(PlatformVersion::latest(), 1000, 1_000_000_000_000, false).pooled,
-            2
-        );
+        assert_eq!(pool(version_15(), 1000, 1_000_000_000_000, false).pooled, 2);
     }
 
     #[test]
     fn should_leave_queued_what_cores_credit_pool_could_not_give_up() {
         // A pool of 1 duff, 1,000 credits: it fits one 1,000 credit withdrawal, not two,
         // although the daily limit (2,000 Dash before any history) would allow both.
-        assert_eq!(pool(PlatformVersion::latest(), 1000, 1, false).pooled, 1);
-        assert_eq!(pool(PlatformVersion::latest(), 1000, 0, false).pooled, 0);
+        assert_eq!(pool(version_15(), 1000, 1, false).pooled, 1);
+        assert_eq!(pool(version_15(), 1000, 0, false).pooled, 0);
     }
 
     /// Through the dispatcher on both sides of the gate: version 1 (protocol version 13) pools
@@ -266,7 +268,7 @@ mod tests {
         assert_eq!(outcome.pooled, 2);
         assert_eq!(outcome.credit_pool_balance_reads, 0);
         assert_eq!(outcome.coinbase_payload_version_reads, 0);
-        assert_eq!(pool(PlatformVersion::latest(), 1000, 1, false).pooled, 1);
+        assert_eq!(pool(version_15(), 1000, 1, false).pooled, 1);
     }
 
     /// While the oldest queued withdrawal does not fit Platform's own limit nothing pools,
@@ -277,7 +279,7 @@ mod tests {
     fn should_pool_nothing_while_the_oldest_does_not_fit_the_daily_limit() {
         // 3,000 Dash each, over the flat 2,000 Dash before any history.
         let outcome = pool(
-            PlatformVersion::latest(),
+            version_15(),
             dash_to_credits!(3000),
             1_000_000_000_000,
             false,
@@ -286,7 +288,7 @@ mod tests {
         assert_eq!(outcome.credit_pool_balance_reads, 50);
         assert_eq!(outcome.coinbase_payload_version_reads, 0);
 
-        let outcome = pool(PlatformVersion::latest(), 1000, 1_000_000_000_000, false);
+        let outcome = pool(version_15(), 1000, 1_000_000_000_000, false);
         assert_eq!(outcome.pooled, 2);
         assert_eq!(outcome.credit_pool_balance_reads, 50);
         assert_eq!(outcome.coinbase_payload_version_reads, 0);
@@ -299,14 +301,14 @@ mod tests {
     #[test]
     fn should_pool_without_asking_core_whether_v24_is_active() {
         let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
-        let latest = PlatformVersion::latest();
+        let version_15 = version_15();
 
         assert_eq!(
             pool(version_14, 1000, 1_000_000_000_000, false).coinbase_payload_version_reads,
             0
         );
         assert_eq!(
-            pool(latest, 1000, 1_000_000_000_000, false).coinbase_payload_version_reads,
+            pool(version_15, 1000, 1_000_000_000_000, false).coinbase_payload_version_reads,
             0
         );
     }
@@ -328,10 +330,10 @@ mod tests {
             .payload_versions
         };
         let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
-        let latest = PlatformVersion::latest();
+        let version_15 = version_15();
 
-        assert_eq!(payload_versions(latest, true), vec![2, 2]);
-        assert_eq!(payload_versions(latest, false), vec![1, 1]);
+        assert_eq!(payload_versions(version_15, true), vec![2, 2]);
+        assert_eq!(payload_versions(version_15, false), vec![1, 1]);
         assert_eq!(payload_versions(version_14, true), vec![1, 1]);
     }
 }

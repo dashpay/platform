@@ -3,6 +3,7 @@ pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod v5;
+pub mod v6;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -267,7 +268,30 @@ pub struct SystemLimits {
     /// first and make them pass.
     pub max_transitions_in_documents_batch: u16,
     pub withdrawal_transactions_per_block_limit: u16,
+    /// How many of the oldest queued withdrawals one block considers for pooling, read by
+    /// `pool_withdrawals_into_transactions_queue` 3, which passes over a withdrawal that does
+    /// not fit the withdrawal limits and pools the ones behind it, up to
+    /// `withdrawal_transactions_per_block_limit`. It has to exceed that limit by at least as
+    /// many withdrawals as can stay unpoolable together, or they would hide the ones behind
+    /// them. A withdrawal that never fits is larger than
+    /// `core_credit_pool_unlock_limit_percent` of Core's credit pool or than
+    /// `daily_withdrawal_limit_percent` of Platform's credits, and either backs every other
+    /// queued withdrawal too, so fewer than 100 divided by the percent of them fit in it (6 at
+    /// 15%, 12 for the two limits together). `None` for the protocol versions whose pooling
+    /// stops at the first withdrawal that does not fit and reads
+    /// `withdrawal_transactions_per_block_limit` of them.
+    pub withdrawal_pooling_candidates_per_block_limit: Option<u16>,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
+    /// Largest amount (in credits) one withdrawal may carry, shared by the identity, address
+    /// and shielded withdrawal paths: 500 Dash up to protocol version 15, 4000 Dash from
+    /// `SYSTEM_LIMITS_V6` (protocol version 16). Up to protocol version 15 neither withdrawal
+    /// limit is ever below it: the daily limit by `daily_withdrawal_limit` 2, the
+    /// Core-anchored limit by its floor (`core_credit_pool_unlock_limit_floor`). From protocol
+    /// version 16 both can be, because that floor may not follow it above Core's own and the
+    /// daily floor (`daily_withdrawal_limit_floor`) stays where it was: a withdrawal larger
+    /// than `core_credit_pool_unlock_limit_percent` of Core's credit pool, or than the daily
+    /// maximum, waits until they have grown, and `pool_withdrawals_into_transactions_queue` 3
+    /// pools the withdrawals behind it meanwhile.
     pub max_withdrawal_amount: u64,
     /// Daily withdrawal limit as a percentage of the total credits Platform held a day ago.
     /// From protocol version 14 Platform pools at most this share of the total credits recorded
@@ -275,9 +299,17 @@ pub struct SystemLimits {
     /// transactions per 24 hours (`daily_withdrawal_limit` method version 2; the history is
     /// kept by `record_total_credits_history_for_withdrawals`). `None` for the protocol versions
     /// that predate the rule: method version 0 derived the limit from the current total, method
-    /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
+    /// version 1 applied a flat 2000 Dash. Method version 3 (protocol version 16) reads it the
+    /// same way. Versioned: see `daily_withdrawal_limit_percent` in
     /// each `SYSTEM_LIMITS_V*`.
     pub daily_withdrawal_limit_percent: Option<u8>,
+    /// Smallest daily withdrawal limit (in credits) once the total credits a day ago are known,
+    /// applied when `daily_withdrawal_limit_percent` of them is less; read by
+    /// `daily_withdrawal_limit` method version 3. `None` for the protocol versions that select
+    /// an earlier method version: version 2 takes `max_withdrawal_amount` for it, 500 Dash
+    /// where it is selected. Protocol version 16 raises `max_withdrawal_amount` and keeps this
+    /// floor at 500 Dash, so the daily limit of a small Platform does not rise with it.
+    pub daily_withdrawal_limit_floor: Option<u64>,
     /// Allowed drop of Core's credit pool per window, as a percentage of its balance at the
     /// window start, in the Core-anchored withdrawal limit of protocol version 14, read by
     /// `core_credit_pool_unlock_limit` method version 0. Platform pools a withdrawal only while
@@ -289,8 +321,12 @@ pub struct SystemLimits {
     /// withdrawal limit, applied when `core_credit_pool_unlock_limit_percent` of the window start
     /// balance is less; read by `core_credit_pool_unlock_limit` method version 0. Below Core
     /// v24's own 2000 Dash floor, so small pools keep a margin too, and at least
-    /// `max_withdrawal_amount` so a queued withdrawal always fits eventually. `None` for the
-    /// protocol versions that predate the Core-anchored limit.
+    /// `max_withdrawal_amount` wherever pooling stops at the first queued withdrawal that does
+    /// not fit (`pool_withdrawals_into_transactions_queue` 2, protocol versions 14 and 15), so
+    /// a queued withdrawal always fits eventually there. From protocol version 16 the largest
+    /// withdrawal is above it, and above what Core's own floor could follow; version 3 of the
+    /// pooling passes over a withdrawal that does not fit instead. `None` for the protocol
+    /// versions that predate the Core-anchored limit.
     pub core_credit_pool_unlock_limit_floor: Option<u64>,
     /// Core's credit pool window on mainnet, testnet and devnets (`CreditPoolPeriodBlocks` in
     /// Dash Core's chain parameters): how many Core blocks before an asset unlock's block lies
@@ -753,14 +789,25 @@ mod tests {
         );
     }
 
-    /// The Core-anchored withdrawal limit never drops below its floor, and pooling stops at the
-    /// first queued withdrawal that does not fit: a floor below one maximal withdrawal would let
-    /// a maximal withdrawal wait forever on a small credit pool, with everything queued behind
-    /// it.
+    /// The Core-anchored withdrawal limit never drops below its floor. Where pooling stops at
+    /// the first queued withdrawal that does not fit (`pool_withdrawals_into_transactions_queue`
+    /// 0 to 2), a floor below one maximal withdrawal would let a maximal withdrawal wait
+    /// forever on a small credit pool, with everything queued behind it. Version 3 passes over
+    /// such a withdrawal, which is what lets protocol version 16 raise the largest withdrawal
+    /// above the floor; a version that raises it and keeps an earlier pooling fails here.
     #[test]
-    fn should_keep_the_core_credit_pool_floor_at_least_one_maximal_withdrawal() {
-        let with_a_floor: Vec<_> = PLATFORM_VERSIONS
+    fn should_keep_the_core_credit_pool_floor_at_least_one_maximal_withdrawal_where_pooling_stops_at_the_first_that_does_not_fit(
+    ) {
+        let stopping_at_the_first: Vec<_> = PLATFORM_VERSIONS
             .iter()
+            .filter(|platform_version| {
+                platform_version
+                    .drive_abci
+                    .methods
+                    .withdrawals
+                    .pool_withdrawals_into_transactions_queue
+                    < 3
+            })
             .filter_map(|platform_version| {
                 platform_version
                     .system_limits
@@ -769,17 +816,74 @@ mod tests {
             })
             .collect();
         assert!(
-            !with_a_floor.is_empty(),
+            !stopping_at_the_first.is_empty(),
             "no protocol version sets a Core credit pool floor; this test would assert nothing"
         );
-        for (platform_version, floor) in with_a_floor {
+        for (platform_version, floor) in stopping_at_the_first {
             assert!(
                 floor >= platform_version.system_limits.max_withdrawal_amount,
                 "protocol version {} sets a Core credit pool floor of {} credits, below one \
-                 maximal withdrawal ({} credits)",
+                 maximal withdrawal ({} credits), and its pooling stops at the first queued \
+                 withdrawal that does not fit",
                 platform_version.protocol_version,
                 floor,
                 platform_version.system_limits.max_withdrawal_amount
+            );
+        }
+    }
+
+    /// Pooling that passes over a withdrawal reads more queued withdrawals than it may pool,
+    /// so the ones it passes over cannot fill what it reads: at least the pooled count plus
+    /// the withdrawals that can stay unpoolable together, those larger than the Core-anchored
+    /// percent of Core's credit pool and those larger than the daily percent of Platform's
+    /// credits. Each such withdrawal is backed by the pool, or the credits, it is larger than
+    /// that percent of, so fewer than 100 divided by the percent exist at once.
+    #[test]
+    fn should_consider_more_queued_withdrawals_than_can_be_passed_over_together() {
+        let passing_over: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                platform_version
+                    .drive_abci
+                    .methods
+                    .withdrawals
+                    .pool_withdrawals_into_transactions_queue
+                    >= 3
+            })
+            .collect();
+        assert!(
+            !passing_over.is_empty(),
+            "no protocol version passes over a queued withdrawal; this test would assert nothing"
+        );
+        for platform_version in passing_over {
+            let system_limits = &platform_version.system_limits;
+            let protocol_version = platform_version.protocol_version;
+            let candidates = system_limits
+                .withdrawal_pooling_candidates_per_block_limit
+                .unwrap_or_else(|| {
+                    panic!("protocol version {protocol_version} sets no pooling candidates limit")
+                });
+            let core_percent = system_limits
+                .core_credit_pool_unlock_limit_percent
+                .unwrap_or_else(|| {
+                    panic!("protocol version {protocol_version} sets no Core-anchored percent")
+                });
+            let daily_percent = system_limits
+                .daily_withdrawal_limit_percent
+                .unwrap_or_else(|| {
+                    panic!("protocol version {protocol_version} sets no daily limit percent")
+                });
+            let passed_over_together =
+                100 / u16::from(core_percent) + 100 / u16::from(daily_percent);
+            assert!(
+                candidates
+                    >= system_limits.withdrawal_transactions_per_block_limit + passed_over_together,
+                "protocol version {} considers {} queued withdrawals per block, which {} \
+                 passed over ones and the {} it may pool do not fit in",
+                protocol_version,
+                candidates,
+                passed_over_together,
+                system_limits.withdrawal_transactions_per_block_limit
             );
         }
     }

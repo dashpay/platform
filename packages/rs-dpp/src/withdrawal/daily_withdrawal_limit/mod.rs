@@ -6,6 +6,7 @@ use platform_version::version::PlatformVersion;
 mod v0;
 mod v1;
 mod v2;
+mod v3;
 
 /// Returns the maximum amount of credits Platform may pool into asset unlock
 /// transactions per 24 hours.
@@ -15,7 +16,8 @@ mod v2;
 /// by version 1 (a flat 2000 Dash), and the total credits Platform held a day ago
 /// for version 2 (`daily_withdrawal_limit_percent` of it, never below one maximal
 /// withdrawal; the flat limit of version 1 while that day-old total is not known
-/// yet).
+/// yet) and version 3 (the same, never below `daily_withdrawal_limit_floor`
+/// instead).
 pub fn daily_withdrawal_limit(
     reference_total_credits: Option<Credits>,
     platform_version: &PlatformVersion,
@@ -31,6 +33,7 @@ pub fn daily_withdrawal_limit(
             }),
         1 => Ok(v1::daily_withdrawal_limit_v1()),
         2 => v2::daily_withdrawal_limit_v2(reference_total_credits, platform_version),
+        3 => v3::daily_withdrawal_limit_v3(reference_total_credits, platform_version),
         v => Err(ProtocolError::UnknownVersionError(format!(
             "Unknown daily_withdrawal_limit version {v}"
         ))),
@@ -75,5 +78,38 @@ mod tests {
             daily_withdrawal_limit(None, v14).expect("expected v14 bootstrap limit"),
             dash_to_credits!(2000)
         );
+    }
+
+    /// Protocol version 16 raises the largest withdrawal from 500 to 4000 Dash. Version 2,
+    /// which protocol version 15 selects, floors the daily limit at the largest withdrawal;
+    /// version 3 keeps the floor at 500 Dash, so the limit does not move at any total.
+    #[test]
+    fn should_keep_the_daily_withdrawal_limit_when_protocol_version_16_raises_the_largest_withdrawal(
+    ) {
+        let v15 = PlatformVersion::get(15).expect("expected protocol version 15");
+        let latest = PlatformVersion::latest();
+        assert!(
+            latest.system_limits.max_withdrawal_amount > v15.system_limits.max_withdrawal_amount
+        );
+
+        for (total_credits_a_day_ago, expected) in [
+            (Some(0), dash_to_credits!(500)),
+            (Some(dash_to_credits!(2000)), dash_to_credits!(500)),
+            (Some(dash_to_credits!(10000)), dash_to_credits!(1500)),
+            (Some(dash_to_credits!(20000)), dash_to_credits!(3000)),
+            (Some(dash_to_credits!(30000)), dash_to_credits!(4500)),
+            (Some(dash_to_credits!(1000000)), dash_to_credits!(150000)),
+            (None, dash_to_credits!(2000)),
+        ] {
+            assert_eq!(
+                daily_withdrawal_limit(total_credits_a_day_ago, v15).expect("expected v15 limit"),
+                expected
+            );
+            assert_eq!(
+                daily_withdrawal_limit(total_credits_a_day_ago, latest)
+                    .expect("expected latest limit"),
+                expected
+            );
+        }
     }
 }

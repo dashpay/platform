@@ -165,9 +165,11 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
+    withdrawal_pooling_candidates_per_block_limit: None,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: Some(15), // 15% of the total credits a day ago (replaces the flat 2000 Dash in v14)
+    daily_withdrawal_limit_floor: None,
     core_credit_pool_unlock_limit_percent: Some(15), // Core v24 allows 20% of the pool a window ago
     core_credit_pool_unlock_limit_floor: Some(150_000_000_000_000), // 1500 Dash; Core v24's floor is 2000 Dash
     core_credit_pool_window_blocks: Some(576), // Core's credit pool window (CreditPoolPeriodBlocks), mainnet, testnet and devnets
