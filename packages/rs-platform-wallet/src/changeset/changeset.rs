@@ -145,6 +145,30 @@ pub struct CoreChangeSet {
     /// `OutputRole::Change` per the upstream `TransactionRecord`).
     pub new_utxos: Vec<Utxo>,
 
+    /// Coins the wallet holds that a block credited without an inserted
+    /// record: a filter rescan re-delivered the block for addresses a later
+    /// block derived, or a mempool transaction confirmed after its pools
+    /// grew. The `BlockProcessed` projection reads them from the wallet's
+    /// UTXO set. Usually the event carries the updated record that owns
+    /// each one, but not always (a legacy snapshot's finalized transaction
+    /// can be credited with no record), so a persister that projects coins
+    /// from `account_records` alone can miss them; this list is the fallback.
+    ///
+    /// A persister writes each one only when it holds no row for the
+    /// outpoint, and never changes an existing row's spent flag: a re-scan
+    /// can re-deliver a coin the store already holds spent. A sweep
+    /// placeholder is not a delivered row: it is materialised with its spent
+    /// flag kept. A coin at or below the persisted sync checkpoint may have
+    /// a spend below it the wallet no longer knows, so a new row for it is
+    /// kept out of the balance until a later sync advance reaches that
+    /// checkpoint. A coin can be missing for a while, never offered twice.
+    ///
+    /// Merge: appended, like `new_utxos`. `serde(default)` for the same
+    /// backward-compatible reading as [`Self::sweeps`]; Rust code building a
+    /// `CoreChangeSet` without `..Default::default()` has to set it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub rescan_utxos: Vec<Utxo>,
+
     /// InstantSend locks observed for records that are NOT yet in a
     /// chain-locked block (i.e. records still in `Mempool`,
     /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
@@ -318,7 +342,8 @@ pub struct CoreChangeSet {
     /// newer map (only uncredited outputs are recorded). The fold therefore
     /// first drops the older verdicts for every outpoint of a record the
     /// newer changeset carries, and for every outpoint the newer changeset
-    /// credits (`new_utxos`), and only then extends with the newer map.
+    /// credits (`new_utxos`, `rescan_utxos`), and only then extends with the
+    /// newer map.
     /// `serde(default)` for the same backward-compatible reading as
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
@@ -755,8 +780,12 @@ impl Merge for CoreChangeSet {
                         })
                 })
                 .collect();
-            let credited: std::collections::HashSet<OutPoint> =
-                other.new_utxos.iter().map(|utxo| utxo.outpoint).collect();
+            let credited: std::collections::HashSet<OutPoint> = other
+                .new_utxos
+                .iter()
+                .chain(&other.rescan_utxos)
+                .map(|utxo| utxo.outpoint)
+                .collect();
             self.utxo_credit_verdicts.retain(|outpoint, _| {
                 !reprojected.contains(outpoint) && !credited.contains(outpoint)
             });
@@ -793,6 +822,7 @@ impl Merge for CoreChangeSet {
         });
         self.spent_utxos.extend(other.spent_utxos);
         self.new_utxos.extend(other.new_utxos);
+        self.rescan_utxos.extend(other.rescan_utxos);
 
         // IS-lock map: last-write-wins per txid. A second IS-lock for
         // the same txid (e.g. a follow-up event re-confirming the lock)
@@ -921,6 +951,7 @@ impl Merge for CoreChangeSet {
             && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
+            && self.rescan_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
@@ -4143,6 +4174,39 @@ mod utxo_credit_verdict_merge_tests {
         ));
         older.merge(newer);
         assert!(older.utxo_credit_verdicts.is_empty());
+    }
+
+    /// A re-scan's coin (`rescan_utxos`) credits its outpoint the same way.
+    #[test]
+    fn merge_drops_older_verdict_for_an_outpoint_a_newer_rescan_credits() {
+        let mut older = CoreChangeSet::default();
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::Doomed);
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(2), UtxoCreditVerdict::Uncredited);
+        let mut newer = CoreChangeSet::default();
+        let script =
+            dashcore::ScriptBuf::new_p2pkh(&dashcore::PubkeyHash::from_byte_array([7u8; 20]));
+        let address = dashcore::Address::from_script(&script, dashcore::Network::Testnet).unwrap();
+        newer.rescan_utxos.push(key_wallet::Utxo::new(
+            outpoint(1),
+            dashcore::TxOut {
+                value: 1,
+                script_pubkey: script,
+            },
+            address,
+            100,
+            false,
+        ));
+        older.merge(newer);
+        assert_eq!(
+            older.utxo_credit_verdicts.keys().collect::<Vec<_>>(),
+            vec![&outpoint(2)],
+            "only the re-scanned outpoint's verdict is dropped"
+        );
+        assert_eq!(older.rescan_utxos.len(), 1);
     }
 }
 

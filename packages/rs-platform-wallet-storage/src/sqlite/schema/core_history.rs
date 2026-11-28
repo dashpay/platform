@@ -102,7 +102,12 @@ pub(crate) fn apply(
     let mut consumers = tx.prepare_cached(
         "SELECT txid FROM core_transaction_inputs WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
-    for utxo in cs.new_utxos.iter().chain(&cs.spent_utxos) {
+    for utxo in cs
+        .new_utxos
+        .iter()
+        .chain(&cs.rescan_utxos)
+        .chain(&cs.spent_utxos)
+    {
         affected.insert(utxo.outpoint.txid);
         let mut rows = consumers.query(params![
             wallet_id.as_slice(),

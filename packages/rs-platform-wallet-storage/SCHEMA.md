@@ -91,6 +91,7 @@ erDiagram
         INTEGER spent "0 | 1"
         BLOB spent_in_txid "set by apply_sweep for an unresolved held input; else NULL"
         INTEGER winner_mined_height "V007: sweep winner's mined height; NULL when unstamped or materialised"
+        INTEGER rescan_held_until "V024: sync checkpoint a re-scan coin is held to; NULL when not held"
     }
 
     CORE_INSTANT_LOCKS {
@@ -433,6 +434,17 @@ so the row resolves only through proof (the funding upsert materialising it,
 a later block-context sweep re-stamping it, or a release). The funding
 upsert clears the stamp, because a materialised row is the wallet's own coin
 held spent and is permanently outside the collector's reach.
+
+`rescan_held_until` (V024) holds a re-scan's coin out of the balance. The
+fill-only write of a coin a re-scan credits (`rescan_utxos`) sets it when
+the coin's height is at or below the stored `synced_height`: a spend below
+the checkpoint may be unknown to the wallet, and a restart resumes past it.
+The checkpoint counts a sync advance the same changeset carries. The value
+is that checkpoint; a later sync advance reaching it clears the hold, since
+the replay has then checked every block up to it. The balance readers
+(`load_state`, `list_unspent_utxos`) skip a held row, and `load_state`
+lowers the loaded `synced_height` to just below the lowest held coin's block,
+so a restart replays those blocks before an advance can release the hold.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -898,3 +910,4 @@ table-rebuild migration, as V004 does.
 | V021 | `V021__profile_address_encoding.rs` | Adds the encoding stamps `identities.entry_format` and `dashpay_profiles.profile_format` (`INTEGER NOT NULL DEFAULT 1 CHECK IN (0, 1)`) and stamps every row present at migration time 0. `DashPayProfile` gained the core, platform and shielded payment addresses, which widens the positional bincode record embedded in both blobs; the stamp routes each row to the decoder for the shape it carries (`schema::identity_profile_encoding`). |
 | V022 | `V022__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
 | V023 | `V023__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
+| V024 | `V024__core_utxos_rescan_hold.rs` | Adds `core_utxos.rescan_held_until`, the hold on a coin a re-scan credits at or below the stored sync checkpoint. The balance readers skip a held row until a sync advance reaches the checkpoint. Purely additive; `NULL` on every existing row. |
