@@ -104,4 +104,27 @@ final class ContractFeeClaimDecodingTests: XCTestCase {
             }
         }
     }
+
+    /// The claim and every signed moderation decode their output through
+    /// `readingPaidOutput` once Rust reported the write as done: an output
+    /// that does not decode reads as "may have gone through", never as a
+    /// refusal before any payment.
+    func testShouldClassAnUnreadableOutputOfAPaidWriteAsMaybeSent() {
+        let reads: [(String, () throws -> Any)] = [
+            ("fee claim", { try ClaimedContractFees.decode(fromJSON: "{\"pot\":\"treasury\"}") }),
+            ("user moderation", { try ModeratedContractUser.decode(fromJSON: "[]") }),
+            ("document deletion", { try ContractDocumentDeletion.decode(fromJSON: "[]") }),
+            ("document restore", { try ContractDocumentRestore.decode(fromJSON: "[]") }),
+            ("team action", { try ContractTeamActionSignature.decode(fromJSON: "[]") }),
+            ("field change", { try ContractDocumentFieldsChange.decode(fromJSON: "[]") }),
+        ]
+        for (what, read) in reads {
+            XCTAssertThrowsError(try PlatformWalletError.readingPaidOutput(read), what) { error in
+                guard case PlatformWalletError.deserialization(_, let payment) = error else {
+                    return XCTFail("\(what): expected a deserialization error, got \(error)")
+                }
+                XCTAssertEqual(payment, .maybeSent, what)
+            }
+        }
+    }
 }

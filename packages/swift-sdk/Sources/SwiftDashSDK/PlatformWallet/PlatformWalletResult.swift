@@ -750,7 +750,8 @@ public struct PlatformPaymentClass: Equatable, Sendable {
     /// The class a Swift-side guard passes when it throws without a result
     /// after the payment may have left, so no second one is offered: only
     /// after Rust returned success but handed back no output (a NULL
-    /// pointer or handle), when the operation's effect already happened.
+    /// pointer or handle) or an output Swift cannot read, when the
+    /// operation's effect already happened.
     /// It grants nothing (no retry, no resume). A refusal Swift raises
     /// before Rust is asked carries no class at all (`payment: nil`): the
     /// class and retry decision are Rust's.
@@ -819,6 +820,21 @@ public enum PlatformPaymentRecovery: Equatable, Sendable {
                 + "invitations to get them back; do not create a new invitation."
         case .retry, .wait, .reconcile, .unconfirmed:
             return suggestion
+        }
+    }
+}
+
+extension PlatformWalletError {
+    /// `read()` over the output of a paid call Rust reported as succeeded.
+    /// The operation's effect already happened, so a `.deserialization`
+    /// refusal of that output carries `.maybeSent` instead of no class: read
+    /// without one, it would pass for a refusal before any payment and invite
+    /// a second one. The output decoders throw only `.deserialization`.
+    static func readingPaidOutput<T>(_ read: () throws -> T) throws -> T {
+        do {
+            return try read()
+        } catch PlatformWalletError.deserialization(let message, payment: .none) {
+            throw PlatformWalletError.deserialization(message, payment: .maybeSent)
         }
     }
 }

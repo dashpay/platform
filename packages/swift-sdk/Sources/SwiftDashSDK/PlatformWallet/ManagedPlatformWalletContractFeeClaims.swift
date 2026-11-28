@@ -149,10 +149,14 @@ extension ManagedPlatformWallet {
             try result.check()
             guard let jsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "contract_fee_claim returned no JSON"
+                    "contract_fee_claim returned no JSON",
+                    payment: .maybeSent
                 )
             }
-            return try ClaimedContractFees.decode(fromJSON: String(cString: jsonPtr))
+            let json = String(cString: jsonPtr)
+            return try PlatformWalletError.readingPaidOutput {
+                try ClaimedContractFees.decode(fromJSON: json)
+            }
         }.value
     }
 }
