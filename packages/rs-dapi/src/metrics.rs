@@ -624,6 +624,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getPrivateDocumentEntries",
                 "getOwnerTransactionsInBlock",
                 "getBlocks",
+                "subscribeToStateTransitions",
             ]
         )
     })

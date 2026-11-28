@@ -2464,6 +2464,37 @@ public final class PlatformGrpc {
     return getGetBlocksMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse> getSubscribeToStateTransitionsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "subscribeToStateTransitions",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse> getSubscribeToStateTransitionsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse> getSubscribeToStateTransitionsMethod;
+    if ((getSubscribeToStateTransitionsMethod = PlatformGrpc.getSubscribeToStateTransitionsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getSubscribeToStateTransitionsMethod = PlatformGrpc.getSubscribeToStateTransitionsMethod) == null) {
+          PlatformGrpc.getSubscribeToStateTransitionsMethod = getSubscribeToStateTransitionsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "subscribeToStateTransitions"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("subscribeToStateTransitions"))
+              .build();
+        }
+      }
+    }
+    return getSubscribeToStateTransitionsMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -3108,6 +3139,19 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBlocksMethod(), responseObserver);
     }
 
+    /**
+     * <pre>
+     * Streams every committed, successfully executed state transition that matches
+     * one of the request's filters, block by block, from a chosen height onward.
+     * Served by DAPI from the Tenderdash block store; see
+     * `SubscribeToStateTransitionsResponse` for the stream contract.
+     * </pre>
+     */
+    public void subscribeToStateTransitions(org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubscribeToStateTransitionsMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -3663,6 +3707,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>(
                   this, METHODID_GET_BLOCKS)))
+          .addMethod(
+            getSubscribeToStateTransitionsMethod(),
+            io.grpc.stub.ServerCalls.asyncServerStreamingCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse>(
+                  this, METHODID_SUBSCRIBE_TO_STATE_TRANSITIONS)))
           .build();
     }
   }
@@ -4355,6 +4406,20 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetBlocksMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Streams every committed, successfully executed state transition that matches
+     * one of the request's filters, block by block, from a chosen height onward.
+     * Served by DAPI from the Tenderdash block store; see
+     * `SubscribeToStateTransitionsResponse` for the stream contract.
+     * </pre>
+     */
+    public void subscribeToStateTransitions(org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncServerStreamingCall(
+          getChannel().newCall(getSubscribeToStateTransitionsMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -4965,6 +5030,20 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetBlocksMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Streams every committed, successfully executed state transition that matches
+     * one of the request's filters, block by block, from a chosen height onward.
+     * Served by DAPI from the Tenderdash block store; see
+     * `SubscribeToStateTransitionsResponse` for the stream contract.
+     * </pre>
+     */
+    public java.util.Iterator<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse> subscribeToStateTransitions(
+        org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingServerStreamingCall(
+          getChannel(), getSubscribeToStateTransitionsMethod(), getCallOptions(), request);
     }
   }
 
@@ -5737,6 +5816,7 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 76;
   private static final int METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK = 77;
   private static final int METHODID_GET_BLOCKS = 78;
+  private static final int METHODID_SUBSCRIBE_TO_STATE_TRANSITIONS = 79;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -6071,6 +6151,10 @@ public final class PlatformGrpc {
           serviceImpl.getBlocks((org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>) responseObserver);
           break;
+        case METHODID_SUBSCRIBE_TO_STATE_TRANSITIONS:
+          serviceImpl.subscribeToStateTransitions((org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SubscribeToStateTransitionsResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -6211,6 +6295,7 @@ public final class PlatformGrpc {
               .addMethod(getGetPrivateDocumentEntriesMethod())
               .addMethod(getGetOwnerTransactionsInBlockMethod())
               .addMethod(getGetBlocksMethod())
+              .addMethod(getSubscribeToStateTransitionsMethod())
               .build();
         }
       }

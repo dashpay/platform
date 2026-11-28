@@ -6477,6 +6477,7 @@ dependencies = [
  "ciborium",
  "clap",
  "dapi-grpc",
+ "dash-platform-queries",
  "dashcore",
  "dashcore-rpc",
  "dotenvy",

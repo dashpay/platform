@@ -29,6 +29,7 @@ describe('PlatformPromiseClient', () => {
       getRecentStateTransitionStatus: this.sinon.stub().resolves(response),
       getOwnerTransactionsInBlock: this.sinon.stub().resolves(response),
       getBlocks: this.sinon.stub().resolves(response),
+      subscribeToStateTransitions: this.sinon.stub().returns(response),
     };
   });
 
@@ -370,6 +371,43 @@ describe('PlatformPromiseClient', () => {
     it('should throw an error when metadata is not an object', async () => {
       try {
         platformPromiseClient.getRecentStateTransitionStatus({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#subscribeToStateTransitions', () => {
+    it('should return the stream of the service without waiting for it', () => {
+      const stream = platformPromiseClient.subscribeToStateTransitions(request);
+
+      expect(stream).to.equal(response);
+      expect(platformPromiseClient.client.subscribeToStateTransitions)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should keep the message conversion when the caller passes interceptors', () => {
+      const passThrough = (options, nextCall) => nextCall(options);
+
+      platformPromiseClient.subscribeToStateTransitions(
+        request,
+        {},
+        { interceptors: [passThrough], deadline: 5 },
+      );
+
+      const [, , callOptions] = platformPromiseClient.client.subscribeToStateTransitions
+        .firstCall.args;
+      expect(callOptions.deadline).to.equal(5);
+      expect(callOptions.interceptors).to.have.lengthOf(2);
+      expect(callOptions.interceptors[0]).to.equal(passThrough);
+      expect(callOptions.interceptors[1]).to.be.a('function');
+    });
+
+    it('should throw an error when metadata is not an object', () => {
+      try {
+        platformPromiseClient.subscribeToStateTransitions({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {

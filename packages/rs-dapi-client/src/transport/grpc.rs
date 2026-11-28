@@ -392,6 +392,10 @@ const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 /// or newer, and serves the methods and request fields 5.1 added.
 const PROTOCOL_VERSION_OF_5_1: u32 = 15;
 
+/// The first protocol version no 5.1 release can sign: every node that answers at it runs 5.2
+/// or newer, and serves the methods and request fields 5.2 added.
+const PROTOCOL_VERSION_OF_5_2: u32 = 16;
+
 /// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
 /// answers for the credit pool instead.
 fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
@@ -1051,6 +1055,24 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_shielded_nullifiers
+);
+
+// rpc subscribeToStateTransitions(SubscribeToStateTransitionsRequest) returns (stream SubscribeToStateTransitionsResponse);
+impl_transport_request_grpc!(
+    // A 5.1 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_2);
+    platform_proto::SubscribeToStateTransitionsRequest,
+    Streaming<platform_proto::SubscribeToStateTransitionsResponse>,
+    PlatformGrpcClient,
+    RequestSettings {
+        timeout: Some(STREAMING_TIMEOUT),
+        // A node admits a bounded number of streams, in all and from one source. One that has
+        // no room for another still serves every other request, so it is not banned for it.
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
+        ..RequestSettings::default()
+    },
+    subscribe_to_state_transitions
 );
 
 // Link to each core gRPC request what client and method to use:

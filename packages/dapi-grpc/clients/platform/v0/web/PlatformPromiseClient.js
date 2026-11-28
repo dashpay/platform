@@ -1,3 +1,5 @@
+const rewireStream = require('../../../../lib/utils/rewireStream');
+
 const { PlatformClient } = require('./platform_pb_service');
 
 // Inline promisify shim — avoids requiring Node's `util` module so this file
@@ -355,6 +357,25 @@ class PlatformPromiseClient {
       getRecentStateTransitionStatusRequest,
       metadata,
     );
+  }
+
+  /**
+   * Committed state transitions matching the request's filters, block by block, with
+   * checkpoints to resume from. The node asserts what it sends and does not prove it.
+   *
+   * @param {!SubscribeToStateTransitionsRequest} subscribeToStateTransitionsRequest
+   * @param {?Object<string, string>} metadata
+   * @return {!grpc.web.ClientReadableStream<!SubscribeToStateTransitionsResponse>|undefined}
+   */
+  subscribeToStateTransitions(subscribeToStateTransitionsRequest, metadata = {}) {
+    const stream = this.client.subscribeToStateTransitions(
+      subscribeToStateTransitionsRequest,
+      metadata,
+    );
+
+    rewireStream(stream);
+
+    return stream;
   }
 
   /**
