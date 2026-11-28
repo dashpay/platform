@@ -131,7 +131,6 @@ mod tests {
     use super::*;
     use crate::address_funds::AddressWitness;
     use crate::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
-    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
     use crate::state_transition::StateTransitionIdentitySigned;

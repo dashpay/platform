@@ -20,6 +20,8 @@ use dpp::identity::identity_public_key::contract_bounds::{
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::BatchTransitionV1;
+use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::ProtocolError;
 
 use super::signing_key::{first_available, require_available};
@@ -212,7 +214,8 @@ fn usable_signing_key_at<'a>(
 ///
 /// Each refusal is the consensus signature error Platform itself returns for it, checked in
 /// Drive's order: a key type outside `key_types`, a purpose outside `purposes`, a security
-/// level outside `security_levels`, a disabled key (identity-signed validation); then contract
+/// level outside the batch signature levels (or `security_levels` for non-batches), a disabled
+/// key (identity-signed validation); then the batch operation `security_levels` and contract
 /// bounds that do not cover `scope` (structure validation); then an expired key (fee
 /// validation). A key bound to
 /// a contract group is accepted: only Platform can read the group's memberships. A key
@@ -262,12 +265,17 @@ pub(super) fn check_signing_key_eligibility(
             ),
         ));
     }
-    if !security_levels.contains(&key.security_level()) {
+    let signature_levels = if scope == SigningScope::NonBatch {
+        security_levels.to_vec()
+    } else {
+        BatchTransitionV1::default().security_level_requirement(key.purpose())
+    };
+    if !signature_levels.contains(&key.security_level()) {
         return Err(signature_refusal(
             SignatureError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
                     key.security_level(),
-                    security_levels.to_vec(),
+                    signature_levels,
                 ),
             ),
         ));
@@ -276,6 +284,16 @@ pub(super) fn check_signing_key_eligibility(
         return Err(signature_refusal(SignatureError::PublicKeyIsDisabledError(
             PublicKeyIsDisabledError::new(key.id()),
         )));
+    }
+    if scope != SigningScope::NonBatch && !security_levels.contains(&key.security_level()) {
+        return Err(signature_refusal(
+            SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    key.security_level(),
+                    security_levels.to_vec(),
+                ),
+            ),
+        ));
     }
     match scope.bounds_check(key) {
         BatchedTransitionBoundsCheck::Allowed
@@ -861,6 +879,63 @@ pub(super) mod tests {
                 other => panic!("not a signature error: {other:?}"),
             },
             other => panic!("not a consensus error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_check_batch_disabled_before_operation_level() {
+        for scope in [
+            document_scope(),
+            SigningScope::Token {
+                contract_id: Identifier::from(CONTRACT),
+                position: 0,
+            },
+        ] {
+            let levels = if matches!(scope, SigningScope::Token { .. }) {
+                vec![SecurityLevel::CRITICAL]
+            } else {
+                vec![SecurityLevel::CRITICAL, SecurityLevel::HIGH]
+            };
+            let check_candidate = |candidate: &IdentityPublicKey| {
+                check_signing_key_eligibility(
+                    candidate,
+                    &[Purpose::AUTHENTICATION],
+                    &levels,
+                    &TYPES,
+                    scope,
+                )
+            };
+            let mut master = key(1, SecurityLevel::MASTER);
+            master.set_disabled_at(5);
+            assert_eq!(
+                signature_error(check_candidate(&master)),
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    InvalidSignaturePublicKeySecurityLevelError::new(
+                        SecurityLevel::MASTER,
+                        vec![
+                            SecurityLevel::CRITICAL,
+                            SecurityLevel::HIGH,
+                            SecurityLevel::MEDIUM
+                        ],
+                    ),
+                ),
+            );
+            let mut candidate = key(1, SecurityLevel::MEDIUM);
+            candidate.set_disabled_at(5);
+            assert_eq!(
+                signature_error(check_candidate(&candidate)),
+                SignatureError::PublicKeyIsDisabledError(PublicKeyIsDisabledError::new(1)),
+            );
+            let candidate = key(1, SecurityLevel::MEDIUM);
+            assert_eq!(
+                signature_error(check_candidate(&candidate)),
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    InvalidSignaturePublicKeySecurityLevelError::new(
+                        SecurityLevel::MEDIUM,
+                        levels.clone()
+                    )
+                ),
+            );
         }
     }
 
