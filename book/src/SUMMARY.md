@@ -16,6 +16,7 @@
 # Contributing
 
 - [Coding Conventions](contributing/coding-conventions.md)
+- [AI Skills](contributing/ai-skills.md)
 
 # Versioning
 

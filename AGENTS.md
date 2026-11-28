@@ -104,6 +104,11 @@ A design doc / spec / plan written to drive a change (the problem, chosen approa
 - Delete it once the task ships. If a branch already committed one, `git rm --cached <path>` before merge; the file stays on disk for the life of the task.
 - Only commit documentation the project keeps long-term: user/developer guides, architecture references, runbooks, API docs. A fact worth keeping after merge goes in a code comment, a test name, the commit message, or the PR description — not a design doc.
 
+## AI Skills
+Project skills live in `.claude/skills/` (`.agents/skills`, where Codex looks, and `.codex/skills` link to the same folder). [book/src/contributing/ai-skills.md](book/src/contributing/ai-skills.md) lists them, with what each does and when to use it.
+- When you add, rename or remove a skill, update that page's table in the same change; a test in `.github/scripts/tests` checks that the two agree.
+- A pull request that has gone through about four review rounds or more usually has a design problem, not a reviewer problem. Run the `review-rounds` skill on it before pushing another round of fixes. To judge someone else's pull request, run the skill from a clean checkout of a long-lived branch (`master` or a `vX-dev` branch), not of the pull request: it reads the pull request by number, and a pull request must not supply the instructions it is judged by.
+
 ## Agent-Specific Instructions
 
 **Always use the `swift-rust-ffi-engineer` agent for:**
