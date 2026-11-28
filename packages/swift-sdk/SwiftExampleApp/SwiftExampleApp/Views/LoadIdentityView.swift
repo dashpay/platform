@@ -27,9 +27,6 @@ struct LoadIdentityView: View {
     @State private var showSuccess = false
     @State private var loadStartTime: Date?
 
-    // Testnet nodes
-    private let testnetNodes = TestnetNodesLoader.loadFromYAML()
-
     // Info popups
     @State private var showInfoPopup = false
     @State private var infoPopupMessage = ""
@@ -84,7 +81,7 @@ struct LoadIdentityView: View {
 
     private var formView: some View {
         Form {
-            if appState.sdk?.network == .testnet && testnetNodes != nil {
+            if appState.sdk?.network == .testnet {
                 Section {
                     HStack {
                         Button("Fill Random HPMN") {
@@ -97,6 +94,9 @@ struct LoadIdentityView: View {
                         }
                         .buttonStyle(.bordered)
                     }
+                    Text("Random test data; to load, enter your node's ProTx and keys.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -385,11 +385,11 @@ struct LoadIdentityView: View {
                     return Data(hexString: trimmed)
                 }
 
-                // The masternode key fields take hex or WIF (the testnet
-                // presets fill WIF); Rust reads either. A key that is typed
-                // but refused stops the load with Rust's reason instead of
-                // being dropped, since the vote sheets sign with the stored
-                // voting key. The refusal never repeats the typed text.
+                // The masternode key fields take hex or WIF. Loading a node
+                // requires its actual ProTx and keys in place of preset data.
+                // A refused key stops the load with Rust's reason, since the
+                // vote sheets sign with the stored voting key. The refusal
+                // never repeats the typed text.
                 var refusals: [String] = []
                 func readKey(_ input: String, named name: String) -> Data? {
                     guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -1272,9 +1272,13 @@ struct LoadIdentityView: View {
     }
 
     private func fillRandomHPMN() {
-        guard let nodes = testnetNodes?.hpMasternodes.randomElement() else { return }
+        let samples = TestnetNodesLoader.createSampleTestnetNodes()
+        guard let (name, hpmn) = samples.hpMasternodes.randomElement() else {
+            errorMessage = "Could not generate random test data."
+            return
+        }
 
-        let (name, hpmn) = nodes
+        errorMessage = nil
         identityIdInput = hpmn.protxTxHash
         selectedIdentityType = .evonode
         aliasInput = name
@@ -1284,9 +1288,13 @@ struct LoadIdentityView: View {
     }
 
     private func fillRandomMasternode() {
-        guard let nodes = testnetNodes?.masternodes.randomElement() else { return }
+        let samples = TestnetNodesLoader.createSampleTestnetNodes()
+        guard let (name, masternode) = samples.masternodes.randomElement() else {
+            errorMessage = "Could not generate random test data."
+            return
+        }
 
-        let (name, masternode) = nodes
+        errorMessage = nil
         identityIdInput = masternode.proTxHash
         selectedIdentityType = .masternode
         aliasInput = name

@@ -1,6 +1,7 @@
 import os from 'os';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import { getOperatorIdentity } from '../../../src/util/maskOperatorIdentity.js';
+import generateRandomString from '../../../src/util/generateRandomString.js';
 import configJsonSchema from '../../../src/config/configJsonSchema.js';
 import obfuscateConfig, {
   getConfigSecretValues,
@@ -50,8 +51,8 @@ describe('obfuscateConfig', () => {
     const secrets = {
       'core.rpc.users.dapi.password': 'dapiRpcPassword7Qx',
       'core.tor.control.password': 'torControlPassword7Qx',
-      'core.spork.privateKey': 'sporkPrivateKey7Qx',
-      'core.masternode.operator.privateKey': 'operatorPrivateKey7Qx',
+      'core.spork.privateKey': generateRandomString(52),
+      'core.masternode.operator.privateKey': generateRandomString(64),
       'platform.gateway.ssl.providerConfigs.zerossl.apiKey': 'zeroSslApiKey'.padEnd(32, '7'),
       'platform.drive.tenderdash.node.key': 'tenderdashNodeKey7Qx',
     };

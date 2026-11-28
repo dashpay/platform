@@ -1,8 +1,13 @@
 const Wallet = require('../src/types/Wallet/Wallet');
 
+const privateKey = process.env.WALLET_PRIVATE_KEY;
+if (!privateKey) {
+  throw new Error('Set WALLET_PRIVATE_KEY to a testnet private key before running this example');
+}
+
 const wallet = new Wallet({
   network: 'testnet',
-  privateKey: '9488797ee0018994d5ae22640e25210f65b1a450a0adcfa428cb5ffb29faa24b',
+  privateKey,
 });
 
 wallet

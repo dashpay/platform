@@ -427,7 +427,7 @@ describe('archiveSamples', () => {
 
     // Where a fact belongs, what is kept is only what looks like that fact
     it('should scrub a value where a fact of an RPC answer belongs that does not look like it', async () => {
-      const secret = 'plantedFactSecret7Qx';
+      const secret = crypto.randomBytes(10).toString('hex');
       const nodeId = 'a'.repeat(40);
 
       config.set('core.rpc.users.tenderdash.password', secret);
