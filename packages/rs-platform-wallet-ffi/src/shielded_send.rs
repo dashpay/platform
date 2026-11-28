@@ -958,7 +958,7 @@ pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
-    match result {
+    match result.map_err(without_payment_class) {
         Ok(()) => PlatformWalletFFIResult::ok(),
         // Outcome not known: a dispatch may have reached a node and the
         // execution result couldn't be confirmed, so the host must NOT
@@ -1255,7 +1255,7 @@ fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
-    match result {
+    match result.map_err(without_payment_class) {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
         Err(
@@ -1469,7 +1469,7 @@ const IDENTITY_CREATE_FROM_POOL_OPERATION: &str = "shielded identity-create-from
 fn map_identity_create_result(
     result: Result<Identifier, PlatformWalletError>,
 ) -> (PlatformWalletFFIResult, Option<[u8; 32]>) {
-    let ffi_result = match result {
+    let ffi_result = match result.map_err(without_payment_class) {
         Ok(identity_id) => {
             return (PlatformWalletFFIResult::ok(), Some(identity_id.to_buffer()));
         }
@@ -5936,6 +5936,7 @@ mod tests {
             Err(PlatformWalletError::AssetLockTooManyInputs {
                 count: 101,
                 max: 100,
+                resumed: true,
             }),
             "shielded resume fund-from-asset-lock",
         );
@@ -6088,6 +6089,35 @@ mod tests {
             "structured available/required duffs must cross the boundary verbatim"
         );
         assert!(message_of(&result).contains("asset lock coin selection is short"));
+    }
+
+    /// A payment-class wrapper is read through: a shortfall the wallet
+    /// classed as refused before dispatch, or one after a dispatch, keeps its
+    /// own code 29 and its rendered figures rather than the catch-all.
+    #[test]
+    fn should_keep_a_wrapped_funding_refusal_at_its_own_code() {
+        for wrap in [
+            |source| PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(source),
+            },
+            |source| PlatformWalletError::PaymentAlreadyDispatched {
+                held_lock: None,
+                source: Box::new(source),
+            },
+        ] {
+            let inner = PlatformWalletError::AssetLockInsufficientFunds {
+                available: 18_000_000,
+                required: 100_000_000,
+            };
+            let rendered = inner.to_string();
+            let result =
+                map_asset_lock_funding_result(Err(wrap(inner)), "shielded fund-from-asset-lock");
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
+            );
+            assert_eq!(message_of(&result), rendered);
+        }
     }
 
     /// The resume sibling shares the helper, so the shortfall stays typed on

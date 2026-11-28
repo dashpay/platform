@@ -521,6 +521,11 @@ pub struct PlatformWallet {
     /// handles share them.
     #[cfg(feature = "shielded")]
     private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
+    /// Test seam: while set, a shielded fund-from-asset-lock proof of this
+    /// wallet (and its clones) fails instead of proving. Per wallet, so a
+    /// test's fault reaches no other test's wallet.
+    #[cfg(all(test, feature = "shielded"))]
+    pub(crate) fail_shield_from_asset_lock_proof: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Refuse an account number of the range reserved for identity accounts in
@@ -897,7 +902,10 @@ impl PlatformWallet {
         if !self.core().is_current_generation().await {
             return Err(removed());
         }
-        let signed = sign.await?;
+        // Nothing reached the network before `send`: an error building or
+        // signing the top-up (a short input, an oversized transition) is a
+        // refusal before dispatch, keeping its diagnostic.
+        let signed = sign.await.map_err(PlatformWalletError::before_dispatch)?;
         let lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
             return Err(removed());
@@ -1158,6 +1166,8 @@ impl PlatformWallet {
             shielded_binding: Arc::default(),
             #[cfg(feature = "shielded")]
             private_payment_restores: Arc::default(),
+            #[cfg(all(test, feature = "shielded"))]
+            fail_shield_from_asset_lock_proof: Arc::default(),
         }
     }
 
@@ -2380,6 +2390,15 @@ impl PlatformWallet {
     /// holds them until it returns, and takes the wallet's shielded
     /// configuration lock for its binding check, so a caller must hold none
     /// of them: a removal or a Clear queued in between would deadlock it.
+    ///
+    /// A refusal of the recipient, the amount or the note reservation is
+    /// `NotSent`. One whose variant is otherwise classed possibly sent (a zero
+    /// amount, an invalid recipient) arrives wrapped in
+    /// [`PlatformWalletError::RefusedBeforeDispatch`]: match the diagnostic
+    /// on [`PlatformWalletError::dispatched_source`], and read delivery and
+    /// retry from the outer error. A later failure keeps its own class, even
+    /// one before the build: a failed recorded-anchor fetch is an SDK error,
+    /// classed possibly sent.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
@@ -2413,8 +2432,28 @@ impl PlatformWallet {
     /// [`shielded_transfer_to_with_plan`](Self::shielded_transfer_to_with_plan))
     /// to run exactly that selection, or have it refused with
     /// [`PlatformWalletError::ShieldedPlanChanged`] when the notes moved.
+    ///
+    /// Planning only reads the notes: it reserves, signs and sends nothing, so
+    /// every failure is `NotSent`. One whose variant is otherwise classed
+    /// possibly sent (a zero amount, a spend kind not active at this protocol
+    /// version) arrives wrapped in [`PlatformWalletError::RefusedBeforeDispatch`]:
+    /// match the diagnostic on [`PlatformWalletError::dispatched_source`], and
+    /// read delivery and retry from the outer error.
     #[cfg(feature = "shielded")]
     pub async fn shielded_plan_spend(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account: u32,
+        kind: super::shielded::note_selection::ShieldedSpendKind,
+        amount: super::shielded::note_selection::ShieldedSpendAmount,
+    ) -> Result<super::shielded::note_selection::ShieldedSpendPlan, PlatformWalletError> {
+        self.shielded_plan_spend_inner(coordinator, account, kind, amount)
+            .await
+            .map_err(PlatformWalletError::before_dispatch)
+    }
+
+    #[cfg(feature = "shielded")]
+    async fn shielded_plan_spend_inner(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         account: u32,
@@ -2511,10 +2550,12 @@ impl PlatformWallet {
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
+        // Refused before anything is built or sent.
         .ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError(
                 "invalid Orchard payment address bytes".to_string(),
             )
+            .before_dispatch()
         })?;
         super::shielded::operations::transfer_once_claimed(
             &self.sdk,
@@ -4308,6 +4349,8 @@ impl Clone for PlatformWallet {
             shielded_binding: self.shielded_binding.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
+            #[cfg(all(test, feature = "shielded"))]
+            fail_shield_from_asset_lock_proof: self.fail_shield_from_asset_lock_proof.clone(),
         }
     }
 }

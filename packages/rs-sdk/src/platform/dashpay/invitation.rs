@@ -165,10 +165,23 @@ pub enum InvitationError {
     /// Retry later: the link may be fine but cannot be used yet. Either the
     /// funding transaction has not reached the queried node, or it is not
     /// chain-locked yet and the claim needs a ChainLock proof (the link has
-    /// no islock, or Platform rejected its islock as stale). The message
-    /// says which.
-    #[error("{0}")]
-    NotChainLocked(String),
+    /// no islock, or Platform refused the claim submitted with its islock
+    /// proof). The message says which.
+    ///
+    /// `after_broadcast` says when it happened: `false` only where no node
+    /// could have answered, before the claim was built (the funding
+    /// transaction was not found, or a ChainLock invitation is not
+    /// chain-locked yet): retry once usable. `true` when the claim was
+    /// submitted with its islock proof and refused (a stale islock, a funding
+    /// transaction over the input cap, or a size verdict, which reads the same
+    /// from the SDK's own check and from a node) with no ChainLock fallback:
+    /// the claim may have been sent, so check whether the invitation's
+    /// identity exists before claiming again.
+    #[error("{message}")]
+    NotChainLocked {
+        message: String,
+        after_broadcast: bool,
+    },
 
     /// The invitation is claimed: an identity already exists at its id. Whose
     /// it is is not decided here; no key the claim submitted proves it (a
@@ -178,8 +191,15 @@ pub enum InvitationError {
     /// records. Usually found before the broadcast, else from Platform's
     /// consumed-outpoint refusal when the identity is not exactly the
     /// submitted one.
+    ///
+    /// `after_broadcast` says which: `false` when the preflight lookup found
+    /// it and nothing was signed or sent, `true` when Platform refused the
+    /// submitted claim and the lookup that followed found it.
     #[error("invitation was already claimed by identity {identity_id}")]
-    AlreadyClaimed { identity_id: Identifier },
+    AlreadyClaimed {
+        identity_id: Identifier,
+        after_broadcast: bool,
+    },
 
     /// A submitted key is already registered to another identity, so
     /// Platform would refuse the claim and charge the voucher for it.
@@ -1012,7 +1032,9 @@ impl Sdk {
     /// size case only if the claim fits with it, and for the input cap case
     /// only if the islock proof's own transaction is over the cap. If the tx is not yet
     /// chain-locked no fallback is possible and the claim returns
-    /// [`InvitationError::NotChainLocked`] as a retry signal.
+    /// [`InvitationError::NotChainLocked`] with `after_broadcast: true`: the
+    /// refused claim may have been sent, so check the invitation's identity
+    /// before claiming again.
     ///
     /// The invitee's own identity keys (`keys_map`) are signed by
     /// `identity_signer`; the asset-lock's outer state-transition signature is
@@ -1221,7 +1243,7 @@ where
     let mut lookup_error = None;
     let mut foreign_owner = None;
     match fetch_by_id().await {
-        Ok(Some(identity)) => return Err(already_claimed(&identity)),
+        Ok(Some(identity)) => return Err(already_claimed(&identity, false)),
         Ok(None) => {}
         Err(error) => lookup_error = Some(error),
     }
@@ -1233,7 +1255,7 @@ where
             // the invitation's identity can answer a key hash while the one
             // asked by id had not seen it yet.
             Ok(Some(identity)) if identity.id() == prospective_identity_id => {
-                return Err(already_claimed(&identity));
+                return Err(already_claimed(&identity, false));
             }
             // A later key hash may still name the invitation's identity,
             // which decides first.
@@ -1268,9 +1290,11 @@ where
 /// The invitation's identity exists. No submitted key decides whose it is:
 /// a key the claim shares with that identity (a delegated application key,
 /// say) does not show that the claimant controls its master.
-fn already_claimed(identity: &Identity) -> InvitationError {
+/// `after_broadcast` is whether the claim was submitted before it was found.
+fn already_claimed(identity: &Identity, after_broadcast: bool) -> InvitationError {
     InvitationError::AlreadyClaimed {
         identity_id: identity.id(),
+        after_broadcast,
     }
 }
 
@@ -1392,12 +1416,13 @@ where
             delay().await;
         }
     }
-    Err(InvitationError::NotChainLocked(
-        "invitation funding transaction not found (tried both byte orders across \
-         repeated attempts); it may not have propagated to the queried DAPI node yet — \
-         retry shortly"
+    Err(InvitationError::NotChainLocked {
+        message: "invitation funding transaction not found (tried both byte orders across \
+                  repeated attempts); it may not have propagated to the queried DAPI node \
+                  yet — retry shortly"
             .to_string(),
-    ))
+        after_broadcast: false,
+    })
 }
 
 /// Submit the claim's reconstructed proof with the IS → ChainLock fallback —
@@ -1420,8 +1445,9 @@ where
 /// On that rejection the ChainLock `chain_fallback` over the SAME credit output
 /// is submitted —
 /// or, when the funding tx was not yet chain-locked so no fallback could be
-/// built, [`InvitationError::NotChainLocked`] surfaces a clear retry signal instead of
-/// the raw consensus error. Every other error — from the primary or from the
+/// built, [`InvitationError::NotChainLocked`] with `after_broadcast: true`
+/// surfaces instead of the raw consensus error (the refusal may be a node's
+/// answer to the sent claim). Every other error — from the primary or from the
 /// fallback itself — propagates as [`InvitationError::Sdk`] with no
 /// further submission.
 async fn submit_claim_with_chain_lock_fallback<T, F, Fut>(
@@ -1445,26 +1471,42 @@ where
                 .is_some_and(|proof| needs_chain_lock_proof(&e, proof)) =>
         {
             let Some(chain_proof) = chain_fallback else {
+                // Every refusal here may come from a node that received the
+                // signed claim: a stale islock and the input cap are
+                // Platform's verdicts, and a size verdict decodes the same
+                // whether `checked_broadcast_request` raised it before sending
+                // or an endpoint returned it after (#6284 tracks evidence that
+                // tells the two apart). So the claim may have been sent.
                 let reason = if is_instant_lock_proof_invalid(&e) {
                     "was rejected by Platform (stale — quorum rotated or no longer recent)"
                 } else if as_asset_lock_transaction_too_many_inputs(&e).is_some() {
                     "was rejected by Platform (the funding transaction has more inputs than \
                      an islock proof may carry)"
                 } else {
-                    "makes the claim too large to submit"
+                    "was refused as too large (by this SDK's size check, or by a node that \
+                     received it)"
                 };
-                return Err(InvitationError::NotChainLocked(format!(
-                    "invitation islock proof {reason} and the funding transaction is not yet \
-                     chain-locked, so no ChainLock fallback is possible; retry once the \
-                     funding block is chain-locked"
-                )));
+                return Err(InvitationError::NotChainLocked {
+                    message: format!(
+                        "invitation claim with its islock proof {reason}, and the funding \
+                         transaction is not yet chain-locked, so no ChainLock fallback is \
+                         possible. The claim may have been sent: check whether the \
+                         invitation's identity exists before claiming again"
+                    ),
+                    after_broadcast: true,
+                });
             };
             tracing::warn!(
                 "invitation IS-lock proof unusable on claim ({}); retrying with a \
                  ChainLock proof over the same funding outpoint",
                 e
             );
-            submit(chain_proof).await.map_err(InvitationError::Sdk)
+            // The primary may have been sent (see above), so whatever the
+            // fallback answers — a local refusal before its own broadcast
+            // included — does not prove the claim was never accepted.
+            submit(chain_proof)
+                .await
+                .map_err(|fallback| InvitationError::Sdk(fallback.into_unconfirmed()))
         }
         Err(e) => Err(InvitationError::Sdk(e)),
     }
@@ -1502,6 +1544,12 @@ fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
 /// there is [`InvitationError::AlreadyClaimed`]; no identity or a failed
 /// lookup reports the original rejection.
 ///
+/// The consumed verdict is also read through an unconfirmed wrapper: a ChainLock
+/// fallback after an InstantSend primary that may have landed comes back
+/// unconfirmed, and Platform's answer that its outpoint is consumed is then the
+/// usual sign that the primary created the identity. The wrapper stays on the
+/// error reported when the identity is not adopted.
+///
 /// `fetch` looks up the identity at the prospective id: the injectable seam
 /// (production passes `Identity::fetch`).
 async fn adopt_already_landed_claim<F, Fut>(
@@ -1515,9 +1563,7 @@ where
     Fut: std::future::Future<Output = Result<Option<Identity>, Error>>,
 {
     let error = match submitted {
-        Err(InvitationError::Sdk(error)) if is_asset_lock_already_consumed(&error, out_point) => {
-            error
-        }
+        Err(InvitationError::Sdk(error)) if reports_consumed_out_point(&error, out_point) => error,
         other => return other,
     };
     match fetch().await {
@@ -1528,7 +1574,7 @@ where
             );
             Ok(identity)
         }
-        Ok(Some(identity)) => Err(already_claimed(&identity)),
+        Ok(Some(identity)) => Err(already_claimed(&identity, true)),
         Ok(None) => Err(InvitationError::Sdk(error)),
         Err(lookup) => {
             tracing::warn!(
@@ -1537,6 +1583,17 @@ where
             );
             Err(InvitationError::Sdk(error))
         }
+    }
+}
+
+/// Whether `error` is Platform's verdict that `out_point` is consumed, also
+/// when it arrives wrapped as unconfirmed (see [`adopt_already_landed_claim`]).
+fn reports_consumed_out_point(error: &Error, out_point: &OutPoint) -> bool {
+    match error {
+        Error::StateTransitionResultUnconfirmed(inner) => {
+            reports_consumed_out_point(inner, out_point)
+        }
+        other => is_asset_lock_already_consumed(other, out_point),
     }
 }
 
@@ -1722,11 +1779,12 @@ fn assemble_asset_lock_proof(
             // chain-locked otherwise. There is no separate fallback — this IS the
             // ChainLock proof.
             if !is_chain_locked {
-                return Err(InvitationError::NotChainLocked(
-                    "chainlock invitation funding transaction is not yet chain-locked; \
-                     retry once it confirms"
+                return Err(InvitationError::NotChainLocked {
+                    message: "chainlock invitation funding transaction is not yet \
+                              chain-locked; retry once it confirms"
                         .to_string(),
-                ));
+                    after_broadcast: false,
+                });
             }
             Ok(ReconstructedProof {
                 primary: chain_lock_proof(),
@@ -2156,7 +2214,13 @@ mod tests {
         let inv = parsed(key, txid, None);
         let err = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap_err();
         assert!(
-            matches!(err, InvitationError::NotChainLocked(_)),
+            matches!(
+                err,
+                InvitationError::NotChainLocked {
+                    after_broadcast: false,
+                    ..
+                }
+            ),
             "expected the retry-later signal, got {err:?}"
         );
     }
@@ -2783,14 +2847,20 @@ mod tests {
             let (result, looked_up) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
             assert!(looked_up.is_empty(), "looked up {looked_up:?}");
 
             let (result, looked_up) = preflight(Ok(Some(ours())), |_| Ok(None)).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
             assert!(looked_up.is_empty(), "looked up {looked_up:?}");
         }
@@ -2812,7 +2882,7 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id })
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false })
                     if identity_id == ours().id()
             ));
             assert_eq!(submit_calls.get(), 0, "nothing may be broadcast");
@@ -2823,7 +2893,7 @@ mod tests {
             let (result, _) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == theirs().id()
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false }) if identity_id == theirs().id()
             ));
         }
 
@@ -2833,7 +2903,10 @@ mod tests {
             let (result, _) = preflight(Ok(Some(theirs())), |_| Ok(Some(ours()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
 
             // The lookup by id failed, but a key hash names the invitation's
@@ -2841,7 +2914,7 @@ mod tests {
             let (result, _) = preflight(Err(timeout()), |_| Ok(Some(ours()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == ours().id()
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false }) if identity_id == ours().id()
             ));
             let (result, _) = preflight(Err(timeout()), |_| Ok(None)).await;
             assert!(matches!(result, Err(InvitationError::Sdk(_))));
@@ -2908,14 +2981,17 @@ mod tests {
             let (result, _) = preflight(Ok(None), |_| Ok(Some(ours()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == ours().id()
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false }) if identity_id == ours().id()
             ));
 
             let squatter = identity(1, [(0, test_key(0, 9))].into());
             let (result, _) = preflight(Ok(None), move |_| Ok(Some(squatter.clone()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
         }
 
@@ -2931,7 +3007,7 @@ mod tests {
                 .await;
                 assert!(matches!(
                     result,
-                    Err(InvitationError::AlreadyClaimed { identity_id })
+                    Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false })
                         if identity_id == ours().id()
                 ));
             }
@@ -2945,6 +3021,7 @@ mod tests {
                 async {
                     Err(InvitationError::AlreadyClaimed {
                         identity_id: ours().id(),
+                        after_broadcast: false,
                     })
                 },
                 || async { panic!("a refused claim must never be broadcast") },
@@ -2952,7 +3029,10 @@ mod tests {
             .await;
             assert!(matches!(
                 refused,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
 
             let taken = claim_unless_refused(async { Ok(()) }, || async {
@@ -3174,7 +3254,10 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: true,
+                    ..
+                })
             ));
         }
 
@@ -3196,6 +3279,33 @@ mod tests {
             assert_eq!(lookups, 1);
         }
 
+        /// A ChainLock fallback answered unconfirmed with the consumed verdict
+        /// (its InstantSend primary landed first) still adopts our identity;
+        /// with nothing to adopt it keeps the unconfirmed error.
+        #[tokio::test]
+        async fn should_adopt_our_identity_behind_an_unconfirmed_consumed_verdict() {
+            let unconfirmed_consumed = || match consumed(out_point()) {
+                InvitationError::Sdk(error) => Err(InvitationError::Sdk(error.into_unconfirmed())),
+                other => panic!("consumed() builds an SDK error, got {other:?}"),
+            };
+
+            let (result, lookups) = adopt(
+                unconfirmed_consumed(),
+                Ok(Some(identity_with_keys(our_keys()))),
+            )
+            .await;
+            assert!(result.is_ok(), "our own landed claim is the claim's result");
+            assert_eq!(lookups, 1);
+
+            let (result, _) = adopt(unconfirmed_consumed(), Ok(None)).await;
+            match result {
+                Err(InvitationError::Sdk(error)) => {
+                    assert!(error.is_state_transition_result_unconfirmed(), "{error:?}")
+                }
+                other => panic!("expected the unconfirmed error, got {other:?}"),
+            }
+        }
+
         #[tokio::test]
         async fn should_report_a_claim_by_someone_else_first() {
             let theirs: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 9))].into();
@@ -3206,7 +3316,10 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: true,
+                    ..
+                })
             ));
         }
 
@@ -3224,7 +3337,10 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: true,
+                    ..
+                })
             ));
         }
 
@@ -3445,7 +3561,13 @@ mod tests {
                 .collect();
             let (result, calls, delays) = run(script).await;
             assert!(
-                matches!(result, Err(InvitationError::NotChainLocked(_))),
+                matches!(
+                    result,
+                    Err(InvitationError::NotChainLocked {
+                        after_broadcast: false,
+                        ..
+                    })
+                ),
                 "a funding tx that never appears must be a retry-later signal, got {result:?}"
             );
             assert_eq!(calls.len(), (CLAIM_FETCH_MAX_ATTEMPTS * 2) as usize);
@@ -3624,6 +3746,28 @@ mod tests {
             );
         }
 
+        /// The primary may have been sent before the fallback, so a fallback
+        /// that fails, even locally before its own broadcast, leaves the claim
+        /// unconfirmed rather than never sent.
+        #[tokio::test]
+        async fn should_keep_the_claim_unconfirmed_when_the_fallback_fails() {
+            let (result, submitted) = run(
+                Some(chain_fallback_proof()),
+                vec![
+                    Err(stale_islock_rejection()),
+                    Err(Error::Generic("signer key unavailable".to_string())),
+                ],
+            )
+            .await;
+            assert_eq!(submitted.len(), 2, "primary then fallback");
+            match result {
+                Err(InvitationError::Sdk(error)) => {
+                    assert!(error.is_state_transition_result_unconfirmed(), "{error:?}")
+                }
+                other => panic!("expected an unconfirmed SDK error, got {other:?}"),
+            }
+        }
+
         /// An InstantSend proof over a funding tx with many inputs makes the
         /// claim too large to submit; the ChainLock fallback over the same
         /// outpoint is submitted instead.
@@ -3643,16 +3787,27 @@ mod tests {
         }
 
         /// An oversized IS primary with no fallback (funding tx not yet
-        /// chain-locked) surfaces the retry signal after one submission.
+        /// chain-locked) is after the broadcast: the size verdict reads the
+        /// same from `checked_broadcast_request` and from an endpoint's gRPC
+        /// consensus metadata (`From<DapiClientError>` decodes both to this
+        /// `Protocol(ConsensusError)`), so the claim may have been sent.
         #[tokio::test]
         async fn should_surface_the_retry_signal_for_a_too_large_islock_proof_without_fallback() {
             let (result, submitted) = run(None, vec![Err(oversized_rejection())]).await;
 
             match result {
-                Err(InvitationError::NotChainLocked(message)) => {
+                Err(InvitationError::NotChainLocked {
+                    message,
+                    after_broadcast: true,
+                }) => {
                     assert!(
                         message.contains("too large"),
                         "unexpected message: {message}"
+                    );
+                    assert!(
+                        message.contains("may have been sent") && !message.contains("retry"),
+                        "an after-broadcast refusal must send the caller to check the claim, \
+                         not to retry: {message}"
                     );
                 }
                 other => panic!("expected the not-chain-locked retry signal, got {other:?}"),
@@ -3697,7 +3852,10 @@ mod tests {
             .await;
 
             match result {
-                Err(InvitationError::NotChainLocked(message)) => {
+                Err(InvitationError::NotChainLocked {
+                    message,
+                    after_broadcast: true,
+                }) => {
                     assert!(
                         message.contains("more inputs"),
                         "unexpected message: {message}"
@@ -3758,7 +3916,13 @@ mod tests {
         async fn should_ask_to_retry_when_a_stale_islock_has_no_chain_fallback() {
             let (result, submitted) = run(None, vec![Err(stale_islock_rejection())]).await;
             assert!(
-                matches!(result, Err(InvitationError::NotChainLocked(_))),
+                matches!(
+                    result,
+                    Err(InvitationError::NotChainLocked {
+                        after_broadcast: true,
+                        ..
+                    })
+                ),
                 "expected the not-chain-locked retry signal, got {result:?}"
             );
             assert_eq!(
@@ -3994,7 +4158,7 @@ mod tests {
             assert!(
                 matches!(
                     result,
-                    Err(InvitationError::AlreadyClaimed { identity_id })
+                    Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false })
                         if identity_id == invitation_id
                 ),
                 "got {result:?}"

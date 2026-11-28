@@ -1220,8 +1220,21 @@ pub(crate) fn retry_after_sync_message(error: &PlatformWalletError) -> String {
     format!("Wallet is still syncing to a confirmed state — try again shortly. ({error})")
 }
 
+/// The error a payment-class wrapper (`PaymentAlreadyDispatched`,
+/// `RefusedBeforeDispatch`) carries. This FFI does not report the wallet's
+/// payment class yet, so every mapper reads the wrapped error, and its own
+/// code, JSON detail and consensus code reach the host as before.
+pub(crate) fn without_payment_class(error: PlatformWalletError) -> PlatformWalletError {
+    match error {
+        PlatformWalletError::PaymentAlreadyDispatched { source, .. }
+        | PlatformWalletError::RefusedBeforeDispatch { source } => without_payment_class(*source),
+        other => other,
+    }
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        let error = without_payment_class(error);
         // Preserve the SDK's submission phase before any diagnostic can be
         // interpreted as a definitive nonce, balance or marketplace refusal.
         if matches!(
@@ -1414,7 +1427,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvitationNotReady(..) => {
                 PlatformWalletFFIResultCode::ErrorInvitationNotReady
             }
-            PlatformWalletError::AssetLockNotChainLocked(..) => {
+            PlatformWalletError::AssetLockNotChainLocked { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
@@ -2845,7 +2858,10 @@ mod tests {
                 65,
             ),
             (
-                PlatformWalletError::AssetLockNotChainLocked("later".to_string()),
+                PlatformWalletError::AssetLockNotChainLocked {
+                    message: "later".to_string(),
+                    after_broadcast: false,
+                },
                 PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked,
                 66,
             ),
@@ -3689,6 +3705,32 @@ mod private_contact_request_error_tests {
     /// wallet's own diagnostic (no code 19 prefix: for a token pool gap a
     /// retry after the next sync is not enough), never as the catch-all a host
     /// reads as possibly sent.
+    /// Every conversion reads through the wallet's payment-class wrappers, so
+    /// a wrapped error keeps the code it has unwrapped.
+    #[test]
+    fn should_read_through_the_payment_class_wrappers() {
+        let inner = || PlatformWalletError::ShieldedMerkleWitnessUnavailable("position 7".into());
+        for wrapped in [
+            PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(inner()),
+            },
+            PlatformWalletError::PaymentAlreadyDispatched {
+                held_lock: None,
+                source: Box::new(PlatformWalletError::RefusedBeforeDispatch {
+                    source: Box::new(inner()),
+                }),
+            },
+        ] {
+            let result = PlatformWalletFFIResult::from(wrapped);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+            );
+            let message = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
+            assert!(message.contains("position 7"), "{message}");
+        }
+    }
+
     #[test]
     fn should_report_an_unavailable_merkle_witness_by_its_own_code() {
         let result = PlatformWalletFFIResult::from(

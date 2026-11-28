@@ -14,6 +14,7 @@
 //! ([`send_contact_request_with_external_signer`](IdentityWallet::send_contact_request_with_external_signer)).
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
@@ -224,6 +225,8 @@ impl IdentityWallet {
         // the proof wait is deferred until AFTER the invitation record below is
         // durably persisted, so an interruption during the (potentially long)
         // proof wait cannot orphan the funded lock from the reclaim UI.
+        // No invitation row exists yet, so a failure here names no voucher
+        // lock as held: the reclaim needs that row.
         let (path, out_point) = self
             .asset_locks
             .broadcast_funded_asset_lock(
@@ -233,79 +236,21 @@ impl IdentityWallet {
                 0,
                 asset_lock_signer,
             )
-            .await?;
+            .await
+            .map_err(PlatformWalletError::without_held_lock)?;
 
-        // Persist the inviter-side invitation record NOW — immediately after the
-        // broadcast succeeds, BEFORE every later fallible or slow step (the proof
-        // wait, the InstantSend check, the voucher-key export, the URI encode).
-        // The broadcast has already spent the DASH into the OP_RETURN, so any
-        // voucher that fails a later step is still a *funded, reclaimable* lock;
-        // recording it first is what keeps it visible in the "Sent
-        // invitations"/reclaim UI. A ChainLock-confirmed voucher is rejected
-        // further below as a usable *link* (the invitee needs an InstantSend
-        // proof), but it remains a funded, reclaimable lock and is already
-        // recorded here rather than orphaned. The store + flush are REQUIRED,
-        // not best-effort: a funded voucher we cannot durably record is a hard
-        // failure to surface, not a silent success. No secret is stored — only
-        // the funding index (display metadata; reclaim resumes by outpoint). If
-        // the funding path carries no u32 index tail (a structural can't-happen
-        // for the invitation account), warn-skip: an untrackable row can't be
-        // reclaimed either way.
-        if let Some(funding_index) = funding_index_from_path(&path) {
-            self.record_funded_invitation(InvitationEntry {
+        let uri = self
+            .funded_invitation_uri(
+                &path,
                 out_point,
-                funding_index,
                 amount_duffs,
                 expiry_unix,
                 created_at_secs,
-                has_inviter: inviter.is_some(),
-                status: InvitationStatus::Created,
-            })?;
-        } else {
-            tracing::warn!(
-                "invitation funding path has no u32 index tail; \
-                 skipping the local invitation record"
-            );
-        }
-
-        // Wait for the funding proof. The row above is already durable, so a
-        // termination or failure inside this wait leaves a reclaimable, visible
-        // invitation rather than an orphaned lock.
-        let proof = self
-            .asset_locks
-            .wait_for_funded_asset_lock_proof(&out_point, funding_account_index)
+                inviter.as_ref(),
+                funding_account_index,
+                crypto_provider,
+            )
             .await?;
-
-        // The invitee's `validate_claimable` accepts only an InstantSend proof.
-        // The proof wait falls back to a ChainLock proof if the IS lock doesn't
-        // propagate within its 300s preference window — reject emitting a link
-        // the invitee would silently reject (a dead voucher: funds locked, no
-        // signal). The funding lock was recorded before the wait, so it stays
-        // tracked/reclaimable; the inviter retries.
-        if !matches!(proof, AssetLockProof::Instant(_)) {
-            return Err(PlatformWalletError::AssetLockTransaction(
-                "InstantSend lock did not confirm in time (a ChainLock proof was produced); \
-                 the funding lock is reclaimable — please retry the invitation"
-                    .to_string(),
-            ));
-        }
-
-        // Export the one-time voucher private key at the funding path. This is
-        // the one deliberate raw-key export (the whole point of an invitation);
-        // it is path-gated to the invitation sub-feature inside the provider.
-        let mut voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
-
-        // Build the (secret) URI, then scrub the exported scalar on BOTH the
-        // success and the encode-error path. `secp256k1::SecretKey` has no
-        // Drop-zeroize, so wipe it explicitly; scrubbing before propagating an
-        // encode failure matters most there — on that path the key never
-        // legitimately left the device, so a lingering copy is the worst kind.
-        // The link carries the funding txid + islock (legacy query form), not
-        // the embedded proof; the invitee refetches the tx at claim.
-        let network = self.sdk.network;
-        let uri_result = encode_invitation_uri(&voucher_key, network, &proof, inviter.as_ref());
-        voucher_key.non_secure_erase();
-        let uri = uri_result?;
 
         Ok(Invitation {
             uri,
@@ -313,6 +258,115 @@ impl IdentityWallet {
             amount_duffs,
             expiry_unix,
         })
+    }
+
+    /// The part of [`Self::create_invitation`] that follows the voucher
+    /// lock's broadcast: record the invitation, wait for the lock's proof,
+    /// and encode the link. The lock at `out_point` is tracked from here on.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn funded_invitation_uri<CP>(
+        &self,
+        path: &DerivationPath,
+        out_point: dashcore::OutPoint,
+        amount_duffs: u64,
+        expiry_unix: u32,
+        created_at_secs: u32,
+        inviter: Option<&InviterInfo>,
+        funding_account_index: u32,
+        crypto_provider: &CP,
+    ) -> Result<String, PlatformWalletError>
+    where
+        CP: ContactCryptoProvider + Send + Sync,
+    {
+        // The voucher lock is broadcast and tracked from here on, so every
+        // later failure goes through the funded-lock seam and is never
+        // `NotSent`. It names the lock as held (the reclaim resumes it) only
+        // once the invitation row is durably saved: the reclaim reads that
+        // row, so without it the failure is `MaybeSent` and names none.
+        let recorded = AtomicBool::new(false);
+        self.asset_locks
+            .with_funded_lock(Some(out_point), async {
+                // Persist the inviter-side invitation record NOW — immediately after the
+                // broadcast succeeds, BEFORE every later fallible or slow step (the proof
+                // wait, the InstantSend check, the voucher-key export, the URI encode).
+                // The broadcast has already spent the DASH into the OP_RETURN, so any
+                // voucher that fails a later step is still a *funded, reclaimable* lock;
+                // recording it first is what keeps it visible in the "Sent
+                // invitations"/reclaim UI. A ChainLock-confirmed voucher is rejected
+                // further below as a usable *link* (the invitee needs an InstantSend
+                // proof), but it remains a funded, reclaimable lock and is already
+                // recorded here rather than orphaned. The store + flush are REQUIRED,
+                // not best-effort: a funded voucher we cannot durably record is a hard
+                // failure to surface, not a silent success. No secret is stored — only
+                // the funding index (display metadata; reclaim resumes by outpoint). If
+                // the funding path carries no u32 index tail (a structural can't-happen
+                // for the invitation account), warn-skip: an untrackable row can't be
+                // reclaimed either way.
+                if let Some(funding_index) = funding_index_from_path(path) {
+                    self.record_funded_invitation(InvitationEntry {
+                        out_point,
+                        funding_index,
+                        amount_duffs,
+                        expiry_unix,
+                        created_at_secs,
+                        has_inviter: inviter.is_some(),
+                        status: InvitationStatus::Created,
+                    })?;
+                    recorded.store(true, Ordering::Release);
+                } else {
+                    tracing::warn!(
+                        "invitation funding path has no u32 index tail; \
+                         skipping the local invitation record"
+                    );
+                }
+
+                // Wait for the funding proof. The row above is already durable, so a
+                // termination or failure inside this wait leaves a reclaimable, visible
+                // invitation rather than an orphaned lock.
+                let proof = self
+                    .asset_locks
+                    .wait_for_funded_asset_lock_proof(&out_point, funding_account_index)
+                    .await?;
+
+                // The invitee's `validate_claimable` accepts only an InstantSend proof.
+                // The proof wait falls back to a ChainLock proof if the IS lock doesn't
+                // propagate within its 300s preference window — reject emitting a link
+                // the invitee would silently reject (a dead voucher: funds locked, no
+                // signal). The funding lock was recorded before the wait, so it stays
+                // tracked and reclaimable from Sent invitations: the way on is the
+                // reclaim, not a second funded invitation.
+                if !matches!(proof, AssetLockProof::Instant(_)) {
+                    return Err(PlatformWalletError::AssetLockTransaction(
+                        "InstantSend lock did not confirm in time (a ChainLock proof was \
+                         produced), so no invitation link can be made from it; the funded \
+                         voucher lock stays tracked — reclaim it rather than funding a new \
+                         invitation"
+                            .to_string(),
+                    ));
+                }
+
+                // Export the one-time voucher private key at the funding path. This is
+                // the one deliberate raw-key export (the whole point of an invitation);
+                // it is path-gated to the invitation sub-feature inside the provider.
+                let mut voucher_key = crypto_provider.export_invitation_private_key(path).await?;
+
+                // Build the (secret) URI, then scrub the exported scalar on BOTH the
+                // success and the encode-error path. `secp256k1::SecretKey` has no
+                // Drop-zeroize, so wipe it explicitly; scrubbing before propagating an
+                // encode failure matters most there — on that path the key never
+                // legitimately left the device, so a lingering copy is the worst kind.
+                // The link carries the funding txid + islock (legacy query form), not
+                // the embedded proof; the invitee refetches the tx at claim.
+                let network = self.sdk.network;
+                let uri_result = encode_invitation_uri(&voucher_key, network, &proof, inviter);
+                voucher_key.non_secure_erase();
+                Ok(uri_result?)
+            })
+            .await
+            .map_err(|error| match recorded.load(Ordering::Acquire) {
+                true => error,
+                false => error.without_held_lock(),
+            })
     }
 
     /// The identity id this invitation WOULD create, without claiming it.
@@ -378,22 +432,38 @@ impl IdentityWallet {
     /// this handle, so it is reported only while the handle's wallet is
     /// still the one the manager holds: one removed, or re-created under its
     /// id, while the claim ran is reported as not found instead.
+    ///
+    /// A claimed invitation the SDK's preflight found (nothing signed or
+    /// sent) is `NotSent` whichever of these it becomes; one found after
+    /// Platform refused the submitted claim keeps its own class.
     async fn claim_refusal(&self, error: InvitationError) -> PlatformWalletError {
+        let preflight = matches!(
+            error,
+            InvitationError::AlreadyClaimed {
+                after_broadcast: false,
+                ..
+            }
+        );
         let refusal = match error {
-            InvitationError::AlreadyClaimed { identity_id }
+            InvitationError::AlreadyClaimed { identity_id, .. }
                 if self.holds_identity(&identity_id).await =>
             {
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id }
             }
             error => error.into(),
         };
-        match refusal {
+        let refusal = match refusal {
             PlatformWalletError::InvitationClaimedByThisWallet { .. }
                 if !self.is_current_generation().await =>
             {
                 PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
             }
             refusal => refusal,
+        };
+        if preflight {
+            refusal.before_dispatch()
+        } else {
+            refusal
         }
     }
 
@@ -565,7 +635,7 @@ mod tests {
         };
         use crate::wallet::identity::network::IdentityWallet;
         use crate::wallet::persister::NoPlatformPersistence;
-        use crate::PlatformWalletError;
+        use crate::{PaymentDelivery, PlatformWalletError};
 
         const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
              abandon abandon abandon abandon abandon about";
@@ -708,7 +778,7 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: id })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: id, after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
             ));
@@ -731,7 +801,7 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
             ));
@@ -743,7 +813,7 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs, after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == theirs
             ));
@@ -778,10 +848,46 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: observed.id() })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: observed.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == observed.id()
             ));
+        }
+
+        /// A claimed invitation the preflight found is `NotSent` and not
+        /// retryable, whether it is this wallet's claim or not; one found
+        /// after Platform refused the submitted claim stays `MaybeSent`.
+        /// Either way the refusal names the same variant for its code.
+        #[tokio::test]
+        async fn should_class_a_claimed_invitation_by_when_it_was_found() {
+            let wallet = wallet().await;
+            let ours = claimed_at(2);
+            let theirs = Identifier::new([9; 32]);
+            record(&wallet, &ours, 2).await;
+            for identity_id in [ours.id(), theirs] {
+                let preflight = wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed {
+                        identity_id,
+                        after_broadcast: false,
+                    })
+                    .await;
+                assert_eq!(preflight.payment_delivery(), PaymentDelivery::NotSent);
+                assert!(!preflight.is_retryable());
+                assert!(matches!(
+                    preflight.dispatched_source(),
+                    PlatformWalletError::InvitationClaimedByThisWallet { .. }
+                        | PlatformWalletError::InvitationAlreadyClaimed { .. }
+                ));
+
+                let after = wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed {
+                        identity_id,
+                        after_broadcast: true,
+                    })
+                    .await;
+                assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
+                assert!(!after.is_retryable());
+            }
         }
 
         /// A handle whose wallet was removed and re-created under its id does
@@ -800,7 +906,7 @@ mod tests {
             record(&replacement, &ours, 2).await;
 
             assert!(matches!(
-                old.claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                old.claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == ours.id()
             ));
@@ -811,7 +917,7 @@ mod tests {
             );
             assert!(matches!(
                 replacement
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
             ));

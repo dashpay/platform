@@ -121,6 +121,18 @@ impl AssetLockStatus {
     pub fn is_consumed(&self) -> bool {
         matches!(self, Self::Consumed | Self::DrainCompleted)
     }
+
+    /// Whether a resume can still take the lock on: it has no evidence of a
+    /// Platform spend. Not consumed, and not consumption-unknown
+    /// ([`Self::RecoveredFromChain`], where Platform may already have
+    /// consumed it). An allow-list, so a new status is not resumable until
+    /// it is listed here.
+    pub fn is_resumable(&self) -> bool {
+        matches!(
+            self,
+            Self::Built | Self::Broadcast | Self::InstantSendLocked | Self::ChainLocked
+        )
+    }
 }
 
 /// A tracked asset lock. Private keys are NOT stored here — they're
