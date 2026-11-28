@@ -358,14 +358,141 @@ pub fn handoff_failure_source() -> PlatformWalletError {
 /// The errors whose own class is the answer even while the lock is tracked:
 /// resuming it is not the way on (see [`hold_resumable_lock`]).
 fn refuses_resume(error: &PlatformWalletError) -> bool {
-    matches!(
-        error,
-        PlatformWalletError::AssetLockAlreadyConsumed(_)
-            | PlatformWalletError::AssetLockNotTracked(_)
-            | PlatformWalletError::AssetLockFundingMismatch { .. }
-            | PlatformWalletError::AssetLockTooManyInputs { .. }
-            | PlatformWalletError::AssetLockInputConflict { .. }
-    )
+    use PlatformWalletError as E;
+    // Read through the payment-class wrappers, and name every variant: a new
+    // variant must decide here whether it refuses a resume of the lock.
+    match error.dispatched_source() {
+        E::AssetLockNotTracked(..)
+        | E::AssetLockAlreadyConsumed(..)
+        | E::AssetLockFundingMismatch { .. }
+        | E::AssetLockInputConflict { .. }
+        | E::AssetLockTooManyInputs { .. } => true,
+        E::DocumentEraseBusy
+        | E::WalletCreation(..)
+        | E::PersisterLoad(..)
+        | E::PersisterStore(..)
+        | E::PersisterFlush(..)
+        | E::PersisterRestore(..)
+        | E::WalletNotFound(..)
+        | E::AccountNotFound(..)
+        | E::WalletRemovedBeforeSend(..)
+        | E::PreparedPaymentAddressTaken(..)
+        | E::WalletAlreadyExists(..)
+        | E::IdentityAlreadyExists(..)
+        | E::IdentityNotFound(..)
+        | E::IdentityBalanceUnavailable(..)
+        | E::NoPrimaryIdentity
+        | E::InvalidIdentityData(..)
+        | E::InvitationNetworkMismatch { .. }
+        | E::InvitationClaimedByThisWallet { .. }
+        | E::InvitationAlreadyClaimed { .. }
+        | E::InvitationKeysAlreadyRegistered { .. }
+        | E::InvitationNotReady(..)
+        | E::Persistence(..)
+        | E::ContactRequestNotFound(..)
+        | E::IdentityIndexNotSet(..)
+        | E::IdentityDiscoveryIncomplete { .. }
+        | E::DashpayReceivingAccountAlreadyExists { .. }
+        | E::DashpayExternalAccountAlreadyExists { .. }
+        | E::DashpayAccountBuild { .. }
+        | E::AssetLockTransaction(..)
+        | E::TransactionBroadcast(..)
+        | E::TransactionBroadcastUnconfirmed(..)
+        | E::StaleReservation
+        | E::TransactionBuild(..)
+        | E::InputMidBroadcast { .. }
+        | E::MessageSigningAddressInvalid { .. }
+        | E::MessageSigningMessageInvalid { .. }
+        | E::MessageSigningKeyUnavailable { .. }
+        | E::MessageSigningFailed { .. }
+        | E::CoreInsufficientFunds { .. }
+        | E::CorePooledInsufficientFunds { .. }
+        | E::NoSpendableInputs { .. }
+        | E::AssetLockProofWait(..)
+        | E::AssetLockInputContested { .. }
+        | E::AssetLockInsufficientFunds { .. }
+        | E::AssetLockFundsAwaitingFinality { .. }
+        | E::AssetLockRecipientMismatch { .. }
+        | E::PaymentAlreadyDispatched { .. }
+        | E::RefusedBeforeDispatch { .. }
+        | E::Sdk(..)
+        | E::IdentityLookupFailed { .. }
+        | E::PrivateContactRequestNeedsPrivateReply(..)
+        | E::PrivateContactRequestPending(..)
+        | E::PublicContactRequestUnconfirmed(..)
+        | E::PrivateContactStoreNotRead(..)
+        | E::PrivateContactPaymentsNotRestored
+        | E::PrivateContactRecoveryUnsupported
+        | E::DpnsNameNotFound { .. }
+        | E::DecisionProposalNotFound { .. }
+        | E::ContractNotFound { .. }
+        | E::DocumentNotFound { .. }
+        | E::DocumentNotForSale { .. }
+        | E::DocumentPriceChanged { .. }
+        | E::InsufficientIdentityCredits { .. }
+        | E::ContestedNameNotTradable { .. }
+        | E::AddressNonceMismatch { .. }
+        | E::AddressSync(..)
+        | E::AddressOperation(..)
+        | E::BalanceHistoryInconsistentHeights { .. }
+        | E::InvalidParameter(..)
+        | E::MasternodeListUnavailable
+        | E::OnlyOutputAddressesFunded { .. }
+        | E::OnlyDustInputs { .. }
+        | E::ChangeBelowMinimumOutput { .. }
+        | E::InputSumOverflow
+        | E::AddressNotFound(..)
+        | E::KeyDerivation(..)
+        | E::WalletLocked
+        | E::SeedMismatch { .. }
+        | E::SeedBindingUnanswered { .. }
+        | E::ContactSyncUnreachable { .. }
+        | E::SpvAlreadyRunning
+        | E::NoWalletsConfigured
+        | E::SpvError(..)
+        | E::QuorumNotVerified { .. }
+        | E::SpvProcessRestartRequired(..)
+        | E::TokenError(..)
+        | E::TokenOperationFailed { .. }
+        | E::FinalityTimeout(..)
+        | E::AssetLockExpired(..)
+        | E::AssetLockNotChainLocked { .. }
+        | E::ShieldedNoUnspentNotes
+        | E::ShieldedInsufficientBalance { .. }
+        | E::ShieldedPlanChanged { .. }
+        | E::ShieldedSpendTooManyNotes { .. }
+        | E::ShieldedWithdrawalAmountOutOfRange { .. }
+        | E::NetworkProtocolVersionUnsupported { .. }
+        | E::PlatformShieldCapacityExceeded { .. }
+        | E::ShieldedBuildError(..)
+        | E::ShieldedBroadcastFailed(..)
+        | E::ShieldedBroadcastMaybeDelivered(..)
+        | E::ShieldedBroadcastUnconfirmed { .. }
+        | E::ShieldedIdentityDebitPending { .. }
+        | E::ShieldedTipPending
+        | E::ShieldedBalanceBusy
+        | E::ShieldedTipRecipientMismatch { .. }
+        | E::ShieldedRecoveryCorrupted { .. }
+        | E::ShieldedRecoveryKeysRequired { .. }
+        | E::ShieldedSpendUnconfirmed { .. }
+        | E::ShieldedSpendNotExecuted { .. }
+        | E::MasternodeWithdrawalUnconfirmed { .. }
+        | E::ShieldedSyncFailed(..)
+        | E::ShutdownIncomplete(..)
+        | E::ShieldedTreeUpdateFailed(..)
+        | E::ShieldedStoreError(..)
+        | E::ShieldedMerkleWitnessUnavailable(..)
+        | E::ShieldedNoRecordedAnchor(..)
+        | E::ShieldedKeyDerivation(..)
+        | E::ShieldedNotBound
+        | E::ShieldedTooManyNotes { .. }
+        | E::ShieldedProtocolVersionMismatch { .. }
+        | E::TokenShieldedPoolDisabled { .. }
+        | E::TokenConfigurationUnavailable { .. }
+        | E::TokenShieldedInsufficientBalance { .. }
+        | E::TokenShieldedPoolSpendPending { .. }
+        | E::ShieldedOperationInProgress => false,
+    }
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -966,6 +1093,26 @@ fn validate_existing_asset_lock_role(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A refusal of the lock's resume keeps refusing it inside a
+    /// payment-class wrapper, and an unrelated error does not.
+    #[test]
+    fn should_read_a_resume_refusal_through_the_payment_class_wrappers() {
+        let consumed = || PlatformWalletError::AssetLockAlreadyConsumed(OutPoint::null());
+        assert!(refuses_resume(&consumed()));
+        assert!(refuses_resume(
+            &PlatformWalletError::PaymentAlreadyDispatched {
+                held_lock: None,
+                source: Box::new(consumed()),
+            }
+        ));
+        assert!(refuses_resume(
+            &PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(consumed()),
+            }
+        ));
+        assert!(!refuses_resume(&PlatformWalletError::WalletLocked));
+    }
 
     #[test]
     fn existing_lock_role_validation_binds_identity_funding() {
