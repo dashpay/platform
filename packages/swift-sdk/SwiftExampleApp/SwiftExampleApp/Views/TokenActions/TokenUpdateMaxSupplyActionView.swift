@@ -33,6 +33,8 @@ struct TokenUpdateMaxSupplyActionView: View {
     @State private var publicNote: String = ""
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Shown after a confirmed update whose contract could not be stored.
+    @State private var refreshNotice: AlertMessage?
     /// Generation counter so a late `MainActor.run` from a previous
     /// `submit()` Task can't write back to a re-entered view instance
     /// after the user pops + repushes mid-broadcast.
@@ -115,6 +117,13 @@ struct TokenUpdateMaxSupplyActionView: View {
                 title: Text("Update failed"),
                 message: Text(msg.message),
                 dismissButton: .default(Text("OK"))
+            )
+        }
+        .alert(item: $refreshNotice) { msg in
+            Alert(
+                title: Text("Max supply updated"),
+                message: Text(msg.message),
+                dismissButton: .default(Text("OK")) { dismiss() }
             )
         }
     }
@@ -215,18 +224,10 @@ struct TokenUpdateMaxSupplyActionView: View {
         let contractId = token.contractId
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
-        // `PersistentToken.maxSupply` is a string-encoded raw u64 (see
-        // `currentMaxSupplyDisplay` — it parses via `UInt64(raw)`),
-        // with `nil` representing "no cap" / Unlimited. Materialize the
-        // post-success target value here so the Task closure can write
-        // it back without re-touching @State from a non-main context.
-        let newMaxSupplyValue: String? = removeCap
-            ? nil
-            : parsedNewMaxSupply.map(String.init)
 
         Task {
             do {
-                try await wallet.tokenUpdateConfig(
+                let outcome = try await wallet.tokenUpdateConfig(
                     identityId: identityId,
                     contractId: contractId,
                     tokenPosition: position,
@@ -238,28 +239,23 @@ struct TokenUpdateMaxSupplyActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
-                    // Single-signer submissions execute on this call —
-                    // flip the local maxSupply so the view (and any
-                    // surfaces reading `token.maxSupply`) reflects the
-                    // new cap without waiting for a manual contract
-                    // refetch. Propose-mode just stores a pending
-                    // group action; the chain config doesn't change
-                    // until the threshold-crossing co-signer submits,
-                    // so leave the field alone in that branch.
-                    if case .none = groupAction {
-                        token.maxSupply = newMaxSupplyValue
-                        // The chain action has already succeeded, so a
-                        // SwiftData persistence hiccup isn't user-facing
-                        // (worst case the in-memory write survives until
-                        // the next contract re-parse reconciles). Log
-                        // for diagnosability instead of swallowing.
-                        do {
-                            try modelContext.save()
-                        } catch {
-                            print("⚠️ TokenUpdateMaxSupplyActionView: failed to persist maxSupply: \(error)")
-                        }
+                    // Rust says whether the update took effect and hands back
+                    // the contract it produced; storing that shows the new cap
+                    // and advances the stored contract version with it. A
+                    // pending group action changes nothing yet.
+                    if let reason = ContractDownloader.storeConfigUpdateOutcome(
+                        outcome,
+                        contractId: contractId,
+                        modelContext: modelContext
+                    ) {
+                        self.refreshNotice = .init(
+                            message: "The update was confirmed, but the updated contract could not be "
+                                + "saved on this device (\(reason)). It keeps showing the old max "
+                                + "supply until the contract is refreshed."
+                        )
+                    } else {
+                        self.dismiss()
                     }
-                    self.dismiss()
                 }
             } catch {
                 await MainActor.run {

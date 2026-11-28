@@ -454,6 +454,53 @@ public enum ContractDownloader {
         }
     }
 
+    /// Store what a token configuration update did to contract `contractId`
+    /// (`ManagedPlatformWallet.tokenUpdateConfig`).
+    ///
+    /// An applied update comes with the contract it produced, which Rust
+    /// fetched and proved from the update's block or later: it is written
+    /// through `apply`, so the stored version, tokens and groups advance
+    /// together. A pending group action changes nothing.
+    ///
+    /// The contract is not registered with the SDK here: the wallet runs on
+    /// the app's SDK and registered the contract with its context provider
+    /// before returning it.
+    ///
+    /// - Returns: nil when the stored contract is current, otherwise why it
+    ///   still has the old configuration (the update itself is confirmed
+    ///   either way).
+    static func storeConfigUpdateOutcome(
+        _ outcome: TokenConfigUpdateOutcome,
+        contractId: Data,
+        modelContext: ModelContext
+    ) -> String? {
+        switch outcome {
+        case .pending:
+            return nil
+        case .appliedNotRefreshed(_, let reason):
+            return reason
+        case .applied(let contractJSON, let serialization):
+            guard let contractData = (try? JSONSerialization.jsonObject(with: contractJSON)) as? [String: Any] else {
+                return "the updated contract could not be read"
+            }
+            do {
+                try apply(
+                    fetched: FetchedContract(
+                        jsonData: contractJSON,
+                        contractData: contractData,
+                        binaryData: serialization
+                    ),
+                    toContractWithId: contractId,
+                    minimumVersion: nil,
+                    modelContext: modelContext
+                ) { _ in }
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }
+    }
+
     /// The part of `refreshPersistedContract` after the fetch: check the
     /// fetched contract against the stored row, then write it, in a context
     /// of its own on `modelContext.container`, and fetch the refreshed rows
