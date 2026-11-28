@@ -1,14 +1,15 @@
 import Foundation
 import Security
+import SwiftDashSDK
 
 // MARK: - Testnet Node Models
 
 /// Container for testnet node configurations
-public struct TestnetNodes: Codable, Sendable {
-    public let masternodes: [String: MasternodeInfo]
-    public let hpMasternodes: [String: HPMasternodeInfo]
+struct TestnetNodes: Codable, Sendable {
+    let masternodes: [String: MasternodeInfo]
+    let hpMasternodes: [String: HPMasternodeInfo]
 
-    public init(masternodes: [String: MasternodeInfo], hpMasternodes: [String: HPMasternodeInfo]) {
+    init(masternodes: [String: MasternodeInfo], hpMasternodes: [String: HPMasternodeInfo]) {
         self.masternodes = masternodes
         self.hpMasternodes = hpMasternodes
     }
@@ -20,12 +21,12 @@ public struct TestnetNodes: Codable, Sendable {
 }
 
 /// Standard masternode information
-public struct MasternodeInfo: Codable, Sendable {
-    public let proTxHash: String
-    public let owner: KeyInfo
-    public let voter: KeyInfo
+struct MasternodeInfo: Codable, Sendable {
+    let proTxHash: String
+    let owner: KeyInfo
+    let voter: KeyInfo
 
-    public init(proTxHash: String, owner: KeyInfo, voter: KeyInfo) {
+    init(proTxHash: String, owner: KeyInfo, voter: KeyInfo) {
         self.proTxHash = proTxHash
         self.owner = owner
         self.voter = voter
@@ -39,13 +40,13 @@ public struct MasternodeInfo: Codable, Sendable {
 }
 
 /// High-performance masternode information
-public struct HPMasternodeInfo: Codable, Sendable {
-    public let protxTxHash: String
-    public let owner: KeyInfo
-    public let voter: KeyInfo
-    public let payout: KeyInfo
+struct HPMasternodeInfo: Codable, Sendable {
+    let protxTxHash: String
+    let owner: KeyInfo
+    let voter: KeyInfo
+    let payout: KeyInfo
 
-    public init(protxTxHash: String, owner: KeyInfo, voter: KeyInfo, payout: KeyInfo) {
+    init(protxTxHash: String, owner: KeyInfo, voter: KeyInfo, payout: KeyInfo) {
         self.protxTxHash = protxTxHash
         self.owner = owner
         self.voter = voter
@@ -61,10 +62,10 @@ public struct HPMasternodeInfo: Codable, Sendable {
 }
 
 /// Masternode key information
-public struct KeyInfo: Codable, Sendable {
-    public let privateKey: String
+struct KeyInfo: Codable, Sendable {
+    let privateKey: String
 
-    public init(privateKey: String) {
+    init(privateKey: String) {
         self.privateKey = privateKey
     }
 
@@ -76,12 +77,12 @@ public struct KeyInfo: Codable, Sendable {
 // MARK: - Testnet Nodes Loader
 
 /// Loads testnet node configurations from YAML or provides sample data
-public class TestnetNodesLoader {
+class TestnetNodesLoader {
 
     /// Load testnet nodes from a YAML file
     /// - Parameter fileName: The name of the YAML file (default: ".testnet_nodes.yml")
     /// - Returns: TestnetNodes configuration, or sample data if file not found
-    public static func loadFromYAML(fileName: String = ".testnet_nodes.yml") -> TestnetNodes? {
+    static func loadFromYAML(fileName: String = ".testnet_nodes.yml") -> TestnetNodes? {
         // In a real implementation, this would load from the app bundle or documents directory
         // For now, return sample data for demonstration
         return createSampleTestnetNodes()
@@ -89,7 +90,7 @@ public class TestnetNodesLoader {
 
     /// Create fresh sample testnet nodes for testing.
     /// - Returns: Random sample data, or empty node lists if generation fails.
-    public static func createSampleTestnetNodes() -> TestnetNodes {
+    static func createSampleTestnetNodes() -> TestnetNodes {
         guard let masternodeHash = randomBytes(),
               let hpmnHash = randomBytes(),
               let masternodeOwner = randomKey(),
