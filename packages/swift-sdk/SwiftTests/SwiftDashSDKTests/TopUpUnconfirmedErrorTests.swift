@@ -36,10 +36,6 @@ final class TopUpUnconfirmedErrorTests: XCTestCase {
                 XCTAssertNil(displayed.recoverySuggestion)
             }
         }
-        // A timeout carries no payment class, so nothing proves the request
-        // did not reach the network: not retryable (← Kotlin `Timeout`).
-        let timeout = ErrorCategorizer.toUserFacingError(SDKError.timeout("timeout"))
-        XCTAssertFalse(timeout.isRetryable)
-        XCTAssertFalse(timeout.fullDescription.lowercased().contains("try again"), timeout.fullDescription)
+        XCTAssertTrue(ErrorCategorizer.toUserFacingError(SDKError.timeout("timeout")).isRetryable)
     }
 }

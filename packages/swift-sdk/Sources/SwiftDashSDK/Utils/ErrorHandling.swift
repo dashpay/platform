@@ -386,29 +386,10 @@ public enum ErrorCategorizer {
             )
         }
 
-        // A network failure or timeout of an SDK request carries no payment
-        // class, so nothing proves the request did not reach the network:
-        // not retryable, and no "try again" (← Kotlin `NetworkError` /
-        // `Timeout`).
-        if let sdkError = error as? SDKError {
-            switch sdkError {
-            case .networkError, .timeout:
-                let category = categorize(sdkError)
-                return UserFacingError(
-                    title: category.rawValue,
-                    message: ErrorFormatter.userFriendlyMessage(from: sdkError),
-                    category: category,
-                    underlyingError: String(describing: sdkError),
-                    isRetryable: false
-                )
-            default:
-                break
-            }
-        }
-
         let category = categorize(error)
         let message = ErrorFormatter.userFriendlyMessage(from: error)
         let suggestion = ErrorRecovery.suggestion(for: category)
+        let isRetryable = ErrorRecovery.isRetryable(category: category)
 
         return UserFacingError(
             title: category.rawValue,
@@ -416,7 +397,7 @@ public enum ErrorCategorizer {
             category: category,
             recoverySuggestion: suggestion,
             underlyingError: String(describing: error),
-            isRetryable: ErrorRecovery.isRetryable(category: category)
+            isRetryable: isRetryable
         )
     }
 }
