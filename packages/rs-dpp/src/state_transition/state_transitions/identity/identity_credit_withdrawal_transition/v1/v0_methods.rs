@@ -44,7 +44,9 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                 let mut key: Option<&IdentityPublicKey>;
 
                 match preferred_key_purpose_for_signing_withdrawal {
-                    PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred => {
+                    PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred
+                        if output_script.is_none() =>
+                    {
                         key = identity.get_first_public_key_matching(
                             Purpose::OWNER,
                             SecurityLevel::full_range().into(),
@@ -61,7 +63,11 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                             );
                         }
                     }
-                    PreferredKeyPurposeForSigningWithdrawal::TransferPreferred
+                    // An OWNER key cannot sign a withdrawal to a chosen address, so there an
+                    // OWNER preference tries TRANSFER first; OWNER stays the fallback and is
+                    // refused below.
+                    PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred
+                    | PreferredKeyPurposeForSigningWithdrawal::TransferPreferred
                     | PreferredKeyPurposeForSigningWithdrawal::Any => {
                         key = identity.get_first_public_key_matching(
                             Purpose::TRANSFER,
@@ -147,6 +153,8 @@ mod tests {
     use crate::address_funds::AddressWitness;
     use crate::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use crate::state_transition::StateTransitionIdentitySigned;
     use platform_value::{BinaryData, Identifier};
 
     #[derive(Debug)]
@@ -181,6 +189,33 @@ mod tests {
         }
     }
 
+    /// A signer that holds every key and returns a fixed signature.
+    #[derive(Debug)]
+    struct SigningSigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for SigningSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Ok(BinaryData::new(vec![0; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            panic!("identity credit withdrawals do not create an address witness");
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
     #[tokio::test]
     async fn should_refuse_an_explicit_owner_key_before_querying_the_signer() {
         let platform_version = PlatformVersion::latest();
@@ -198,7 +233,8 @@ mod tests {
         .expect("identity");
         let output_script = CoreScript::from_bytes(vec![0x51]);
 
-        let error = IdentityCreditWithdrawalTransitionV1::try_from_identity(
+        // Through the enum constructor with no version, as the SDK calls it.
+        let error = IdentityCreditWithdrawalTransition::try_from_identity(
             &identity,
             Some(output_script.clone()),
             1_000_000,
@@ -220,9 +256,7 @@ mod tests {
         assert_owner_script_refusal(error, &output_script);
     }
 
-    #[tokio::test]
-    async fn should_refuse_a_selected_owner_key_without_falling_back_to_transfer() {
-        let platform_version = PlatformVersion::latest();
+    fn owner_and_transfer_identity(platform_version: &PlatformVersion) -> Identity {
         let owner_key = IdentityPublicKey::from(IdentityPublicKeyV0 {
             id: 17,
             purpose: Purpose::OWNER,
@@ -235,9 +269,54 @@ mod tests {
             security_level: SecurityLevel::CRITICAL,
             ..Default::default()
         });
-        let identity = Identity::new_with_id_and_keys(
+        Identity::new_with_id_and_keys(
             Identifier::default(),
             [(17, owner_key), (18, transfer_key)].into(),
+            platform_version,
+        )
+        .expect("identity")
+    }
+
+    #[tokio::test]
+    async fn should_sign_an_owner_preferred_withdrawal_to_an_address_with_the_transfer_key() {
+        let platform_version = PlatformVersion::latest();
+        let identity = owner_and_transfer_identity(platform_version);
+
+        let transition = IdentityCreditWithdrawalTransitionV1::try_from_identity(
+            &identity,
+            Some(CoreScript::from_bytes(vec![0x51])),
+            1_000_000,
+            Pooling::Never,
+            1,
+            0,
+            SigningSigner,
+            None,
+            PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred,
+            1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("the TRANSFER key signs a withdrawal to a chosen address");
+
+        let StateTransition::IdentityCreditWithdrawal(transition) = transition else {
+            panic!("expected an identity credit withdrawal, got {transition:?}");
+        };
+        assert_eq!(transition.signature_public_key_id(), 18);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_owner_preferred_withdrawal_to_an_address_without_a_transfer_key() {
+        let platform_version = PlatformVersion::latest();
+        let owner_key = IdentityPublicKey::from(IdentityPublicKeyV0 {
+            id: 17,
+            purpose: Purpose::OWNER,
+            security_level: SecurityLevel::CRITICAL,
+            ..Default::default()
+        });
+        let identity = Identity::new_with_id_and_keys(
+            Identifier::default(),
+            [(17, owner_key)].into(),
             platform_version,
         )
         .expect("identity");
@@ -260,7 +339,35 @@ mod tests {
             None,
         )
         .await
-        .expect_err("the selected OWNER key cannot sign a withdrawal with an output script");
+        .expect_err("only an OWNER key is left, and it cannot sign this withdrawal");
+
+        assert_owner_script_refusal(error, &output_script);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_owner_only_withdrawal_to_an_address_before_signing() {
+        let platform_version = PlatformVersion::latest();
+        let identity = owner_and_transfer_identity(platform_version);
+        let output_script = CoreScript::from_bytes(vec![0x51]);
+
+        let error = IdentityCreditWithdrawalTransitionV1::try_from_identity(
+            &identity,
+            Some(output_script.clone()),
+            1_000_000,
+            Pooling::Never,
+            1,
+            0,
+            UnexpectedSigner {
+                allow_availability_query: true,
+            },
+            None,
+            PreferredKeyPurposeForSigningWithdrawal::OwnerOnly,
+            1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect_err("OWNER only cannot sign a withdrawal with an output script");
 
         assert_owner_script_refusal(error, &output_script);
     }
