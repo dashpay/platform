@@ -1501,7 +1501,12 @@ where
                  ChainLock proof over the same funding outpoint",
                 e
             );
-            submit(chain_proof).await.map_err(InvitationError::Sdk)
+            // The primary may have been sent (see above), so whatever the
+            // fallback answers — a local refusal before its own broadcast
+            // included — does not prove the claim was never accepted.
+            submit(chain_proof)
+                .await
+                .map_err(|fallback| InvitationError::Sdk(fallback.into_unconfirmed()))
         }
         Err(e) => Err(InvitationError::Sdk(e)),
     }
@@ -3697,6 +3702,28 @@ mod tests {
                 matches!(submitted[1], AssetLockProof::Chain(_)),
                 "the resubmission must carry the ChainLock fallback"
             );
+        }
+
+        /// The primary may have been sent before the fallback, so a fallback
+        /// that fails, even locally before its own broadcast, leaves the claim
+        /// unconfirmed rather than never sent.
+        #[tokio::test]
+        async fn should_keep_the_claim_unconfirmed_when_the_fallback_fails() {
+            let (result, submitted) = run(
+                Some(chain_fallback_proof()),
+                vec![
+                    Err(stale_islock_rejection()),
+                    Err(Error::Generic("signer key unavailable".to_string())),
+                ],
+            )
+            .await;
+            assert_eq!(submitted.len(), 2, "primary then fallback");
+            match result {
+                Err(InvitationError::Sdk(error)) => {
+                    assert!(error.is_state_transition_result_unconfirmed(), "{error:?}")
+                }
+                other => panic!("expected an unconfirmed SDK error, got {other:?}"),
+            }
         }
 
         /// An InstantSend proof over a funding tx with many inputs makes the
