@@ -27,6 +27,7 @@ fn tolerate_skipped_row(
         SiteCoords {
             wallet_id,
             account_type: &"shielded_viewing_key",
+            contact: None,
             affected: 1,
             detail: Some(&detail),
         },

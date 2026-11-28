@@ -1416,19 +1416,19 @@ impl PlatformWalletPersistence for SqlitePersister {
         // invitations, account pools, tracked asset locks,
         // deferred-contact-crypto queue rows, and locked outpoints (applied
         // by `core_state::apply`, handed back by `load_state`).
-        // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
-        // token balances and the DashPay overlay have no load readers, so a
-        // full restore remains lossy. Shielded viewing keys are native when
-        // compiled in; notes, nullifiers, and sync state use ShieldedStore.
-        // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
+        // WALLET_RESTORE covers the Core snapshot; auxiliary token, profile,
+        // invitation, and deferred-contact readback remains separate.
+        // Conflict cleanup can remove asset-lock operation evidence. Until it
+        // preserves that evidence, do not attest ASSET_LOCK_OPERATION_IDS:
+        // absence cannot safely mean NotSent, so wallet draining stays disabled.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::WALLET_RESTORE)
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
@@ -1626,11 +1626,13 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// and counted on [`last_load_degradation`](Self::last_load_degradation)
     /// instead, and the persister is read-only for the rest of its life.
     ///
-    /// Two sites degrade in **both** policies because their signal cannot
-    /// distinguish corruption from a healthy wallet: a used address whose
-    /// owner is not one of this wallet's funds accounts, and a restored
-    /// address that does not resolve against its account xpub. Both re-warm
-    /// on the next sync and the balance total is exact regardless.
+    /// Four sites degrade in **both** policies: `OrphanedUtxoOwner` for
+    /// unavailable owners, `UnresolvedUtxoAddress` for addresses unresolved
+    /// against funding accounts, `PoolRowBeyondDerivationBudget` for pool
+    /// rows above the bounded derivation range, and `UnrestoredPoolReservation`
+    /// for reservations no restored pool took back. Used or reserved
+    /// one-time funding keys that cannot be restored instead fail the wallet
+    /// (abort under Strict, drop the wallet under Recovery), preventing reuse.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one
@@ -1686,7 +1688,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1737,7 +1739,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             if unreadable.contains(&wallet_id) {
                 continue;
             }
-            match load_one_wallet(&conn, wallet_id, &ctx) {
+            match load_one_wallet(&mut conn, wallet_id, &ctx) {
                 Ok(wallet_state) => {
                     state.wallets.insert(wallet_id, wallet_state);
                 }
@@ -1851,11 +1853,12 @@ fn populated_field_count(cs: &PendingWrites) -> usize {
 /// Extracted from `load()`'s loop so the loop has somewhere to put a
 /// boundary: every `?` in here ends this wallet, not the file.
 fn load_one_wallet(
-    conn: &Connection,
+    conn: &mut Connection,
     wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
-    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+    let tx = conn
+        .transaction()
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
     let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
@@ -1988,12 +1991,7 @@ fn load_wallet_snapshot(
             key_wallet::account::account_collection::AccountCollection::new(),
         )
     } else {
-        build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
-            PersistenceError::backend(format!(
-                "watch-only wallet rebuild failed for {}: {e}",
-                hex::encode(wallet_id)
-            ))
-        })?
+        build_wallet(network, wallet_id, &account_manifest).map_err(PersistenceError::from)?
     };
     // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
     // insert_wallet recomputes wallet_id — see PR's existing Deferred
@@ -2005,9 +2003,23 @@ fn load_wallet_snapshot(
         &wallet,
         birth_height,
     );
+    // Pools come back first, so the used-address projection below marks the
+    // restored entries too: a stored row can still say "available" for an
+    // address that has since been funded. The platform-node reader stays
+    // ahead of `restore_pools` because it rewrites its entries' state from
+    // `used` alone, and `restore_pools` overlays their reservations.
+    if account_manifest
+        .provider
+        .iter()
+        .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
+    {
+        restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+    }
+    schema::core_pool::restore_pools(conn, &wallet_id, &wallet, &mut wallet_info, ctx)
+        .map_err(PersistenceError::from)?;
     // Provider key-material accounts hold no funds, so only the ECDSA
-    // half feeds the UTXO/balance projection here. The platform-node
-    // pre-derived-key pool is restored separately below.
+    // half feeds the UTXO/balance projection here.
     apply_persisted_core_state(
         &mut wallet_info,
         &account_manifest.ecdsa,
@@ -2016,25 +2028,7 @@ fn load_wallet_snapshot(
         &used_core_addresses,
         ctx,
     )
-    .map_err(|e| {
-        PersistenceError::backend(format!(
-            "core-state rehydration failed for {}: {e}",
-            hex::encode(wallet_id)
-        ))
-    })?;
-    if account_manifest
-        .provider
-        .iter()
-        .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
-    {
-        restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
-            .map_err(|e| {
-                PersistenceError::backend(format!(
-                    "platform-node pool rehydration failed for {}: {e}",
-                    hex::encode(wallet_id)
-                ))
-            })?;
-    }
+    .map_err(PersistenceError::from)?;
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -2049,8 +2043,8 @@ fn load_wallet_snapshot(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
-        // This backend restores pools through `apply_persisted_core_state`,
-        // which reports no unreachable funding rows.
+        // `core_pool::restore_pools` fails the wallet on unreachable used or
+        // reserved one-time funding rows, so no issuance floor is needed.
         funding_issuance_floors: Default::default(),
     })
 }
@@ -2072,6 +2066,7 @@ fn record_wallet_degradation(
         crate::sqlite::load_ctx::SiteCoords {
             wallet_id: Some(wallet_id),
             account_type: &"wallet",
+            contact: None,
             affected: 1,
             detail: Some(&cause),
         },
@@ -2079,7 +2074,17 @@ fn record_wallet_degradation(
             wallet_id,
             cause: original.to_string(),
         },
-    )?;
+    )
+    // Strict: the caller propagates its original error, and a typed cause
+    // rarely names the wallet it came from, so this is where it is named.
+    // The error text is left out: a cause can name addresses and accounts.
+    .inspect_err(|_| {
+        tracing::error!(
+            wallet_id = %hex::encode(wallet_id),
+            error_kind = cause,
+            "strict load: a wallet could not be rebuilt, so the load fails"
+        );
+    })?;
     ctx.note_wallet_degraded(wallet_id, cause);
     Ok(())
 }

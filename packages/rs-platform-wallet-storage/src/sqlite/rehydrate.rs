@@ -11,7 +11,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
@@ -22,7 +22,7 @@ use platform_wallet::wallet::address_pool_restore::derive_through;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
+use crate::sqlite::load_ctx::{contact_log_id, LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
@@ -114,8 +114,8 @@ pub(crate) fn restore_provider_platform_node_pool(
         return Ok(());
     }
 
-    // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-    // restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
+    // `reserved_at` is not consumed here: `core_pool::restore_pools` runs next
+    // and overlays each row's reservation state on the entries inserted below.
     for (index, script_bytes, public_key, used) in entries {
         let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(
@@ -146,6 +146,7 @@ pub(crate) fn restore_provider_platform_node_pool(
                     SiteCoords {
                         wallet_id: Some(*wallet_id),
                         account_type: &AccountType::ProviderPlatformKeys,
+                        contact: None,
                         affected: 1,
                         detail: Some(&AddressPoolType::AbsentHardened),
                     },
@@ -165,8 +166,15 @@ pub(crate) fn restore_provider_platform_node_pool(
                 PlatformNodePoolError::MissingHardenedPool => WalletStorageError::blob_decode(
                     "provider platform account has no AbsentHardened pool",
                 ),
-                PlatformNodePoolError::InvalidChildIndex { source, .. }
-                | PlatformNodePoolError::PoolRefused { source, .. } => {
+                PlatformNodePoolError::InvalidChildIndex { index, source }
+                | PlatformNodePoolError::PoolRefused { index, source } => {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        account_type = %AccountType::ProviderPlatformKeys,
+                        pool_type = ?AddressPoolType::AbsentHardened,
+                        address_index = index,
+                        "provider platform pool row refused; its wallet does not load"
+                    );
                     WalletStorageError::AccountRecordInvalid { e: source }
                 }
             })?;
@@ -227,6 +235,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
+///   Every entry is offered to funding pools, including reciprocal DashPay
+///   receiving pools. A used address restored in a non-funding pool skips
+///   discovery unless a reciprocal receiving account exists, and suppresses
+///   `UnresolvedUtxoAddress`; it suppresses `OrphanedUtxoOwner` only when that
+///   pool belongs to the entry's named owner.
 /// - **InstantSend locks**: every `instant_locks_for_non_final_records`
 ///   entry is replayed through `mark_instant_send_utxos` after the UTXO
 ///   restore, so instant-locked funds come back instant-locked instead of
@@ -359,11 +372,55 @@ pub fn apply_persisted_core_state(
         .filter(|u| !spent_outpoints.contains(&u.outpoint))
         .collect();
 
+    let account_keys: Vec<OwningAccount> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .map(owning_account_of)
+        .collect();
+    // Suppress diagnostics only for addresses actually restored as used.
+    // Contact addresses can also belong to a reciprocal receiving pool.
+    let mut non_funding_used: HashMap<_, Vec<OwningAccount>> = HashMap::new();
+    let mut non_funding_only_used = HashSet::new();
+    for account in wallet_info.accounts.all_accounts() {
+        let account_type = account.managed_account_type();
+        let kind = account_type.to_account_type();
+        let owner = owning_account_for(&kind);
+        if account_keys.contains(&owner) {
+            continue;
+        }
+        let has_reciprocal_receiver = match kind {
+            AccountType::DashpayExternalAccount {
+                user_identity_id,
+                friend_identity_id,
+                ..
+            } => wallet_info
+                .accounts
+                .dashpay_receival_accounts
+                .keys()
+                .any(|key| {
+                    key.user_identity_id == friend_identity_id
+                        && key.friend_identity_id == user_identity_id
+                }),
+            _ => false,
+        };
+        for pool in account_type.address_pools() {
+            for info in pool.addresses().values().filter(|info| info.is_used()) {
+                non_funding_used
+                    .entry(info.address.clone())
+                    .or_default()
+                    .push(owner.clone());
+                if !has_reciprocal_receiver {
+                    non_funding_only_used.insert(info.address.clone());
+                }
+            }
+        }
+    }
+
     let mut funding = wallet_info.accounts.all_funding_accounts_mut();
     if !unspent.is_empty() && funding.is_empty() {
         return Err(WalletStorageError::MissingAccount { wallet_id });
     }
-    let account_keys: Vec<OwningAccount> = funding.iter().map(|a| owning_account_of(a)).collect();
     // Every stored used address, whatever owner its row names: marked
     // wherever the pools, once extended, derive it. None without a funds
     // account, which has no pool to mark one in.
@@ -404,23 +461,24 @@ pub fn apply_persisted_core_state(
             };
             match account_keys.iter().position(|k| k == owner) {
                 Some(target) => per_account_addrs[target].push(addr.clone()),
-                None => orphaned_owners.push(owner_label(owner)),
+                None if !non_funding_used
+                    .get(addr)
+                    .is_some_and(|owners| owners.contains(owner)) =>
+                {
+                    orphaned_owners.push(owner_label(owner))
+                }
+                None => {}
             }
         }
 
-        // Degraded in BOTH policies, never fatal. An owner absent from the
-        // funds accounts is not necessarily corruption: provider accounts are
-        // first-class in the schema yet sit on a non-secp256k1 curve, so they
-        // are not `ManagedCoreFundsAccount` and a used provider-owned address
-        // has no funds account to route to. Telling that apart needs an
-        // upstream `key-wallet` enumerator over every account kind; until then,
-        // failing here would brick a masternode-operator wallet.
+        // A non-funding owner is harmless only when its used address was restored.
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
                 SiteCoords {
                     wallet_id: Some(wallet_id),
-                    account_type: &orphaned_owners,
+                    account_type: &format_args!("{orphaned_owners:?}"),
+                    contact: None,
                     affected: orphaned_owners.len(),
                     detail: None,
                 },
@@ -481,7 +539,10 @@ pub fn apply_persisted_core_state(
         if restorable {
             let mut outside = outside_funds_pools(
                 wallet_info,
-                (unspent.iter().map(|u| &u.address)).chain(&used),
+                (unspent.iter().map(|u| &u.address)).chain(
+                    used.iter()
+                        .filter(|addr| !non_funding_only_used.contains(*addr)),
+                ),
             );
             if !outside.is_empty()
                 && discover_in_funds_accounts(wallet_info, manifest, &mut outside, wallet_id, ctx)?
@@ -507,11 +568,14 @@ pub fn apply_persisted_core_state(
                  were placed by their stored owner, or in the first funds account"
             );
         }
-        // Every stored address no funds pool holds now, counted once: the
-        // fallback coins' and the used ones', whatever owner their rows name.
+        // Count fallback coins and used addresses still outside funds pools,
+        // except used addresses already restored in a non-funding pool.
         let unresolved = outside_funds_pools(
             wallet_info,
-            (unmatched.iter().map(|u| &u.address)).chain(&used),
+            (unmatched.iter().map(|u| &u.address)).chain(
+                used.iter()
+                    .filter(|addr| !non_funding_used.contains_key(*addr)),
+            ),
         )
         .len();
         let mut funding = wallet_info.accounts.all_funding_accounts_mut();
@@ -535,6 +599,7 @@ pub fn apply_persisted_core_state(
                 SiteCoords {
                     wallet_id: Some(wallet_id),
                     account_type: &"any funds account",
+                    contact: None,
                     affected: unresolved,
                     detail: None,
                 },
@@ -769,6 +834,7 @@ fn gap_refills_bounded(
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(&wallet_id, &account_type),
                         affected: 1,
                         detail: Some(&pool.pool_type()),
                     },
@@ -819,6 +885,9 @@ fn discover_in_funds_accounts(
 ) -> Result<usize, WalletStorageError> {
     use key_wallet::managed_account::address_pool::KeySource;
 
+    #[cfg(test)]
+    tests::DISCOVERY_RUNS.with(|runs| runs.set(runs.get() + 1));
+
     let mut derived = 0;
     for account in wallet_info.accounts.all_funding_accounts_mut() {
         if wanted.is_empty() {
@@ -862,7 +931,8 @@ fn discover_in_funds_accounts(
             if index.saturating_sub(start) > REHYDRATION_DEEP_SCAN_WARN_INDEX {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
-                    account_type = ?account_type,
+                    account_type = %account_type,
+                    contact = contact_log_id(&wallet_id, &account_type).as_deref().map(tracing::field::display),
                     pool_type = ?pool.pool_type(),
                     scanned_to = index.saturating_sub(1),
                     "rehydration: discovery past the pool scanned abnormally deep — \
@@ -878,6 +948,7 @@ fn discover_in_funds_accounts(
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(&wallet_id, &account_type),
                         affected: 1,
                         detail: Some(&pool.pool_type()),
                     },
@@ -904,6 +975,7 @@ fn restore_failed(
         SiteCoords {
             wallet_id: Some(wallet_id),
             account_type: &"restore_utxos",
+            contact: None,
             affected: 1,
             detail: None,
         },
@@ -921,11 +993,16 @@ fn owning_account_of(
     account: &key_wallet::managed_account::ManagedCoreFundsAccount,
 ) -> OwningAccount {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    let at = account.managed_account_type().to_account_type();
-    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(&at);
+    owning_account_for(&account.managed_account_type().to_account_type())
+}
+
+/// Owning-account identity of any account type, on the discriminators
+/// [`owning_account_of`] describes.
+fn owning_account_for(at: &AccountType) -> OwningAccount {
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(at);
     OwningAccount {
-        account_type: accounts::account_type_db_label(&at).to_string(),
-        account_index: accounts::account_index(&at),
+        account_type: accounts::account_type_db_label(at).to_string(),
+        account_index: accounts::account_index(at),
         user_identity_id,
         friend_identity_id,
     }
@@ -938,7 +1015,7 @@ fn owning_account_of(
 /// rescan to re-warm — generous enough to cover any realistic per-account
 /// derivation depth. The common (single funds account) path terminates at
 /// the true high-water mark well before this and never reaches the cap.
-const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
+pub(crate) const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 
 /// Soft threshold past which a single chain's discovery scan is treated as
 /// abnormally deep and worth a `tracing::warn!`. Real funds chains anchor
@@ -1101,7 +1178,8 @@ fn extend_pools_for_restored_addresses(
             if index > REHYDRATION_DEEP_SCAN_WARN_INDEX {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
-                    account_type = ?account_type,
+                    account_type = %account_type,
+                    contact = contact_log_id(&wallet_id, &account_type).as_deref().map(tracing::field::display),
                     pool_type = ?probe.pool_type(),
                     deepest_resolved = ?deepest_resolved,
                     scanned_to = index.saturating_sub(1),
@@ -1166,6 +1244,7 @@ fn extend_pools_for_restored_addresses(
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
+                            contact: contact_log_id(&wallet_id, &account_type),
                             affected: 1,
                             detail: Some(&pool.pool_type()),
                         },
@@ -1189,8 +1268,15 @@ fn extend_pools_for_restored_addresses(
         // reaches 50 and derives idx 45). A single mark-then-refill pass
         // would leave that address in the pool with `used = false`, handing
         // a previously-used address back out as fresh. Terminates: each
-        // round marks at least one new address from the finite restored set
-        // (`mark_used` returns `true` only on an unused→used flip).
+        // round after the first marks at least one new address from the
+        // finite restored set (`mark_used` returns `true` only on an
+        // unused→used flip).
+        //
+        // A pool restored from its stored rows enters with those entries
+        // already used, so no flip announces them. Its window is refilled
+        // once regardless, or the addresses past the stored rows would stay
+        // underived: unobserved, and a funded one among them never marked.
+        let mut restored_used = pool.highest_used().is_some();
         loop {
             let mut marked_any = false;
             for addr in restored_addresses {
@@ -1198,7 +1284,8 @@ fn extend_pools_for_restored_addresses(
                     marked_any = true;
                 }
             }
-            if !marked_any {
+            let refill_restored = std::mem::take(&mut restored_used);
+            if !marked_any && !refill_restored {
                 break;
             }
             // Refill the gap window past the deepest used index (needs the
@@ -1227,6 +1314,7 @@ fn extend_pools_for_restored_addresses(
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
+                            contact: contact_log_id(&wallet_id, &account_type),
                             affected: 1,
                             detail: Some(&pool.pool_type()),
                         },
@@ -1248,6 +1336,7 @@ fn extend_pools_for_restored_addresses(
                     SiteCoords {
                         wallet_id: Some(wallet_id),
                         account_type: &account_type,
+                        contact: contact_log_id(&wallet_id, &account_type),
                         affected: 1,
                         detail: Some(&pool.pool_type()),
                     },
@@ -1339,6 +1428,10 @@ mod tests {
     use super::*;
     use key_wallet::managed_account::address_pool::MAX_GAP_LIMIT;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    thread_local! {
+        pub(super) static DISCOVERY_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
 
     fn manifest_for(w: &Wallet) -> Vec<AccountRegistrationEntry> {
         w.accounts
@@ -1914,10 +2007,9 @@ mod tests {
         }
     }
 
-    /// A used address whose owning account is not one of this wallet's funds
-    /// accounts — what a masternode-operator wallet looks like, since provider
-    /// accounts sit on a non-secp256k1 curve and are not funds accounts at all.
-    /// Degraded in every policy, fatal in none (dashpay/platform#3968).
+    /// A used address whose owning account this wallet did not rebuild at
+    /// all — its registration is gone while its pool row stayed. Degraded in
+    /// every policy, fatal in none (dashpay/platform#3968).
     #[test]
     fn rehydration_orphaned_used_address_owner_is_degraded_not_fatal() {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -1933,13 +2025,13 @@ mod tests {
         let manifest = manifest_for(&wallet);
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
 
-        // An owner this wallet has no funds account for.
+        // An owner this wallet has no account of any kind for.
         let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
         used.insert(
             first_external_address(&wallet_info, &manifest),
             Some(OwningAccount {
-                account_type: "provider_platform".to_string(),
-                account_index: 0,
+                account_type: "identity_topup".to_string(),
+                account_index: 7,
                 user_identity_id: [0u8; 32],
                 friend_identity_id: [0u8; 32],
             }),
@@ -1971,6 +2063,112 @@ mod tests {
         );
     }
 
+    #[test]
+    fn should_keep_funds_reuse_guard_for_a_mislabeled_provider_address() {
+        assert_provider_used_address_restored(false, None);
+    }
+
+    #[test]
+    fn should_not_report_a_used_address_restored_in_a_provider_pool() {
+        assert_provider_used_address_restored(true, None);
+    }
+
+    #[test]
+    fn should_report_a_missing_owner_even_when_a_provider_pool_holds_the_used_address() {
+        assert_provider_used_address_restored(
+            true,
+            Some(owning_account_for(&AccountType::CoinJoin { index: 9 })),
+        );
+    }
+
+    fn assert_provider_used_address_restored(
+        real_provider: bool,
+        stored_owner: Option<OwningAccount>,
+    ) {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+        use platform_wallet::wallet::provider_key_at_index::{
+            derive_platform_node_public_keys, populate_platform_node_pool,
+        };
+        use std::collections::HashMap;
+
+        let wallet = Wallet::from_seed_bytes(
+            [15u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        assert!(
+            wallet_info.accounts.provider_platform_keys.is_some(),
+            "precondition: the wallet rebuilds a provider platform key account"
+        );
+        let address = if real_provider {
+            let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 1).unwrap();
+            populate_platform_node_pool(&mut wallet_info, &keys, Network::Testnet).unwrap();
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_mut()
+                .unwrap();
+            let mut pools = account.managed_account_type_mut().address_pools_mut();
+            let address = pools[0].address_at_index(0).unwrap();
+            assert!(pools[0].mark_used(&address));
+            address
+        } else {
+            first_external_address(&wallet_info, &manifest)
+        };
+
+        let expect_orphan = !real_provider || stored_owner.is_some();
+        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
+        used.insert(
+            address.clone(),
+            Some(stored_owner.unwrap_or(OwningAccount {
+                account_type: "provider_platform".to_string(),
+                account_index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            })),
+        );
+
+        let core = platform_wallet::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        let ctx = LoadCtx::strict();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &used,
+            &ctx,
+        )
+        .unwrap();
+
+        let funds = wallet_info.accounts.all_funding_accounts();
+        assert_eq!(
+            funds.iter().any(
+                |account| account
+                    .managed_account_type()
+                    .address_pools()
+                    .iter()
+                    .any(|pool| pool
+                        .address_info(&address)
+                        .is_some_and(|info| info.is_used()))
+            ),
+            !real_provider,
+            "a mislabeled funds address must retain its reuse guard"
+        );
+        assert_eq!(ctx.degradation().degraded, expect_orphan);
+        assert_eq!(
+            ctx.degradation().by_site.get(&LoadSite::OrphanedUtxoOwner),
+            if expect_orphan { Some(&1) } else { None }
+        );
+    }
+
     /// Two unroutable owners are two incidents. Every existing test at this
     /// site seeds exactly one address, which cannot tell "count the rows"
     /// apart from "count the times the reader decided to tolerate them" —
@@ -1991,8 +2189,8 @@ mod tests {
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
 
         let orphan_owner = OwningAccount {
-            account_type: "provider_platform".to_string(),
-            account_index: 0,
+            account_type: "identity_topup".to_string(),
+            account_index: 7,
             user_identity_id: [0u8; 32],
             friend_identity_id: [0u8; 32],
         };
@@ -4420,6 +4618,81 @@ mod tests {
             let shared = first_pool_address(&wallet, &receiving, past);
             assert_eq!(first_pool_address(&wallet, &reverse, past), shared);
             (wallet, manifest, receiving, reverse, shared)
+        }
+
+        #[test]
+        fn should_skip_discovery_for_a_used_contact_with_an_unrelated_receiving_account() {
+            let (mut wallet, _) = fixture(59);
+            let receiving = AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xcc; 32],
+            };
+            for account in [receiving, contact()] {
+                wallet.add_account(account, None).unwrap();
+            }
+            let manifest = manifest_for(&wallet);
+            let address = first_pool_address(&wallet, &contact(), 0);
+            for ctx in [LoadCtx::strict(), LoadCtx::recovery()] {
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let external = info
+                    .accounts
+                    .dashpay_external_accounts
+                    .values_mut()
+                    .next()
+                    .unwrap();
+                assert!(
+                    external.managed_account_type_mut().address_pools_mut()[0].mark_used(&address)
+                );
+                DISCOVERY_RUNS.with(|runs| runs.set(0));
+                load_into(
+                    &mut info,
+                    &manifest,
+                    Vec::new(),
+                    &HashMap::new(),
+                    &HashMap::from([(address.clone(), Some(owning_account_for(&contact())))]),
+                    &ctx,
+                )
+                .unwrap();
+                assert!(!ctx.degradation().degraded, "{:?}", ctx.degradation());
+                DISCOVERY_RUNS.with(|runs| {
+                    assert_eq!(
+                        runs.get(),
+                        0,
+                        "unrelated contact must not trigger discovery"
+                    )
+                });
+            }
+        }
+
+        #[test]
+        fn should_restore_a_deeper_reciprocal_coin_after_a_spent_contact_payout() {
+            let (wallet, manifest, receiving, reverse, shared) = befriended_both_ways(58);
+            let past = key_wallet::managed_account::address_pool::DEFAULT_DASHPAY_GAP_LIMIT;
+            let coin = utxo(1, &first_pool_address(&wallet, &receiving, 2 * past));
+            let mut info = with_deeper_contact_pool(&wallet, &receiving, &reverse);
+            let contact = info
+                .accounts
+                .dashpay_external_accounts
+                .values_mut()
+                .next()
+                .unwrap();
+            let mut pools = contact.managed_account_type_mut().address_pools_mut();
+            assert!(pools[0].mark_used(&shared));
+            ensure_derived(pools[0], &wallet.key_source_for_account(reverse), 2 * past).unwrap();
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &HashMap::from([(shared, Some(owning_account_for(&reverse)))]),
+                &ctx,
+            )
+            .unwrap();
+            assert_eq!(info.balance.total(), VALUE);
+            assert_eq!(every_holder(&info, &coin.outpoint), vec![receiving]);
+            assert!(!ctx.degradation().degraded, "{:?}", ctx.degradation());
         }
 
         /// `wallet`'s managed state with the reverse contact pool derived one

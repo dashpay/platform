@@ -712,6 +712,7 @@ fn route_by_owner<T>(
             SiteCoords {
                 wallet_id: Some(wallet_id),
                 account_type: &"identity",
+                contact: None,
                 affected: skipped,
                 detail: Some(&collection),
             },
