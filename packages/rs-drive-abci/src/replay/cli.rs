@@ -40,7 +40,11 @@ pub struct ReplayArgs {
     )]
     pub skip: Vec<SkipSelector>,
 
-    /// Stop replay after reaching this block height (inclusive).
+    /// Stop replay after reaching this block height (inclusive). A replay that reaches its
+    /// stop height, or the end of its log, directly after a block that was executed and not
+    /// committed ends with an error, since its database is not at that block: mainnet's
+    /// block 32326 is one, as on the chain. A replay that is cancelled there says so in a
+    /// warning.
     #[arg(long, value_name = "HEIGHT")]
     pub stop_height: Option<u64>,
 
@@ -53,7 +57,9 @@ pub struct ReplayArgs {
     /// Core whose chain stands still (caught up, then `setnetworkactive false`); whether it
     /// does answer alike is checked and not assumed: a second, different answer to a recorded
     /// request (one of the errors for a node that is not ready aside) stops the replay, as
-    /// does a method Core refuses with HTTP status 403. A request Core gives no answer to (an
+    /// does a method Core refuses with HTTP status 403, or an error of a request that is
+    /// none of the connection (a reply with HTTP status 200 whose body is no JSON, for one).
+    /// A request Core gives no answer to (an
     /// error of the connection, or one of the errors for a node that is not ready) is asked
     /// up to four times; the replay goes on with the first answer, and stops when none of the
     /// four is answered. The file may not be inside the database directory.
@@ -66,7 +72,8 @@ pub struct ReplayArgs {
     pub core_answers_record: Option<PathBuf>,
 
     /// Answer every request to Dash Core from this file, recorded by `--core-answers-record`,
-    /// and ask no Core node. A request the file has no answer to stops the replay.
+    /// and ask no Core node. A request the file has no answer to stops the replay. Both
+    /// options need a build that unwinds on a panic, which the node's builds do.
     #[arg(long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     pub core_answers: Option<PathBuf>,
 
@@ -80,18 +87,22 @@ pub struct ReplayArgs {
     /// aside) was the accepted ProcessProposal of that very block. A report is written from a
     /// new database on. For a database that has blocks the
     /// report has to be its own: one block after the other, ending at the block the database
-    /// is at with its app hash. The file is locked while a replay writes it, and may not be
-    /// inside the database directory.
+    /// is at with its app hash. The file is locked while a replay writes it or is held
+    /// against it, and may not be inside the database directory.
     #[arg(long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     pub report: Option<PathBuf>,
 
     /// Hold every finalized block against the line another replay wrote for it with
     /// `--report`, on another storage engine for one, and stop at the first block that
     /// differs, naming each field that does; its line is then not written. Lines an earlier
-    /// run wrote to `--report` are held against that file first. The other replay's line for
-    /// a block is read before the block is finalized, so a file that has none stops the
-    /// replay before that block; and where the log ends, the file has to end too, unless
-    /// `--stop-height` was reached.
+    /// run wrote to `--report` are held against that file first, and counted apart from the
+    /// blocks this run executes. The other replay's line for a block is read before the
+    /// first ProcessProposal of the block's height is executed, so a file that has none
+    /// stops the replay before that, and before the block is finalized (a PrepareProposal
+    /// of the height that comes earlier in the log has been executed by then); and where the
+    /// log ends, the file has to end too, unless `--stop-height` was reached. The file is
+    /// locked while a replay is held against it: one that another replay is still writing is
+    /// refused.
     #[arg(
         long,
         value_name = "FILE",

@@ -160,7 +160,8 @@ impl ReportWriter {
     ///
     /// The file is locked before it is read and for as long as it is written: two replays
     /// that wrote one report would each find it fit to add to, and then write every height
-    /// twice.
+    /// twice. A replay that is held against the report locks it too (`ReportReader::lock`),
+    /// so a report that is read as the other is not added to meanwhile.
     fn open(path: &Path, database: Option<&DatabaseAt>) -> Result<Self, String> {
         let file = OpenOptions::new()
             .read(true)
@@ -170,7 +171,7 @@ impl ReportWriter {
             .map_err(|error| format!("cannot open report {}: {}", path.display(), error))?;
         file.try_lock().map_err(|error| match error {
             TryLockError::WouldBlock => format!(
-                "report {} is being written by another replay",
+                "report {} is in use by another replay, which writes it or is held against it",
                 path.display()
             ),
             TryLockError::Error(error) => {
@@ -264,6 +265,8 @@ impl ReportWriter {
 /// first of them for the first block this replay's report has.
 struct ReportReader {
     path: PathBuf,
+    /// The file that is read, kept open for its lock
+    file: File,
     lines: Box<dyn Iterator<Item = io::Result<NumberedLine>>>,
 }
 
@@ -283,13 +286,32 @@ impl ReportReader {
             .try_clone()
             .and_then(Handle::from_file)
             .map_err(open_error)?;
+        let read = file.try_clone().map_err(open_error)?;
         Ok((
             ReportReader {
                 path: path.to_path_buf(),
-                lines: Box::new(records(BufReader::new(file))),
+                file,
+                lines: Box::new(records(BufReader::new(read))),
             },
             identity,
         ))
+    }
+
+    /// Locks the report against a replay that writes it, for as long as it is read here.
+    /// Where the log ends, this replay says that the other report ends there too (`ends`),
+    /// and of a report another replay still adds to that would not hold: its next line may
+    /// come after its end was seen. So a report is held against only once the replay that
+    /// writes it has ended, and is not written while a replay is held against it.
+    fn lock(&self) -> Result<(), String> {
+        self.file.try_lock_shared().map_err(|error| match error {
+            TryLockError::WouldBlock => format!(
+                "report {} is being written by another replay; a replay is held against a report only once the replay that writes it has ended",
+                self.path.display()
+            ),
+            TryLockError::Error(error) => {
+                format!("cannot lock report {}: {}", self.path.display(), error)
+            }
+        })
     }
 
     /// The other run's next line, which has to be for the block at `height`: the two reports
@@ -454,8 +476,15 @@ pub(super) struct ChecksSummary {
     pub(super) blocks_held_against_report: u64,
     /// `info` requests passed over: logged by a Tenderdash of another ABCI version
     pub(super) info_passed_over: u64,
-    /// The heights after which GroveDB's root hash was not the app hash
+    /// The heights after which GroveDB's root hash was not the app hash. The replay goes on
+    /// from such a block only where the block was not committed and the chain went on from
+    /// it (`runner`'s `root_after_block`)
     pub(super) root_not_app_hash: Vec<u64>,
+    /// Lines an earlier run wrote to this run's report, held against the other run's report
+    /// when this run began. This run did not execute their blocks, and counts none of them
+    /// above; that they are of this run's database is known by the last of them only, whose
+    /// height and app hash the database has
+    pub(super) earlier_lines_held_against_report: u64,
 }
 
 /// The `ProcessProposal` request the replay answered.
@@ -503,8 +532,8 @@ pub(super) struct ReplayChecks {
     other: Option<ReportReader>,
     core_answers: Option<CoreAnswers>,
     proposal: Option<Proposal>,
-    /// The other run's line for the block whose `FinalizeBlock` comes next, with the block's
-    /// height
+    /// The other run's line for the block that is being executed, with the block's height:
+    /// read before the block's first `ProcessProposal`, taken when the block is finalized
     other_line: Option<(u64, String)>,
     summary: ChecksSummary,
 }
@@ -575,7 +604,12 @@ impl ReplayChecks {
             return Err(ITSELF.to_owned());
         }
 
+        // After the check that the two are not one file, which the writer's lock would refuse
+        // in other words
+        other.lock()?;
+
         // What an earlier run wrote, read from the file that was checked
+        let mut earlier_lines = 0;
         earlier
             .seek(SeekFrom::Start(0))
             .map_err(|error| format!("cannot read report {}: {}", report_path.display(), error))?;
@@ -590,11 +624,16 @@ impl ReplayChecks {
                 )
             })?;
             other.hold(record.height, &line)?;
+            earlier_lines += 1;
         }
 
         Ok(ReplayChecks {
             report: Some(report),
             other: Some(other),
+            summary: ChecksSummary {
+                earlier_lines_held_against_report: earlier_lines,
+                ..Default::default()
+            },
             ..Default::default()
         })
     }
@@ -634,18 +673,62 @@ impl ReplayChecks {
         }
     }
 
-    /// Reads what the block at `height` is held against, before its `FinalizeBlock` is
-    /// executed: the other run's line for the block. A report that has no such line (it ends
-    /// before, or its next line is not whole or is of another height) is found here and not
-    /// after the block is committed: the replay stops with the block not finalized, and its
-    /// report ends at the last block it finalized. Once the other report has the line, the
-    /// replay can be started again on a database that holds that block; when it cannot is
-    /// said at `CoreAnswers::finalizing`.
-    pub(super) fn finalization_begins(&mut self, height: u64) -> Result<(), String> {
-        if let Some(other) = &mut self.other {
-            self.other_line = Some((height, other.line_for(height)?));
+    /// Reads what the block at `height` is held against: the other run's line for the
+    /// block. The replay calls it before every `ProcessProposal` and before `FinalizeBlock`,
+    /// and the line is read at the first of them. A report that has no such line (it ends
+    /// before, or its next line is not whole or is of another height) is found here, and not
+    /// after the block's `ProcessProposal` was executed or the block committed: the replay
+    /// stops, and its report ends at the block before.
+    ///
+    /// The line is not read as late as `FinalizeBlock` because the execution of a proposal
+    /// may write outside the block's transaction: on mainnet below height 32329 it removes
+    /// votes so, and a database a replay stopped on after that is not the one the block
+    /// before left. Where the first request of a height that executes a proposal is a
+    /// `ProcessProposal`, no proposal of the height is executed before the stop: the
+    /// database and report are then what a replay leaves that reaches a stop height at the
+    /// block before, and can be gone on with where those can (not where the database holds
+    /// no block yet, `CoreAnswers::finalizing`, and not where the block before was executed
+    /// and not committed, `ended_on_a_block_not_committed`).
+    ///
+    /// A `PrepareProposal` is executed without this, as it is without another report: a log
+    /// may end with one whose block it does not finalize, and a report of that log ends at
+    /// the block before. A log has one where its node proposed a block at the height, in any
+    /// round, whether or not that proposal became the block. So where a `PrepareProposal` of
+    /// a height comes before the height's first `ProcessProposal`, it has been executed
+    /// when the report is found short at that `ProcessProposal`.
+    pub(super) fn block_begins(&mut self, height: u64) -> Result<(), String> {
+        let Some(other) = &mut self.other else {
+            return Ok(());
+        };
+        // A request for a block this run has finalized: its line was taken then
+        if self.summary.last_height.is_some_and(|last| height <= last) {
+            return Ok(());
         }
-        Ok(())
+        match &self.other_line {
+            Some((read, _)) if *read == height => Ok(()),
+            Some((read, _)) => Err(format!(
+                "report {} was read up to its line for height {}, and that block was not finalized before a request for height {}",
+                other.path.display(),
+                read,
+                height
+            )),
+            None => {
+                self.other_line = Some((height, other.line_for(height)?));
+                Ok(())
+            }
+        }
+    }
+
+    /// The last block this run finalized, if it was executed and not committed: GroveDB's
+    /// root hash was not its app hash afterwards, which the replay goes on from only where
+    /// the store shows that the block was not committed. The database is then not at that
+    /// block.
+    pub(super) fn ended_on_a_block_not_committed(&self) -> Option<u64> {
+        self.summary
+            .root_not_app_hash
+            .last()
+            .copied()
+            .filter(|height| self.summary.last_height == Some(*height))
     }
 
     /// Executes `FinalizeBlock` through `finalize` so that a failure of Core's answers ends
@@ -663,10 +746,22 @@ impl ReplayChecks {
     /// Called where the log has no further request. A report the replay is held against has
     /// to end there too: of one with more blocks, a replay that ended well would say that it
     /// was held against it.
+    ///
+    /// A line that was read for a block and not taken is such a block too: the log has a
+    /// `ProcessProposal` of the block and does not finalize it. The replay's loop refuses
+    /// such a log before it asks here (`RequestSequenceValidator::finish`); this does not
+    /// rest on that.
     pub(super) fn log_ended(&mut self) -> Result<(), String> {
-        match &mut self.other {
-            Some(other) => other.ends(),
-            None => Ok(()),
+        let Some(other) = &mut self.other else {
+            return Ok(());
+        };
+        match &self.other_line {
+            Some((height, _)) => Err(format!(
+                "report {} goes on with height {} where the log ends, with that block begun and not finalized: from that height on nothing was held against it",
+                other.path.display(),
+                height
+            )),
+            None => other.ends(),
         }
     }
 
@@ -786,7 +881,8 @@ impl ReplayChecks {
             .map_err(|error| format!("cannot write the report line: {error}"))?;
 
         if let Some(other) = &mut self.other {
-            // Read before the block was committed, where the replay asked for it then
+            // Read before the height's first `ProcessProposal`, where the replay asked for
+            // it then
             let other_line = match self.other_line.take() {
                 Some((height, other_line)) if height == record.height => other_line,
                 _ => other.line_for(record.height)?,
@@ -937,12 +1033,12 @@ mod tests {
     ) -> Result<(), String> {
         for height in heights {
             let hash = block_hash(height);
+            checks.block_begins(height)?;
             checks.proposal_answered(
                 proposed(height, 0, &hash),
                 &proposal_answer(&[(0, gas_used)]),
                 &logged_answer(&[(0, gas_used)]),
             )?;
-            checks.finalization_begins(height)?;
             checks.block_finalized(
                 finalized(height, &hash, 1, &APP_HASH),
                 &ResponseFinalizeBlock::default(),
@@ -1032,6 +1128,7 @@ mod tests {
                 blocks_held_against_report: 0,
                 info_passed_over: 0,
                 root_not_app_hash: vec![2],
+                earlier_lines_held_against_report: 0,
             }
         );
     }
@@ -1176,10 +1273,12 @@ mod tests {
         let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
         replay_blocks(&mut checks, 1..=5, 100).unwrap();
         assert_eq!(checks.summary().blocks_held_against_report, 0);
+        drop(checks);
 
         let mut checks = ReplayChecks::open(Some(&second), Some(&first), None).unwrap();
         replay_blocks(&mut checks, 1..=5, 100).unwrap();
         assert_eq!(checks.summary().blocks_held_against_report, 5);
+        assert_eq!(checks.summary().earlier_lines_held_against_report, 0);
         assert_eq!(checks.summary().blocks_held_against_log, 5);
         assert_eq!(fs::read(&first).unwrap(), fs::read(&second).unwrap());
     }
@@ -1190,6 +1289,7 @@ mod tests {
         let first = dir.path().join("first.jsonl");
         let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
         replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        drop(checks);
 
         let second = dir.path().join("second.jsonl");
         let mut checks = ReplayChecks::open(Some(&second), Some(&first), None).unwrap();
@@ -1255,6 +1355,7 @@ mod tests {
         let first = dir.path().join("first.jsonl");
         let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
         replay_blocks(&mut checks, 1..=6, 100).unwrap();
+        drop(checks);
 
         // This replay's database and report are at the third block
         let second = dir.path().join("second.jsonl");
@@ -1512,6 +1613,7 @@ mod tests {
         let first = dir.path().join("first.jsonl");
         let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
         replay_blocks(&mut checks, 1..=6, 100).unwrap();
+        drop(checks);
 
         // An earlier run of the second replay was held against nothing, and paid another
         // fee in its third block
@@ -1536,8 +1638,14 @@ mod tests {
         drop(checks);
         let mut checks =
             ReplayChecks::open(Some(&third), Some(&first), Some(&database(4))).unwrap();
+        // The four lines of the earlier run are counted apart: this run executed none of
+        // their blocks
+        assert_eq!(checks.summary().earlier_lines_held_against_report, 4);
+        assert_eq!(checks.summary().blocks, 0);
+        assert_eq!(checks.summary().blocks_held_against_report, 0);
         replay_blocks(&mut checks, 5..=6, 100).unwrap();
         assert_eq!(checks.summary().blocks_held_against_report, 2);
+        assert_eq!(checks.summary().earlier_lines_held_against_report, 4);
         assert_eq!(fs::read(&first).unwrap(), fs::read(&third).unwrap());
         drop(checks);
 
@@ -1560,6 +1668,7 @@ mod tests {
         let first = dir.path().join("first.jsonl");
         let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
         replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        drop(checks);
 
         // The very first block of the second replay differs: its line is not written, and
         // its database is at the first block all the same
@@ -1823,7 +1932,7 @@ mod tests {
         let report = dir.path().join("report.jsonl");
         let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
         replay_blocks(&mut checks, 1..=2, 100).unwrap();
-        let error = checks.finalization_begins(3).unwrap_err();
+        let error = checks.block_begins(3).unwrap_err();
         assert_eq!(
             error,
             format!(
@@ -1854,7 +1963,7 @@ mod tests {
             fs::remove_file(&report).unwrap();
             let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
             replay_blocks(&mut checks, 1..=2, 100).unwrap();
-            let error = checks.finalization_begins(3).unwrap_err();
+            let error = checks.block_begins(3).unwrap_err();
             assert!(error.starts_with(expected), "{error}");
             drop(checks);
             assert_eq!(report_lines(&report), lines[..2].to_vec());
@@ -1874,7 +1983,7 @@ mod tests {
         let report = dir.path().join("report.jsonl");
         let mut checks = ReplayChecks::open(Some(&report), Some(&first), None).unwrap();
         let hash = block_hash(1);
-        checks.finalization_begins(1).unwrap();
+        checks.block_begins(1).unwrap();
         checks
             .proposal_answered(
                 proposed(1, 0, &hash),
@@ -1946,7 +2055,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let report = dir.path().join("report.jsonl");
         let being_written = format!(
-            "report {} is being written by another replay",
+            "report {} is in use by another replay, which writes it or is held against it",
             report.display()
         );
 
@@ -1959,11 +2068,6 @@ mod tests {
         replay_blocks(&mut first, 1..=2, 100).unwrap();
         let error = ReplayChecks::open(Some(&report), None, Some(&database(2))).unwrap_err();
         assert_eq!(error, being_written);
-        // The file can be read meanwhile, as the report another replay is held against
-        let other = dir.path().join("other.jsonl");
-        let mut second = ReplayChecks::open(Some(&other), Some(&report), None).unwrap();
-        replay_blocks(&mut second, 1..=2, 100).unwrap();
-        drop(second);
 
         // The first replay has ended: its report is its database's to go on with
         drop(first);
@@ -1971,5 +2075,171 @@ mod tests {
         replay_blocks(&mut again, 3..=3, 100).unwrap();
         drop(again);
         assert_eq!(report_lines(&report).len(), 3);
+    }
+
+    #[test]
+    fn should_hold_a_replay_only_against_a_report_no_replay_is_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_path = dir.path().join("first.jsonl");
+        let second_path = dir.path().join("second.jsonl");
+        let mut first = ReplayChecks::open(Some(&first_path), None, None).unwrap();
+        replay_blocks(&mut first, 1..=2, 100).unwrap();
+
+        // The first replay is still writing its report. A second that came to the end of its
+        // log now would find the report ended there, and the first may add a block after
+        let error = ReplayChecks::open(Some(&second_path), Some(&first_path), None).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "report {} is being written by another replay; a replay is held against a report only once the replay that writes it has ended",
+                first_path.display()
+            )
+        );
+        drop(first);
+
+        // It has ended. While the second replay is held against its report, the report is
+        // not added to, by the replay of its own database either
+        fs::remove_file(&second_path).unwrap();
+        let mut second = ReplayChecks::open(Some(&second_path), Some(&first_path), None).unwrap();
+        let error = ReplayChecks::open(Some(&first_path), None, Some(&database(2))).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "report {} is in use by another replay, which writes it or is held against it",
+                first_path.display()
+            )
+        );
+        // A third replay may be held against it beside the second
+        let third_path = dir.path().join("third.jsonl");
+        let mut third = ReplayChecks::open(Some(&third_path), Some(&first_path), None).unwrap();
+        replay_blocks(&mut second, 1..=2, 100).unwrap();
+        replay_blocks(&mut third, 1..=2, 100).unwrap();
+        second.log_ended().unwrap();
+        third.log_ended().unwrap();
+        drop((second, third));
+
+        // Nothing is held against it any more: it is its database's to go on with
+        let mut first = ReplayChecks::open(Some(&first_path), None, Some(&database(2))).unwrap();
+        replay_blocks(&mut first, 3..=3, 100).unwrap();
+    }
+
+    // ---- the other report's line before the block, and a block that was not committed ----
+
+    #[test]
+    fn should_read_the_other_reports_line_before_a_block_is_processed_and_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jsonl");
+        let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
+        replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        drop(checks);
+        let lines = report_lines(&first);
+
+        // The other report has block 1 only. Block 2 has no line in it, and that is found
+        // before the `ProcessProposal` of block 2 is executed
+        let other = dir.path().join("other.jsonl");
+        fs::write(&other, lines[0].clone() + "\n").unwrap();
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+        // The `ProcessProposal` of two rounds and the `FinalizeBlock` of block 1 each ask,
+        // and one line is read
+        let hash = block_hash(1);
+        checks.block_begins(1).unwrap();
+        checks.block_begins(1).unwrap();
+        checks
+            .proposal_answered(
+                proposed(1, 0, &hash),
+                &proposal_answer(&[(0, 100)]),
+                &logged_answer(&[(0, 100)]),
+            )
+            .unwrap();
+        checks.block_begins(1).unwrap();
+        checks
+            .block_finalized(
+                finalized(1, &hash, 1, &APP_HASH),
+                &ResponseFinalizeBlock::default(),
+            )
+            .unwrap();
+        // A late request for the block that was finalized reads no line of the next block
+        checks.block_begins(1).unwrap();
+        let error = checks.block_begins(2).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "report {} has no line for height 2: it ends before",
+                other.display()
+            )
+        );
+        drop(checks);
+        assert_eq!(report_lines(&report), lines[..1].to_vec());
+
+        // With the whole report the replay goes on from block 1, to the same bytes
+        fs::write(&other, lines.join("\n") + "\n").unwrap();
+        let mut checks =
+            ReplayChecks::open(Some(&report), Some(&other), Some(&database(1))).unwrap();
+        assert_eq!(checks.summary().earlier_lines_held_against_report, 1);
+        replay_blocks(&mut checks, 2..=3, 100).unwrap();
+        checks.log_ended().unwrap();
+        drop(checks);
+        assert_eq!(fs::read(&report).unwrap(), fs::read(&first).unwrap());
+
+        // A block whose line was read is finalized before the next block's line is read: a
+        // line is not passed over
+        fs::remove_file(&report).unwrap();
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+        checks.block_begins(1).unwrap();
+        let error = checks.block_begins(2).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "report {} was read up to its line for height 1, and that block was not finalized before a request for height 2",
+                other.display()
+            )
+        );
+    }
+
+    #[test]
+    fn should_not_end_well_with_a_line_that_was_read_for_a_block_and_not_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jsonl");
+        let mut checks = ReplayChecks::open(Some(&first), None, None).unwrap();
+        replay_blocks(&mut checks, 1..=3, 100).unwrap();
+        drop(checks);
+
+        // The other report's last line was read for block 3, and block 3 was not finalized:
+        // nothing follows in the other report, and it was not held to its end all the same
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&first), None).unwrap();
+        replay_blocks(&mut checks, 1..=2, 100).unwrap();
+        checks.block_begins(3).unwrap();
+        assert_eq!(
+            checks.log_ended().unwrap_err(),
+            format!(
+                "report {} goes on with height 3 where the log ends, with that block begun and not finalized: from that height on nothing was held against it",
+                first.display()
+            )
+        );
+    }
+    #[test]
+    fn should_say_that_the_last_block_was_not_committed_only_while_it_is_the_last() {
+        let mut checks = ReplayChecks::open(None, None, None).unwrap();
+        replay_blocks(&mut checks, 1..=2, 100).unwrap();
+        assert_eq!(checks.ended_on_a_block_not_committed(), None);
+
+        // Block 3 leaves a root that is not its app hash: the replay went on from it, so it
+        // was not committed
+        let hash = block_hash(3);
+        checks
+            .block_finalized(
+                finalized(3, &hash, 0, &OTHER_ROOT),
+                &ResponseFinalizeBlock::default(),
+            )
+            .unwrap();
+        assert_eq!(checks.summary().root_not_app_hash, vec![3]);
+        assert_eq!(checks.ended_on_a_block_not_committed(), Some(3));
+
+        // Once a later block is committed the database is at a block again
+        replay_blocks(&mut checks, 4..=4, 100).unwrap();
+        assert_eq!(checks.summary().root_not_app_hash, vec![3]);
+        assert_eq!(checks.ended_on_a_block_not_committed(), None);
     }
 }

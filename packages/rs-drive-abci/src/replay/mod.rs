@@ -34,6 +34,7 @@ pub fn run(
     args: ReplayArgs,
     cancel: CancellationToken,
 ) -> Result<(), Box<dyn Error>> {
+    core_answers_need_unwinding(cfg!(panic = "unwind"), &args)?;
     config.db_path = database_directory(&config, &args)?;
     let db_is_new = database_is_new(&config.db_path)?;
 
@@ -100,6 +101,15 @@ pub fn run(
         None
     };
 
+    // A replay of a new database that was cancelled while it read its files makes no
+    // database: a directory GroveDB was opened in once is not taken for a new database
+    // again, and it would hold no block to go on from. A database that has blocks was opened
+    // by its verification above, and its replay is cancelled where the requests are
+    if db_is_new && cancel.is_cancelled() {
+        tracing::info!("replay interrupted by cancellation before its database was made");
+        return Ok(());
+    }
+
     ensure_db_directory(&config.db_path)?;
     let platform: Platform<DefaultCoreRPC> =
         Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc, None)?;
@@ -140,6 +150,9 @@ pub fn run(
                     current,
                     limit
                 );
+                // The counters say that this run executed no block; lines of an earlier run
+                // that were held against the other report are counted apart
+                log_checks(&checks, core_answers.as_ref());
                 return Ok(());
             }
         }
@@ -159,6 +172,19 @@ pub fn run(
     // the ones that passed every check before it stopped.
     log_checks(&checks, core_answers.as_ref());
     replayed
+}
+
+/// A replay with a file of Core's answers ends `FinalizeBlock` before the commit by unwinding
+/// where the answers fail (`CoreAnswers::finalizing`). A build that aborts on a panic would
+/// end the process there instead, so such a replay is not started in one.
+fn core_answers_need_unwinding(unwinds: bool, args: &ReplayArgs) -> Result<(), String> {
+    if unwinds || (args.core_answers.is_none() && args.core_answers_record.is_none()) {
+        return Ok(());
+    }
+    Err(
+        "this build aborts on a panic (panic = \"abort\"); --core-answers and --core-answers-record need a build that unwinds, since a failure of Core's answers ends FinalizeBlock before the commit by unwinding"
+            .to_owned(),
+    )
 }
 
 /// The database directory of the replay, as the one location that everything after looks at,
@@ -290,7 +316,11 @@ fn open_core_rpc(
 }
 
 /// Executes the stream's requests until it ends, the stop height is reached or the replay is
-/// cancelled. Where the stream ends, a report the replay is held against has to end too.
+/// cancelled. Where the stream ends, a report the replay is held against has to end too. A
+/// replay that reaches its stop height or the end of the stream directly after a block that
+/// was executed and not committed does not end well: its database is not at the block it
+/// stopped after. One that is cancelled there says the same in a warning, and ends as a
+/// cancelled replay does.
 fn replay_requests<C: CoreRPCLike>(
     app: &FullAbciApplication<C>,
     stream: &mut LogRequestStream,
@@ -355,8 +385,18 @@ fn replay_requests<C: CoreRPCLike>(
         stream.path().display()
     );
 
+    let not_committed = checks.ended_on_a_block_not_committed().map(|height| {
+        format!(
+            "the replay ends after block {height}, which was executed and not committed: GroveDB's root hash is not the block's app hash, and the store does not hold the block, as on the chain, which went on from there. The database is not at block {height}; a replay that is to be gone on with is stopped before block {height}"
+        )
+    });
     if cancelled {
         tracing::info!("replay interrupted by cancellation");
+        if let Some(not_committed) = not_committed {
+            tracing::warn!("{}", not_committed);
+        }
+    } else if let Some(not_committed) = not_committed {
+        return Err(not_committed.into());
     }
 
     Ok(())
@@ -373,6 +413,8 @@ fn log_checks(checks: &ReplayChecks, core_answers: Option<&CoreAnswers>) {
         blocks_held_against_logged_answers = summary.blocks_held_against_log,
         blocks_without_their_proposal_answer = summary.blocks_without_proposal,
         blocks_held_against_other_report = summary.blocks_held_against_report,
+        lines_of_an_earlier_run_held_against_other_report =
+            summary.earlier_lines_held_against_report,
         proposals = summary.proposals,
         proposals_held_against_logged_answers = summary.proposals_held_against_log,
         proposals_without_logged_answer = summary.proposals_without_logged_answer,
@@ -1646,6 +1688,119 @@ mod tests {
         replay(Some(5), Some(5), false).unwrap();
         // A replay that was cancelled ends as it did
         replay(None, None, true).unwrap();
+    }
+
+    #[test]
+    fn should_not_end_well_directly_after_a_block_that_was_not_committed() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        // A log of one request, which a replay passes over: the log then ends
+        let info = r#"Request { value: Some(Info(RequestInfo { version: "1.8.2", block_version: 14, p2p_version: 10, abci_version: "999.999.999" })) }"#;
+        let (_dir, log_path) = log_of(&[request_line(info)]);
+
+        // The replay has finalized block 5, and GroveDB's root is `root` after it
+        let replay = |root: [u8; 32], stop_height: Option<u64>, cancelled: bool| {
+            let mut checks = ReplayChecks::open(None, None, None).unwrap();
+            checks
+                .block_finalized(
+                    report::Finalized {
+                        height: 5,
+                        round: 0,
+                        block_hash: &[5; 32],
+                        transactions: 0,
+                        protocol_version: 1,
+                        app_hash: &[1; 32],
+                        grove_root: &root,
+                    },
+                    &Default::default(),
+                )
+                .unwrap();
+            let mut stream = LogRequestStream::open(&log_path).unwrap();
+            let mut args = replay_args(&log_path);
+            args.stop_height = stop_height;
+            let cancel = CancellationToken::new();
+            if cancelled {
+                cancel.cancel();
+            }
+            let mut known_height = Some(5);
+            replay_requests(
+                &app,
+                &mut stream,
+                &args,
+                &cancel,
+                &mut known_height,
+                &mut checks,
+            )
+            .map_err(|error| error.to_string())
+        };
+
+        let not_committed = "the replay ends after block 5, which was executed and not committed: ";
+        // The root is not block 5's app hash: the block was not committed, and the database
+        // is not at the block the replay stopped after, at its stop height
+        let error = replay([2; 32], Some(5), false).unwrap_err();
+        assert!(error.starts_with(not_committed), "{error}");
+        // or at the end of its log
+        let error = replay([2; 32], None, false).unwrap_err();
+        assert!(error.starts_with(not_committed), "{error}");
+        // A replay that was cancelled ends as it did
+        replay([2; 32], None, true).unwrap();
+        // After a block that was committed a replay ends well
+        replay([1; 32], Some(5), false).unwrap();
+        replay([1; 32], None, false).unwrap();
+    }
+
+    #[test]
+    fn should_make_no_database_for_a_replay_that_was_cancelled_before_it_opened_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("abci.jsonl");
+        fs::write(
+            &log,
+            format!("{}\n{}\n", request_line(INFO), request_line(INIT_CHAIN)),
+        )
+        .unwrap();
+        let db = dir.path().join("db");
+        let mut config = PlatformConfig::default_testnet();
+        config.core.consensus_rpc.host = "127.0.0.1".to_owned();
+        let args = ReplayArgs {
+            db_path: Some(db.clone()),
+            core_answers_record: Some(dir.path().join("core-answers.jsonl")),
+            report: Some(dir.path().join("report.jsonl")),
+            ..replay_args(&log)
+        };
+
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        run(config, args, cancel).unwrap();
+        // No directory that a second start would not take for a new database
+        assert!(!db.exists());
+    }
+
+    #[test]
+    fn should_take_core_answers_only_in_a_build_that_unwinds() {
+        let log = Path::new("abci.jsonl");
+        let recording = ReplayArgs {
+            core_answers_record: Some(PathBuf::from("core-answers.jsonl")),
+            ..replay_args(log)
+        };
+        let serving = ReplayArgs {
+            core_answers: Some(PathBuf::from("core-answers.jsonl")),
+            ..replay_args(log)
+        };
+        // The tests' build unwinds, as the node's builds do
+        assert!(cfg!(panic = "unwind"));
+        for args in [&recording, &serving, &replay_args(log)] {
+            core_answers_need_unwinding(true, args).unwrap();
+        }
+        // In a build that aborts on a panic a failure of the answers would end the process
+        // inside FinalizeBlock
+        for args in [&recording, &serving] {
+            let error = core_answers_need_unwinding(false, args).unwrap_err();
+            assert!(error.starts_with("this build aborts on a panic"), "{error}");
+        }
+        // A replay beside a Core node with nothing kept unwinds nowhere
+        core_answers_need_unwinding(false, &replay_args(log)).unwrap();
     }
 
     // ---- drain_skipped_entries ----

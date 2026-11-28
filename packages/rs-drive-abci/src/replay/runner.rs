@@ -140,13 +140,107 @@ pub(super) fn ensure_db_directory(path: &Path) -> Result<bool, Box<dyn Error>> {
 /// below height 33000; that is the range in which a node may be started on such a state, and
 /// not one in which a commit may fail.
 ///
-/// The replay is not told whether a commit failed. At one of the three heights it therefore
-/// takes a root that differs after a commit that succeeded too, writes it in the block's line
-/// and names the height in its last lines.
+/// The replay is not told whether a commit failed. At those three heights it asks the store
+/// which block it holds, before `FinalizeBlock` and, where the root differs, after
+/// (`stored_block_height`, `store_after_block`, `root_after_block`).
 fn grove_root_may_differ_from_app_hash(config: &PlatformConfig, height: i64) -> bool {
     config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
         && (32326..32329).contains(&height)
+}
+
+/// What the store says of a block once its `FinalizeBlock` has returned.
+#[derive(Debug, PartialEq, Eq)]
+enum RootAfterBlock {
+    /// GroveDB's root hash is the block's app hash
+    AppHash,
+    /// The root is not the app hash, and the store holds the earlier block it held before
+    /// `FinalizeBlock`: the block's platform state, which is saved in the block's
+    /// transaction, was not committed. That is what the commit conflict leaves from which
+    /// the chain went on
+    NotCommitted,
+    /// The root is not the app hash, and it may not differ: at a height where the node
+    /// stops at a failed commit, or with a store that holds the block, or one that does not
+    /// show an earlier block it still holds
+    Mismatch,
+}
+
+/// Which block the store holds once `FinalizeBlock` of the block at `height` has returned,
+/// by the heights `stored_block_height` gave before the request and after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoreAfterBlock {
+    /// The block: its transaction was committed
+    TheBlock,
+    /// The same earlier block as before the request: the block's platform state was not
+    /// committed. Of a store whose transactions are committed whole or not at all, nothing
+    /// of the block's transaction was
+    WhatItHeldBefore,
+    /// Anything else: no saved state, another block than before, or a block that is not an
+    /// earlier one. None of these shows an earlier block that the store still holds, also
+    /// where a transaction that was not committed would leave it so (no saved state before
+    /// and none after)
+    SomethingElse,
+}
+
+fn store_after_block(height: u64, before: Option<u64>, after: Option<u64>) -> StoreAfterBlock {
+    match after {
+        Some(stored) if stored == height => StoreAfterBlock::TheBlock,
+        Some(stored) if stored < height && before == after => StoreAfterBlock::WhatItHeldBefore,
+        _ => StoreAfterBlock::SomethingElse,
+    }
+}
+
+/// `store` is `Some` only where `grove_root_may_differ_from_app_hash` and the root does
+/// differ, and `None` everywhere else: at those heights the store is read before
+/// `FinalizeBlock`, and after it where the root differs. A root may differ from the app hash
+/// only after a block the store shows was not committed: a block that was committed has to
+/// have left its app hash for a root.
+///
+/// What this does not tell apart is why a block was not committed: the commit conflict
+/// `finalize_block` goes on from, or a store that lost the commit otherwise and left what it
+/// held. Either way the root is not the app hash in the block's line, and the replay's last
+/// lines name the height, if the block passes the replay's other checks.
+fn root_after_block(
+    app_hash: &[u8],
+    root: &[u8; 32],
+    store: Option<StoreAfterBlock>,
+) -> RootAfterBlock {
+    if root[..] == *app_hash {
+        RootAfterBlock::AppHash
+    } else if store == Some(StoreAfterBlock::WhatItHeldBefore) {
+        RootAfterBlock::NotCommitted
+    } else {
+        RootAfterBlock::Mismatch
+    }
+}
+
+/// The height of the block the store holds: that of the platform state saved in it, `None`
+/// where none is saved. A block saves its platform state in its own transaction, so the
+/// store holds a block's state when that block's transaction was committed and goes on
+/// holding the state it held when it was not, whatever was written outside the transaction
+/// meanwhile.
+fn stored_block_height<C>(app: &FullAbciApplication<C>) -> Result<Option<u64>, Box<dyn Error>> {
+    let state = app.platform.state.load();
+    let platform_version = state.current_platform_version()?;
+    let stored = Platform::<C>::fetch_platform_state(&app.platform.drive, None, platform_version)?;
+    Ok(stored.and_then(|stored| {
+        stored
+            .last_committed_block_info()
+            .as_ref()
+            .map(|info| info.basic_info().height)
+    }))
+}
+
+/// GroveDB's root hash as it is committed.
+fn committed_grove_root<C>(app: &FullAbciApplication<C>) -> Result<[u8; 32], Box<dyn Error>> {
+    let state = app.platform.state.load();
+    let grove_version = &state.current_platform_version()?.drive.grove_version;
+    app.platform
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()
+        .map_err(|err| format!("{:?}", err).into())
 }
 
 /// Whether a request, executed after a `ProcessProposal`, may have replaced what that
@@ -267,6 +361,18 @@ where
                 origin,
                 height
             );
+            // What the block is held against is read before the handler of `ProcessProposal`
+            // is called: the execution of a proposal may write outside the block's
+            // transaction. A `PrepareProposal` of the height that came before this request
+            // has been executed
+            checks
+                .block_begins(u64::try_from(height)?)
+                .map_err(|reason| {
+                    logged_error(format!(
+                        "replay stops before process_proposal for {}{}:\n{}",
+                        origin, context, reason
+                    ))
+                })?;
             let response = app.process_proposal(request).map_err(|err| {
                 logged_error(format!(
                     "process_proposal failed for {}{}: {:?}",
@@ -320,15 +426,28 @@ where
                 .and_then(|block| block.data.as_ref())
                 .map_or(0, |data| data.txs.len());
 
-            // What the block is held against is read before the block is committed
+            // Read at the block's `ProcessProposal`, and here for a block that had none
             checks
-                .finalization_begins(u64::try_from(height)?)
+                .block_begins(u64::try_from(height)?)
                 .map_err(|reason| {
                     logged_error(format!(
                         "replay stops before finalize_block for {}{}:\n{}",
                         origin, context, reason
                     ))
                 })?;
+            // Where the chain went on from a block that was not committed: the block the
+            // store holds before the request, to hold what it holds afterwards against
+            let stored_before = if grove_root_may_differ_from_app_hash(&app.platform.config, height)
+            {
+                Some(stored_block_height(app).map_err(|err| {
+                    logged_error(format!(
+                        "the platform state the store holds cannot be read before finalize_block for {}{}: {}",
+                        origin, context, err
+                    ))
+                })?)
+            } else {
+                None
+            };
             // After an error of `finalizing` the handler was left in the middle of the block:
             // the replay executes nothing more on this platform, and ends. The platform's own
             // end still flushes and closes GroveDB, which commits nothing of the block
@@ -352,27 +471,13 @@ where
                 .load()
                 .last_committed_block_app_hash()
                 .map(|hash| hash.to_vec());
-            let grove_hash = app
-                .platform
-                .drive
-                .grove
-                .root_hash(
-                    None,
-                    &app.platform
-                        .state
-                        .load()
-                        .current_platform_version()?
-                        .drive
-                        .grove_version,
-                )
-                .unwrap()
-                .map_err(|err| {
-                    // A root that cannot be read is not a root that differs
-                    logged_error(format!(
-                        "grovedb root hash cannot be read after finalize_block for {}{}: {:?}",
-                        origin, context, err
-                    ))
-                })?;
+            let grove_hash = committed_grove_root(app).map_err(|err| {
+                // A root that cannot be read is not a root that differs
+                logged_error(format!(
+                    "grovedb root hash cannot be read after finalize_block for {}{}: {}",
+                    origin, context, err
+                ))
+            })?;
             let actual_hex = actual_hash
                 .as_ref()
                 .map(hex::encode)
@@ -396,23 +501,56 @@ where
                             actual_hex
                         )));
                     }
-                    if expected_hash != &grove_hash {
-                        if !grove_root_may_differ_from_app_hash(&app.platform.config, height) {
-                            return Err(logged_error(format!(
-                                "grovedb root mismatch for {}{}: expected 0x{}, grove 0x{}",
-                                origin,
-                                context,
-                                hex::encode(expected_hash),
-                                hex::encode(grove_hash)
-                            )));
+                    // Asked a second time only where the answer decides: the root differs at
+                    // a height the chain went on from without the block's commit
+                    let stored = match stored_before {
+                        Some(before) if expected_hash != &grove_hash => {
+                            let after = stored_block_height(app).map_err(|err| {
+                                logged_error(format!(
+                                    "the platform state the store holds cannot be read after finalize_block for {}{}: {}",
+                                    origin, context, err
+                                ))
+                            })?;
+                            Some((before, after))
                         }
-                        tracing::warn!(
-                            "grovedb root is not the app hash for {}{}: app hash 0x{}, grove 0x{}; the chain went on from such a block here, and so does the replay",
+                        _ => None,
+                    };
+                    let store = match stored {
+                        Some((before, after)) => {
+                            Some(store_after_block(u64::try_from(height)?, before, after))
+                        }
+                        None => None,
+                    };
+                    match root_after_block(expected_hash, &grove_hash, store) {
+                        RootAfterBlock::AppHash => {}
+                        RootAfterBlock::NotCommitted => tracing::warn!(
+                            "grovedb root is not the app hash for {}{}: app hash 0x{}, grove 0x{}; the store holds the platform state of block {:?}, as before finalize_block, so this block was not committed. The chain went on from such a block here, and so does the replay",
                             origin,
                             context,
                             hex::encode(expected_hash),
-                            hex::encode(grove_hash)
-                        );
+                            hex::encode(grove_hash),
+                            stored.and_then(|(_, after)| after)
+                        ),
+                        RootAfterBlock::Mismatch => {
+                            let held = match (store, stored) {
+                                (Some(StoreAfterBlock::TheBlock), _) => {
+                                    "; the store holds this block, so it was committed with a root that is not its app hash".to_owned()
+                                }
+                                (Some(_), Some((before, after))) => format!(
+                                    "; the store held the platform state of block {:?} before finalize_block and holds that of block {:?} now, which is not this block and does not show an earlier block that the store still holds",
+                                    before, after
+                                ),
+                                _ => String::new(),
+                            };
+                            return Err(logged_error(format!(
+                                "grovedb root mismatch for {}{}: expected 0x{}, grove 0x{}{}",
+                                origin,
+                                context,
+                                hex::encode(expected_hash),
+                                hex::encode(grove_hash),
+                                held
+                            )));
+                        }
                     }
                 }
                 (Some(_), None) => {
@@ -758,6 +896,134 @@ mod tests {
     }
 
     #[test]
+    fn should_take_a_root_that_is_not_the_app_hash_only_after_a_block_that_was_not_committed() {
+        let app_hash = [1u8; 32];
+        let other = [3u8; 32];
+        // The root is the app hash, whatever the store holds
+        assert_eq!(
+            root_after_block(&app_hash, &app_hash, None),
+            RootAfterBlock::AppHash
+        );
+        // At a height the chain went on from without the commit: the store holds what it
+        // held before the block
+        assert_eq!(
+            root_after_block(&app_hash, &other, Some(StoreAfterBlock::WhatItHeldBefore)),
+            RootAfterBlock::NotCommitted
+        );
+        // There too, a block that was committed has to have left its app hash for a root,
+        // and a store that holds neither the block nor what it held is no block that was
+        // not committed
+        assert_eq!(
+            root_after_block(&app_hash, &other, Some(StoreAfterBlock::TheBlock)),
+            RootAfterBlock::Mismatch
+        );
+        assert_eq!(
+            root_after_block(&app_hash, &other, Some(StoreAfterBlock::SomethingElse)),
+            RootAfterBlock::Mismatch
+        );
+        // At every other height the store is not read, and a root that is not the app hash
+        // is not taken
+        assert_eq!(
+            root_after_block(&app_hash, &other, None),
+            RootAfterBlock::Mismatch
+        );
+    }
+
+    #[test]
+    fn should_tell_by_the_block_the_store_holds_whether_a_block_was_committed() {
+        // Block 8 was committed
+        assert_eq!(
+            store_after_block(8, Some(7), Some(8)),
+            StoreAfterBlock::TheBlock
+        );
+        // It was not: the store holds what it held, the block before
+        assert_eq!(
+            store_after_block(8, Some(7), Some(7)),
+            StoreAfterBlock::WhatItHeldBefore
+        );
+        // or an earlier one, where the block before was not committed either
+        assert_eq!(
+            store_after_block(8, Some(6), Some(6)),
+            StoreAfterBlock::WhatItHeldBefore
+        );
+        // None of these shows an earlier block that the store still holds: the saved state
+        // gone, never there, of a later block, or of another earlier block than before
+        for (before, after) in [
+            (Some(7), None),
+            (None, None),
+            (Some(7), Some(9)),
+            (Some(9), Some(9)),
+            (Some(7), Some(6)),
+            (None, Some(7)),
+        ] {
+            assert_eq!(
+                store_after_block(8, before, after),
+                StoreAfterBlock::SomethingElse,
+                "{before:?} {after:?}"
+            );
+        }
+    }
+    #[test]
+    fn should_read_from_the_store_which_block_it_holds() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let app = FullAbciApplication::new(&platform.platform);
+        // Nothing was saved yet
+        assert_eq!(stored_block_height(&app).unwrap(), None);
+
+        // What the commit of block 7 leaves, and what the store goes on holding while block 8
+        // is executed and its transaction is not committed
+        let platform_version = PlatformVersion::latest();
+        let mut state = platform.platform.state.load().as_ref().clone();
+        state.set_last_committed_block_info(Some(
+            dpp::block::extended_block_info::v0::ExtendedBlockInfoV0 {
+                basic_info: dpp::block::block_info::BlockInfo {
+                    height: 7,
+                    ..Default::default()
+                },
+                app_hash: [7; 32],
+                quorum_hash: [0; 32],
+                block_id_hash: [0; 32],
+                proposer_pro_tx_hash: [0; 32],
+                signature: [0; 96],
+                round: 0,
+            }
+            .into(),
+        ));
+        platform
+            .platform
+            .store_platform_state(&state, None, platform_version)
+            .unwrap();
+        assert_eq!(stored_block_height(&app).unwrap(), Some(7));
+        let transaction = platform.platform.drive.grove.start_transaction();
+        let mut next = state.clone();
+        next.set_last_committed_block_info(Some(
+            dpp::block::extended_block_info::v0::ExtendedBlockInfoV0 {
+                basic_info: dpp::block::block_info::BlockInfo {
+                    height: 8,
+                    ..Default::default()
+                },
+                app_hash: [8; 32],
+                quorum_hash: [0; 32],
+                block_id_hash: [0; 32],
+                proposer_pro_tx_hash: [0; 32],
+                signature: [0; 96],
+                round: 0,
+            }
+            .into(),
+        ));
+        platform
+            .platform
+            .store_platform_state(&next, Some(&transaction), platform_version)
+            .unwrap();
+        assert_eq!(stored_block_height(&app).unwrap(), Some(7));
+        drop(transaction);
+        assert_eq!(stored_block_height(&app).unwrap(), Some(7));
+    }
+
+    #[test]
     fn should_pass_over_an_info_request_of_another_abci_version() {
         let platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1048,6 +1314,92 @@ mod tests {
         assert_eq!(fs::read_to_string(&report).unwrap(), "");
     }
 
+    #[test]
+    fn should_read_the_other_reports_line_before_a_process_proposal_is_executed() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        // Core has no chain lock to give a `PrepareProposal`
+        let mut core = MockCoreRPCLike::new();
+        core.expect_get_best_chain_lock().returning(|| {
+            Err(dpp::dashcore_rpc::Error::JsonRpc(
+                dpp::dashcore_rpc::jsonrpc::Error::EmptyBatch,
+            ))
+        });
+        platform.core_rpc = core;
+        let app = FullAbciApplication::new(&platform.platform);
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other.jsonl");
+        fs::write(&other, "").unwrap();
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+
+        // The other report has no line for block 1. A `PrepareProposal` is executed all the
+        // same, as it is without another report: a log may end with one. The error is the
+        // handler's, of a request that names no version
+        let prepare = LoadedRequest::Prepare(RequestPrepareProposal {
+            height: 1,
+            ..Default::default()
+        });
+        let item = ReplayItem::from_log(Path::new("/test.log"), 8, None, None, prepare);
+        let error = execute_request(&app, item, None, &mut checks)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("prepare_proposal failed for /test.log:8 (height=1, round=0): "),
+            "{error}"
+        );
+
+        // A `ProcessProposal` is not: the replay's own error, from before the handler is
+        // called
+        let process = LoadedRequest::Process(RequestProcessProposal {
+            height: 1,
+            ..Default::default()
+        });
+        let item = ReplayItem::from_log(Path::new("/test.log"), 9, None, None, process);
+        let error = execute_request(&app, item, None, &mut checks)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            format!(
+                "replay stops before process_proposal for /test.log:9 (height=1, round=0):\nreport {} has no line for height 1: it ends before",
+                other.display()
+            )
+        );
+        assert_eq!(fs::read_to_string(&report).unwrap(), "");
+    }
+
+    #[test]
+    fn should_execute_nothing_of_a_block_the_other_report_has_no_line_for() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other.jsonl");
+        fs::write(&other, "").unwrap();
+        let report = dir.path().join("report.jsonl");
+        let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+
+        // A height after the first block: the handler of such a request begins a transaction
+        // before it looks at the request any further
+        let process = LoadedRequest::Process(RequestProcessProposal {
+            height: 2,
+            ..Default::default()
+        });
+        let item = ReplayItem::from_log(Path::new("/test.log"), 9, None, None, process);
+        let error = execute_request(&app, item, None, &mut checks)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("replay stops before process_proposal for "),
+            "{error}"
+        );
+        // No transaction was begun, and no proposal left a context
+        assert!(app.transaction.read().unwrap().is_none());
+        assert!(app.block_execution_context.read().unwrap().is_none());
+    }
     #[test]
     fn should_carry_the_logged_answer_with_the_request() {
         let item = ReplayItem::from_log(

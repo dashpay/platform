@@ -574,7 +574,11 @@ fn not_ready(response: &Response) -> Option<&RpcError> {
 /// see `Shared::fail`). Where Core gives no answer (an error of the connection, or its error
 /// for a node that is not ready) the request is asked again here, `TRIES` times in all, and
 /// not handed up for the client to ask again: when the client gives up, what asked through
-/// it may go on, and nothing in the file would say that it did so without an answer.
+/// it may go on, and nothing in the file would say that it did so without an answer. Those
+/// are the errors the node's client asks again after. After any other error of a request
+/// (a reply with HTTP status 200 whose body is no JSON, for one; with another status it is
+/// an error of the connection) the node's client does not, so the recording asks no more and
+/// has failed: an answer to a second try would be one the node had not been given.
 struct Recording<T> {
     core: T,
     shared: Arc<Shared>,
@@ -606,7 +610,20 @@ impl<T: Transport> Transport for Recording<T> {
                     );
                     return Err(self.shared.fail(&mut self.shared.lock(), message));
                 }
-                Err(error) => error.to_string(),
+                // What the node's client asks again after: an error of the connection
+                Err(error @ jsonrpc::Error::Transport(_)) => error.to_string(),
+                // Any other error the node's client hands to block execution at once, and no
+                // later answer may stand in the file for it
+                Err(error) => {
+                    let message = format!(
+                        "Core's reply to `{}` {} is no answer: {}; the node's client does not ask again after such an error, and the recording ends here, since {} holds answers of Core and nothing else",
+                        method,
+                        params,
+                        error,
+                        self.shared.path.display()
+                    );
+                    return Err(self.shared.fail(&mut self.shared.lock(), message));
+                }
             };
             if tries == TRIES {
                 let message = format!(
@@ -1314,13 +1331,40 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = answers_path(&dir);
 
-        let (answers, client, asked) =
-            recording(&path, vec![Err(jsonrpc::Error::EmptyBatch), hash(HASH_100)]);
+        let (answers, client, asked) = recording(&path, vec![away(), hash(HASH_100)]);
         assert_eq!(ask(&client, 100).unwrap(), HASH_100);
         assert_eq!(asked.lock().unwrap().len(), 2);
         assert_eq!(answers.failure(), None);
         assert_eq!(answers.summary().held, 1);
         assert_eq!(answers.summary().added, 1);
+    }
+
+    #[test]
+    fn should_end_a_recording_at_an_error_the_node_client_does_not_ask_again_after() {
+        // A reply that is no JSON, which the node's client hands to block execution as the
+        // error it is, and another error that is none of the connection
+        let no_json = || {
+            jsonrpc::Error::Json(serde_json::from_str::<serde_json::Value>("<html>").unwrap_err())
+        };
+        for error in [no_json(), jsonrpc::Error::EmptyBatch] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = answers_path(&dir);
+            let said = error.to_string();
+            // Core would have answered a second try
+            let (answers, client, asked) = recording(&path, vec![Err(error), hash(HASH_100)]);
+            let expected = format!(
+                "Core's reply to `getblockhash` [100] is no answer: {}; the node's client does not ask again after such an error, and the recording ends here, since {} holds answers of Core and nothing else",
+                said,
+                path.display()
+            );
+            let noted = ask(&client, 100).unwrap_err();
+            assert!(noted.contains(&expected), "{noted}");
+            // It was not asked again: the answer to a second try is one the node would not
+            // have been given
+            assert_eq!(asked.lock().unwrap().len(), 1);
+            assert_eq!(answers.failure(), Some(expected));
+            assert_eq!(fs::read_to_string(&path).unwrap(), FORMAT_LINE);
+        }
     }
 
     #[test]
