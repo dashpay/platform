@@ -819,7 +819,9 @@ func fetchKeysRemainingBudgets(
 ```
 
 Defined on `SDK`. Each value is the credits left to that key, or `nil` for a
-key that carries no budget or that the identity does not have.
+key that carries no budget or that the identity does not have. The network
+read runs on the SDK's query queue, so awaiting it does not hold the caller's
+actor.
 
 ## See Also
 

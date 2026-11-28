@@ -51,13 +51,11 @@ final class PlatformQueryOffMainTests: XCTestCase {
     var description: String { message }
   }
 
-  /// `identityGet` and `dpnsGetUsername` make their FFI call without the
-  /// main actor: the main thread is held for the whole of both calls, and
-  /// each still returns (with the mock's missing-expectation error) before it
-  /// is released. A call that needed the main actor would wait until the hold
-  /// timed out.
-  func testIdentityReadsDoNotNeedTheMainActor() async throws {
-    let sdk = try SDK(mockVectorsDirectory: nil)
+  /// Hold the main thread until the returned closure is called. The closure
+  /// answers whether the hold was still in place when it was called: `false`
+  /// means the hold timed out first, so the work done meanwhile may have
+  /// waited for the main actor.
+  private func holdMainThread() async throws -> @Sendable () -> Bool {
     let mainHeld = DispatchSemaphore(value: 0)
     let releaseMain = DispatchSemaphore(value: 0)
     let holdTimedOut = OSAllocatedUnfairLock(initialState: false)
@@ -80,6 +78,22 @@ final class PlatformQueryOffMainTests: XCTestCase {
       }
     }
 
+    return {
+      let stillHeld = !holdTimedOut.withLock { $0 }
+      releaseMain.signal()
+      return stillHeld
+    }
+  }
+
+  /// `identityGet` and `dpnsGetUsername` make their FFI call without the
+  /// main actor: the main thread is held for the whole of both calls, and
+  /// each still returns (with the mock's missing-expectation error) before it
+  /// is released. A call that needed the main actor would wait until the hold
+  /// timed out.
+  func testIdentityReadsDoNotNeedTheMainActor() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    let releaseMain = try await holdMainThread()
+
     do {
       _ = try await sdk.identityGet(identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk")
       XCTFail("identityGet should fail without recorded responses")
@@ -95,10 +109,82 @@ final class PlatformQueryOffMainTests: XCTestCase {
       XCTFail("dpnsGetUsername must reach the FFI, not fail on an unavailable SDK handle")
     } catch {}
 
-    let returnedWhileMainWasHeld = !holdTimedOut.withLock { $0 }
-    releaseMain.signal()
+    XCTAssertTrue(releaseMain(), "an identity read waited for the main actor")
+  }
+
+  /// `getCurrentEpoch`, `identityGetContractKeys` and
+  /// `fetchKeysRemainingBudgets` make their FFI call without the main actor,
+  /// checked the same way as the identity reads above.
+  func testEpochContractKeysAndBudgetReadsDoNotNeedTheMainActor() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    let identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"
+    let releaseMain = try await holdMainThread()
+
+    do {
+      _ = try await sdk.getCurrentEpoch()
+      XCTFail("getCurrentEpoch should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("getCurrentEpoch must reach the FFI, not fail on an unavailable SDK handle")
+    } catch {}
+
+    do {
+      _ = try await sdk.identityGetContractKeys(
+        identityIds: [identityId],
+        contractId: DPNSVotePoll.contractId,
+        documentType: nil,
+        purposes: ["1", "2"])
+      XCTFail("identityGetContractKeys should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("identityGetContractKeys must reach the FFI, not fail on an unavailable SDK handle")
+    } catch {}
+
+    do {
+      _ = try await sdk.fetchKeysRemainingBudgets(identityId: identityId, keyIds: [10, 11])
+      XCTFail("fetchKeysRemainingBudgets should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("fetchKeysRemainingBudgets must reach the FFI, not fail on an unavailable SDK handle")
+    } catch {}
+
     XCTAssertTrue(
-      returnedWhileMainWasHeld, "an identity read waited for the main actor")
+      releaseMain(), "an epoch, contract keys or key budgets read waited for the main actor")
+  }
+
+  /// No key ids is refused before any call is made.
+  func testKeysRemainingBudgetsRefusesNoKeyIds() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    do {
+      _ = try await sdk.fetchKeysRemainingBudgets(
+        identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk", keyIds: [])
+      XCTFail("fetchKeysRemainingBudgets should refuse an empty key id list")
+    } catch SDKError.invalidParameter {
+    } catch {
+      XCTFail("expected SDKError.invalidParameter, got \(error)")
+    }
+  }
+
+  /// A budget arrives as a decimal string, and a key with no budget as null,
+  /// which stays in the result as an entry holding `nil`.
+  func testKeysRemainingBudgetsAnswerIsParsed() throws {
+    let budgets = try SDK.parseKeysRemainingBudgets([
+      "10": "400", "11": NSNull(), "12": "18446744073709551615",
+    ])
+
+    XCTAssertEqual(budgets.count, 3)
+    XCTAssertEqual(budgets[10], .some(.some(400)))
+    XCTAssertEqual(budgets[11], .some(.none))
+    XCTAssertEqual(budgets[12], .some(.some(UInt64.max)))
+  }
+
+  /// A budget that is not a decimal string, or a key id that is not a
+  /// number, is an unreadable answer and not a missing budget.
+  func testKeysRemainingBudgetsAnswerRefusesWhatItCannotRead() {
+    for answer: [String: Any] in [["10": 400], ["ten": "400"], ["10": "-1"]] {
+      XCTAssertThrowsError(try SDK.parseKeysRemainingBudgets(answer)) { error in
+        guard case SDKError.serializationError = error else {
+          return XCTFail("expected SDKError.serializationError, got \(error)")
+        }
+      }
+    }
   }
 
   /// The off-main entry points marshal their arguments, make the FFI call and
