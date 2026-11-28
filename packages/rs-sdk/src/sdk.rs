@@ -67,6 +67,8 @@ pub(crate) mod put_test_support;
 pub(crate) mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
+#[cfg(all(test, feature = "mocks", feature = "core_key_wallet"))]
+mod top_up_tests;
 #[cfg(all(test, feature = "mocks"))]
 mod verified_provider_tests;
 

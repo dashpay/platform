@@ -36,6 +36,10 @@ use dpp::prelude::AssetLockProof;
 use super::put_settings::PutSettings;
 use crate::Error;
 
+tokio::task_local! {
+    static CL_HEIGHT_RETRY_ACTIVE: ();
+}
+
 /// Delay between retries when Platform rejected with CL-height-too-low.
 /// Each retry bumps `PutSettings::user_fee_increase` so the ST hash
 /// changes (Tenderdash caches rejected ST hashes for ~24h on
@@ -262,6 +266,10 @@ fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
 /// identical-bytes resubmit would get the cached CheckTx rejection back
 /// without reaching Platform's CheckTx again.
 ///
+/// Nested calls awaited inside `submit` make one attempt: the outer call owns
+/// the delay, fee bumps and budget. The scope is per future, so concurrent
+/// submissions keep independent budgets; it is not inherited by spawned tasks.
+///
 /// **Retry scope.** This wrapper retries ONLY consensus code 10506
 /// (CL-height-too-low). Every other `Error` — including
 /// transient gRPC `UNAVAILABLE`, DAPI 502/503, RST_STREAM, TLS
@@ -323,11 +331,17 @@ where
     F: Fn(Option<PutSettings>) -> Fut,
     Fut: std::future::Future<Output = Result<R, Error>>,
 {
+    if CL_HEIGHT_RETRY_ACTIVE.try_with(|()| ()).is_ok() {
+        return submit(settings).await;
+    }
     let elapsed_since_start = retry_clock();
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
-        match submit(settings).await {
+        match CL_HEIGHT_RETRY_ACTIVE
+            .scope((), async { submit(settings).await })
+            .await
+        {
             Ok(r) => return Ok(r),
             Err(e) => {
                 let Some(detail) = as_asset_lock_proof_cl_height_too_low(&e) else {
@@ -545,6 +559,45 @@ mod tests {
             vec![None, Some(1)],
             "the second attempt must carry a bumped user_fee_increase"
         );
+    }
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_concurrent_retry_budgets_independent() {
+        // Both futures share a task/thread and yield inside submission, where the scope is active.
+        let retry = || {
+            submit_with_cl_height_retry(None, |settings| async move {
+                tokio::task::yield_now().await;
+                if settings.and_then(|s| s.user_fee_increase) == Some(1) {
+                    Ok(())
+                } else {
+                    Err(fabricate_cl_height_too_low_error())
+                }
+            })
+        };
+        let started = tokio::time::Instant::now();
+        let (first, second) = tokio::join!(retry(), retry());
+        assert!(first.is_ok());
+        assert!(second.is_ok());
+        assert_eq!(started.elapsed(), CL_HEIGHT_RETRY_DELAY);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_release_retry_ownership_after_cancellation() {
+        let pending =
+            submit_with_cl_height_retry(None, |_| std::future::pending::<Result<(), Error>>());
+        assert!(tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .is_err());
+        let started = tokio::time::Instant::now();
+        let result = submit_with_cl_height_retry(None, |settings| async move {
+            if settings.and_then(|s| s.user_fee_increase) == Some(1) {
+                Ok(())
+            } else {
+                Err(fabricate_cl_height_too_low_error())
+            }
+        })
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(started.elapsed(), CL_HEIGHT_RETRY_DELAY);
     }
 }
 

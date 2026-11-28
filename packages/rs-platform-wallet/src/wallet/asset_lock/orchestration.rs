@@ -304,6 +304,30 @@ pub(crate) fn out_point_from_proof(proof: &AssetLockProof) -> OutPoint {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Reconcile a top-up, including the SDK's exact-transition duplicate signal.
+    /// The signal is unauthenticated: retain consumption-unknown state, just as
+    /// for a consumed-outpoint report, without attributing credits to this call.
+    pub(crate) async fn reconcile_identity_top_up_result<T>(
+        &self,
+        result: Result<T, dash_sdk::Error>,
+        out_point: &OutPoint,
+        effective_proof: &AssetLockProof,
+        chain_lock_timeout: Option<Duration>,
+    ) -> Result<T, PlatformWalletError> {
+        if matches!(&result, Err(dash_sdk::Error::AlreadyExists(_))) {
+            return self
+                .reconcile_consumed_asset_lock(out_point, effective_proof, chain_lock_timeout)
+                .await;
+        }
+        self.reconcile_asset_lock_submit_result(
+            result,
+            out_point,
+            effective_proof,
+            chain_lock_timeout,
+        )
+        .await
+    }
+
     /// Normalize the final result of an asset-lock-funded Platform submit.
     ///
     /// A matching `already consumed` consensus response is not authenticated,
@@ -341,6 +365,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             return Err(PlatformWalletError::Sdk(error));
         }
 
+        self.reconcile_consumed_asset_lock(out_point, effective_proof, chain_lock_timeout)
+            .await
+    }
+
+    async fn reconcile_consumed_asset_lock<T>(
+        &self,
+        out_point: &OutPoint,
+        effective_proof: &AssetLockProof,
+        chain_lock_timeout: Option<Duration>,
+    ) -> Result<T, PlatformWalletError> {
         let chain_proof = match effective_proof {
             AssetLockProof::Chain(_) => Some(effective_proof.clone()),
             AssetLockProof::Instant(_) => {
@@ -353,8 +387,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // signal, let the caller retry.
                     //
                     // Deliberately a catch-all, not `FinalityTimeout`-only.
-                    // The code-24 classification above came from Platform's
-                    // outpoint-matched consensus error, not from this local
+                    // The code-24 classification came from Platform's matching
+                    // consumed-outpoint or top-up duplicate signal, not this local
                     // lookup, so a `WalletNotFound` / `AssetLockProofWait`
                     // (lock untracked after a restore, persister failure)
                     // does not invalidate it — the
@@ -771,7 +805,7 @@ fn validate_existing_asset_lock_role(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -889,7 +923,8 @@ mod tests {
     // -----------------------------------------------------------------
 
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
     use crate::test_support::{
         funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
@@ -899,9 +934,177 @@ mod tests {
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
     use key_wallet::managed_account::transaction_record::TransactionRecord;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    pub(crate) struct ReconciliationPersistence {
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+        pub(crate) flushed: Mutex<bool>,
+    }
+
+    impl ReconciliationPersistence {
+        pub(crate) fn assert_recovered_asset_lock(
+            &self,
+            lock: &TrackedAssetLock,
+            proof: AssetLockProof,
+        ) {
+            assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+            assert_eq!(lock.proof, Some(proof));
+            let stored = self.stored.lock().unwrap();
+            let entry = &stored
+                .last()
+                .unwrap()
+                .asset_locks
+                .as_ref()
+                .unwrap()
+                .asset_locks[&lock.out_point];
+            assert_eq!(entry.status, AssetLockStatus::RecoveredFromChain);
+            assert!(*self.flushed.lock().unwrap());
+        }
+    }
+
+    impl PlatformWalletPersistence for ReconciliationPersistence {
+        fn persistence_capabilities(&self) -> PersistenceCapabilities {
+            PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
+        }
+
+        fn store(
+            &self,
+            _: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored.lock().unwrap().push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+            *self.flushed.lock().unwrap() = true;
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reconcile_duplicate_top_up_like_consumed_outpoint() {
+        for duplicate in [false, true] {
+            let persistence = Arc::new(ReconciliationPersistence::default());
+            let ctx = instant_reconciliation_context_with(persistence.clone()).await;
+            *persistence.flushed.lock().unwrap() = false;
+            let proof = AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: 100,
+                out_point: ctx.out_point,
+            });
+            let error = if duplicate {
+                dash_sdk::Error::AlreadyExists("state transition already in chain".into())
+            } else {
+                already_consumed_error(ctx.out_point)
+            };
+            let result = ctx
+                .manager
+                .reconcile_identity_top_up_result::<()>(Err(error), &ctx.out_point, &proof, None)
+                .await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::AssetLockAlreadyConsumed(actual))
+                if actual == ctx.out_point),
+                "{result:?}"
+            );
+            let wm = ctx.wallet_manager.read().await;
+            let lock = &wm
+                .get_wallet_info(&ctx.wallet_id)
+                .unwrap()
+                .tracked_asset_locks[&ctx.out_point];
+            persistence.assert_recovered_asset_lock(lock, proof);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_preserve_duplicate_top_up_signal_when_chain_proof_unavailable() {
+        let ctx = instant_reconciliation_context().await;
+        let result = ctx
+            .manager
+            .reconcile_identity_top_up_result::<()>(
+                Err(dash_sdk::Error::AlreadyExists(
+                    "state transition already in chain".into(),
+                )),
+                &ctx.out_point,
+                &ctx.instant_proof,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::AssetLockAlreadyConsumed(actual))
+            if actual == ctx.out_point),
+            "{result:?}"
+        );
+        let wm = ctx.wallet_manager.read().await;
+        let lock = &wm
+            .get_wallet_info(&ctx.wallet_id)
+            .unwrap()
+            .tracked_asset_locks[&ctx.out_point];
+        assert_eq!(lock.status, AssetLockStatus::InstantSendLocked);
+        assert_eq!(lock.proof, Some(ctx.instant_proof));
+    }
+
+    #[tokio::test]
+    async fn should_not_reconcile_unconfirmed_duplicate_or_other_submit_as_top_up() {
+        let ctx = instant_reconciliation_context().await;
+        let result = ctx
+            .manager
+            .reconcile_identity_top_up_result::<()>(
+                Err(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                    dash_sdk::Error::AlreadyExists("tx already exists in cache".into()),
+                ))),
+                &ctx.out_point,
+                &ctx.instant_proof,
+                None,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::Sdk(
+                dash_sdk::Error::StateTransitionResultUnconfirmed(_)
+            ))
+        ));
+        let result = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(dash_sdk::Error::AlreadyExists(
+                    "tx already exists in cache".into(),
+                )),
+                &ctx.out_point,
+                &ctx.instant_proof,
+                None,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::Sdk(dash_sdk::Error::AlreadyExists(_)))
+        ));
+        assert_eq!(
+            ctx.manager
+                .reconcile_identity_top_up_result(
+                    Ok(42u64),
+                    &ctx.out_point,
+                    &ctx.instant_proof,
+                    None,
+                )
+                .await
+                .unwrap(),
+            42
+        );
+        let wm = ctx.wallet_manager.read().await;
+        let lock = &wm
+            .get_wallet_info(&ctx.wallet_id)
+            .unwrap()
+            .tracked_asset_locks[&ctx.out_point];
+        assert_eq!(lock.status, AssetLockStatus::InstantSendLocked);
+    }
 
     /// Shared fixture: a funded wallet with ONE tracked, IS-locked asset
     /// lock whose effective proof is an Instant proof — the shape that

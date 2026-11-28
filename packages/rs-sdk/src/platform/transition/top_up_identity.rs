@@ -1,20 +1,35 @@
-use super::broadcast::BroadcastStateTransition;
+use super::asset_lock_submission::submit_with_cl_height_retry;
+use super::broadcast::{
+    broadcast_may_have_been_accepted, convert_proof_result, BroadcastStateTransition,
+    WaitForOutcome,
+};
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::{Error, Sdk};
-#[cfg(feature = "core_key_wallet")]
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::{Identity, PartialIdentity};
 use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::StateTransition;
 
 #[async_trait::async_trait]
 pub trait TopUpIdentity: Waitable {
     /// Tops up an existing identity using an asset lock proof whose
     /// private key is held in-process.
+    ///
+    /// [`Error::AlreadyExists`] means this exact transition (same hash) is already
+    /// accepted by Platform, credited by an earlier call or an earlier attempt of
+    /// this call. The asset lock is consumed: refresh the balance instead of
+    /// reporting this call's credit amount or resubmitting the lock. Unresolved
+    /// delivery stays [`Error::StateTransitionResultUnconfirmed`].
+    ///
+    /// Definite ChainLock-height lag is retried within a roughly 210-second budget;
+    /// network calls can extend elapsed time beyond it. Each retry increments
+    /// `user_fee_increase` by one and re-signs, raising the processing fee charged
+    /// to the lock. Cancelling mid-retry does not prove non-delivery of an attempt.
     ///
     /// Prefer [`Self::top_up_identity_with_signer`] when the asset-lock
     /// private key lives outside Rust (Swift / hardware wallet / HSM):
@@ -36,6 +51,17 @@ pub trait TopUpIdentity: Waitable {
     /// produces the outer state-transition ECDSA signature for the key
     /// at `asset_lock_proof_path` — atomically deriving, signing, and
     /// zeroising inside the signer's trust boundary.
+    ///
+    /// [`Error::AlreadyExists`] means this exact transition (same hash) is already
+    /// accepted by Platform, credited by an earlier call or an earlier attempt of
+    /// this call. The lock is consumed: refresh the balance; do not report this
+    /// call's credit amount or resubmit the lock. Unresolved delivery stays
+    /// [`Error::StateTransitionResultUnconfirmed`].
+    ///
+    /// As with [`Self::top_up_identity_with_private_key`], height retries have a
+    /// roughly 210-second budget (network calls can extend elapsed time). Each retry
+    /// increments `user_fee_increase` by one and re-signs, raising the processing
+    /// fee. Cancelling mid-retry does not prove non-delivery.
     #[cfg(feature = "core_key_wallet")]
     async fn top_up_identity_with_signer<AS>(
         &self,
@@ -52,7 +78,17 @@ pub trait TopUpIdentity: Waitable {
 /// Balance operations that also expose the committed proof metadata.
 #[async_trait::async_trait]
 pub trait TopUpIdentityWithMetadata: Waitable {
-    /// Returns the confirmed balance result and its proof metadata.
+    /// Returns the balance snapshot and its proof metadata after an acknowledged submission.
+    ///
+    /// [`Error::AlreadyExists`] means the same transition hash is already accepted
+    /// and credited by an earlier call or attempt of this call. The lock is consumed:
+    /// refresh the balance; do not report this call's credit amount or resubmit it.
+    /// Unresolved delivery stays [`Error::StateTransitionResultUnconfirmed`].
+    ///
+    /// As with [`TopUpIdentity::top_up_identity_with_private_key`], height retries
+    /// have a roughly 210-second budget (network calls can extend elapsed time).
+    /// Each retry increments `user_fee_increase` by one and re-signs, raising the
+    /// processing fee. Cancelling mid-retry does not prove non-delivery.
     #[cfg(feature = "core_key_wallet")]
     async fn top_up_identity_with_signer_with_metadata<AS>(
         &self,
@@ -75,25 +111,25 @@ impl TopUpIdentity for Identity {
         asset_lock_proof_private_key: &PrivateKey,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        let user_fee_increase = settings
-            .and_then(|s| s.user_fee_increase)
-            .unwrap_or_default();
-        let state_transition = IdentityTopUpTransition::try_from_identity_with_private_key(
-            self,
-            asset_lock_proof,
-            &asset_lock_proof_private_key.inner.to_bytes()[..],
-            user_fee_increase,
-            sdk.version(),
-            None,
-        )?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let identity: PartialIdentity = state_transition
-            .broadcast_and_wait_for_affected_state(sdk, settings)
-            .await?;
-
-        identity
-            .balance
-            .ok_or(Error::Generic("expected an identity balance".to_string()))
+        submit_with_cl_height_retry(settings, |settings| {
+            let asset_lock_proof = asset_lock_proof.clone();
+            async move {
+                let user_fee_increase = settings
+                    .and_then(|s| s.user_fee_increase)
+                    .unwrap_or_default();
+                let state_transition = IdentityTopUpTransition::try_from_identity_with_private_key(
+                    self,
+                    asset_lock_proof,
+                    &asset_lock_proof_private_key.inner.to_bytes()[..],
+                    user_fee_increase,
+                    sdk.version(),
+                    None,
+                )?;
+                submit_top_up(sdk, state_transition, settings).await
+            }
+        })
+        .await
+        .map(|(balance, _)| balance)
     }
 
     #[cfg(feature = "core_key_wallet")]
@@ -134,27 +170,63 @@ impl TopUpIdentityWithMetadata for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        let user_fee_increase = settings
-            .and_then(|s| s.user_fee_increase)
-            .unwrap_or_default();
-        let state_transition = IdentityTopUpTransition::try_from_identity_with_signer(
-            self,
-            asset_lock_proof,
-            asset_lock_proof_path,
-            asset_lock_signer,
-            user_fee_increase,
-            sdk.version(),
-            None,
-        )
-        .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let (identity, metadata): (PartialIdentity, _) = state_transition
-            .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)
-            .await?;
+        submit_with_cl_height_retry(settings, |settings| {
+            let asset_lock_proof = asset_lock_proof.clone();
+            async move {
+                let user_fee_increase = settings
+                    .and_then(|s| s.user_fee_increase)
+                    .unwrap_or_default();
+                let state_transition = IdentityTopUpTransition::try_from_identity_with_signer(
+                    self,
+                    asset_lock_proof,
+                    asset_lock_proof_path,
+                    asset_lock_signer,
+                    user_fee_increase,
+                    sdk.version(),
+                    None,
+                )
+                .await?;
+                submit_top_up(sdk, state_transition, settings).await
+            }
+        })
+        .await
+    }
+}
 
-        identity
-            .balance
-            .ok_or(Error::Generic("expected an identity balance".to_string()))
-            .map(|balance| (balance, metadata))
+/// A balance snapshot cannot resolve a duplicate or uncertain top-up submission.
+async fn submit_top_up(
+    sdk: &Sdk,
+    state_transition: StateTransition,
+    settings: Option<PutSettings>,
+) -> Result<(u64, ResponseMetadata), Error> {
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+    let broadcast_error = match state_transition.broadcast(sdk, settings).await {
+        Ok(()) => None,
+        Err(error) if broadcast_may_have_been_accepted(&error) => Some(error),
+        Err(error) => return Err(error),
+    };
+    let (outcome, metadata) = state_transition
+        .wait_for_outcome_with_metadata(sdk, settings)
+        .await
+        .map_err(Error::into_unconfirmed)?;
+    if let Some(error) = broadcast_error {
+        return Err(top_up_submission_error(error));
+    }
+    let identity: PartialIdentity =
+        convert_proof_result(outcome.into_result()).map_err(Error::into_unconfirmed)?;
+    identity
+        .balance
+        .ok_or(Error::Generic("expected an identity balance".to_string()))
+        .map(|balance| (balance, metadata))
+}
+
+fn top_up_submission_error(error: Error) -> Error {
+    if !error.is_already_exists() {
+        return error.into_unconfirmed();
+    }
+    match error {
+        Error::StateTransitionResultUnconfirmed(inner)
+        | Error::NoAvailableAddressesToRetry(inner) => top_up_submission_error(*inner),
+        duplicate => duplicate,
     }
 }
