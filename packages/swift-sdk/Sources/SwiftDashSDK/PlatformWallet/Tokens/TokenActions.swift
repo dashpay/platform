@@ -783,8 +783,12 @@ extension ManagedPlatformWallet {
         let jsonString = String(cString: cStr)
         guard let data = jsonString.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // Every caller (transfer, burn, mint) is a paid write Rust
+            // reported as done: the balances it returns may not decode, but
+            // the transition already went out.
             throw PlatformWalletError.deserialization(
-                "failed to parse token balances JSON: \(jsonString)"
+                "failed to parse token balances JSON: \(jsonString)",
+                payment: .maybeSent
             )
         }
 
