@@ -177,8 +177,11 @@ impl Checkpoint {
     ///
     /// On LigninDB the removal is the engine's alone, and its error is the error of the
     /// call: a directory that the engine refuses stays, and the engine can fail after the
-    /// directory is gone. It also removes the directory beside `path` in which a creation
-    /// of a checkpoint at `path` was cut short.
+    /// directory is gone. It also removes the directory beside `path` under the name a
+    /// checkpoint at `path` is built under, where that lists nothing but what a creation
+    /// puts there. One that lists anything else stays as it was: a deletion of a
+    /// checkpoint passes it over, and where nothing is at `path` the engine's error is
+    /// returned.
     pub fn delete_closed(path: &Path, engine: StorageEngine) -> std::io::Result<()> {
         delete_closed_checkpoint(path, engine)
     }
@@ -504,6 +507,7 @@ fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
 mod checkpoint_tests {
     use super::{Checkpoint, Drive};
     use crate::config::StorageEngine;
+    use grovedb::engine::either::lignindb::checkpoint::CREATING_SUFFIX;
     use std::path::{Path, PathBuf};
 
     /// A database with a checkpoint of it at `<directory>/checkpoints/7`, opened, on the
@@ -585,6 +589,43 @@ mod checkpoint_tests {
         std::fs::create_dir(&empty).expect("an empty directory");
         Checkpoint::delete_closed(&empty, live.storage_engine()).expect("the directory removed");
         assert!(!empty.exists());
+    }
+
+    /// A directory beside a checkpoint's path, under the name LigninDB builds a checkpoint
+    /// under, that holds what no creation puts there stays as it was. The deletion of the
+    /// checkpoint passes it over. A deletion at the path once the checkpoint is gone has
+    /// nothing to remove: on LigninDB the engine refuses the directory beside and its error
+    /// is returned, and RocksDB's deletion does not look beside the path.
+    #[test]
+    fn a_deletion_leaves_a_directory_beside_the_path_that_no_creation_left() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let (live, checkpoint, path) = checkpoint_in(directory.path());
+        drop(checkpoint);
+        let engine = live.storage_engine();
+        let beside = path.with_file_name(format!("7{CREATING_SUFFIX}"));
+        std::fs::create_dir(&beside).expect("a directory beside the checkpoint");
+        std::fs::write(beside.join("note"), b"a note").expect("a file no creation puts there");
+        let as_it_was = |beside: &Path| {
+            let entries = std::fs::read_dir(beside).expect("the entries").count();
+            let note = std::fs::read(beside.join("note")).expect("the file");
+            entries == 1 && note == b"a note"
+        };
+
+        Checkpoint::delete_closed(&path, engine).expect("the checkpoint deleted");
+        assert!(!path.exists());
+        assert!(as_it_was(&beside), "the deletion changed the directory");
+
+        let with_none_there = Checkpoint::delete_closed(&path, engine);
+        match engine {
+            StorageEngine::RocksDb => with_none_there.expect("nothing to delete"),
+            StorageEngine::LigninDb => {
+                with_none_there.expect_err("the engine took a directory that no creation left");
+            }
+        }
+        assert!(
+            as_it_was(&beside),
+            "the second deletion changed the directory"
+        );
     }
 
     /// A checkpoint that holds a file of the node beside its database is deleted whole.

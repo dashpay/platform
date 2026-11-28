@@ -272,9 +272,9 @@ const LIGNINDB_MANIFEST: &str = "MANIFEST";
 /// or a deletion of a checkpoint left that was cut short:
 ///
 /// - a directory under the name a checkpoint of a height is built under. LigninDB then
-///   removes it only where it lists nothing but what a creation puts there, its lock file
-///   and the directory the checkpoint is built in. One that lists anything else is
-///   refused by the removal and stays as it was, or
+///   removes it only where it lists nothing but what a creation puts there, its lock
+///   file, empty, and the directory the checkpoint is built in. One that lists anything
+///   else is refused by the removal and stays as it was, or
 /// - a directory named after a height that holds a file with the name of a deletion's
 ///   mark and nothing with the name of the manifest. LigninDB then removes it only where
 ///   the mark holds a manifest.
@@ -854,6 +854,37 @@ mod tests {
         assert_eq!(
             std::fs::read(being_made.join("part")).expect("the file"),
             b"a part"
+        );
+    }
+
+    /// A database of RocksDB under a name with the ending LigninDB builds a checkpoint
+    /// under is opened as under any other name. Where the engine is chosen at the open, a
+    /// path of such a name that holds no database is refused for RocksDB, and nothing is
+    /// made or written there: LigninDB may be building a checkpoint under it.
+    #[test]
+    fn a_database_of_rocksdb_under_the_staging_ending_is_opened_and_none_is_made_there() {
+        let engine = StorageEngine::RocksDb;
+        let directory = tempfile::tempdir().expect("a directory");
+        let made = directory.path().join("db");
+        drop(Drive::open(&made, Some(on(engine))).expect("a database"));
+        let renamed = directory.path().join(format!("db{CREATING_SUFFIX}"));
+        std::fs::rename(&made, &renamed).expect("the database under the ending");
+        let (drive, _) = Drive::open(&renamed, Some(on(engine))).expect("the database again");
+        assert_eq!(drive.storage_engine(), engine);
+        drop(drive);
+
+        if !the_engine_is_chosen_at_the_open() {
+            return;
+        }
+        let none = directory.path().join(format!("none{CREATING_SUFFIX}"));
+        assert!(Drive::open(&none, Some(on(engine))).is_err());
+        assert!(!none.exists(), "a refused open made the directory");
+        let empty = directory.path().join(format!("empty{CREATING_SUFFIX}"));
+        std::fs::create_dir(&empty).expect("an empty directory");
+        assert!(Drive::open(&empty, Some(on(engine))).is_err());
+        assert!(
+            contents(&empty).is_empty(),
+            "a refused open wrote to the directory"
         );
     }
 
