@@ -146,12 +146,24 @@ data class PaymentFailure(
 
         /**
          * The failure a payment screen keeps after [error]: [error]'s own
-         * ([ofPayment]), or [previous] when [error] is not an SDK error. Such
+         * ([ofPayment], with [invitationVoucher] as there), or [previous]
+         * when [error] is not an SDK error. Such
          * a throwable says nothing about the payment, so it never clears a
          * hold an earlier failure put on the form.
          */
-        fun keptAfter(previous: PaymentFailure?, error: Throwable): PaymentFailure? =
-            ofPayment(error) ?: previous
+        fun keptAfter(
+            previous: PaymentFailure?,
+            error: Throwable,
+            invitationVoucher: Boolean = false,
+        ): PaymentFailure? = ofPayment(error, invitationVoucher) ?: previous
+
+        /**
+         * Whether a screen may start a fresh payment after [failure], the
+         * last one it kept: never while that failure holds its slot
+         * ([holdsSlot]). Every payment screen's submit control and its action
+         * read this.
+         */
+        fun permitsFreshPayment(failure: PaymentFailure?): Boolean = failure?.holdsSlot != true
 
         /** The outpoint a resume call takes, from its wire-order txid and vout. */
         fun outPoint(txid: ByteArray, vout: Int): AssetLockBuiltOutPoint =

@@ -42,6 +42,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.ui.components.EmissionKey
+import org.dashfoundation.example.ui.components.ReleasePaymentHoldButton
 import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.parseDashToDuffs
@@ -108,6 +109,11 @@ fun CreateInvitationSheet(
     var sendRequestBack by remember { mutableStateOf(true) }
     var isCreating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // The last failed create, presented by its payment class; Create stays
+    // off while it holds its slot (invitationCreatePermittedAfter) until a
+    // create succeeds, a later one is NOT_SENT, the user releases it after
+    // checking the history, or leaves the sheet.
+    var failure by remember { mutableStateOf<PaymentFailure?>(null) }
     var createdLink by remember { mutableStateOf<String?>(null) }
     val didCopy = remember { mutableStateOf(false) }
 
@@ -126,7 +132,7 @@ fun CreateInvitationSheet(
     }
 
     fun create() {
-        if (isCreating) return
+        if (isCreating || !invitationCreatePermittedAfter(failure)) return
         val amountDuffs = parseDashToDuffs(amountText)
         if (amountDuffs == null || amountDuffs <= 0) {
             errorMessage = "Enter a valid DASH amount."
@@ -152,12 +158,19 @@ fun CreateInvitationSheet(
                     coreSignerHandle = mgr.mnemonicResolverHandle,
                 )
                 createdLink = link
+                failure = null
             } catch (t: Throwable) {
                 // By the native payment class; a held lock here is the
                 // invitation's voucher, which the user reclaims rather than
-                // resumes.
-                errorMessage = PaymentFailure.ofPayment(t, invitationVoucher = true)?.message
-                    ?: t.message ?: "Creating the invitation failed."
+                // resumes. A throwable that is not an SDK error says nothing
+                // about the payment: it keeps an earlier failure's hold and
+                // shows as it is.
+                failure = PaymentFailure.keptAfter(failure, t, invitationVoucher = true)
+                errorMessage = if (PaymentFailure.ofPayment(t) == null) {
+                    t.message ?: "Creating the invitation failed."
+                } else {
+                    null
+                }
             } finally {
                 isCreating = false
                 // A successful create keeps the host's dismissal gate held
@@ -212,12 +225,21 @@ fun CreateInvitationSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            failure?.let { f ->
+                Text(f.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
+                Text(
+                    f.message,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("dashpay.invite.create.failure"),
+                )
+                ReleasePaymentHoldButton(f, testTagPrefix = "dashpay.invite.create") { failure = null }
+            }
             errorMessage?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
             Button(
                 onClick = { create() },
-                enabled = !isCreating && walletsMap.isNotEmpty(),
+                enabled = !isCreating && walletsMap.isNotEmpty() && invitationCreatePermittedAfter(failure),
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.submit"),
             ) {
                 if (isCreating) {
@@ -282,6 +304,14 @@ fun CreateInvitationSheet(
         }
     }
 }
+
+/**
+ * Whether Create may start an invitation after [failure], the last one the
+ * sheet kept: never while it holds its slot (a voucher lock held, a funding
+ * transaction that may have gone out, or no class).
+ */
+internal fun invitationCreatePermittedAfter(failure: PaymentFailure?): Boolean =
+    PaymentFailure.permitsFreshPayment(failure)
 
 /** Text-only share — never a temp image file carrying the bearer link. */
 private fun shareInvitationLink(context: Context, link: String) {

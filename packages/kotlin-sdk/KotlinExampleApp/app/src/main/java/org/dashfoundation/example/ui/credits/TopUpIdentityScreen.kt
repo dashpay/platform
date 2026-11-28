@@ -136,7 +136,8 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
     // The last failed top-up, presented by its payment class; the button
-    // stays off while it holds its slot (PaymentFailure.holdsSlot).
+    // stays off for either source while it holds its slot
+    // (topUpPermittedAfter).
     var failure by remember { mutableStateOf<PaymentFailure?>(null) }
     // The top-up may have been broadcast and its outcome is not confirmed
     // (Rust classes it MAYBE_SENT): shown as pending, and the same top-up
@@ -209,10 +210,9 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
 
     val amount = amountText.toLongOrNull()
     val shieldedAmount = parseDashToCredits(shieldedAmountText)
-    val canSubmit = when (funding) {
+    val canSubmit = topUpPermittedAfter(failure) && when (funding) {
         TopUpFunding.PLATFORM_ADDRESSES ->
-            wallet != null && manager != null && amount != null && amount > 0 &&
-                failure?.holdsSlot != true
+            wallet != null && manager != null && amount != null && amount > 0
         TopUpFunding.SHIELDED ->
             identityWalletId != null && manager != null && offersShielded &&
                 shieldedAmount != null && shieldedTopUpFee != null
@@ -423,6 +423,7 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                         if (funding == TopUpFunding.SHIELDED) "topup.submit" else "topUpIdentity.submit",
                     ),
             ) {
+                if (!topUpPermittedAfter(failure)) return@SubmitButton
                 val mgr = manager ?: return@SubmitButton
                 when (funding) {
                     TopUpFunding.PLATFORM_ADDRESSES -> {
@@ -626,6 +627,15 @@ private fun PendingShieldedTopUpsSection(
         )
     }
 }
+
+/**
+ * Whether a top-up from either source (Platform addresses or the shielded
+ * pool) may start after [failure], the last one the screen kept: never while
+ * it holds its slot, so a top-up that may have gone through is not paid again
+ * from the other source. ← Swift `TopUpIdentityView` (holdsSlot gate).
+ */
+internal fun topUpPermittedAfter(failure: PaymentFailure?): Boolean =
+    PaymentFailure.permitsFreshPayment(failure)
 
 /**
  * Greedily select funding inputs from [candidates] (assumed sorted

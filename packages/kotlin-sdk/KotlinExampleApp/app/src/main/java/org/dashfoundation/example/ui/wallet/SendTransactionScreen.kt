@@ -1132,7 +1132,7 @@ fun SendTransactionScreen(
  * never while it holds its slot ([PaymentFailure.holdsSlot]).
  * ← Swift `SendViewModel.isHeldByPaymentFailure`.
  */
-internal fun sendPermittedAfter(failure: PaymentFailure?): Boolean = failure?.holdsSlot != true
+internal fun sendPermittedAfter(failure: PaymentFailure?): Boolean = PaymentFailure.permitsFreshPayment(failure)
 
 /**
  * Whether a shielded operation's error means it may already be on chain, so
