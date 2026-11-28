@@ -28,7 +28,7 @@ export interface DocumentCreateCostOptions {
   /** Documents of the type already stored, for the processing estimate (default 1000). */
   existingDocuments?: number;
   /** The type of the key the transition is signed with (default ECDSA_SECP256K1). */
-  signatureKeyType?: 'ECDSA_SECP256K1' | 'BLS12_381' | 'ECDSA_HASH160' | 'BIP13_SCRIPT_HASH' | 'EDDSA_25519_HASH160';
+  signatureKeyType?: 'ECDSA_SECP256K1' | 'BLS12_381' | 'ECDSA_HASH160' | 'BIP13_SCRIPT_HASH' | 'EDDSA_25519_HASH160' | 'ML_DSA_65';
   /** The fee increase the transition asks for, in percent of the processing fee (default 0). */
   userFeeIncrease?: number;
   /** The epoch's fee multiplier in permille, for action fees priced by it (default 1000). */
@@ -176,6 +176,7 @@ fn key_type(name: &str) -> Result<KeyType, WasmSdkError> {
         "ECDSA_HASH160" => KeyType::ECDSA_HASH160,
         "BIP13_SCRIPT_HASH" => KeyType::BIP13_SCRIPT_HASH,
         "EDDSA_25519_HASH160" => KeyType::EDDSA_25519_HASH160,
+        "ML_DSA_65" => KeyType::ML_DSA_65,
         other => {
             return Err(WasmSdkError::invalid_argument(format!(
                 "unknown signature key type {other:?}"

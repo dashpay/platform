@@ -70,6 +70,12 @@ impl StateTransition {
 
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
 
+            // No identity holds a key of this type before protocol version 16, so the versions
+            // before it never reach this arm.
+            KeyType::ML_DSA_65 => self
+                .verify_ml_dsa_65_signature_by_public_key(public_key_bytes)
+                .map(|()| true),
+
             // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(true),
         }

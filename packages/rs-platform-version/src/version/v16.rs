@@ -34,6 +34,28 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///    - The token market contract v1 (`token_market: 1`, `SYSTEM_DATA_CONTRACT_VERSIONS_V5`) is
 ///      registered at genesis and stored without storage flags by the upgrade. Its `ask` and
 ///      `bid` types hold the open orders.
+///
+/// 2. **ML_DSA_65 identity keys**: a key type whose signatures stay secure against a quantum
+///    computer, the ML-DSA-65 scheme of FIPS 204, exists from this version
+///    (`ML_DSA_65_KEY_INITIAL_PROTOCOL_VERSION`). It names no table of its own: the key type is
+///    refused while a transition is decoded, so every method reads it only from this version on.
+///    - `KeyType::ML_DSA_65` is 5. Its data is the 1,952 byte public key, stored whole, and its
+///      signature is 3,309 bytes over the signable bytes themselves, with the empty context
+///      string. Like an ECDSA_SECP256K1 or a BLS12_381 key it belongs to one identity and is
+///      found by its hash.
+///    - A transition registering one (`IdentityCreate`, `IdentityUpdate`,
+///      `IdentityCreateFromAddresses`, `IdentityCreateFromShieldedPool`) is not active before
+///      this version and is refused unpaid there (`StateTransitionNotActiveError`, 10603), as
+///      software that cannot decode the key type refuses it.
+///    - Key structure validation 1 refuses key data that is not 1,952 bytes
+///      (`InvalidIdentityPublicKeyDataError`, 10511), and a key of the type registered for
+///      ENCRYPTION or DECRYPTION, which a signing key cannot serve
+///      (`IdentityPublicKeyTypeNotAllowedForPurposeError`, 10540).
+///    - A proof of possession that does not verify is `BasicMLDSAError` (20019), and a
+///      transition signature that does not verify is `InvalidStateTransitionSignatureError`
+///      (20002), as for the other key types.
+///    - Checking one signature costs `verify_signature_ml_dsa_65`, 100,000 credits, a new entry
+///      of the signature fee table that no earlier version reads.
 pub const PLATFORM_V16: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_16,
     drive: DRIVE_VERSION_V11, // changed: create_initial_state_structure 5 creates the token order escrow trees; the token methods of the marketplace and the deeper escrow layer estimates (note 1)

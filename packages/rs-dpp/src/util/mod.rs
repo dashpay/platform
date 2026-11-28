@@ -11,6 +11,7 @@ pub mod is_non_zero_fibonacci_number;
 pub mod json_path;
 pub mod json_schema;
 pub mod json_value;
+pub mod ml_dsa_65;
 pub mod protocol_data;
 
 pub mod strings;

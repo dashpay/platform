@@ -1,5 +1,6 @@
 mod basic_bls_error;
 mod basic_ecdsa_error;
+mod basic_ml_dsa_error;
 mod identity_not_found_error;
 mod invalid_identity_public_key_type_error;
 mod invalid_signature_public_key_purpose_error;
@@ -15,6 +16,7 @@ mod wrong_public_key_purpose_error;
 
 pub use crate::consensus::signature::basic_bls_error::BasicBLSError;
 pub use crate::consensus::signature::basic_ecdsa_error::BasicECDSAError;
+pub use crate::consensus::signature::basic_ml_dsa_error::BasicMLDSAError;
 pub use crate::consensus::signature::identity_not_found_error::IdentityNotFoundError;
 pub use crate::consensus::signature::invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeError;
 pub use crate::consensus::signature::invalid_signature_public_key_purpose_error::InvalidSignaturePublicKeyPurposeError;

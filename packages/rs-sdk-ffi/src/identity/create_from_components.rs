@@ -143,6 +143,7 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_components(
                 2 => KeyType::ECDSA_HASH160,
                 3 => KeyType::BIP13_SCRIPT_HASH,
                 4 => KeyType::EDDSA_25519_HASH160,
+                5 => KeyType::ML_DSA_65,
                 _ => {
                     return DashSDKResult::error(DashSDKError::new(
                         DashSDKErrorCode::InvalidParameter,

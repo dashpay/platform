@@ -6,6 +6,7 @@ use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMe
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
+use crate::util::ml_dsa_65;
 use crate::ProtocolError;
 use anyhow::anyhow;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
@@ -67,6 +68,17 @@ pub(in crate::identity::identity_public_key) fn public_key_hash_for_key_data(
         }
         KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
             Ok(Bytes20::from_vec(data.to_vec())?.into_buffer())
+        }
+        KeyType::ML_DSA_65 => {
+            if data.len() != ml_dsa_65::PUBLIC_KEY_SIZE {
+                Err(ProtocolError::ParsingError(format!(
+                    "the key length is invalid: {} Allowed sizes: {} bytes for ml-dsa-65 key",
+                    data.len(),
+                    ml_dsa_65::PUBLIC_KEY_SIZE
+                )))
+            } else {
+                Ok(ripemd160_sha256(data.as_slice()))
+            }
         }
     }
 }
@@ -132,6 +144,9 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
         KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
             "Converting a private key to a script hash is not supported".to_string(),
         )),
+        KeyType::ML_DSA_65 => {
+            Ok(ml_dsa_65::public_key_from_seed(private_key_bytes).as_slice() == data.as_slice())
+        }
     }
 }
 

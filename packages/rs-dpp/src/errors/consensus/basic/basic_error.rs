@@ -75,6 +75,7 @@ use crate::consensus::basic::document::{
 use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
 use crate::consensus::basic::identity::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError;
+use crate::consensus::basic::identity::IdentityPublicKeyTypeNotAllowedForPurposeError;
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
@@ -903,6 +904,10 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatePrivateDocumentEntryError(DuplicatePrivateDocumentEntryError),
+
+    // A key registered for a purpose its key type cannot serve (protocol version 16).
+    #[error(transparent)]
+    IdentityPublicKeyTypeNotAllowedForPurposeError(IdentityPublicKeyTypeNotAllowedForPurposeError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -915,6 +920,7 @@ impl From<BasicError> for ConsensusError {
 mod tests {
     use super::*;
     use crate::consensus::basic::document::PropertyConstraintViolation;
+    use crate::identity::{KeyType, Purpose};
     use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
@@ -1168,6 +1174,18 @@ mod tests {
                 DuplicatePrivateDocumentEntryError::new(0, 3)
             )),
             213
+        );
+        // A key registered for a purpose its key type cannot serve (protocol version 16):
+        // the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::IdentityPublicKeyTypeNotAllowedForPurposeError(
+                IdentityPublicKeyTypeNotAllowedForPurposeError::new(
+                    1,
+                    KeyType::ML_DSA_65,
+                    Purpose::ENCRYPTION
+                )
+            )),
+            214
         );
     }
 

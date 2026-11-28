@@ -680,6 +680,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
                 ));
             }
+            KeyType::ML_DSA_65 => {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "ML_DSA_65 keys are not derived from the wallet".to_string(),
+                ));
+            }
         };
 
         let path = Self::identity_auth_derivation_path(

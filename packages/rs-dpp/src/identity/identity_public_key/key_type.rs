@@ -1,4 +1,5 @@
 use crate::util::hash::ripemd160_sha256;
+use crate::util::ml_dsa_65;
 use anyhow::bail;
 use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
@@ -50,6 +51,10 @@ pub enum KeyType {
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
     EDDSA_25519_HASH160 = 4,
+    /// An ML-DSA-65 public key (FIPS 204), a signature scheme that stays secure against a
+    /// quantum computer. Exists from protocol version 16
+    /// (`ML_DSA_65_KEY_INITIAL_PROTOCOL_VERSION`).
+    ML_DSA_65 = 5,
 }
 
 lazy_static! {
@@ -58,7 +63,8 @@ lazy_static! {
         (KeyType::BLS12_381, 48),
         (KeyType::ECDSA_HASH160, 20),
         (KeyType::BIP13_SCRIPT_HASH, 20),
-        (KeyType::EDDSA_25519_HASH160, 20)
+        (KeyType::EDDSA_25519_HASH160, 20),
+        (KeyType::ML_DSA_65, ml_dsa_65::PUBLIC_KEY_SIZE)
     ]
     .iter()
     .copied()
@@ -78,13 +84,14 @@ impl KeyType {
     }
 
     /// All key types
-    pub fn all_key_types() -> [KeyType; 5] {
+    pub fn all_key_types() -> [KeyType; 6] {
         [
             Self::ECDSA_SECP256K1,
             Self::BLS12_381,
             Self::ECDSA_HASH160,
             Self::BIP13_SCRIPT_HASH,
             Self::EDDSA_25519_HASH160,
+            Self::ML_DSA_65,
         ]
     }
 
@@ -96,6 +103,7 @@ impl KeyType {
             KeyType::ECDSA_HASH160 => false,
             KeyType::BIP13_SCRIPT_HASH => false,
             KeyType::EDDSA_25519_HASH160 => false,
+            KeyType::ML_DSA_65 => true,
         }
     }
 
@@ -107,6 +115,7 @@ impl KeyType {
             KeyType::ECDSA_HASH160 => true,
             KeyType::BIP13_SCRIPT_HASH => true,
             KeyType::EDDSA_25519_HASH160 => false,
+            KeyType::ML_DSA_65 => false,
         }
     }
 
@@ -146,6 +155,14 @@ impl KeyType {
                         .signature
                         .verify_signature_eddsa25519_hash160
                 }
+                // No key of this type exists before protocol version 16, so the versions
+                // before it never reach this arm.
+                KeyType::ML_DSA_65 => {
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_ml_dsa_65
+                }
             }),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "KeyType::signature_verify_cost".to_string(),
@@ -173,6 +190,11 @@ impl KeyType {
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 (0..self.default_size()).map(|_| rng.gen::<u8>()).collect()
+            }
+            KeyType::ML_DSA_65 => {
+                let mut seed = [0u8; 32];
+                rng.fill(&mut seed);
+                ml_dsa_65::public_key_from_seed(&seed)
             }
         }
     }
@@ -253,6 +275,8 @@ impl KeyType {
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
                 "Converting a private key to a script hash is not supported".to_string(),
             )),
+            // The private key is the seed the key pair is expanded from.
+            KeyType::ML_DSA_65 => Ok(ml_dsa_65::public_key_from_seed(private_key_bytes)),
         }
     }
 
@@ -306,6 +330,11 @@ impl KeyType {
                     secret_key.to_secret_bytes(),
                 )
             }
+            KeyType::ML_DSA_65 => {
+                let mut seed = [0u8; 32];
+                rng.fill(&mut seed);
+                (ml_dsa_65::public_key_from_seed(&seed), seed)
+            }
         }
     }
 
@@ -347,6 +376,7 @@ impl TryFrom<u8> for KeyType {
             2 => Ok(Self::ECDSA_HASH160),
             3 => Ok(Self::BIP13_SCRIPT_HASH),
             4 => Ok(Self::EDDSA_25519_HASH160),
+            5 => Ok(Self::ML_DSA_65),
             value => bail!("unrecognized key type: {}", value),
         }
     }
@@ -390,12 +420,17 @@ mod tests {
         assert_eq!(KeyType::EDDSA_25519_HASH160.default_size(), 20);
     }
 
+    #[test]
+    fn test_default_size_ml_dsa_65() {
+        assert_eq!(KeyType::ML_DSA_65.default_size(), 1952);
+    }
+
     // -- all_key_types() --
 
     #[test]
-    fn test_all_key_types_has_five_elements() {
+    fn test_all_key_types_has_six_elements() {
         let types = KeyType::all_key_types();
-        assert_eq!(types.len(), 5);
+        assert_eq!(types.len(), 6);
     }
 
     #[test]
@@ -409,6 +444,7 @@ mod tests {
                 KeyType::ECDSA_HASH160,
                 KeyType::BIP13_SCRIPT_HASH,
                 KeyType::EDDSA_25519_HASH160,
+                KeyType::ML_DSA_65,
             ]
         );
     }
@@ -440,6 +476,11 @@ mod tests {
         assert!(!KeyType::EDDSA_25519_HASH160.is_unique_key_type());
     }
 
+    #[test]
+    fn test_ml_dsa_65_is_unique() {
+        assert!(KeyType::ML_DSA_65.is_unique_key_type());
+    }
+
     // -- is_core_address_key_type() --
 
     #[test]
@@ -465,6 +506,11 @@ mod tests {
     #[test]
     fn test_eddsa_25519_hash160_not_core_address() {
         assert!(!KeyType::EDDSA_25519_HASH160.is_core_address_key_type());
+    }
+
+    #[test]
+    fn test_ml_dsa_65_not_core_address() {
+        assert!(!KeyType::ML_DSA_65.is_core_address_key_type());
     }
 
     // -- TryFrom<u8> valid --
@@ -497,11 +543,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_try_from_u8_ml_dsa_65() {
+        assert_eq!(KeyType::try_from(5u8).unwrap(), KeyType::ML_DSA_65);
+    }
+
     // -- TryFrom<u8> invalid --
 
     #[test]
-    fn test_try_from_u8_invalid_5() {
-        assert!(KeyType::try_from(5u8).is_err());
+    fn test_try_from_u8_invalid_6() {
+        assert!(KeyType::try_from(6u8).is_err());
     }
 
     #[test]
@@ -542,6 +593,11 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_display_ml_dsa_65() {
+        assert_eq!(format!("{}", KeyType::ML_DSA_65), "ML_DSA_65");
+    }
+
     // -- Default --
 
     #[test]
@@ -553,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_round_trip_all_valid() {
-        for val in 0u8..=4 {
+        for val in 0u8..=5 {
             let key_type = KeyType::try_from(val).unwrap();
             assert_eq!(key_type as u8, val);
         }
@@ -567,5 +623,39 @@ mod tests {
             // A key type should not be both unique and a core address key type
             assert!(!(kt.is_unique_key_type() && kt.is_core_address_key_type()));
         }
+    }
+
+    // -- signature_verify_cost() --
+
+    #[test]
+    fn should_charge_an_ml_dsa_65_signature_check_the_fee_of_its_own_table_entry() {
+        let platform_version = PlatformVersion::latest();
+        let cost = KeyType::ML_DSA_65
+            .signature_verify_cost(platform_version)
+            .expect("expected a cost");
+        assert_eq!(
+            cost,
+            platform_version
+                .fee_version
+                .signature
+                .verify_signature_ml_dsa_65
+        );
+        assert!(
+            cost > KeyType::ECDSA_SECP256K1
+                .signature_verify_cost(platform_version)
+                .expect("expected a cost")
+        );
+    }
+
+    // -- ML_DSA_65 key pairs --
+
+    #[test]
+    fn should_derive_the_ml_dsa_65_public_key_from_the_seed_that_is_its_private_key() {
+        let private_key = [3u8; 32];
+        let public_key = KeyType::ML_DSA_65
+            .public_key_data_from_private_key_data(&private_key, Network::Testnet)
+            .expect("expected to derive the public key");
+        assert_eq!(public_key.len(), KeyType::ML_DSA_65.default_size());
+        assert_eq!(public_key, ml_dsa_65::public_key_from_seed(&private_key));
     }
 }
