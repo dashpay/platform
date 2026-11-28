@@ -16,8 +16,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub enum PreferredKeyPurposeForSigningWithdrawal {
     /// Use any key
     Any,
-    /// Use the owner key, then the transfer key. With an output script, which an owner key
-    /// cannot sign, use the transfer key, then the owner key.
+    /// Use the owner key, then the transfer key
     OwnerPreferred,
     /// Use the transfer key, then the owner key
     TransferPreferred,
