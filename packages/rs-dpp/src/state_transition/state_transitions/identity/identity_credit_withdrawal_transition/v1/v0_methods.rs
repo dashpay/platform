@@ -306,6 +306,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_sign_an_owner_preferred_withdrawal_without_an_address_with_the_owner_key() {
+        let platform_version = PlatformVersion::latest();
+        let identity = owner_and_transfer_identity(platform_version);
+
+        let transition = IdentityCreditWithdrawalTransitionV1::try_from_identity(
+            &identity,
+            None,
+            1_000_000,
+            Pooling::Never,
+            1,
+            0,
+            SigningSigner,
+            None,
+            PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred,
+            1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("the OWNER key signs a withdrawal to the payout address");
+
+        let StateTransition::IdentityCreditWithdrawal(transition) = transition else {
+            panic!("expected an identity credit withdrawal, got {transition:?}");
+        };
+        assert_eq!(transition.signature_public_key_id(), 17);
+    }
+
+    #[tokio::test]
     async fn should_refuse_an_owner_preferred_withdrawal_to_an_address_without_a_transfer_key() {
         let platform_version = PlatformVersion::latest();
         let owner_key = IdentityPublicKey::from(IdentityPublicKeyV0 {
