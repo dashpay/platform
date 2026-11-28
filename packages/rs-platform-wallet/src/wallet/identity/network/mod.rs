@@ -145,7 +145,9 @@ pub use contact_requests::{
     ContactSyncReport,
 };
 pub use dashpay_view::DashPayView;
-pub use discovery::IdentityDiscoveryOptions;
+#[cfg(test)]
+pub(crate) use discovery::MASTER_KEY_HASH_MAX_PAGES;
+pub use discovery::{AmbiguousIdentity, IdentityDiscoveryOptions, IdentityDiscoveryResult};
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
     give_up_clears_main_dpns_name, DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary,

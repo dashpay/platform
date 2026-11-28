@@ -5,7 +5,7 @@
 //! `IdentityWallet::discover` (or `discover_from_master`): derives
 //! consecutive MASTER authentication keys from the wallet's DIP-9 tree,
 //! queries Platform for a registered identity bound to each key hash
-//! (unique pubkey-hash lookup), and stops after `gap_limit` consecutive
+//! (unique, then non-unique key-hash lookup), and stops after `gap_limit` consecutive
 //! misses.
 //!
 //! Resume vs full rescan is controlled by `start_index_or_neg1`:
@@ -250,7 +250,11 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         .map_err(PlatformWalletFFIResult::from)
     });
     let result = unwrap_option_or_return!(option);
-    let found = unwrap_result_or_return!(result);
+    // Indices whose candidates did not single out one identity of this wallet
+    // import nothing and are logged by the scan; the call still succeeds.
+    // TODO: surface `IdentityDiscoveryResult::ambiguous` to hosts (needs
+    // out-struct fields mirrored in the Swift and Kotlin SDKs).
+    let found = unwrap_result_or_return!(result).discovered;
     if found.is_empty() {
         return PlatformWalletFFIResult::ok();
     }

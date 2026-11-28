@@ -1423,3 +1423,74 @@ pub(crate) mod tracing_capture {
         }
     }
 }
+
+/// Identity candidates and non-unique query pages shared by wallet tests.
+#[cfg(test)]
+pub(crate) mod identity_fixtures {
+    use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
+    use dash_sdk::Sdk;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::Identifier;
+
+    use crate::wallet::identity::network::MASTER_KEY_INDEX;
+
+    /// An identity whose key 0 is a MASTER authentication key.
+    pub(crate) fn identity_with_master_key(
+        id_byte: u8,
+        key_type: KeyType,
+        data: Vec<u8>,
+    ) -> Identity {
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: MASTER_KEY_INDEX,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(data),
+            disabled_at: None,
+        });
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([id_byte; 32]),
+            public_keys: [(MASTER_KEY_INDEX, key)].into(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// A HASH160 MASTER candidate with optional additional keys.
+    pub(crate) fn hash160_candidate(
+        id_byte: u8,
+        key_hash: [u8; 20],
+        extra_keys: impl IntoIterator<Item = IdentityPublicKey>,
+    ) -> Identity {
+        let mut identity =
+            identity_with_master_key(id_byte, KeyType::ECDSA_HASH160, key_hash.to_vec());
+        for key in extra_keys {
+            identity.public_keys_mut().insert(key.id(), key);
+        }
+        identity
+    }
+
+    /// Answer non-unique pages with one candidate per page, then an empty page.
+    pub(crate) async fn expect_candidates(
+        sdk: &mut Sdk,
+        key_hash: [u8; 20],
+        candidates: Vec<Identity>,
+    ) {
+        let mut after = None;
+        for candidate in candidates.into_iter().map(Some).chain([None]) {
+            let next = candidate.as_ref().map(|identity| identity.id().to_buffer());
+            sdk.mock()
+                .expect_fetch(NonUniquePublicKeyHashQuery { key_hash, after }, candidate)
+                .await
+                .expect("non-unique-tree expectation");
+            after = next;
+        }
+    }
+}

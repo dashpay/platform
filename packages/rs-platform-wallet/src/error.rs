@@ -15,6 +15,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::Network;
 
 use crate::changeset::PersistenceError;
+use crate::wallet::identity::network::AmbiguousIdentity;
 
 pub use dash_sdk::platform::transition::asset_lock_submission::{
     as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
@@ -207,6 +208,14 @@ pub enum PlatformWalletError {
         #[source]
         source: Box<dash_sdk::Error>,
     },
+
+    /// A load by identity index found candidates for the index and could not
+    /// single out one that belongs to this wallet, so nothing was imported.
+    /// See [`AmbiguousIdentity`] for what a candidate is and how ownership is
+    /// verified. Retrying does not change the answer while Platform's state is
+    /// the same. Discovery reports such indices in its result instead.
+    #[error("{0}")]
+    AmbiguousIdentityForKey(AmbiguousIdentity),
 
     #[error(
         "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
