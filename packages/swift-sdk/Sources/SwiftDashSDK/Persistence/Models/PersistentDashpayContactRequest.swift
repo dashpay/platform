@@ -141,6 +141,21 @@ public final class PersistentDashpayContactRequest {
     /// ride SwiftData's lightweight migration.
     public var contactAcceptedAccounts: [UInt32] = []
 
+    /// `ContactRequest::encrypted_shielded_address` bytes: the request's
+    /// `encryptedShieldedAddress` as it stands on Platform (DashPay v3),
+    /// when the request carries one. Stored as handed over and handed back
+    /// on restore; only the Rust wallet opens it. Optional with a `nil`
+    /// default so existing rows ride SwiftData's lightweight migration.
+    public var encryptedShieldedAddress: Data? = nil
+
+    /// The raw 43-byte shielded payment address the contact gave in their
+    /// contact request, as the Rust wallet read it from
+    /// `encryptedShieldedAddress`. **System-derived and read-only**, and
+    /// direction-specific like `contactAccountLabel`: populated only on the
+    /// incoming-direction row of an established contact. Optional with a
+    /// `nil` default so existing rows ride the lightweight migration.
+    public var contactShieldedAddress: Data? = nil
+
     // MARK: - Relationships
 
     /// Owning identity — the wallet-managed identity this row's

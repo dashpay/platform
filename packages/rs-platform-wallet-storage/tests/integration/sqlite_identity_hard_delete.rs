@@ -102,6 +102,7 @@ fn contact_request(sender: Identifier, recipient: Identifier) -> ContactRequest 
         auto_accept_proof: None,
         core_height_created_at: 42,
         created_at: 7,
+        encrypted_shielded_address: None,
     }
 }
 
@@ -125,6 +126,7 @@ fn contacts_of(owner: Identifier, contact: Identifier) -> ContactChangeSet {
             payment_channel_broken: false,
             contact_account_label: None,
             external_account_reference: None,
+            contact_shielded_address: None,
         },
     );
     ContactChangeSet {

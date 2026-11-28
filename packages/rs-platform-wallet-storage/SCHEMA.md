@@ -582,6 +582,12 @@ pending). The request columns hold a bincode-encoded `ContactRequest`;
 when external-account registration permanently fails for a contact and
 cleared on a superseding rotation.
 
+`outgoing_request_format` and `incoming_request_format` (V024) stamp the
+encoding of the request blob beside them: 0 is the `ContactRequest` record
+written before it gained `encrypted_shielded_address`, 1 the current one.
+Each blob has its own stamp because the two are written at different times;
+every write of a blob stamps it 1.
+
 - PK: `(wallet_id, owner_id, contact_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Trigger cleanup: `cascade_children_on_identity_delete` brooms by `owner_id` — there is no FK to `identities`.
@@ -898,3 +904,4 @@ table-rebuild migration, as V004 does.
 | V021 | `V021__profile_address_encoding.rs` | Adds the encoding stamps `identities.entry_format` and `dashpay_profiles.profile_format` (`INTEGER NOT NULL DEFAULT 1 CHECK IN (0, 1)`) and stamps every row present at migration time 0. `DashPayProfile` gained the core, platform and shielded payment addresses, which widens the positional bincode record embedded in both blobs; the stamp routes each row to the decoder for the shape it carries (`schema::identity_profile_encoding`). |
 | V022 | `V022__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
 | V023 | `V023__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
+| V024 | `V024__contact_request_encoding.rs` | Adds the encoding stamps `contacts.outgoing_request_format` and `contacts.incoming_request_format` (`INTEGER NOT NULL DEFAULT 1 CHECK IN (0, 1)`) and stamps every row present at migration time 0. `ContactRequest` gained `encrypted_shielded_address` (the DashPay v3 `encryptedShieldedAddress` of a contact request), which widens the positional bincode record in both request blobs; the stamp routes each blob to the decoder of the shape it carries, and a write of a blob stamps it 1. |

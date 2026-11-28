@@ -336,6 +336,7 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
             auto_accept_proof: None,
             core_height_created_at: 0,
             created_at: 0,
+            encrypted_shielded_address: None,
         },
     }
 }

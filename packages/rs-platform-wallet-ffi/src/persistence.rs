@@ -88,8 +88,8 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, Securi
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::{
-    normalize_persisted_profile, ContactProfileEntry, DashPayProfile, DpnsNameInfo,
-    IdentityManagerStartState, IdentityStatus, ManagedIdentity,
+    normalize_persisted_profile, validated_shielded_address, ContactProfileEntry, DashPayProfile,
+    DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity,
 };
 use std::ffi::CStr;
 
@@ -3412,6 +3412,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         established.contact_account_label.as_deref(),
                         &established.accepted_accounts,
                         established.external_account_reference,
+                        established.contact_shielded_address,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -7414,6 +7415,7 @@ unsafe fn apply_contact_rows(
         contact_account_label: Option<String>,
         accepted_accounts: Vec<u32>,
         external_account_reference: Option<u32>,
+        contact_shielded_address: Option<[u8; 43]>,
     }
 
     let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
@@ -7459,6 +7461,10 @@ unsafe fn apply_contact_rows(
         request.encrypted_account_label =
             opt_bytes(row.encrypted_account_label, row.encrypted_account_label_len);
         request.auto_accept_proof = opt_bytes(row.auto_accept_proof, row.auto_accept_proof_len);
+        request.encrypted_shielded_address = opt_bytes(
+            row.encrypted_shielded_address,
+            row.encrypted_shielded_address_len,
+        );
 
         let acc = by_contact.entry(row.contact_id).or_default();
         if row.is_outgoing {
@@ -7469,6 +7475,13 @@ unsafe fn apply_contact_rows(
             // ONLY the incoming row, so take it from that row (never the
             // outgoing one, which may carry a label we sent).
             acc.contact_account_label = opt_string(row.contact_account_label);
+            // So is the shielded address the contact gave: the wallet read it
+            // from their incoming request, and the host hands back the bytes
+            // it was given. Bytes that are not an address restore as none.
+            acc.contact_shielded_address = row
+                .has_contact_shielded_address
+                .then_some(row.contact_shielded_address)
+                .and_then(|address| validated_shielded_address(&address));
         }
         // Relationship-level properties are replicated onto both rows
         // by the persist projection; OR / first-non-null is the safe
@@ -7506,6 +7519,7 @@ unsafe fn apply_contact_rows(
                 contact.contact_account_label = acc.contact_account_label;
                 contact.accepted_accounts = acc.accepted_accounts;
                 contact.external_account_reference = acc.external_account_reference;
+                contact.contact_shielded_address = acc.contact_shielded_address;
                 managed.apply_established_contact(contact);
             }
             (Some(outgoing), None) => {
@@ -14008,6 +14022,14 @@ mod tests {
         let mut estab_in = ContactRequest::new(estab_c, owner, 9, 10, 44, vec![4u8; 96], 103, 1003);
         estab_in.encrypted_account_label = Some(vec![0x2au8; 48]);
         estab_in.auto_accept_proof = Some(vec![8u8; 38]);
+        estab_in.encrypted_shielded_address = Some(vec![0x3cu8; 64]);
+        // The default address of the official Orchard key test vector.
+        let estab_shielded_address = Some([
+            0x8f, 0xf3, 0x38, 0x69, 0x71, 0xcb, 0x64, 0xb8, 0xe7, 0x78, 0x99, 0x08, 0xdd, 0x8e,
+            0xbd, 0x7d, 0xe9, 0x2a, 0x68, 0xe5, 0x86, 0xa3, 0x4d, 0xb8, 0xfe, 0xa9, 0x99, 0xef,
+            0xd2, 0x01, 0x6f, 0xae, 0x76, 0x75, 0x0a, 0xfa, 0xe7, 0xee, 0x94, 0x16, 0x46, 0xbc,
+            0xb9,
+        ]);
 
         let mut rows = vec![
             ContactRequestFFI::from_outgoing(owner.to_buffer(), sent_c.to_buffer(), &sent_req),
@@ -14034,6 +14056,7 @@ mod tests {
                 Some("Main wallet"),
                 &[7, 42],
                 Some(4),
+                estab_shielded_address,
             ),
         ];
 
@@ -14099,6 +14122,16 @@ mod tests {
             e.contact_account_label.as_deref(),
             Some("Main wallet"),
             "contact_account_label must restore from the incoming row only"
+        );
+        assert_eq!(
+            e.incoming_request.encrypted_shielded_address,
+            Some(vec![0x3cu8; 64]),
+            "the incoming request's encrypted shielded address must survive read-back"
+        );
+        assert_eq!(e.outgoing_request.encrypted_shielded_address, None);
+        assert_eq!(
+            e.contact_shielded_address, estab_shielded_address,
+            "the contact's shielded address must restore from the incoming row"
         );
         assert_eq!(
             e.accepted_accounts,

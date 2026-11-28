@@ -17,12 +17,14 @@ use super::contacts::{ExternalAccountRegistration, RegisterExternalError};
 use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
+use crate::changeset::{ContactChangeSet, SentContactRequestKey};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 pub(super) use crate::wallet::identity::state::managed_identity::predates;
 use crate::wallet::identity::state::managed_identity::{freshness, SentContactRequestOutcome};
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
+use crate::wallet::identity::types::dashpay::profile::validated_shielded_address;
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -50,6 +52,10 @@ use dpp::platform_value::BinaryData;
 use dpp::state_transition::StateTransition;
 use key_wallet::bip32::ExtendedPubKey;
 use std::collections::BTreeMap;
+
+/// The `contactRequest` property that carries the sender's shielded payment
+/// address for the contact, encrypted to the recipient.
+const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 
 // ---------------------------------------------------------------------------
 // Deferred-crypto drain provider
@@ -1384,6 +1390,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         contact_request.encrypted_account_label = document
             .properties()
             .get("encryptedAccountLabel")
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
+        // And its optional `encryptedShieldedAddress`, for the same reason: a
+        // tracked row is never refreshed from the sweep, so what is not
+        // copied here stays missing.
+        contact_request.encrypted_shielded_address = document
+            .properties()
+            .get(ENCRYPTED_SHIELDED_ADDRESS)
             .and_then(|v: &Value| v.to_binary_bytes().ok());
 
         // Register our receiving (friendship) account from the xpub the signer
@@ -3131,6 +3144,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let encrypted_account_label = props
             .get("encryptedAccountLabel")
             .and_then(|v: &Value| v.to_binary_bytes().ok());
+        // Optional `encryptedShieldedAddress` (DashPay v3): the sender's
+        // shielded payment address for this contact. Kept as it stands; it is
+        // opened where the contact's account is built
+        // (`store_contact_shielded_address`).
+        let encrypted_shielded_address = props
+            .get(ENCRYPTED_SHIELDED_ADDRESS)
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
 
         match (
             sender_key_index,
@@ -3151,6 +3171,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 );
                 request.auto_accept_proof = auto_accept_proof;
                 request.encrypted_account_label = encrypted_account_label;
+                request.encrypted_shielded_address = encrypted_shielded_address;
                 Some(request)
             }
             _ => {
@@ -4014,6 +4035,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                     encrypted_public_key,
                                 )
                                 .await;
+                                // The shielded address their request carries,
+                                // only here: this is where `shared` has just
+                                // opened the request's xpub, which is what
+                                // says it is the right key.
+                                self.store_contact_shielded_address(
+                                    &entry.owner_identity_id,
+                                    &entry.contact_id,
+                                    encrypted_public_key,
+                                    &shared,
+                                )
+                                .await;
                             }
                             // Surface the contact's account label from the same
                             // ECDH shared key (best-effort, cosmetic — never
@@ -4843,6 +4875,184 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             tracing::error!("Failed to persist account-label changeset: {}", e);
         }
     }
+
+    /// Open the `encryptedShieldedAddress` of the contact's incoming request
+    /// with the ECDH shared key and store the address on the established
+    /// contact's `contact_shielded_address`.
+    ///
+    /// Called only where the same `shared_key` has just opened the request's
+    /// `encryptedPublicKey` to a well-formed key and the account was built
+    /// from it, which is what tells a right key from a wrong one: AES-CBC
+    /// does not. `built_from_ciphertext` is that `encryptedPublicKey`. The
+    /// registration ran under another guard, so a rotation may have replaced
+    /// the request since: the address is set, or cleared, only while the
+    /// contact's live request still carries `built_from_ciphertext`, as
+    /// [`Self::note_external_account_registered`] stamps its marker. A
+    /// replaced request is left to its own account build.
+    ///
+    /// What the wallet takes is decided by
+    /// [`contact_request_shielded_address`], and an address of this wallet's
+    /// own bound shielded accounts is refused as well. Anything refused leaves
+    /// the contact without an address and never fails the caller: a reader
+    /// that cannot use the value ignores it, the contact request stands.
+    ///
+    /// Only the **incoming** request is a source; the outgoing one carries the
+    /// address this wallet gave. Persisted through an `established` changeset
+    /// entry before the in-memory contact takes it, so memory never holds an
+    /// address the store refused. The caller must hold no wallet-manager
+    /// guard.
+    pub(crate) async fn store_contact_shielded_address(
+        &self,
+        identity_id: &Identifier,
+        contact_id: &Identifier,
+        built_from_ciphertext: &[u8],
+        shared_key: &[u8; 32],
+    ) {
+        // The request's ciphertext and the profile address this wallet knows
+        // the contact by, copied out so nothing below waits under the lock.
+        let (ciphertext, profile_address) = {
+            let wm = self.wallet_manager.read().await;
+            let Ok(info) = self.current_wallet_info(&wm) else {
+                return;
+            };
+            let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
+                return;
+            };
+            let Some(contact) = managed.dashpay().established_contacts().get(contact_id) else {
+                return;
+            };
+            if contact.incoming_request.encrypted_public_key != built_from_ciphertext {
+                return;
+            }
+            // A sender this wallet tracks as an identity keeps its profile on
+            // its own record; any other sender's is in the contact cache. A
+            // tracked record not yet synced holds no profile, and the cache
+            // may still hold the one read before the sender was tracked. The
+            // profile is chosen first: a synced one without an address is the
+            // newer word, and the cache is not asked.
+            let profile_address = info
+                .identity_manager
+                .managed_identity(contact_id)
+                .and_then(|sender| sender.dashpay().profile.as_ref())
+                .or_else(|| {
+                    managed
+                        .dashpay()
+                        .contact_profiles
+                        .get(contact_id)
+                        .and_then(|entry| entry.profile.as_ref())
+                })
+                .and_then(|profile| profile.shielded_address.clone());
+            (
+                contact.incoming_request.encrypted_shielded_address.clone(),
+                profile_address,
+            )
+        };
+
+        let mut address = ciphertext.as_deref().and_then(|field| {
+            contact_request_shielded_address(shared_key, field, profile_address.as_deref())
+        });
+        if let Some(candidate) = address {
+            if self.is_own_shielded_address(&candidate).await {
+                tracing::debug!(
+                    owner = %identity_id, contact = %contact_id,
+                    "The contact request's shielded address is this wallet's own; leaving it unset"
+                );
+                address = None;
+            }
+        }
+
+        let mut wm = self.wallet_manager.write().await;
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
+            return;
+        };
+        // The lock was released above: still the request the account was
+        // built from, with the field that was read.
+        if contact.incoming_request.encrypted_public_key != built_from_ciphertext
+            || contact.incoming_request.encrypted_shielded_address != ciphertext
+        {
+            return;
+        }
+        // Idempotent — skip the changeset write when nothing changed.
+        if contact.contact_shielded_address == address {
+            return;
+        }
+        let mut updated = contact.clone();
+        updated.contact_shielded_address = address;
+
+        let mut cs = ContactChangeSet::default();
+        cs.established.insert(
+            SentContactRequestKey {
+                owner_id: *identity_id,
+                recipient_id: *contact_id,
+            },
+            updated.clone(),
+        );
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!(
+                "Failed to persist contact shielded-address changeset: {}",
+                e
+            );
+            return;
+        }
+        *contact = updated;
+    }
+
+    /// Whether `address` belongs to one of this wallet's bound shielded
+    /// accounts. A build without the `shielded` feature holds no such account.
+    async fn is_own_shielded_address(&self, address: &[u8; 43]) -> bool {
+        #[cfg(feature = "shielded")]
+        {
+            self.contact_shielded_addresses
+                .is_own_address(address)
+                .await
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            let _ = address;
+            false
+        }
+    }
+}
+
+/// The shielded payment address a contact request's `encryptedShieldedAddress`
+/// gives its recipient, or `None` when the wallet does not take it.
+///
+/// `shared_key` is the request's ECDH shared key, and the caller has seen it
+/// open the request's `encryptedPublicKey`. `sender_profile_address` is the
+/// `shieldedAddress` of the sender's DashPay profile as this wallet last read
+/// it, if it has one.
+///
+/// Refused:
+/// - a field in an encoding this wallet does not read (any length but the 64
+///   bytes written today, the 80 the contract keeps for a later one included);
+/// - a field that does not decrypt to 43 bytes, or whose 43 bytes are not an
+///   Orchard address;
+/// - the sender's profile address: a request carries an address of the
+///   contact's own, and the profile one is public and meant for tips.
+fn contact_request_shielded_address(
+    shared_key: &[u8; 32],
+    field: &[u8],
+    sender_profile_address: Option<&[u8]>,
+) -> Option<[u8; 43]> {
+    let decrypted = match platform_encryption::decrypt_shielded_address(shared_key, field) {
+        Ok(decrypted) => decrypted,
+        Err(e) => {
+            tracing::debug!(error = %e, "Could not read a contact request's shielded address");
+            return None;
+        }
+    };
+    let address = validated_shielded_address(&decrypted)?;
+    if sender_profile_address == Some(address.as_slice()) {
+        tracing::debug!("A contact request carries its sender's profile shielded address");
+        return None;
+    }
+    Some(address)
 }
 
 /// Contact accounts to build after releasing the sync sweep's write guard.
@@ -5250,13 +5460,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 contact_encrypted_xpub,
             )
             .await;
+            // The shielded address their request carries, only here: this is
+            // where `shared` has just opened the request's xpub, which is what
+            // says it is the right key. Never fails the accept.
+            self.store_contact_shielded_address(
+                our_identity_id,
+                contact_id,
+                contact_encrypted_xpub,
+                &shared,
+            )
+            .await;
         }
 
         // Surface the contact's account label from the same ECDH shared key
         // (best-effort, cosmetic — a label failure never fails the accept).
         self.store_contact_account_label(our_identity_id, contact_id, &shared)
             .await;
-
         Ok(())
     }
 
@@ -7108,6 +7327,151 @@ mod sweep_tests {
             Some(label_ct),
             "the sweep parser must carry encryptedAccountLabel onto the request, \
              else the receive-side label surfacing has nothing to decrypt"
+        );
+    }
+
+    /// The sweep parser keeps a document's `encryptedShieldedAddress` as it
+    /// stands, so the account build has something to open; a document without
+    /// one parses to a request without one.
+    #[test]
+    fn should_carry_the_encrypted_shielded_address_of_a_contact_request_document() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::Value;
+        use std::collections::BTreeMap;
+
+        let sender = Identifier::from([2u8; 32]);
+        let recipient = Identifier::from([1u8; 32]);
+        let document = |shielded: Option<Vec<u8>>| {
+            let mut properties = BTreeMap::new();
+            properties.insert("senderKeyIndex".to_string(), Value::U32(0));
+            properties.insert("recipientKeyIndex".to_string(), Value::U32(0));
+            properties.insert("accountReference".to_string(), Value::U32(5));
+            properties.insert(
+                "encryptedPublicKey".to_string(),
+                Value::Bytes(vec![1u8; 96]),
+            );
+            if let Some(shielded) = shielded {
+                properties.insert(
+                    "encryptedShieldedAddress".to_string(),
+                    Value::Bytes(shielded),
+                );
+            }
+            Document::V0(DocumentV0 {
+                contract_version: None,
+                id: Identifier::from([9u8; 32]),
+                owner_id: sender,
+                properties,
+                revision: None,
+                created_at: Some(123),
+                updated_at: None,
+                transferred_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                transferred_at_block_height: None,
+                created_at_core_block_height: Some(456),
+                updated_at_core_block_height: None,
+                transferred_at_core_block_height: None,
+                creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
+            })
+        };
+        let parse = |doc: &Document| {
+            DashPayView::<SpvBroadcaster>::parse_contact_request_doc(doc, sender, recipient)
+                .expect("a complete contactRequest doc must parse")
+        };
+
+        let field = vec![0x3cu8; 64];
+        assert_eq!(
+            parse(&document(Some(field.clone()))).encrypted_shielded_address,
+            Some(field)
+        );
+        assert_eq!(parse(&document(None)).encrypted_shielded_address, None);
+    }
+
+    /// A valid raw Orchard address, for the tests of what a contact request's
+    /// `encryptedShieldedAddress` gives.
+    fn orchard_address(seed: u8) -> [u8; 43] {
+        use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+
+        let spending_key = SpendingKey::from_bytes([seed; 32]).expect("a valid spending key");
+        FullViewingKey::from(&spending_key)
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes()
+    }
+
+    #[test]
+    fn should_read_the_shielded_address_a_contact_request_carries() {
+        let shared = [0x55u8; 32];
+        let address = orchard_address(7);
+        let field = platform_encryption::encrypt_shielded_address(&shared, &[0x11; 16], &address);
+
+        assert_eq!(
+            contact_request_shielded_address(&shared, &field, None),
+            Some(address)
+        );
+        // Another address on the sender's profile does not stand in the way.
+        assert_eq!(
+            contact_request_shielded_address(&shared, &field, Some(&orchard_address(8))),
+            Some(address)
+        );
+    }
+
+    #[test]
+    fn should_not_take_a_shielded_address_in_an_encoding_it_does_not_read() {
+        let shared = [0x55u8; 32];
+        let address = orchard_address(7);
+        let field = platform_encryption::encrypt_shielded_address(&shared, &[0x11; 16], &address);
+
+        // The 80 bytes the contract keeps for a later encoding.
+        let mut later = field.to_vec();
+        later.extend_from_slice(&[0u8; 16]);
+        assert_eq!(
+            contact_request_shielded_address(&shared, &later, None),
+            None
+        );
+        assert_eq!(
+            contact_request_shielded_address(&shared, &field[..48], None),
+            None
+        );
+        assert_eq!(contact_request_shielded_address(&shared, &[], None), None);
+    }
+
+    #[test]
+    fn should_not_take_a_shielded_address_opened_with_another_key() {
+        let address = orchard_address(7);
+        let field =
+            platform_encryption::encrypt_shielded_address(&[0x55; 32], &[0x11; 16], &address);
+
+        assert_eq!(
+            contact_request_shielded_address(&[0x56; 32], &field, None),
+            None
+        );
+    }
+
+    #[test]
+    fn should_not_take_43_bytes_that_are_not_a_shielded_address() {
+        let shared = [0x55u8; 32];
+        let not_an_address = [0xffu8; 43];
+        assert_eq!(validated_shielded_address(&not_an_address), None);
+        let field =
+            platform_encryption::encrypt_shielded_address(&shared, &[0x11; 16], &not_an_address);
+
+        assert_eq!(
+            contact_request_shielded_address(&shared, &field, None),
+            None
+        );
+    }
+
+    #[test]
+    fn should_not_take_the_senders_profile_address_from_a_contact_request() {
+        let shared = [0x55u8; 32];
+        let address = orchard_address(7);
+        let field = platform_encryption::encrypt_shielded_address(&shared, &[0x11; 16], &address);
+
+        assert_eq!(
+            contact_request_shielded_address(&shared, &field, Some(&address)),
+            None
         );
     }
 

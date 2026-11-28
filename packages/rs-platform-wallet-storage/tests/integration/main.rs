@@ -29,6 +29,7 @@ mod sqlite_check_constraints;
 mod sqlite_cli_smoke;
 mod sqlite_commit_writes_lock_poison_shortcircuit;
 mod sqlite_compile_time;
+mod sqlite_contact_request_encoding;
 mod sqlite_contacts_keys_rehydration;
 mod sqlite_core_pool_writer;
 mod sqlite_core_state_reader;

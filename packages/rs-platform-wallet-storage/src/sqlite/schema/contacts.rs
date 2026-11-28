@@ -7,6 +7,11 @@
 //! `received` and carries only the matching request blob; an
 //! `established` relationship carries both request blobs plus the four
 //! metadata columns (`alias`, `note`, `is_hidden`, `accepted_accounts`).
+//!
+//! Each request blob carries an encoding stamp (`outgoing_request_format`,
+//! `incoming_request_format`, V024): 0 is the `ContactRequest` record written
+//! before it gained `encrypted_shielded_address`, 1 the current one. Every
+//! write of a blob stamps it 1.
 
 use rusqlite::{params, Transaction};
 
@@ -17,6 +22,8 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
+use dpp::identity::TimestampMillis;
+use dpp::prelude::CoreBlockHeight;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
@@ -28,6 +35,78 @@ use std::collections::BTreeMap;
 // PUBLIC material only: contact-request types + the accepted-account index (a
 // list of account indices). Contact requests carry public keys/refs.
 crate::sqlite::schema::blob::impl_persistable_blob!(ContactRequest, Vec<u32>);
+
+/// The `ContactRequest` record as written before V024, without
+/// `encrypted_shielded_address`. Do not edit the field order: it is the
+/// positional bincode shape of every blob stamped 0.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LegacyContactRequest {
+    sender_id: Identifier,
+    recipient_id: Identifier,
+    sender_key_index: u32,
+    recipient_key_index: u32,
+    account_reference: u32,
+    encrypted_account_label: Option<Vec<u8>>,
+    encrypted_public_key: Vec<u8>,
+    auto_accept_proof: Option<Vec<u8>>,
+    core_height_created_at: CoreBlockHeight,
+    created_at: TimestampMillis,
+}
+
+impl From<LegacyContactRequest> for ContactRequest {
+    fn from(request: LegacyContactRequest) -> Self {
+        Self {
+            sender_id: request.sender_id,
+            recipient_id: request.recipient_id,
+            sender_key_index: request.sender_key_index,
+            recipient_key_index: request.recipient_key_index,
+            account_reference: request.account_reference,
+            encrypted_account_label: request.encrypted_account_label,
+            encrypted_public_key: request.encrypted_public_key,
+            auto_accept_proof: request.auto_accept_proof,
+            core_height_created_at: request.core_height_created_at,
+            created_at: request.created_at,
+            // A request stored before the field existed was read without it.
+            encrypted_shielded_address: None,
+        }
+    }
+}
+
+// Test-only: production never writes the legacy shape, but migration
+// fixtures have to produce the bytes a pre-V024 writer produced. PUBLIC
+// material only, like the current shape it mirrors.
+#[cfg(any(test, feature = "__test-helpers"))]
+crate::sqlite::schema::blob::impl_persistable_blob!(LegacyContactRequest);
+
+/// The bytes a pre-V024 writer stored for `request`: the record without
+/// `encrypted_shielded_address`. For fixtures of databases written before
+/// V024.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn encode_legacy_request(request: &ContactRequest) -> Result<Vec<u8>, WalletStorageError> {
+    blob::encode(&LegacyContactRequest {
+        sender_id: request.sender_id,
+        recipient_id: request.recipient_id,
+        sender_key_index: request.sender_key_index,
+        recipient_key_index: request.recipient_key_index,
+        account_reference: request.account_reference,
+        encrypted_account_label: request.encrypted_account_label.clone(),
+        encrypted_public_key: request.encrypted_public_key.clone(),
+        auto_accept_proof: request.auto_accept_proof.clone(),
+        core_height_created_at: request.core_height_created_at,
+        created_at: request.created_at,
+    })
+}
+
+/// Decode a request blob by its encoding stamp.
+fn decode_stamped_request(bytes: &[u8], format: i64) -> Result<ContactRequest, WalletStorageError> {
+    match format {
+        0 => blob::decode::<LegacyContactRequest>(bytes).map(Into::into),
+        1 => blob::decode(bytes),
+        _ => Err(WalletStorageError::blob_decode(
+            "contacts request blob has an unknown encoding stamp",
+        )),
+    }
+}
 
 /// Single source of truth for the `contacts.state` TEXT-column domain.
 ///
@@ -115,10 +194,13 @@ pub fn apply(
         // `contact_state_db_label` so it stays the writer's codomain.
         let sent = contact_state_db_label(ContactState::Sent);
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, outgoing_request) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
+            "INSERT INTO contacts \
+                (wallet_id, owner_id, contact_id, state, outgoing_request, \
+                 outgoing_request_format) \
+             VALUES (?1, ?2, ?3, ?4, ?5, 1) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 outgoing_request = excluded.outgoing_request, \
+                outgoing_request_format = 1, \
                 state = CASE \
                     WHEN contacts.state = 'established' THEN 'established' \
                     WHEN contacts.incoming_request IS NOT NULL THEN 'established' \
@@ -165,10 +247,13 @@ pub fn apply(
         // promotes to 'established' in the same statement.
         let received = contact_state_db_label(ContactState::Received);
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, incoming_request) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
+            "INSERT INTO contacts \
+                (wallet_id, owner_id, contact_id, state, incoming_request, \
+                 incoming_request_format) \
+             VALUES (?1, ?2, ?3, ?4, ?5, 1) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 incoming_request = excluded.incoming_request, \
+                incoming_request_format = 1, \
                 state = CASE \
                     WHEN contacts.state = 'established' THEN 'established' \
                     WHEN contacts.outgoing_request IS NOT NULL THEN 'established' \
@@ -211,12 +296,15 @@ pub fn apply(
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts \
                 (wallet_id, owner_id, contact_id, state, outgoing_request, incoming_request, \
-                 alias, note, is_hidden, accepted_accounts, payment_channel_broken) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
+                 alias, note, is_hidden, accepted_accounts, payment_channel_broken, \
+                 outgoing_request_format, incoming_request_format) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, 1) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 state = excluded.state, \
                 outgoing_request = excluded.outgoing_request, \
                 incoming_request = excluded.incoming_request, \
+                outgoing_request_format = 1, \
+                incoming_request_format = 1, \
                 alias = excluded.alias, \
                 note = excluded.note, \
                 is_hidden = excluded.is_hidden, \
@@ -302,7 +390,8 @@ pub(crate) fn load_state(
 
     let mut stmt = conn.prepare(
         "SELECT owner_id, contact_id, state, outgoing_request, incoming_request, \
-                alias, note, is_hidden, accepted_accounts, payment_channel_broken \
+                alias, note, is_hidden, accepted_accounts, payment_channel_broken, \
+                outgoing_request_format, incoming_request_format \
          FROM contacts WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -324,6 +413,8 @@ pub(crate) fn load_state(
             is_hidden: row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
             accepted_accounts: row.get(8)?,
             payment_channel_broken: row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0,
+            outgoing_format: row.get(10)?,
+            incoming_format: row.get(11)?,
         };
         if let Err(err) = bucket_contact_row(&mut state, columns) {
             ctx.tolerate(LoadSite::ContactRow, err)?;
@@ -345,6 +436,8 @@ struct ContactRowColumns {
     is_hidden: bool,
     accepted_accounts: Option<Vec<u8>>,
     payment_channel_broken: bool,
+    outgoing_format: i64,
+    incoming_format: i64,
 }
 
 /// File one read row into the bucket its `state` names, decoding the blobs
@@ -365,11 +458,13 @@ fn bucket_contact_row(
         is_hidden,
         accepted_accounts,
         payment_channel_broken,
+        outgoing_format,
+        incoming_format,
     } = columns;
 
     match contact_state_from_label(&label)? {
         ContactState::Sent => {
-            let request = decode_request("outgoing_request", outgoing.as_deref())?;
+            let request = decode_request("outgoing_request", outgoing.as_deref(), outgoing_format)?;
             state.sent_requests.insert(
                 SentContactRequestKey {
                     owner_id,
@@ -379,7 +474,7 @@ fn bucket_contact_row(
             );
         }
         ContactState::Received => {
-            let request = decode_request("incoming_request", incoming.as_deref())?;
+            let request = decode_request("incoming_request", incoming.as_deref(), incoming_format)?;
             state.incoming_requests.insert(
                 ReceivedContactRequestKey {
                     owner_id,
@@ -389,8 +484,10 @@ fn bucket_contact_row(
             );
         }
         ContactState::Established => {
-            let outgoing_request = decode_request("outgoing_request", outgoing.as_deref())?;
-            let incoming_request = decode_request("incoming_request", incoming.as_deref())?;
+            let outgoing_request =
+                decode_request("outgoing_request", outgoing.as_deref(), outgoing_format)?;
+            let incoming_request =
+                decode_request("incoming_request", incoming.as_deref(), incoming_format)?;
             let accepted_accounts: Vec<u32> = match accepted_accounts {
                 Some(bytes) => blob::decode(&bytes)?,
                 None => Vec::new(),
@@ -418,6 +515,10 @@ fn bucket_contact_row(
                     // forces the next sweep to re-verify (tear down + rebuild)
                     // the external account once, then re-stamp it.
                     external_account_reference: None,
+                    // Read from the incoming request when its external
+                    // account is built; this backend has no column for it,
+                    // and the rebuild the marker above forces reads it again.
+                    contact_shielded_address: None,
                 },
             );
         }
@@ -432,9 +533,10 @@ fn bucket_contact_row(
 fn decode_request(
     column: &'static str,
     bytes: Option<&[u8]>,
+    format: i64,
 ) -> Result<ContactRequest, WalletStorageError> {
     match bytes {
-        Some(b) => blob::decode(b),
+        Some(b) => decode_stamped_request(b, format),
         None => Err(WalletStorageError::blob_decode(match column {
             "outgoing_request" => "contacts row is missing its outgoing_request blob",
             _ => "contacts row is missing its incoming_request blob",

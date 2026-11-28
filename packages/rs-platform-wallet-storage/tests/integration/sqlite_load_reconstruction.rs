@@ -369,6 +369,7 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
                 auto_accept_proof: None,
                 core_height_created_at: 0,
                 created_at: 0,
+                encrypted_shielded_address: None,
             },
         },
     );
@@ -487,6 +488,7 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
             auto_accept_proof: None,
             core_height_created_at: 100,
             created_at: 0,
+            encrypted_shielded_address: None,
         },
     }
 }
@@ -683,6 +685,7 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
         // the read path always reconstructs it as `None`; keep the fixture
         // `None` to match through the round-trip.
         external_account_reference: None,
+        contact_shielded_address: None,
     }
 }
 

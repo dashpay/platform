@@ -4427,6 +4427,13 @@ fn build_contact_restore(
         accepted_accounts_len: 0,
         has_external_account_reference,
         external_account_reference,
+        // The Kotlin host does not store a contact request's shielded address
+        // yet (neither the ciphertext nor what the wallet read from it), so a
+        // restore hands the wallet none.
+        encrypted_shielded_address: ptr::null(),
+        encrypted_shielded_address_len: 0,
+        has_contact_shielded_address: false,
+        contact_shielded_address: [0u8; 43],
     };
     Ok(ContactRestoreStaged {
         row,

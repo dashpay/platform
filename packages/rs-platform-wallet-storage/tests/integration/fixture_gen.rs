@@ -36,6 +36,7 @@ use key_wallet::Network;
 use platform_wallet::changeset::{AccountRegistrationEntry, IdentityEntry};
 use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
 use platform_wallet_storage::sqlite::schema::blob;
+use platform_wallet_storage::sqlite::schema::contacts::encode_legacy_request;
 
 /// The two wallets the fixture carries: one populated, one bare.
 const FIXTURE_WALLET: u8 = 0xA1;
@@ -294,9 +295,14 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
         auto_accept_proof: None,
         core_height_created_at: 200,
         created_at: 0,
+        encrypted_shielded_address: None,
     };
-    let outgoing = blob::encode(&request(FIXTURE_IDENTITY, contact_id)).expect("encode outgoing");
-    let incoming = blob::encode(&request(contact_id, FIXTURE_IDENTITY)).expect("encode incoming");
+    // The base writer predates V024, so its request blobs have the shape
+    // without `encrypted_shielded_address`.
+    let outgoing =
+        encode_legacy_request(&request(FIXTURE_IDENTITY, contact_id)).expect("encode outgoing");
+    let incoming =
+        encode_legacy_request(&request(contact_id, FIXTURE_IDENTITY)).expect("encode incoming");
     conn.execute(
         "INSERT INTO contacts \
              (wallet_id, owner_id, contact_id, state, outgoing_request, incoming_request) \

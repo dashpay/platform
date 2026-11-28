@@ -86,4 +86,16 @@ public final class EstablishedContact: @unchecked Sendable {
         try established_contact_is_hidden(handle, &hidden).check()
         return hidden
     }
+
+    /// The raw 43-byte shielded payment address the contact gave in their
+    /// contact request, or `nil` when they gave none the wallet takes. The
+    /// Rust wallet read and checked it; this only hands the bytes over.
+    public func getShieldedAddress() throws -> Data? {
+        var hasAddress = false
+        var buf = [UInt8](repeating: 0, count: 43)
+        try buf.withUnsafeMutableBufferPointer { bp in
+            try established_contact_get_shielded_address(handle, &hasAddress, bp.baseAddress!).check()
+        }
+        return hasAddress ? Data(buf) : nil
+    }
 }
