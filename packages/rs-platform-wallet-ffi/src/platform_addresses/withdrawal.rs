@@ -16,7 +16,7 @@ use std::os::raw::c_char;
 use std::str::FromStr;
 
 use super::parse_input_selection;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, ensure_not_on_runtime};
 
 /// Withdraw platform credits to a Core L1 address.
 #[no_mangle]
@@ -240,6 +240,10 @@ unsafe fn withdraw_to_checked_address(
     signer_address_handle: *mut SignerHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
+    if let Err(result) = ensure_not_on_runtime("platform address withdrawal") {
+        return result;
+    }
+
     // Clone the wallet out of handle storage so the read lock is released
     // before the network check + long-running withdraw.
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
@@ -418,7 +422,7 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
     let wallet = unwrap_option_or_return!(option);
     let result = block_on_worker(async move {
         wallet
-            .preflight_withdrawal(account_index, None, core_fee_per_byte)
+            .preflight_withdrawal(account_index, core_fee_per_byte)
             .await
     });
 
@@ -462,7 +466,7 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
 /// account, without signing, broadcasting or consuming a Core receive address.
 ///
 /// Runs the planner the withdrawal itself runs
-/// (`PlatformAddressWallet::preflight_withdrawal` with the amount), on the
+/// (`PlatformAddressWallet::preflight_withdrawal_amount`), on the
 /// account's on-chain balances, so what this reports is what
 /// [`platform_address_wallet_withdraw_amount_to_address`] will do.
 ///
@@ -475,6 +479,10 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
 ///   has `can_withdraw = false` and the call returns a **Success-coded**
 ///   result whose `message` is the reason. For an amount outside the range,
 ///   `min_withdrawable` and `max_withdrawable` are filled in.
+/// - Called from inside a wallet callback (a thread already on this crate's
+///   runtime): refused with `ErrorWalletOperation` and `out` untouched, as is
+///   [`platform_address_wallet_withdraw_amount_to_address`]. Call from
+///   another thread.
 /// - A structural failure (bad handle, missing account, non-retryable SDK
 ///   error) is an FFI error and leaves `out` untouched.
 ///
@@ -490,6 +498,9 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal_amount(
     out: *mut WithdrawalAmountPreflightFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out);
+    if let Err(result) = ensure_not_on_runtime("withdrawal amount preflight") {
+        return result;
+    }
 
     // Worker thread for the same reason as the preflight above: the balance
     // read verifies a GroveDB proof.
@@ -497,7 +508,7 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal_amount(
     let wallet = unwrap_option_or_return!(option);
     let result = block_on_worker(async move {
         wallet
-            .preflight_withdrawal(account_index, Some(amount), core_fee_per_byte)
+            .preflight_withdrawal_amount(account_index, amount, core_fee_per_byte)
             .await
     });
 
@@ -664,6 +675,64 @@ mod tests {
         assert_eq!(
             classify_preflight_error(&op),
             PreflightOutcome::DisabledWithReason
+        );
+    }
+
+    // ---- Calls from inside a wallet callback --------------------------------
+    //
+    // A wallet callback runs on this crate's runtime. Blocking on the runtime
+    // again from there panics, and the iOS profiles abort on a panic, so both
+    // exports must refuse before they block.
+
+    #[test]
+    fn should_refuse_an_amount_preflight_called_on_the_runtime() {
+        let mut out = WithdrawalAmountPreflightFFI {
+            can_withdraw: true,
+            amount: 1,
+            estimated_fee: 1,
+            input_count: 1,
+            min_withdrawable: 1,
+            max_withdrawable: 1,
+        };
+
+        let result = crate::runtime::runtime().block_on(async {
+            unsafe { platform_address_wallet_preflight_withdrawal_amount(0, 0, 1, 1, &mut out) }
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        // `out` is left as the caller passed it.
+        assert!(out.can_withdraw);
+        assert_eq!(out.amount, 1);
+    }
+
+    #[test]
+    fn should_refuse_an_amount_withdrawal_called_on_the_runtime() {
+        let address =
+            std::ffi::CString::new("yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA").expect("no interior NUL");
+        let mut out = PlatformAddressChangeSetFFI::empty();
+        // Never dereferenced: the call is refused before the signer is used.
+        let signer = std::ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+
+        let result = crate::runtime::runtime().block_on(async {
+            unsafe {
+                platform_address_wallet_withdraw_amount_to_address(
+                    0,
+                    0,
+                    1,
+                    address.as_ptr(),
+                    1,
+                    signer,
+                    &mut out,
+                )
+            }
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         );
     }
 

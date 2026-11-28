@@ -526,12 +526,15 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         /// `nil` otherwise; `0` when `canWithdraw == false`.
         public let inputCount: UInt32?
         /// The smallest amount a withdrawal may carry at the chosen Core fee
-        /// rate, as Rust computed it. Reported only by the amount preflight,
-        /// `nil` otherwise; `0` when Rust could not determine it.
+        /// rate, as Rust computed it. Reported only by the amount preflight;
+        /// `nil` otherwise, and when Rust could not determine it (the
+        /// balances could not be read, or the account cannot fund any
+        /// withdrawal).
         public let minWithdrawable: UInt64?
         /// The largest amount the account can withdraw in one transition, as
-        /// Rust computed it. Reported only by the amount preflight, `nil`
-        /// otherwise; `0` when Rust could not determine it.
+        /// Rust computed it. Reported only by the amount preflight; `nil`
+        /// otherwise, and when Rust could not determine it. Never `0`: an
+        /// unknown limit is not a limit of zero.
         public let maxWithdrawable: UInt64?
     }
 
@@ -674,8 +677,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 estimatedFee: out.estimated_fee,
                 reason: out.can_withdraw ? nil : result.message,
                 inputCount: out.input_count,
-                minWithdrawable: out.min_withdrawable,
-                maxWithdrawable: out.max_withdrawable
+                // Rust writes 0 for a bound it could not work out (the
+                // balances could not be read, or the account cannot fund any
+                // withdrawal); that is "unknown", not a limit of zero.
+                minWithdrawable: out.min_withdrawable == 0 ? nil : out.min_withdrawable,
+                maxWithdrawable: out.max_withdrawable == 0 ? nil : out.max_withdrawable
             )
         }.value
     }

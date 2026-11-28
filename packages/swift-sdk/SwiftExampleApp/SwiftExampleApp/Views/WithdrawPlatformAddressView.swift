@@ -125,8 +125,6 @@ struct WithdrawPlatformAddressView: View {
     @State private var saveWarning: String? = nil
 
     private static let creditsPerDash: Double = 100_000_000_000.0
-    private static let creditsPerDashExact: UInt64 = 100_000_000_000
-    private static let creditFractionDigits = 11
 
     /// Upper bound on the Core L1 fee rate (duffs/byte). The normal rate
     /// is 1; even heavy congestion rarely exceeds a few hundred. Because a
@@ -206,7 +204,9 @@ struct WithdrawPlatformAddressView: View {
                 recomputePreflight()
             }
             .onChange(of: amountDash) { _, _ in
-                recomputePreflight()
+                // Typing changes the amount once per key; wait for it to
+                // settle so each keystroke is not its own proof query.
+                recomputePreflight(afterTypingSettles: true)
             }
             .onDisappear {
                 // Tear down any in-flight preflight when the sheet closes so a
@@ -290,9 +290,16 @@ struct WithdrawPlatformAddressView: View {
                     .accessibilityIdentifier("withdrawPlatform.amountField")
                 Text("DASH")
                     .foregroundColor(.secondary)
-                Button("Max") { amountDash = "" }
+                // The largest amount Rust reported for this account and fee
+                // rate. An empty field stays the separate full-balance
+                // withdrawal, which spends every address.
+                Button("Max") {
+                    if let maximum = preflight?.maxWithdrawable {
+                        amountDash = KeyLimitsFormatting.dashNumber(maximum)
+                    }
+                }
                     .buttonStyle(.borderless)
-                    .disabled(isSubmitting || amountDash.isEmpty)
+                    .disabled(isSubmitting || preflight?.maxWithdrawable == nil)
                     .accessibilityIdentifier("withdrawPlatform.maxButton")
             }
             if case .invalid = amountInput {
@@ -443,26 +450,27 @@ struct WithdrawPlatformAddressView: View {
         }
     }
 
-    /// The range Rust reported for a requested amount. Shown only when the
-    /// amount preflight reported it (a `0` means Rust could not tell).
+    /// The range Rust reported for a requested amount, at full credit
+    /// precision so the text shown can be typed back into the field. Shown
+    /// only when the amount preflight reported it.
     @ViewBuilder
     private func amountRangeRows(
         _ preflight: ManagedPlatformAddressWallet.WithdrawalPreflight
     ) -> some View {
-        if let minimum = preflight.minWithdrawable, minimum > 0 {
+        if let minimum = preflight.minWithdrawable {
             HStack {
                 Label("Minimum", systemImage: "arrow.down.to.line")
                 Spacer()
-                Text(formatCredits(minimum))
+                Text(formatCreditsAsDash(minimum))
                     .foregroundColor(.secondary)
                     .accessibilityIdentifier("withdrawPlatform.minWithdrawable")
             }
         }
-        if let maximum = preflight.maxWithdrawable, maximum > 0 {
+        if let maximum = preflight.maxWithdrawable {
             HStack {
                 Label("Maximum", systemImage: "arrow.up.to.line")
                 Spacer()
-                Text(formatCredits(maximum))
+                Text(formatCreditsAsDash(maximum))
                     .foregroundColor(.secondary)
                     .accessibilityIdentifier("withdrawPlatform.maxWithdrawable")
             }
@@ -591,30 +599,16 @@ struct WithdrawPlatformAddressView: View {
     }
 
     /// Exact decimal → credits conversion of the amount field, without
-    /// passing through `Double`. Same parse as `TransferPlatformAddressView`.
-    /// Whether the amount can be withdrawn is Rust's call (the preflight).
+    /// passing through `Double`; "." and the locale's decimal separator are
+    /// both read. Whether the amount can be withdrawn is Rust's call (the
+    /// preflight).
     private var amountInput: AmountInput {
         let raw = amountDash.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return .fullBalance }
-
-        let parts = raw.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count <= 2 else { return .invalid }
-        let wholeStr = String(parts.first ?? "")
-        let fracStr = parts.count == 2 ? String(parts[1]) : ""
-        guard wholeStr.allSatisfy(\.isNumber), fracStr.allSatisfy(\.isNumber),
-            !(wholeStr.isEmpty && fracStr.isEmpty),
-            fracStr.count <= Self.creditFractionDigits
-        else { return .invalid }
-
-        guard let whole = wholeStr.isEmpty ? 0 : UInt64(wholeStr) else { return .invalid }
-        let scaled = whole.multipliedReportingOverflow(by: Self.creditsPerDashExact)
-        let paddedFrac = fracStr.padding(
-            toLength: Self.creditFractionDigits, withPad: "0", startingAt: 0
-        )
-        guard !scaled.overflow, let fracCredits = UInt64(paddedFrac) else { return .invalid }
-        let total = scaled.partialValue.addingReportingOverflow(fracCredits)
-        guard !total.overflow, total.partialValue > 0 else { return .invalid }
-        return .credits(total.partialValue)
+        guard let credits = KeyLimitsFormatting.credits(fromDash: raw), credits > 0 else {
+            return .invalid
+        }
+        return .credits(credits)
     }
 
     /// Resolved Core destination address for the current mode.
@@ -761,7 +755,7 @@ struct WithdrawPlatformAddressView: View {
     /// a guess. Both "can't fund" and a transient "can't confirm right now"
     /// (network/proof failure) are normal non-throwing results with
     /// `canWithdraw == false` and a `reason`.
-    private func recomputePreflight() {
+    private func recomputePreflight(afterTypingSettles: Bool = false) {
         // Cancel any in-flight query so its result can't land after ours.
         preflightTask?.cancel()
 
@@ -790,6 +784,11 @@ struct WithdrawPlatformAddressView: View {
         let fee = coreFeePerByte
         isCheckingPreflight = true
         preflightTask = Task { @MainActor in
+            if afterTypingSettles {
+                // The next keystroke cancels this task during the wait.
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled else { return }
+            }
             let result: ManagedPlatformAddressWallet.WithdrawalPreflight?
             do {
                 let addressWallet = try managedHolder.platformAddressWallet()
