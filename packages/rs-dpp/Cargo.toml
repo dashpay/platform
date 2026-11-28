@@ -12,7 +12,6 @@ authors = [
 ]
 
 [dependencies]
-secp256k1 = { workspace = true }
 # Reach dash-pkc through rust-dashcore so the crates.io release it requires is the
 # only one in the lockfile; a second version would duplicate dash-pkc.
 dashcore-crypto = { workspace = true, optional = true }
@@ -101,6 +100,7 @@ tracing = { version = "0.1.41" }
 grovedb-commitment-tree = { workspace = true, optional = true }
 
 [dev-dependencies]
+secp256k1 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = [

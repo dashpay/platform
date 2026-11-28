@@ -14,6 +14,7 @@
 //! ([`send_contact_request_with_external_signer`](IdentityWallet::send_contact_request_with_external_signer)).
 
 use std::collections::BTreeMap;
+use zeroize::Zeroize;
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
@@ -295,16 +296,16 @@ impl IdentityWallet {
         // it is path-gated to the invitation sub-feature inside the provider.
         let mut voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
 
-        // Build the (secret) URI, then scrub the exported scalar on BOTH the
-        // success and the encode-error path. `secp256k1::SecretKey` has no
-        // Drop-zeroize, so wipe it explicitly; scrubbing before propagating an
-        // encode failure matters most there — on that path the key never
-        // legitimately left the device, so a lingering copy is the worst kind.
+        // Build the (secret) URI, then scrub the exported scalar right away on
+        // BOTH the success and the encode-error path instead of waiting for its
+        // drop-time zeroize; scrubbing before propagating an encode failure
+        // matters most there — on that path the key never legitimately left
+        // the device, so a lingering copy is the worst kind.
         // The link carries the funding txid + islock (legacy query form), not
         // the embedded proof; the invitee refetches the tx at claim.
         let network = self.sdk.network;
         let uri_result = encode_invitation_uri(&voucher_key, network, &proof, inviter.as_ref());
-        voucher_key.non_secure_erase();
+        voucher_key.zeroize();
         let uri = uri_result?;
 
         Ok(Invitation {

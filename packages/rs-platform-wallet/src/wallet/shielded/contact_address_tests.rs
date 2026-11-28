@@ -6,14 +6,15 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use dashcore::Network;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dpp::data_contracts::SystemDataContract;
 use dpp::identity::{Identity, IdentityV0};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet_manager::WalletManager;
+use secp256k1::PublicKey;
 use tokio::sync::RwLock;
 
 use super::viewing_key_bind_tests::{
@@ -273,7 +274,7 @@ impl ContactCryptoProvider for SlotProvider {
     async fn export_auto_accept_private_key(
         &self,
         path: &DerivationPath,
-    ) -> Result<SecretKey, PlatformWalletError> {
+    ) -> Result<EcdsaSecretKey, PlatformWalletError> {
         self.inner.export_auto_accept_private_key(path).await
     }
 

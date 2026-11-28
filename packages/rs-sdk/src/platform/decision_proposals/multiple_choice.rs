@@ -38,6 +38,8 @@ use crate::platform::query::VoteQuery;
 use crate::platform::{DataContract, Document, Fetch, FetchMany, Identifier};
 use crate::{Error, Sdk};
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::decision_proposal::multiple_choice::{
     choice_properties, proposal_properties, CHOICE_DOCUMENT_TYPE_NAME,
@@ -54,8 +56,6 @@ use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Bytes32, Value};
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

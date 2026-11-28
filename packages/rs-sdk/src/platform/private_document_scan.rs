@@ -33,7 +33,6 @@ use dpp::data_contract::validate_document::DataContractDocumentValidationMethods
 use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
 use dpp::platform_value::Value;
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::version::PlatformVersion;
 use futures::stream::{self, Stream, StreamExt};
 use platform_encryption::{
@@ -41,6 +40,7 @@ use platform_encryption::{
     OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError, PrivateDocumentRecipientKeys,
     PrivateDocumentTarget,
 };
+use secp256k1::{PublicKey, SecretKey};
 use zeroize::{Zeroize, Zeroizing};
 
 /// One identity of the wallet and the keys entries to it may be encrypted to.

@@ -285,16 +285,29 @@ pub fn new_block_header(timestamp_secs: Option<u32>) -> Header {
     }
 }
 
+/// The secp256k1 group order `n`, big-endian.
+const SECP256K1_ORDER: [u8; 32] = [
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+];
+
 /// `signature`, a 65-byte compact recoverable ECDSA signature, with S replaced by `n - S` and the
 /// recovery id's parity flipped: the high-S twin a third party can derive from a valid low-S
 /// signature. Key recovery accepts it like the original.
 pub fn high_s_twin(signature: &[u8]) -> Vec<u8> {
     let mut twin = signature.to_vec();
-    let s: [u8; 32] = twin[33..].try_into().expect("a 65-byte signature");
-    let negated = secp256k1::SecretKey::from_secret_bytes(s)
-        .expect("S is a valid scalar")
-        .negate();
-    twin[33..].copy_from_slice(&negated.to_secret_bytes());
+    assert_eq!(twin.len(), 65, "a 65-byte compact signature");
+    // n - S over big-endian bytes; S is a valid nonzero scalar, so n > S and no borrow remains.
+    let mut borrow = 0u16;
+    for (byte, n) in twin[33..]
+        .iter_mut()
+        .rev()
+        .zip(SECP256K1_ORDER.iter().rev())
+    {
+        let diff = 0x100 + u16::from(*n) - u16::from(*byte) - borrow;
+        *byte = diff as u8;
+        borrow = u16::from(diff < 0x100);
+    }
     // The header is 27 + recovery id, plus 4 for a compressed key.
     let base = if twin[0] >= 31 { 31 } else { 27 };
     twin[0] = base + ((twin[0] - base) ^ 1);
@@ -315,4 +328,39 @@ pub fn uncompressed_header_twin(signature: &[u8]) -> Vec<u8> {
     let mut twin = signature.to_vec();
     twin[0] -= 4;
     twin
+}
+
+#[cfg(test)]
+mod high_s_twin_tests {
+    use super::*;
+
+    fn signature(header: u8, s: [u8; 32]) -> Vec<u8> {
+        let mut signature = vec![header];
+        signature.extend_from_slice(&[7; 32]);
+        signature.extend_from_slice(&s);
+        signature
+    }
+
+    #[test]
+    fn should_replace_s_with_its_negation_modulo_the_order() {
+        let mut one = [0; 32];
+        one[31] = 1;
+        let mut order_minus_one = SECP256K1_ORDER;
+        order_minus_one[31] -= 1;
+
+        assert_eq!(
+            high_s_twin(&signature(31, one)),
+            signature(32, order_minus_one)
+        );
+        assert_eq!(
+            high_s_twin(&signature(28, order_minus_one)),
+            signature(27, one)
+        );
+    }
+
+    #[test]
+    fn should_return_the_original_signature_when_applied_twice() {
+        let original = signature(33, [0x5a; 32]);
+        assert_eq!(high_s_twin(&high_s_twin(&original)), original);
+    }
 }

@@ -12,7 +12,6 @@ use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::signer;
 use dpp::prelude::Identifier;
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::serialization::Signable;
 use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
@@ -25,6 +24,7 @@ use rs_dapi_client::transport::{
 };
 use rs_dapi_client::DapiRequestExecutor;
 use rs_dapi_client::{ConnectionPool, DapiClient, DapiClientError, Uri};
+use secp256k1::{PublicKey, SecretKey};
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::io;

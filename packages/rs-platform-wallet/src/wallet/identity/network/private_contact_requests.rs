@@ -43,6 +43,8 @@ use dash_sdk::platform::private_document_entries::{PrivateDocumentEntries, Priva
 use dash_sdk::platform::private_document_scan::{
     PrivateDocumentPageHeights, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{RngCore, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::decode_private_document_payload;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -52,13 +54,11 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::secp256k1::PublicKey;
 use futures::StreamExt;
 use key_wallet::bip32::KeyDerivationType;
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
+use secp256k1::PublicKey;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
@@ -2782,6 +2782,7 @@ mod tests {
     use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
     use dash_sdk::platform::ContextProvider;
     use dpp::address_funds::AddressWitness;
+    use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
     use dpp::data_contract::{DataContract, TokenConfiguration};
     use dpp::document::{Document, DocumentV0};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
@@ -2789,7 +2790,6 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::Value;
-    use dpp::secp256k1::SecretKey;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::StateTransition;
     use dpp::version::PlatformVersion;
@@ -2802,6 +2802,7 @@ mod tests {
     use platform_encryption::{
         account_reference_version, decrypt_account_label, decrypt_extended_public_key,
     };
+    use secp256k1::SecretKey;
     #[cfg(feature = "shielded")]
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -9918,7 +9919,7 @@ mod tests {
         async fn export_auto_accept_private_key(
             &self,
             path: &DerivationPath,
-        ) -> Result<SecretKey, PlatformWalletError> {
+        ) -> Result<EcdsaSecretKey, PlatformWalletError> {
             self.inner.export_auto_accept_private_key(path).await
         }
 

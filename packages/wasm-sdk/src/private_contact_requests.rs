@@ -12,7 +12,6 @@ use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::{Identity, KeyID};
 use dash_sdk::dpp::platform_value::BinaryData;
-use dash_sdk::dpp::secp256k1::SecretKey;
 use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::platform::dashpay::{
     private_contact_request_outgoing_viewing_key, PrivateContactRequest,
@@ -24,6 +23,7 @@ use dash_sdk::platform::private_document_entries::{
 };
 use dash_sdk::platform::private_document_scan::PrivateDocumentScanKeys;
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
+use secp256k1::SecretKey;
 use serde::Serialize;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -797,11 +797,11 @@ mod tests {
 mod binding_tests {
     use super::*;
     use dash_sdk::dpp::dashcore::{Network, PrivateKey};
-    use dash_sdk::dpp::secp256k1::PublicKey;
     use dash_sdk::platform::dashpay::{
         ReceivedPrivateContactRequest, RejectedPrivateContactRequest, SentPrivateContactRequest,
     };
     use js_sys::{Array, BigInt, Object, Reflect, Uint8Array};
+    use secp256k1::PublicKey;
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
     use wasm_dpp2::PrivateKeyWasm;

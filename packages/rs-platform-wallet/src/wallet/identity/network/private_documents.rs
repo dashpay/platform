@@ -39,11 +39,11 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::secp256k1::{PublicKey, SecretKey};
 use futures::StreamExt;
 use key_wallet::bip32::{DerivationPath, KeyDerivationType};
 use key_wallet::Network;
 use platform_encryption::{OpenedPrivateDocumentEntry, PrivateDocumentAuthMode};
+use secp256k1::{PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
 use super::{identity_auth_derivation_path_for_type, ContactCryptoProvider, IdentityWallet};
@@ -781,7 +781,6 @@ pub(super) mod tests {
     use dpp::identity::{KeyType, SecurityLevel};
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{to_value, BinaryData};
-    use dpp::secp256k1::PublicKey;
     use dpp::version::PlatformVersion;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -790,6 +789,7 @@ pub(super) mod tests {
         PrivateDocumentEnvelopeError, PrivateDocumentRecipient, PrivateDocumentSender,
         PrivateDocumentTarget,
     };
+    use secp256k1::PublicKey;
     use serde_json::json;
     use std::sync::{Arc, Mutex};
 

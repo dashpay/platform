@@ -7,6 +7,8 @@ use crate::platform::transition::put_document::prepare_document_state_transition
 use crate::platform::transition::waitable::Waitable;
 use crate::platform::Document;
 use crate::{Error, Sdk};
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{Rng, RngCore, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -19,15 +21,13 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::StateTransition;
 use dpp::version::feature_initial_protocol_versions::DASHPAY_CONTACT_REQUEST_SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION;
 use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key,
     encrypt_shielded_address, COMPACT_XPUB_LEN, SHIELDED_ADDRESS_LEN,
 };
+use secp256k1::{PublicKey, SecretKey};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -749,8 +749,7 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::secp256k1;
-    use dpp::secp256k1::rand::{self, RngCore};
+    use dpp::dashcore::key::rand::{self, RngCore};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::PlatformVersion;
     use platform_encryption::decrypt_shielded_address;

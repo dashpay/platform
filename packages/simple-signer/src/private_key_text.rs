@@ -1,11 +1,10 @@
 //! Reading a secp256k1 private key typed by a person, as hex or WIF.
 
-use dpp::dashcore::ecdsa::EcdsaError;
+use dpp::dashcore::ecdsa::{EcdsaError, EcdsaSecretKey};
 use dpp::dashcore::key::Error as KeyError;
 use dpp::dashcore::PrivateKey;
-use dpp::secp256k1::SecretKey;
 use std::fmt;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The length of a private key written as hex: 32 bytes, two characters each.
 const PRIVATE_KEY_HEX_LEN: usize = 64;
@@ -67,9 +66,9 @@ pub fn private_key_from_text(text: &str) -> Result<Zeroizing<[u8; 32]>, PrivateK
         // the text leaves no partial secret in another buffer.
         hex::decode_to_slice(text, secret.as_mut_slice())
             .map_err(|_| PrivateKeyTextError::NotHexOrWif)?;
-        let mut validated = SecretKey::from_secret_bytes(*secret)
-            .map_err(|_| PrivateKeyTextError::NotASecretKey)?;
-        validated.non_secure_erase();
+        let mut validated =
+            EcdsaSecretKey::from_bytes(&secret).map_err(|_| PrivateKeyTextError::NotASecretKey)?;
+        validated.zeroize();
         return Ok(secret);
     }
     if text.len() > PRIVATE_KEY_HEX_LEN {

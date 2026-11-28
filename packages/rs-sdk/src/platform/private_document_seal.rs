@@ -27,7 +27,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
 use dpp::platform_value::{BinaryData, Identifier, Value};
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use platform_encryption::{
@@ -35,6 +34,7 @@ use platform_encryption::{
     PrivateDocumentEnvelopeError, PrivateDocumentRecipient, PrivateDocumentSender,
     PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN,
 };
+use secp256k1::{PublicKey, SecretKey};
 use zeroize::{Zeroize, Zeroizing};
 
 /// Whose key a [`PrivateDocumentSealError`] refuses.

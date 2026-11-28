@@ -950,7 +950,7 @@ mod tests {
     /// scalar.
     #[test]
     fn connect_keypairs_match_the_pinned_vectors() {
-        use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+        use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecretKey;
         use ApplicationKeyPurpose::{Decryption, Encryption};
 
         let rotated = |identity: [u8; 32], contract, purpose, rotation| ConnectKey::AppEncryption {
@@ -1022,11 +1022,8 @@ mod tests {
             );
 
             let secret: [u8; 32] = *derived.private_key;
-            let sk = SecretKey::from_secret_bytes(secret).expect("valid scalar");
-            assert_eq!(
-                SecpPublicKey::from_secret_key(&sk).serialize(),
-                derived.public_key
-            );
+            let sk = SecretKey::from_bytes(&secret).expect("valid scalar");
+            assert_eq!(sk.public_key().to_compressed(), derived.public_key);
         }
     }
 

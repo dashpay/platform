@@ -23,6 +23,8 @@ use dash_sdk::platform::private_document_seal::{
 };
 use dash_sdk::platform::Fetch;
 use dash_sdk::Sdk;
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{RngCore, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
@@ -32,12 +34,10 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{Identity, KeyID, Purpose};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::secp256k1::PublicKey;
 use dpp::shielded::compute_private_document_create_from_shielded_pool_fee;
 use dpp::version::PlatformVersion;
 use key_wallet::bip32::{DerivationPath, KeyDerivationType};
+use secp256k1::PublicKey;
 use zeroize::Zeroizing;
 
 use super::document::document_properties_from_json;
@@ -1223,7 +1223,7 @@ mod tests {
         async fn export_auto_accept_private_key(
             &self,
             _path: &DerivationPath,
-        ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
+        ) -> Result<dpp::dashcore::crypto::ecdsa::EcdsaSecretKey, PlatformWalletError> {
             panic!("the signer is not asked")
         }
 

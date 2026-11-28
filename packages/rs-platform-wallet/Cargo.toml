@@ -7,6 +7,8 @@ license = "MIT"
 description = "Platform wallet with identity management support"
 
 [dependencies]
+# platform-encryption exposes raw ECDH keys; Core has no typed ECDH API yet.
+secp256k1 = { workspace = true }
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet"] }

@@ -709,9 +709,9 @@ mod tests {
     use dashcore::hash_types::InputsHash;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
     use dashcore::Address as DashAddress;
-    use dpp::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-    use dpp::secp256k1::{Message, SecretKey};
     use key_wallet::account::StandardAccountType;
+    use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+    use secp256k1::{Message, SecretKey};
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
 
@@ -1576,7 +1576,7 @@ mod review_tests {
     use super::super::update_service::require_standard_payout_script;
     use super::*;
     use dashcore::Address as DashAddress;
-    use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+    use secp256k1::{PublicKey as SecpPublicKey, SecretKey};
 
     /// Consensus accepts only P2PKH / P2SH payouts (`bad-protx-payee`). A
     /// Dash address is always one of the two, so the script check is what
