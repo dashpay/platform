@@ -352,6 +352,17 @@ impl Report {
         &self.directory
     }
 
+    /// How many divergences of `kind` are counted.
+    pub(super) fn divergences_of(&self, kind: DivergenceKind) -> u64 {
+        self.counts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .divergences
+            .get(kind.name())
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// The counts as they are.
     pub fn counts(&self) -> Counts {
         self.counts

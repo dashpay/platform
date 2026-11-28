@@ -28,7 +28,11 @@
 //! to a directory of its own ([`Report`]), as far as the file system takes each write:
 //! of the request, the answers and the lists of fee calculations, those it held; and a
 //! checkpoint of the primary's database, and of the shadow's where it is open, as each
-//! is then. For a difference in the stored records, the two checkpoints that were
+//! is then. Of the divergences in costs alone, which do not stop the shadow where the
+//! node goes on, the two checkpoints are kept with the first
+//! [`COST_DIVERGENCES_KEPT_WITH_THE_STORES`] that the report counts, by either setting
+//! of [`OnDivergence`]: a later one is counted and written with everything else, and
+//! says so. For a difference in the stored records, the two checkpoints that were
 //! compared are left, and where the counts were written with the divergence, what the
 //! comparison found is written, as far as the file system takes that. A divergence is
 //! counted also where nothing of it could be written to that directory. Then, by
@@ -155,6 +159,13 @@ pub enum ShadowError {
     #[error("{0}")]
     Refused(String),
 }
+
+/// With how many of the divergences in costs alone that a report counts a checkpoint of
+/// each database is kept. The shadow goes on after such a divergence where the node does,
+/// and a node that ends at one is given the block again when it is started again; a
+/// checkpoint holds the files of its database as they were, which the database then
+/// cannot remove.
+pub const COST_DIVERGENCES_KEPT_WITH_THE_STORES: u64 = 4;
 
 /// Which storage engine the shadow is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -993,6 +1004,13 @@ impl<'a, C: CoreRPCLike> Shadow<'a, C> {
     /// Keeps what a divergence was found in, with the stores as they are when this is
     /// called, as far as each can be written, and counts nothing. The errors of Dash
     /// Core that are noted then are written with it.
+    ///
+    /// A divergence in costs alone is kept without the stores where the report counts
+    /// [`COST_DIVERGENCES_KEPT_WITH_THE_STORES`] of them already, whatever the node does
+    /// at a divergence. Where it goes on, the shadow goes on after one, so a cost that
+    /// differs in every block would keep two checkpoints for every block. Where it ends,
+    /// neither database has committed the block: a node that is started again is given
+    /// the block again, and a cost that differs in it again is counted again.
     fn evidence_kept<A>(
         &self,
         primary: &A,
@@ -1031,7 +1049,19 @@ impl<'a, C: CoreRPCLike> Shadow<'a, C> {
         notes.extend(core_errors.iter().map(|error| {
             format!("Dash Core answered the shadow with an error before this was found: {error}")
         }));
-        notes.extend(self.keep_the_stores(primary, &kept));
+        let in_costs_before = match kind {
+            DivergenceKind::Cost => self.report.divergences_of(kind),
+            _ => 0,
+        };
+        if in_costs_before < COST_DIVERGENCES_KEPT_WITH_THE_STORES {
+            notes.extend(self.keep_the_stores(primary, &kept));
+        } else {
+            notes.push(format!(
+                "the stores are not kept: the report counts {in_costs_before} divergences in \
+                 costs alone before this one, and the stores are kept with the first \
+                 {COST_DIVERGENCES_KEPT_WITH_THE_STORES}"
+            ));
+        }
         self.written(kept.differences(differences, &notes));
         tracing::error!(
             height,

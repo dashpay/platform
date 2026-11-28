@@ -22,7 +22,7 @@ mod tests {
     };
     use drive_abci::abci::app::shadow::{
         compare_stores, Counts, HeightRange, Shadow, ShadowEngine, ShadowError, ShadowPlatform,
-        SkippedHeight, STATUS_FILE,
+        SkippedHeight, COST_DIVERGENCES_KEPT_WITH_THE_STORES, STATUS_FILE,
     };
     use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
@@ -788,6 +788,83 @@ mod tests {
         planted.kept(&OF_THE_EXECUTIONS);
         planted.kept(&THE_LINES);
         planted.not_kept(&OF_THE_COMMITS);
+    }
+
+    /// A cost that differs alone in block after block: every one is counted and written,
+    /// the shadow goes on, and the checkpoints of the two databases are kept with the
+    /// first [`COST_DIVERGENCES_KEPT_WITH_THE_STORES`] and with none after them.
+    #[tokio::test]
+    async fn the_stores_are_kept_with_the_first_cost_divergences_alone() {
+        let strategy = identities_and_documents();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config())
+            .build_with_mock_rpc();
+        let report = report_directory(&platform.config.db_path);
+        let mut outcome = chain(
+            &mut platform,
+            5,
+            &strategy,
+            ForATest::on(ShadowEngine::Other),
+        )
+        .await;
+        let with_the_stores = COST_DIVERGENCES_KEPT_WITH_THE_STORES;
+        for _ in 0..with_the_stores + 2 {
+            shadow_of(&outcome).plant(Fault::ShadowCost);
+            outcome = more(outcome, 1, &identities()).await;
+        }
+        let last = 5 + with_the_stores + 2;
+        let counts = shadow_of(&outcome).report().counts();
+        assert_eq!(counts, counts_in(&report));
+        assert_eq!(
+            counts.divergences,
+            BTreeMap::from([("cost".to_string(), with_the_stores + 2)])
+        );
+        assert_eq!(counts.divergence_heights, (6..=last).collect::<Vec<_>>());
+        assert_eq!(counts.shadow_stopped, None);
+        assert_eq!(counts.blocks_compared, 5);
+        assert_eq!(counts.blocks_diverged, with_the_stores + 2);
+        assert_eq!(counts.blocks_without_shadow, 0);
+        assert_eq!(counts.shadow_height, last);
+
+        for height in 6..=last {
+            let (kept, differs) = kept_at(&report, height);
+            let names = names_in(&kept);
+            let stores = ["primary-store", "shadow-store"]
+                .iter()
+                .filter(|store| names.iter().any(|name| name == *store))
+                .count();
+            assert!(
+                differs.contains(&format!(
+                    "DIFFERS height={height} field=fee_ops_sha256 this="
+                )),
+                "{differs}"
+            );
+            assert!(differs.contains("fee calculation "), "{differs}");
+            for name in OF_THE_EXECUTIONS
+                .iter()
+                .filter(|name| !name.ends_with("-store"))
+                .chain(&THE_LINES)
+            {
+                assert!(
+                    names.iter().any(|kept| kept == name),
+                    "{name} at {height}: {names:?}"
+                );
+            }
+            if height < 6 + with_the_stores {
+                assert_eq!(stores, 2, "at {height}: {names:?}");
+                assert!(!differs.contains("the stores are not kept"), "{differs}");
+            } else {
+                assert_eq!(stores, 0, "at {height}: {names:?}");
+                assert!(
+                    differs.contains(&format!(
+                        "the stores are not kept: the report counts {} divergences in costs \
+                         alone before this one",
+                        height - 6
+                    )),
+                    "{differs}"
+                );
+            }
+        }
     }
 
     #[tokio::test]
