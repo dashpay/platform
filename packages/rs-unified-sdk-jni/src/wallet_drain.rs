@@ -26,7 +26,8 @@
 #![cfg(feature = "shielded")]
 
 use crate::support::{
-    guard, net_from_ord, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET,
+    guard, held_asset_lock_of, net_from_ord, take_pwffi_error, throw_sdk_exception,
+    PWFFI_CODE_OFFSET,
 };
 use jni::objects::{JByteArray, JClass};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
@@ -52,8 +53,9 @@ use std::ptr;
 
 /// Bytes of a packed outcome before its error message: state (1),
 /// has-outpoint flag (1), txid (32), vout (4), error code (4), consensus
-/// code (4), consensus kind (4).
-pub(crate) const OUTCOME_HEADER_LEN: usize = 1 + 1 + 32 + 4 + 4 + 4 + 4;
+/// code (4), consensus kind (4), payment delivery (4), retryable flag (1),
+/// held-asset-lock flag (1), held asset lock (36).
+pub(crate) const OUTCOME_HEADER_LEN: usize = 1 + 1 + 32 + 4 + 4 + 4 + 4 + 4 + 1 + 1 + 36;
 
 /// Number of `long`s in a packed preview: status, candidate input count,
 /// candidate balance, pool fee, has-L1-fee flag, L1 fee, has-recipient flag,
@@ -61,13 +63,18 @@ pub(crate) const OUTCOME_HEADER_LEN: usize = 1 + 1 + 32 + 4 + 4 + 4 + 4;
 pub(crate) const PREVIEW_LEN: usize = 8;
 
 /// The error half of a packed outcome: `code` is 0 for success, otherwise
-/// the result code shifted by [`PWFFI_CODE_OFFSET`], exactly what a thrown
-/// `DashSDKException` would carry.
+/// the result code shifted by [`PWFFI_CODE_OFFSET`]. It carries everything a
+/// thrown `DashSDKException` would (see `support::throw_pwffi_result`),
+/// the payment class included, so a failed drain reports the same class on
+/// Kotlin as on Swift.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct OutcomeError {
     code: i32,
     consensus_code: u32,
     consensus_kind: i32,
+    payment_delivery: i32,
+    retryable: bool,
+    held_asset_lock: Option<[u8; 36]>,
     message: String,
 }
 
@@ -88,6 +95,9 @@ fn take_outcome_error(mut result: PlatformWalletFFIResult) -> OutcomeError {
         code: result.code as i32 + PWFFI_CODE_OFFSET,
         consensus_code: result.consensus_code,
         consensus_kind: result.consensus_kind as i32,
+        payment_delivery: result.payment_delivery as i32,
+        retryable: result.retryable,
+        held_asset_lock: held_asset_lock_of(&result),
         message,
     };
     // SAFETY: `result` is a fresh result this function owns.
@@ -97,8 +107,10 @@ fn take_outcome_error(mut result: PlatformWalletFFIResult) -> OutcomeError {
 
 /// One outcome and the error returned beside it, in the layout
 /// `WalletDrainOutcome.decode` reads: state, has-outpoint flag, the txid in
-/// wire order, then vout, error code, consensus code and consensus kind as
-/// little-endian 32-bit values, then the error message as UTF-8.
+/// wire order, then vout, error code, consensus code, consensus kind and
+/// payment delivery as little-endian 32-bit values, the retryable and
+/// held-asset-lock flags, the held lock's raw outpoint (zeros when there is
+/// none), then the error message as UTF-8.
 pub(crate) fn pack_outcome(outcome: &WalletDrainOutcomeFFI, error: &OutcomeError) -> Vec<u8> {
     let mut packed = Vec::with_capacity(OUTCOME_HEADER_LEN + error.message.len());
     packed.push(outcome.state);
@@ -108,6 +120,10 @@ pub(crate) fn pack_outcome(outcome: &WalletDrainOutcomeFFI, error: &OutcomeError
     packed.extend_from_slice(&error.code.to_le_bytes());
     packed.extend_from_slice(&error.consensus_code.to_le_bytes());
     packed.extend_from_slice(&error.consensus_kind.to_le_bytes());
+    packed.extend_from_slice(&error.payment_delivery.to_le_bytes());
+    packed.push(u8::from(error.retryable));
+    packed.push(u8::from(error.held_asset_lock.is_some()));
+    packed.extend_from_slice(&error.held_asset_lock.unwrap_or([0; 36]));
     packed.extend_from_slice(error.message.as_bytes());
     packed
 }
@@ -230,8 +246,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_pre
 /// thrown. Throws only for an argument that could not be read, before any
 /// Rust wallet code runs. Blocks for the asset-lock proof wait and the
 /// Halo 2 proof.
+///
+/// `V2` (with [`Java_..._statusV2`]) names the 92-byte outcome header: a
+/// Kotlin SDK finds no entry point in a library that still packs the 50-byte
+/// one, so the mismatch fails at link time, before any funds move.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_fundFromWalletDrain(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_fundFromWalletDrainV2(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
@@ -278,9 +298,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_fun
 /// `platform_wallet_manager_shielded_wallet_drain_status`. Never touches the
 /// network. Throws when the read fails, which is never evidence that nothing
 /// was sent; otherwise returns the outcome packed as
-/// [`Java_..._fundFromWalletDrain`] does, with no error.
+/// [`Java_..._fundFromWalletDrainV2`] does, with no error.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_status(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_statusV2(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
@@ -529,6 +549,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_loc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_wallet_ffi::error::PlatformWalletFFIPaymentDelivery;
     use platform_wallet_ffi::OutPointFFI;
 
     /// The packed outcome is the only place the drain's error and its
@@ -548,6 +569,9 @@ mod tests {
             code: 1020,
             consensus_code: 40_001,
             consensus_kind: 4,
+            payment_delivery: 3,
+            retryable: true,
+            held_asset_lock: Some([9; 36]),
             message: "résumé".to_owned(),
         };
         let packed = pack_outcome(&outcome, &error);
@@ -563,7 +587,11 @@ mod tests {
         assert_eq!(&packed[38..42], &1020i32.to_le_bytes());
         assert_eq!(&packed[42..46], &40_001u32.to_le_bytes());
         assert_eq!(&packed[46..50], &4i32.to_le_bytes());
-        assert_eq!(&packed[50..], "résumé".as_bytes());
+        assert_eq!(&packed[50..54], &3i32.to_le_bytes());
+        assert_eq!(packed[54], 1, "retryable");
+        assert_eq!(packed[55], 1, "has a held asset lock");
+        assert_eq!(&packed[56..92], &[9; 36]);
+        assert_eq!(&packed[92..], "résumé".as_bytes());
     }
 
     #[test]
@@ -592,8 +620,54 @@ mod tests {
         assert_eq!(error.message, "unresolved");
         assert_eq!(error.consensus_code, 0);
         assert_eq!(
+            error.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::Unknown as i32
+        );
+        assert!(!error.retryable);
+        assert_eq!(error.held_asset_lock, None);
+        assert_eq!(
             take_outcome_error(PlatformWalletFFIResult::ok()),
             OutcomeError::default()
+        );
+    }
+
+    /// A failed drain keeps the payment class a thrown exception would carry:
+    /// its delivery, the wallet's retry and the held lock under `LockHeld`.
+    #[test]
+    fn should_carry_the_payment_class_of_a_failed_result() {
+        let mut result = PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "proof wait timed out",
+        );
+        result.payment_delivery = PlatformWalletFFIPaymentDelivery::LockHeld;
+        result.retryable = true;
+        result.held_asset_lock = OutPointFFI {
+            txid: [5; 32],
+            vout: 2,
+        };
+        let error = take_outcome_error(result);
+        assert_eq!(
+            error.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::LockHeld as i32
+        );
+        assert!(error.retryable);
+        let mut held = [5u8; 36];
+        held[32..].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(error.held_asset_lock, Some(held));
+
+        let mut result = PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "maybe sent",
+        );
+        result.payment_delivery = PlatformWalletFFIPaymentDelivery::MaybeSent;
+        result.held_asset_lock = OutPointFFI {
+            txid: [5; 32],
+            vout: 2,
+        };
+        assert_eq!(
+            take_outcome_error(result).held_asset_lock,
+            None,
+            "only LockHeld names a held lock"
         );
     }
 

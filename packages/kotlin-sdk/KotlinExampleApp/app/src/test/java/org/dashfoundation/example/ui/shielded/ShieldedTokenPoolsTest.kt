@@ -15,6 +15,8 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.dashfoundation.example.testing.spendUnconfirmed
+import org.dashfoundation.example.testing.broadcastUnconfirmed
 
 /**
  * What the Shielded Tokens screens show and read (SH-25, SH-26, SH-27), apart
@@ -139,10 +141,10 @@ class ShieldedTokenPoolsTest {
     @Test
     fun `reports a spend that may have reached a node without inviting a retry`() = runTest {
         val transfer = shieldedTokenSpendResult(ShieldedTokenPoolSpendKind.ShieldedTransfer) {
-            throw DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("result not proved")
+            throw spendUnconfirmed("result not proved")
         }
         val unshield = shieldedTokenSpendResult(ShieldedTokenPoolSpendKind.Unshield) {
-            throw DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("no answer")
+            throw broadcastUnconfirmed("no answer")
         }
 
         assertTrue(transfer.mayHaveGoneThrough)

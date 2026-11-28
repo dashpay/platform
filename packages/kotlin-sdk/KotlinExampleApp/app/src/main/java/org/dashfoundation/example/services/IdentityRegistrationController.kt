@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
+import org.dashfoundation.example.util.PaymentFailure
 
 /**
  * Per-slot state for a single identity registration attempt — 1:1 port of
@@ -61,8 +63,15 @@ class IdentityRegistrationController(
             override fun hashCode(): Int = identityId.contentHashCode()
         }
 
-        /** Failure terminal state; the message is shown inline. Stays until dismissed. */
-        data class Failed(val message: String) : Phase
+        /**
+         * Failure terminal state, presented by [PaymentFailure] from the
+         * native wallet's class: its message is shown inline, and its action
+         * says what may run again (a retry, or only the resume of the held
+         * lock). Stays until dismissed.
+         */
+        data class Failed(val failure: PaymentFailure) : Phase {
+            val message: String get() = failure.message
+        }
 
         /**
          * Unconfirmed terminal state (shielded only): the transition may have
@@ -82,10 +91,24 @@ class IdentityRegistrationController(
         /**
          * Whether the controller is currently holding its slot against a
          * fresh registration. [PreparingKeys], [InFlight], [Unconfirmed] hold
-         * it; [Idle], [Completed], [Failed] release it. ← Swift `isActive`.
+         * it; [Idle], [Completed], [Failed] release it — what may run on a
+         * failed slot again is [permitsSubmit]'s to decide from the
+         * failure's payment class. ← Swift `isActive`.
          */
         val isActive: Boolean
             get() = this is PreparingKeys || this is InFlight || this is Unconfirmed
+
+        /**
+         * Whether an operation resuming [resuming] (null for a fresh
+         * registration) may start from this phase: from [Idle] and
+         * [PreparingKeys], from [Failed] only as its class allows
+         * ([PaymentFailure.permitsRestart]). ← Swift `permitsSubmit`.
+         */
+        fun permitsSubmit(resuming: AssetLockBuiltOutPoint?): Boolean = when (this) {
+            is Idle, is PreparingKeys -> true
+            is Failed -> failure.permitsRestart(resuming)
+            is InFlight, is Completed, is Unconfirmed -> false
+        }
     }
 
     /**
@@ -126,9 +149,11 @@ class IdentityRegistrationController(
     /**
      * Submit the registration. Defensively rejects [Phase.InFlight],
      * [Phase.Completed], and [Phase.Unconfirmed] (re-firing would race a
-     * duplicate FFI call or re-register a live identity). [Phase.Idle],
-     * [Phase.PreparingKeys], and [Phase.Failed] are allowed — the coordinator
-     * drives the legitimate restart through them. ← Swift `submit`.
+     * duplicate FFI call or re-register a live identity), and a
+     * [Phase.Failed] whose class does not allow this operation
+     * ([Phase.permitsSubmit]: a fresh registration only after a NOT_SENT
+     * failure, a resume only of the lock it holds). [resuming] names the
+     * lock [body] resumes, null for a fresh registration. ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the 32-byte identity
      * id, or throws. It runs on its own dispatcher; the terminal phase flip
@@ -138,11 +163,9 @@ class IdentityRegistrationController(
         body: suspend () -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
+        resuming: AssetLockBuiltOutPoint? = null,
     ) {
-        when (_phase.value) {
-            is Phase.Idle, is Phase.PreparingKeys, is Phase.Failed -> Unit
-            is Phase.InFlight, is Phase.Completed, is Phase.Unconfirmed -> return
-        }
+        if (!_phase.value.permitsSubmit(resuming)) return
         _phase.value = Phase.InFlight
         _failureStage.value = null
         lastSubmittedAt = now()
@@ -160,7 +183,7 @@ class IdentityRegistrationController(
                 } else {
                     _failureStage.value = if (isBroadcastNotSent(e)) FailureStage.BroadcastNotSent else null
                     terminalAt = now()
-                    _phase.value = Phase.Failed(e.message ?: "Registration failed")
+                    _phase.value = Phase.Failed(PaymentFailure.of(e))
                 }
             }
         }

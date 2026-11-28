@@ -10,6 +10,8 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.dashfoundation.example.testing.spendUnconfirmed
+import org.dashfoundation.example.testing.broadcastUnconfirmed
 
 /**
  * The create screen's own logic (TEST_PLAN DOC-19): how an outcome is shown, what a tap sends
@@ -46,8 +48,8 @@ class PrivateDocumentEntryCreateTest {
     @Test
     fun shouldShowACreateThatMayHaveGoneThroughAsUnconfirmedNeverAsFailed() {
         for (error in listOf(
-            DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
-            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("no result"),
+            spendUnconfirmed("not proved"),
+            broadcastUnconfirmed("no result"),
             DashSdkError.StateTransitionResultUnconfirmed("no result"),
         )) {
             assertEquals(

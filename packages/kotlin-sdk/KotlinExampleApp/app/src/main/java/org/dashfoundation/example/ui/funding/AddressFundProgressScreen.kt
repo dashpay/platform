@@ -37,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AddressFundProgress
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController.Phase
+import org.dashfoundation.example.ui.components.ReleasePaymentHoldButton
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
@@ -246,11 +247,21 @@ fun AddressFundProgressScreen(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.testTag("addressFundProgress.completed"),
                 )
-                is Phase.Failed -> Text(
-                    p.message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("addressFundProgress.failed"),
-                )
+                is Phase.Failed -> {
+                    Text(
+                        p.message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("addressFundProgress.failed"),
+                    )
+                    // A hold without a lock to resume is released only once
+                    // the user confirmed the original payment in the history;
+                    // a held lock stays on the resume path (← Swift).
+                    ReleasePaymentHoldButton(p.failure, testTagPrefix = "addressFundProgress") {
+                        container.addressFundCoordinator
+                            .release(walletId, platformAccountIndex, recipientHash)
+                        navController.popBackStack()
+                    }
+                }
                 else -> Unit
             }
         }
@@ -308,5 +319,5 @@ private fun phaseLabel(phase: Phase): String = when (phase) {
     is Phase.Idle -> "Queued"
     is Phase.InFlight -> "In flight"
     is Phase.Completed -> "Funded"
-    is Phase.Failed -> "Failed"
+    is Phase.Failed -> phase.failure.title
 }

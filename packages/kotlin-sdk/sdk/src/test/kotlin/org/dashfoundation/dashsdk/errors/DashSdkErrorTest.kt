@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +9,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashSdkErrorTest {
+
+    private companion object {
+        // `PlatformWalletFFIPaymentDelivery` discriminants.
+        const val NOT_SENT = 1
+        const val MAYBE_SENT = 2
+        const val LOCK_HELD = 3
+
+        /** A raw outpoint (`txid_le[32] || vout_le[4]`): txid of 7s, vout 2. */
+        val heldOutPoint: ByteArray = ByteArray(32) { 7 } + byteArrayOf(2, 0, 0, 0)
+    }
 
     @Test
     fun shouldPreserveAssetLockInputCapWithoutRetryingAPartialDrain() {
@@ -26,6 +37,83 @@ class DashSdkErrorTest {
         assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockRecipientMismatch)
         assertEquals(native.message, mapped.message)
         assertFalse(mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldExposeThePaymentDeliveryThePlatformWalletResultCarried() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // `ErrorWalletOperation` (6) folds failures of both classes; the
+        // native result says which one this was.
+        val notSent = DashSdkError.fromNative(DashSDKException(offset + 6, "build failed", 0, 0, 1))
+        assertEquals(PaymentDelivery.NOT_SENT, notSent.delivery)
+        assertNull(notSent.consensusError)
+
+        val maybeSent = DashSdkError.fromNative(DashSDKException(offset + 18, "unconfirmed", 0, 0, 2))
+        assertEquals(PaymentDelivery.MAYBE_SENT, maybeSent.delivery)
+        assertFalse(maybeSent.isRetryable)
+
+        // A consensus rejection still arrives with its code and kind.
+        val rejected = DashSdkError.fromNative(DashSDKException(offset + 21, "nonce", 40603, 4, 2))
+        assertEquals(PlatformConsensusError(40603, ConsensusErrorKind.STATE), rejected.consensusError)
+        assertEquals(PaymentDelivery.MAYBE_SENT, rejected.delivery)
+
+        // A class this build does not know never invites a second payment.
+        val future = DashSdkError.fromNative(DashSDKException(offset + 6, "future", 0, 0, 7))
+        assertEquals(PaymentDelivery.MAYBE_SENT, future.delivery)
+
+        // A failure no wallet error classified (`Unknown`, 4) has no class.
+        val unknown = DashSdkError.fromNative(DashSDKException(offset + 1, "null pointer", 0, 0, 4))
+        assertNull(unknown.delivery)
+        assertFalse(unknown.isRetryable)
+
+        // Errors that carry no class: rs-sdk-ffi's, and the legacy constructor.
+        assertNull(DashSdkError.fromNative(DashSDKException(3, "network")).delivery)
+        assertNull(DashSdkError.fromNative(DashSDKException(offset + 6, "legacy")).delivery)
+    }
+
+    @Test
+    fun shouldReadRetryabilityFromTheNativeResultAlone() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // The native wallet allowed the retry: Kotlin reports it.
+        val refused = DashSdkError.fromNative(DashSDKException(offset + 16, "refused", 0, 0, NOT_SENT, true))
+        assertTrue(refused is DashSdkError.PlatformWallet.ShieldedBroadcastFailed)
+        assertTrue(refused.isRetryable)
+        // Kotlin decides nothing from the kind or the class: the kinds that
+        // used to be retryable answer no when the native result says no, and
+        // when the native layer gave no answer at all.
+        for (code in listOf(16, 19, 27, 49, 51, 74)) {
+            for (delivery in listOf(NOT_SENT, MAYBE_SENT, LOCK_HELD)) {
+                val refusedRetry = DashSdkError.fromNative(
+                    DashSDKException(offset + code, "no", 0, 0, delivery, false),
+                )
+                assertFalse("code $code delivery $delivery", refusedRetry.isRetryable)
+            }
+            val unclassified = DashSdkError.fromNative(DashSDKException(offset + code, "legacy"))
+            assertFalse("code $code without a native answer", unclassified.isRetryable)
+        }
+    }
+
+    @Test
+    fun shouldExposeAHeldAssetLockAsResumableWithItsOutpointAndNotRetryable() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // A held lock under the shared code (a proof wait that timed out), the
+        // contested lock (48) and the recipient mismatch (61): whatever the
+        // type, the native delivery says resume, and names the lock. Not a
+        // retry: running the payment again would fund a second one.
+        for (code in listOf(6, 48, 61)) {
+            val held = DashSdkError.fromNative(
+                DashSDKException(offset + code, "held", 0, 0, LOCK_HELD, false, heldOutPoint),
+            )
+            assertEquals("code $code", PaymentDelivery.LOCK_HELD, held.delivery)
+            assertFalse("code $code resumes, never retries", held.isRetryable)
+            val outPoint = held.heldAssetLock!!
+            assertArrayEquals(ByteArray(32) { 7 }, outPoint.txid)
+            assertEquals(2, outPoint.vout)
+        }
+        // No outpoint unless the delivery holds a lock.
+        val maybe = DashSdkError.fromNative(DashSDKException(offset + 48, "maybe", 0, 0, MAYBE_SENT))
+        assertNull(maybe.heldAssetLock)
+        assertFalse(maybe.isRetryable)
     }
 
     @Test
@@ -114,8 +202,9 @@ class DashSdkErrorTest {
 
     @Test
     fun retryabilityFollowsErrorClass() {
-        assertTrue(DashSdkError.NetworkError("x").isRetryable)
-        assertTrue(DashSdkError.Timeout("x").isRetryable)
+        // No payment class, so nothing proves the request never left.
+        assertFalse(DashSdkError.NetworkError("x").isRetryable)
+        assertFalse(DashSdkError.Timeout("x").isRetryable)
         assertFalse(DashSdkError.InvalidParameter("x").isRetryable)
     }
 
@@ -149,7 +238,7 @@ class DashSdkErrorTest {
         assertFalse(optionMiss is DashSdkError.NotFound)
         assertEquals("missing", optionMiss.message)
 
-        val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree"))
+        val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree", 0, 0, NOT_SENT, true))
         assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
         assertTrue("ShieldedNoRecordedAnchor is retryable", noAnchor.isRetryable)
 
@@ -278,7 +367,7 @@ class DashSdkErrorTest {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
 
         val incomplete =
-            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out"))
+            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out", 0, 0, NOT_SENT, true))
         assertTrue(incomplete is DashSdkError.PlatformWallet.ShutdownIncomplete)
         assertEquals("SPV teardown timed out", incomplete.message)
         assertTrue("a tracked teardown completes on a repeated stop", incomplete.isRetryable)
@@ -373,7 +462,7 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
         val detail = "the private contact request store was not read to its end for 9fRYTJZW"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 74, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 74, detail, 0, 0, NOT_SENT, true)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactStoreNotRead)
         assertEquals(detail, mapped.message)
@@ -481,7 +570,7 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportAFailedIdentityLookupByItsOwnCode() {
         val detail = "could not look up identity on Platform; nothing was sent"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 80, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 80, detail, 0, 0, NOT_SENT, true)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.IdentityLookupFailed)
         assertEquals(detail, mapped.message)
@@ -498,17 +587,23 @@ class DashSdkErrorTest {
         val detail = "Shielded Merkle witness unavailable: no checkpoint of the commitment tree " +
             "covers the note at position 7 yet; try again after the next shielded sync, " +
             "which checkpoints the tree"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 88, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 88, detail, 0, 0, NOT_SENT, true)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedMerkleWitnessUnavailable)
         assertEquals(detail, mapped.message)
-        assertTrue("nothing was sent, so a retry after sync is safe", mapped.isRetryable)
+        assertEquals(PaymentDelivery.NOT_SENT, mapped.delivery)
+        assertTrue("Rust allows a retry after sync", mapped.isRetryable)
+        // Retry is Rust's answer, not the code's.
+        val unclassified = DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 88, detail),
+        )
+        assertFalse(unclassified.isRetryable)
     }
 
     @Test
     fun shouldReportAMissingIdentityBalanceAsRetryable() {
         val detail = "Platform returned no balance for the identity"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, detail, 0, 0, NOT_SENT, true)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
         assertEquals(detail, mapped.message)
@@ -522,7 +617,9 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode() {
         val detail = "page proved at height 11, below height 12"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail)
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail, 0, 0, NOT_SENT, true,
+        )
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights)
         assertEquals(detail, mapped.message)
@@ -538,7 +635,9 @@ class DashSdkErrorTest {
     fun shouldReportAShieldedClearRefusedDuringAnOperationByItsOwnRetryableCode() {
         val detail =
             "A shielded operation is in progress; clear the shielded state once it has finished"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail)
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail, 0, 0, NOT_SENT, true,
+        )
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedOperationInProgress)
         assertEquals(detail, mapped.message)
@@ -582,7 +681,9 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportABusyShieldedBalanceReadByItsOwnRetryableCode() {
         val detail = "shielded identity balance busy; retry after sync releases its locks"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 87, detail)
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 87, detail, 0, 0, NOT_SENT, true,
+        )
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedBalanceBusy)
         assertEquals(detail, mapped.message)
@@ -626,7 +727,7 @@ class DashSdkErrorTest {
         for ((code, type, retryable) in cases) {
             val message = "persistence backend error from code $code"
             val mapped = DashSdkError.fromNative(
-                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message),
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message, 0, 0, NOT_SENT, retryable),
             )
 
             assertTrue(
@@ -651,7 +752,8 @@ class DashSdkErrorTest {
         // be described to a person as a failed read.
         val chain = "failed to persist wallet registration changeset: " +
             "persistence backend error (Transient): database is locked"
-        val busy = "The wallet database is busy. Try again in a moment."
+        // Unclassified (no native retry): no retry is invited.
+        val busy = "The wallet database is busy."
         val unreadable = "The wallet data could not be read and may need to be restored."
         val unsaved = "The wallet data could not be saved and may need to be restored."
         val expected = mapOf(
@@ -718,6 +820,11 @@ class DashSdkErrorTest {
             DashSDKException(
                 DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 48,
                 message,
+                0,
+                0,
+                LOCK_HELD,
+                true,
+                heldOutPoint,
             ),
         )
 
@@ -914,5 +1021,26 @@ class DashSdkErrorTest {
         )
         assertTrue(plain is DashSdkError.InternalError)
         assertNull(plain.consensusError)
+    }
+
+    private fun native(code: Int, delivery: Int, retryable: Boolean) =
+        DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, "detail", 0, 0, delivery, retryable, null),
+        )
+
+    @Test
+    fun shouldNotClaimAnOutcomeOrARetryWithoutTheClass() {
+        val changed = DashSdkError.PlatformWallet.DocumentPriceChanged("d", 1u, 2u)
+        assertFalse(changed.message!!.contains("Nothing was purchased"))
+
+        assertEquals(
+            "The wallet database is busy. Try again in a moment.",
+            native(51, 1, true).userMessage,
+        )
+        assertEquals("The wallet database is busy.", native(51, 1, false).userMessage)
+
+        assertFalse(DashSdkError.NetworkError("x").isRetryable)
+        assertFalse(DashSdkError.Timeout("x").isRetryable)
+        assertTrue(native(19, 1, true).isRetryable)
     }
 }

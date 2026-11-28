@@ -45,8 +45,10 @@ import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.ReleasePaymentHoldButton
 import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 import java.text.DateFormat
 import java.util.Date
@@ -81,6 +83,13 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
     var results by remember { mutableStateOf<List<DpnsMarketplaceName>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // The last failed trade, presented by its payment class. While it holds
+    // its slot, every trade (purchase, set price, delist, transfer) stays off
+    // (dpnsTradePermittedAfter) until a trade succeeds, a later one is
+    // NOT_SENT, or the user releases it after checking the history. Search,
+    // sync and history send nothing and stay available.
+    var tradeFailure by remember { mutableStateOf<PaymentFailure?>(null) }
+    val tradesPermitted = dpnsTradePermittedAfter(tradeFailure)
     var lastSyncMs by remember { mutableStateOf(0L) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var pendingAction by remember { mutableStateOf<MarketplaceAction?>(null) }
@@ -92,14 +101,22 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
         lastSyncMs = (manager?.dpnsLastSyncUnixSeconds() ?: 0L) * 1_000L
     }
 
-    fun launch(block: suspend () -> Unit) {
+    fun launch(trade: Boolean = false, block: suspend () -> Unit) {
         if (busy) return
+        if (trade && !dpnsTradePermittedAfter(tradeFailure)) return
         busy = true
         scope.launch {
             try {
                 block()
             } catch (t: Throwable) {
-                error = t.message ?: "DPNS marketplace operation failed"
+                if (trade) {
+                    // A throwable that is not an SDK error (the screen's own
+                    // input check) keeps an earlier failure's hold.
+                    tradeFailure = PaymentFailure.keptAfter(tradeFailure, t)
+                    error = dpnsTradeErrorMessage(t)
+                } else {
+                    error = t.message ?: "DPNS marketplace operation failed"
+                }
             } finally {
                 busy = false
             }
@@ -142,6 +159,16 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            tradeFailure?.takeIf { it.holdsSlot }?.let { f ->
+                FormSection(title = f.title) {
+                    Text(
+                        "${f.message} Trades stay off until this one is settled.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("dpnsMarketplace.tradeFailure"),
+                    )
+                    ReleasePaymentHoldButton(f, testTagPrefix = "dpnsMarketplace") { tradeFailure = null }
+                }
+            }
             FormSection(title = "Browse") {
                 OutlinedTextField(
                     value = prefix,
@@ -172,6 +199,7 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                     MarketplaceResultCard(
                         row = row,
                         isMine = row.ownerId.contentEquals(identityId),
+                        tradesEnabled = tradesPermitted,
                         onPurchase = row.priceCredits?.let { price ->
                             { pendingAction = MarketplaceAction.Purchase(row.label, price) }
                         },
@@ -190,6 +218,7 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                     OwnedNameCard(
                         row = row,
                         history = histories[row.normalizedLabel],
+                        tradesEnabled = tradesPermitted,
                         onSetPrice = { pendingAction = MarketplaceAction.SetPrice(row.label) },
                         onDelist = { pendingAction = MarketplaceAction.Delist(row.label) },
                         onTransfer = { pendingAction = MarketplaceAction.Transfer(row.label) },
@@ -221,6 +250,7 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
             action = action,
             price = actionPrice,
             recipient = actionRecipient,
+            confirmEnabled = tradesPermitted,
             onPriceChange = { actionPrice = it.filter(Char::isDigit) },
             onRecipientChange = { actionRecipient = it },
             onDismiss = { pendingAction = null },
@@ -232,7 +262,7 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                     pendingAction = null
                     return@MarketplaceConfirmationDialog
                 }
-                launch {
+                launch(trade = true) {
                     when (action) {
                         is MarketplaceAction.SetPrice -> {
                             val credits = actionPrice.toULongOrNull()
@@ -258,10 +288,17 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                             activeManager.signerHandle,
                         )
                     }
-                    val summary = activeManager.dpnsMarketplace.sync(activeWallet.handle)
-                    lastSyncMs = summary.syncUnixMs
-                    if (results.isNotEmpty()) {
-                        results = activeManager.dpnsMarketplace.search(activeWallet.handle, prefix.trim(), 50)
+                    tradeFailure = null
+                    // The trade is done; a failed refresh after it must not
+                    // read as a failed trade.
+                    try {
+                        val summary = activeManager.dpnsMarketplace.sync(activeWallet.handle)
+                        lastSyncMs = summary.syncUnixMs
+                        if (results.isNotEmpty()) {
+                            results = activeManager.dpnsMarketplace.search(activeWallet.handle, prefix.trim(), 50)
+                        }
+                    } catch (t: Throwable) {
+                        syncMessage = "Trade submitted; refreshing the marketplace failed: ${t.message}"
                     }
                 }
                 pendingAction = null
@@ -274,10 +311,30 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
+/**
+ * Whether a trade (purchase, set price, delist, transfer) may start after
+ * [failure], the last failed trade the screen kept: never while it holds its
+ * slot (it may have gone through, or has no class).
+ */
+internal fun dpnsTradePermittedAfter(failure: PaymentFailure?): Boolean =
+    PaymentFailure.permitsFreshPayment(failure)
+
+/**
+ * The text of a failed trade (set price, delist, transfer, purchase): a
+ * wallet error is presented by its payment class ([PaymentFailure]), never
+ * as "nothing was purchased" or "try again" unless the class says so. Any
+ * other throwable is the screen's own input check before anything was sent.
+ */
+internal fun dpnsTradeErrorMessage(t: Throwable): String =
+    PaymentFailure.ofPayment(t)?.let { "${it.title}: ${it.message}" }
+        ?: t.message
+        ?: "DPNS marketplace operation failed"
+
 @Composable
 private fun MarketplaceResultCard(
     row: DpnsMarketplaceName,
     isMine: Boolean,
+    tradesEnabled: Boolean,
     onPurchase: (() -> Unit)?,
 ) {
     Card(Modifier.fillMaxWidth().testTag("dpnsMarketplace.search.${row.normalizedLabel}")) {
@@ -288,6 +345,7 @@ private fun MarketplaceResultCard(
             if (!isMine && onPurchase != null) {
                 TextButton(
                     onClick = onPurchase,
+                    enabled = tradesEnabled,
                     modifier = Modifier.testTag("dpnsMarketplace.buy.${row.normalizedLabel}"),
                 ) { Text("Buy") }
             }
@@ -299,6 +357,7 @@ private fun MarketplaceResultCard(
 private fun OwnedNameCard(
     row: DpnsNameEntity,
     history: List<DpnsNameHistoryEvent>?,
+    tradesEnabled: Boolean,
     onSetPrice: () -> Unit,
     onDelist: () -> Unit,
     onTransfer: () -> Unit,
@@ -320,9 +379,13 @@ private fun OwnedNameCard(
             row.counterpartyIdentityId?.let { Text("Counterparty ${Base58.encode(it)}") }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (row.isOwned) {
-                    TextButton(onClick = onSetPrice) { Text(if (row.priceCredits == null) "List" else "Reprice") }
-                    if (row.priceCredits != null) TextButton(onClick = onDelist) { Text("Delist") }
-                    TextButton(onClick = onTransfer) { Text("Transfer") }
+                    TextButton(onClick = onSetPrice, enabled = tradesEnabled) {
+                        Text(if (row.priceCredits == null) "List" else "Reprice")
+                    }
+                    if (row.priceCredits != null) {
+                        TextButton(onClick = onDelist, enabled = tradesEnabled) { Text("Delist") }
+                    }
+                    TextButton(onClick = onTransfer, enabled = tradesEnabled) { Text("Transfer") }
                 }
                 TextButton(onClick = onHistory) { Text("History") }
             }
@@ -343,6 +406,7 @@ private fun MarketplaceConfirmationDialog(
     action: MarketplaceAction,
     price: String,
     recipient: String,
+    confirmEnabled: Boolean,
     onPriceChange: (String) -> Unit,
     onRecipientChange: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -385,7 +449,11 @@ private fun MarketplaceConfirmationDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag("dpnsMarketplace.confirm")) {
+            TextButton(
+                onClick = onConfirm,
+                enabled = confirmEnabled,
+                modifier = Modifier.testTag("dpnsMarketplace.confirm"),
+            ) {
                 Text("Confirm")
             }
         },

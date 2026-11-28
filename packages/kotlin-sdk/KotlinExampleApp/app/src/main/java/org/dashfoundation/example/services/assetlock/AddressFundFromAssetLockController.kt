@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
+import org.dashfoundation.example.util.PaymentFailure
 
 /**
  * Per-slot state for a single "fund a Platform address from an asset lock"
@@ -48,15 +50,33 @@ class AddressFundFromAssetLockController(
         /** Address credited; [newBalance] is the proof-attested credit balance. */
         data class Completed(val newBalance: Long) : Phase
 
-        /** Failure terminal state; the message is shown inline. Stays until dismissed. */
-        data class Failed(val message: String) : Phase
+        /**
+         * Failure terminal state, presented by [PaymentFailure] from the
+         * native wallet's class; its action says what may run again (a
+         * retry, or only the resume of the held lock). Stays until dismissed.
+         */
+        data class Failed(val failure: PaymentFailure) : Phase {
+            val message: String get() = failure.message
+        }
 
         /**
          * Whether the controller is currently holding its slot against a
-         * fresh funding. Only [InFlight] holds it. ← Swift `isActive`.
+         * fresh funding. Only [InFlight] holds it; what may run on a failed
+         * slot again is [permitsSubmit]'s to decide. ← Swift `isActive`.
          */
         val isActive: Boolean
             get() = this is InFlight
+
+        /**
+         * Whether an operation resuming [resuming] (null for a fresh
+         * funding) may start from this phase: from [Idle], and from
+         * [Failed] only as its class allows. ← Swift `permitsSubmit`.
+         */
+        fun permitsSubmit(resuming: AssetLockBuiltOutPoint?): Boolean = when (this) {
+            is Idle -> true
+            is Failed -> failure.permitsRestart(resuming)
+            is InFlight, is Completed -> false
+        }
     }
 
     private val _phase = MutableStateFlow<Phase>(Phase.Idle)
@@ -75,19 +95,16 @@ class AddressFundFromAssetLockController(
     /**
      * Submit the funding. Defensively rejects [Phase.InFlight] and
      * [Phase.Completed] (re-firing would race a duplicate FFI call or
-     * re-fund the address). [Phase.Idle] and [Phase.Failed] are allowed —
-     * the coordinator drives the legitimate restart through them.
-     * ← Swift `submit`.
+     * re-fund the address), and a [Phase.Failed] whose class does not allow
+     * this operation ([Phase.permitsSubmit]). [resuming] names the lock
+     * [body] resumes, null for a fresh funding. ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the new credit
      * balance, or throws. It runs on its own dispatcher; the terminal
      * phase flip hops back to [scope].
      */
-    fun submit(body: suspend () -> Long) {
-        when (_phase.value) {
-            is Phase.Idle, is Phase.Failed -> Unit
-            is Phase.InFlight, is Phase.Completed -> return
-        }
+    fun submit(body: suspend () -> Long, resuming: AssetLockBuiltOutPoint? = null) {
+        if (!_phase.value.permitsSubmit(resuming)) return
         _phase.value = Phase.InFlight
         lastSubmittedAt = now()
         task = scope.launch {
@@ -95,7 +112,7 @@ class AddressFundFromAssetLockController(
                 val newBalance = body()
                 _phase.value = Phase.Completed(newBalance)
             } catch (e: Throwable) {
-                _phase.value = Phase.Failed(e.message ?: "Funding failed")
+                _phase.value = Phase.Failed(PaymentFailure.of(e))
             }
         }
     }

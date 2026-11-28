@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 
 /**
  * Hub for in-flight "shield funds from an asset lock" attempts — 1:1 port
@@ -48,7 +49,8 @@ class ShieldedFundFromAssetLockCoordinator(
         /**
          * The controller for this slot. [bodyScheduled] is false when the
          * call re-presented a controller that already runs (or just ran) the
-         * same operation, so the body passed to this call will never run.
+         * same operation, or a failed one whose class refuses this
+         * operation, so the body passed to this call will never run.
          * ← Swift `.started(controller, bodyScheduled:)`.
          */
         data class Started(
@@ -113,6 +115,7 @@ class ShieldedFundFromAssetLockCoordinator(
         walletId: ByteArray,
         recipientRaw43: ByteArray,
         operationId: String,
+        resuming: AssetLockBuiltOutPoint? = null,
         body: suspend () -> Unit,
     ): StartFundingResult {
         val key = key(walletId, recipientRaw43)
@@ -151,7 +154,14 @@ class ShieldedFundFromAssetLockCoordinator(
                 is ShieldedFundFromAssetLockController.Phase.Idle,
                 is ShieldedFundFromAssetLockController.Phase.Failed,
                 -> {
-                    existing.submit(operationId, body)
+                    // The failure's class forbids this operation (the payment
+                    // may have left, or it holds a lock this call does not
+                    // resume): re-present the failed state instead of paying
+                    // again. The body passed here never runs.
+                    if (!phase.permitsSubmit(resuming)) {
+                        return StartFundingResult.Started(existing, bodyScheduled = false)
+                    }
+                    existing.submit(operationId, body, resuming)
                     scheduleRetentionSweep(key, existing)
                     return StartFundingResult.Started(existing)
                 }
@@ -159,14 +169,50 @@ class ShieldedFundFromAssetLockCoordinator(
         }
         val controller = ShieldedFundFromAssetLockController(walletId, recipientRaw43, scope, now)
         _controllers.update { it + (key to controller) }
-        controller.submit(operationId, body)
+        controller.submit(operationId, body, resuming)
         scheduleRetentionSweep(key, controller)
         return StartFundingResult.Started(controller)
     }
 
-    /** Manually drop a controller — the UI's "Dismiss" on a failed row. ← Swift. */
-    fun dismiss(walletId: ByteArray, recipientRaw43: ByteArray) {
-        _controllers.update { it - key(walletId, recipientRaw43) }
+    /**
+     * Manually drop a controller — the UI's "Dismiss" on a failed row.
+     * ← Swift `dismiss`.
+     *
+     * A failed slot is dropped only when its failure releases it
+     * (`PaymentFailure.holdsSlot`, any NOT_SENT): [startFunding] gates a
+     * restart only on a slot it still holds, so dropping a failure that may
+     * have left, holds a lock, or has no class would let a fresh lock be
+     * funded for the same recipient. Such a slot stays until its lock is
+     * resumed, the user releases it after reconciling ([release]), or the
+     * app restarts. Returns whether the controller was dropped
+     * (← [RegistrationCoordinator.dismiss]).
+     */
+    fun dismiss(walletId: ByteArray, recipientRaw43: ByteArray): Boolean {
+        val key = key(walletId, recipientRaw43)
+        val phase = _controllers.value[key]?.phase?.value
+        if (phase is ShieldedFundFromAssetLockController.Phase.Failed && phase.failure.holdsSlot) return false
+        _controllers.update { it - key }
+        return true
+    }
+
+    /**
+     * The exit of a hold [dismiss] refuses, once the user reconciled the
+     * original payment from the history: drops a [Phase.Failed] controller
+     * only when its failure holds the slot without a held lock
+     * (`PaymentFailure.releasableAfterReconciliation`). A held lock is
+     * resumed instead. Returns whether the controller was dropped.
+     * ← Swift `release`.
+     */
+    fun release(walletId: ByteArray, recipientRaw43: ByteArray): Boolean {
+        val key = key(walletId, recipientRaw43)
+        val phase = _controllers.value[key]?.phase?.value
+        if (phase !is ShieldedFundFromAssetLockController.Phase.Failed ||
+            !phase.failure.releasableAfterReconciliation
+        ) {
+            return false
+        }
+        _controllers.update { it - key }
+        return true
     }
 
     /**

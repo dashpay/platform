@@ -1,11 +1,11 @@
 //! Shared JNI plumbing: JVM caching, panic guards, exception throwing.
 
-use jni::objects::{JThrowable, JValue};
+use jni::objects::{JObject, JThrowable, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIConsensusErrorKind, PlatformWalletFFIResult,
-    PlatformWalletFFIResultCode,
+    platform_wallet_ffi_result_free, PlatformWalletFFIConsensusErrorKind,
+    PlatformWalletFFIPaymentDelivery, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
 };
 use rs_sdk_ffi::{DashSDKConsensusErrorKind, FFINetwork};
 use std::ffi::CStr;
@@ -115,9 +115,12 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
 
 /// Throw the `DashSDKException` for a non-`Success` `result`, leaving its
 /// message for the caller to free. The exception code is the result code
-/// shifted by [`PWFFI_CODE_OFFSET`]; a result that carries a consensus
-/// rejection (`consensus_code != 0`) hands its code and kind to the exception
-/// as well, so Kotlin can branch on them instead of on the message.
+/// shifted by [`PWFFI_CODE_OFFSET`]; the result's consensus rejection (code
+/// and kind, `0` when it carries none), its payment-delivery class, whether
+/// the wallet allows a retry and, under `LockHeld`, the held asset lock's
+/// outpoint as 36 raw bytes (`txid_le[32] || vout_le[4]`, `null` otherwise)
+/// go to the exception as well, so Kotlin reads them instead of deciding
+/// from the message or from lists of codes.
 pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     let message = if result.message.is_null() {
         format!("platform-wallet error (code {})", result.code as i32)
@@ -128,17 +131,42 @@ pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
             .into_owned()
     };
     let code = result.code as i32 + PWFFI_CODE_OFFSET;
-    if result.consensus_code == 0 {
-        throw_sdk_exception(env, code, &message);
-    } else {
-        throw_sdk_consensus_exception(
-            env,
-            code,
-            &message,
-            result.consensus_code,
-            result.consensus_kind as jint,
-        );
+    // Consensus codes top out in the 40000s, far inside a `jint`.
+    let consensus_code = jint::try_from(result.consensus_code).unwrap_or(jint::MAX);
+    let held_asset_lock = held_asset_lock_of(result);
+    throw_built_sdk_exception(env, &message, |env| {
+        let jmsg = env.new_string(&message)?;
+        let held = match &held_asset_lock {
+            Some(bytes) => JObject::from(env.byte_array_from_slice(bytes)?),
+            None => JObject::null(),
+        };
+        env.new_object(
+            SDK_EXCEPTION_CLASS,
+            "(ILjava/lang/String;IIIZ[B)V",
+            &[
+                code.into(),
+                (&jmsg).into(),
+                consensus_code.into(),
+                (result.consensus_kind as jint).into(),
+                (result.payment_delivery as jint).into(),
+                JValue::from(result.retryable),
+                (&held).into(),
+            ],
+        )
+    });
+}
+
+/// The held asset lock of `result` under `LockHeld`, in the 36-byte raw
+/// outpoint form (`txid_le[32] || vout_le[4]`) Kotlin's
+/// `AssetLockBuiltOutPoint` decodes; `None` for any other delivery.
+pub(crate) fn held_asset_lock_of(result: &PlatformWalletFFIResult) -> Option<[u8; 36]> {
+    if result.payment_delivery != PlatformWalletFFIPaymentDelivery::LockHeld {
+        return None;
     }
+    let mut bytes = [0u8; 36];
+    bytes[..32].copy_from_slice(&result.held_asset_lock.txid);
+    bytes[32..].copy_from_slice(&result.held_asset_lock.vout.to_le_bytes());
+    Some(bytes)
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
@@ -189,18 +217,27 @@ fn throw_sdk_exception_with(
     signature: &str,
     extra: &[jint],
 ) {
+    throw_built_sdk_exception(env, message, |env| {
+        let jmsg = env.new_string(message)?;
+        let mut args: Vec<JValue> = vec![code.into(), (&jmsg).into()];
+        args.extend(extra.iter().map(|value| JValue::from(*value)));
+        env.new_object(SDK_EXCEPTION_CLASS, signature, &args)
+    });
+}
+
+/// Throw the `DashSDKException` that `build` constructs; falls back to a
+/// plain `RuntimeException(message)` if construction fails.
+fn throw_built_sdk_exception<'local>(
+    env: &mut JNIEnv<'local>,
+    message: &str,
+    build: impl FnOnce(&mut JNIEnv<'local>) -> jni::errors::Result<JObject<'local>>,
+) {
     // If an exception is already pending we must not call further JNI
     // functions that would themselves throw.
     if env.exception_check().unwrap_or(false) {
         return;
     }
-    let thrown = (|| -> jni::errors::Result<()> {
-        let jmsg = env.new_string(message)?;
-        let mut args: Vec<JValue> = vec![code.into(), (&jmsg).into()];
-        args.extend(extra.iter().map(|value| JValue::from(*value)));
-        let obj = env.new_object(SDK_EXCEPTION_CLASS, signature, &args)?;
-        env.throw(JThrowable::from(obj))
-    })();
+    let thrown = build(env).and_then(|obj| env.throw(JThrowable::from(obj)));
     if thrown.is_err() {
         let _ = env.exception_clear();
         let _ = env.throw_new("java/lang/RuntimeException", message);

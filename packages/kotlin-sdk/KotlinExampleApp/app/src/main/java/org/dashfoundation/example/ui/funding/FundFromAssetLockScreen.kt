@@ -40,6 +40,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.credits.rememberManagedWalletFor
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
@@ -246,6 +247,9 @@ fun FundFromAssetLockScreen(
                         platformAccountIndex = platformAccountIndex,
                         recipientHash = recipientHash,
                         recipientType = recipientType,
+                        // Names the lock this body resumes, so a slot whose
+                        // failure holds that lock may restart through it.
+                        resuming = PaymentFailure.outPoint(txid, vout),
                     ) {
                         val updates = w.resumeFundFromAssetLock(
                             outPointTxid = txid,

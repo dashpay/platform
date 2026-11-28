@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutcome
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutpoint
@@ -19,6 +21,8 @@ import org.dashfoundation.dashsdk.wallet.WalletDrainStatusRead
 import org.dashfoundation.dashsdk.wallet.shieldedFundFromWalletDrain
 import org.dashfoundation.dashsdk.wallet.shieldedWalletDrainStatus
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoordinator.StartFundingResult
+import org.dashfoundation.example.util.PaymentFailure
+import org.dashfoundation.example.util.PaymentRecovery
 import java.util.UUID
 
 /**
@@ -90,8 +94,22 @@ interface WalletDrainRuleSet {
     }
 }
 
-/** The error a drain attempt fails with when Rust did not report it finished. */
-class WalletDrainAttemptException(message: String) : Exception(message)
+/**
+ * The error a drain attempt fails with when Rust did not report it finished.
+ * [recovery] is Rust's class of the failure, which [PaymentFailure] reads
+ * instead of treating this app-side error as unclassified. [lockHeld] is
+ * whether Rust classed it LOCK_HELD, kept apart from [recovery] because a held
+ * lock whose outpoint did not decode reads as [PaymentRecovery.Reconcile].
+ */
+class WalletDrainAttemptException(
+    message: String,
+    val recovery: PaymentRecovery,
+    val lockHeld: Boolean = false,
+) : Exception(message)
+
+/** Whether [error] is a native wallet error Rust classed LOCK_HELD. */
+internal fun isLockHeld(error: Throwable?): Boolean =
+    (error as? DashSdkError)?.delivery == PaymentDelivery.LOCK_HELD
 
 /**
  * Starts, resumes and reconciles Core to shielded "Max" transfers. Port of
@@ -298,18 +316,36 @@ class WalletDrainCoordinator(
      * The error a returned attempt fails with, or null when Rust's rule says
      * it needs nothing more (even if the call also returned an error, such
      * as "already consumed" for a repeated operation id).
+     *
+     * The error keeps Rust's class: the returned error's, or NOT_SENT for a
+     * not-sent outcome that returned none (Rust's state says nothing left
+     * the wallet, and gives no retry). Any other outcome without an error is
+     * unclassified, so it holds its slot.
      */
     fun attemptError(outcome: WalletDrainOutcome): WalletDrainAttemptException? {
         val finished = runCatching { rules.attemptFinished(outcome.state) }.getOrDefault(false)
         if (finished) return null
         val rustText = outcome.error?.message
+        val recovery = outcome.error?.let { PaymentRecovery.of(it) }
+            ?: when (outcome.state) {
+                WalletDrainOutcome.State.NotSent ->
+                    PaymentRecovery.of(PaymentDelivery.NOT_SENT, isRetryable = false, heldAssetLock = null)
+                WalletDrainOutcome.State.Pending, WalletDrainOutcome.State.Completed ->
+                    PaymentRecovery.Unconfirmed
+            }
         return when (outcome.state) {
             WalletDrainOutcome.State.NotSent ->
-                WalletDrainAttemptException(rustText ?: "Nothing was sent.")
-            else -> {
+                WalletDrainAttemptException(rustText ?: "Nothing was sent.", recovery, isLockHeld(outcome.error))
+            // `Completed` lands here only if the rule call itself failed:
+            // shown as unfinished, the fail-closed reading.
+            WalletDrainOutcome.State.Pending, WalletDrainOutcome.State.Completed -> {
                 val notice = "This transfer is not finished: resume it from the wallet screen " +
                     "and do not start a new Max."
-                WalletDrainAttemptException(rustText?.let { "$it $notice" } ?: notice)
+                WalletDrainAttemptException(
+                    rustText?.let { "$it $notice" } ?: notice,
+                    recovery,
+                    isLockHeld(outcome.error),
+                )
             }
         }
     }
@@ -423,11 +459,15 @@ class WalletDrainCoordinator(
                 "Could not save the transfer id, so nothing was sent: ${e.message ?: e}",
             )
         }
-        val result = run(record, network, wallet) {
+        val result = run(record, network, wallet, resuming = null) {
             attemptError(wallet.drain(record))?.let { throw it }
         }
         return when (result) {
             is StartFundingResult.Started -> {
+                // A failure that holds the slot refused the start, so the
+                // body never ran and nothing was sent under this id: remove
+                // it as for a blocked start (reconcile reads it otherwise).
+                if (!result.bodyScheduled) runCatching { store.remove(record.operationId) }
                 // Listed as unread until the reconcile after the attempt.
                 refreshFromStore()
                 StartResult.Started(result.controller)
@@ -448,18 +488,26 @@ class WalletDrainCoordinator(
      * paying the stored recipient. Rust writes the drain's completion
      * receipt when it lands (or Platform reports the lock already
      * consumed), so the reconcile that follows forgets the stored id.
+     * The attempt names [outpoint] as the lock it resumes, so a failure
+     * that holds exactly that lock lets it run.
      */
     suspend fun resume(
         record: WalletDrainOperationRecord,
         outpoint: WalletDrainOutpoint,
         network: Network,
         wallet: WalletDrainWallet,
-    ): StartFundingResult = run(record, network, wallet) {
+    ): StartFundingResult = run(
+        record,
+        network,
+        wallet,
+        resuming = PaymentFailure.outPoint(outpoint.txidWire, outpoint.vout),
+    ) {
         try {
             wallet.resume(record, outpoint)
         } catch (e: DashSdkError.PlatformWallet.AssetLockNotTracked) {
-            // Rust's "not tracked" text does not say what to do next.
-            throw WalletDrainAttemptException(ASSET_LOCK_NOT_TRACKED_MESSAGE)
+            // Rust's "not tracked" text does not say what to do next; its
+            // class stays the error's.
+            throw WalletDrainAttemptException(ASSET_LOCK_NOT_TRACKED_MESSAGE, PaymentRecovery.of(e), isLockHeld(e))
         }
     }
 
@@ -501,11 +549,13 @@ class WalletDrainCoordinator(
      * Runs [attempt] for [record] through the shielded-funding coordinator
      * under the operation's controller id, then reconciles the operation
      * and rethrows the attempt's error for the controller to show.
+     * [resuming] is the asset lock the attempt resumes, null for the drain.
      */
     private suspend fun run(
         record: WalletDrainOperationRecord,
         network: Network,
         wallet: WalletDrainWallet,
+        resuming: AssetLockBuiltOutPoint?,
         attempt: suspend () -> Unit,
     ): StartFundingResult {
         val id = record.operationId
@@ -534,11 +584,12 @@ class WalletDrainCoordinator(
             walletId = record.walletId,
             recipientRaw43 = record.recipientRaw43,
             operationId = controllerOperationId(id),
+            resuming = resuming,
             body = body,
         )
         // Undo the running count when the body was not scheduled: a blocked
-        // start, or a re-tap that re-presented a controller already running
-        // this operation.
+        // start, a re-tap that re-presented a controller already running
+        // this operation, or a start a failure's class refused.
         val bodyScheduled = (result as? StartFundingResult.Started)?.bodyScheduled ?: false
         if (!bodyScheduled) finishRunning(id)
         return result

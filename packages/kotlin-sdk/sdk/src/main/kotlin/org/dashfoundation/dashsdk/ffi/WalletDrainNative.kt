@@ -37,12 +37,19 @@ internal object WalletDrainNative {
      * Returns the outcome AND the error beside it in one packed array,
      * decoded by [org.dashfoundation.dashsdk.wallet.WalletDrainOutcome.decode]:
      * state (1 byte), has-outpoint flag (1), txid in wire order (32), then
-     * vout, error code, consensus code and consensus kind as little-endian
-     * 32-bit values, then the error message as UTF-8. A failed drain is NOT
-     * thrown, because its error does not erase the outpoint. Throws only for
-     * an argument that could not be read, before any wallet code runs.
+     * vout, error code, consensus code, consensus kind and payment delivery
+     * as little-endian 32-bit values, the retryable and held-lock flags (1
+     * each), the held lock's raw outpoint (36), then the error message as
+     * UTF-8. A failed drain is NOT thrown, because its error does not erase
+     * the outpoint. Throws only for an argument that could not be read,
+     * before any wallet code runs.
+     *
+     * `V2` names this layout: a native library that packs the earlier
+     * 50-byte header exports no `fundFromWalletDrainV2`, so pairing this SDK
+     * with it fails at link time, before any funds move, instead of being
+     * decoded wrongly after the drain ran.
      */
-    external fun fundFromWalletDrain(
+    external fun fundFromWalletDrainV2(
         managerHandle: Long,
         walletId: ByteArray,
         operationId: ByteArray,
@@ -55,9 +62,9 @@ internal object WalletDrainNative {
      * Read one operation by its id (bridges
      * `platform_wallet_manager_shielded_wallet_drain_status`). Throws when
      * the read fails; otherwise returns the outcome packed as
-     * [fundFromWalletDrain] does, with no error.
+     * [fundFromWalletDrainV2] does, with no error. `V2` for the same reason.
      */
-    external fun status(managerHandle: Long, walletId: ByteArray, operationId: ByteArray): ByteArray
+    external fun statusV2(managerHandle: Long, walletId: ByteArray, operationId: ByteArray): ByteArray
 
     /** Bridges `platform_wallet_wallet_drain_marker_decision`; true keeps the stored id. */
     external fun keepsStoredId(

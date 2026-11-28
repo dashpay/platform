@@ -2631,6 +2631,53 @@
       ]
     },
     {
+      "id": "errors.payment_class",
+      "title": "Payment class on every wallet error: delivery, retry and the held asset lock, set once in Rust",
+      "area": "shared_policy",
+      "shared_apis": [],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletError carries the result's PlatformPaymentClass (delivery, held outpoint under LockHeld) and the wallet's retry, read from the FFI result and never derived from the code. SwiftExampleApp presents a payment failure by its class on Send, the funding progress screens (identity registration, address and shielded funding, the wallet drain), identity create, the identity top-up from Platform addresses, the address top-up from an asset lock, the shielded pool seed, DPNS trades and invitation create; other screens still decide from error types (#6009)."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "DashSdkError.PlatformWallet exposes delivery, isRetryable and heldAssetLock from the JNI exception, including the error beside a wallet drain's packed outcome. KotlinExampleApp presents a payment failure by its class on Send, the funding progress screens (identity registration, address and shielded funding, the wallet drain), both identity top-ups (from Core and from Platform addresses), the shielded pool seed, DPNS trades, invitation create and contact requests; other screens still decide from error types (#6009)."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testShouldReadThePaymentDeliveryFromTheFFIResult",
+          "command": "swift test --package-path packages/swift-sdk",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldExposeThePaymentDeliveryThePlatformWalletResultCarried",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/WalletDrainTest.kt",
+          "id": "shouldKeepThePaymentClassOfTheErrorBesideTheOutcome",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "shielded.core_wallet_drain",
       "title": "Pooled Core-to-shielded Max with restart-safe recovery",
       "area": "recovery",

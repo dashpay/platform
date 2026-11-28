@@ -7,7 +7,10 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.example.services.IdentityRegistrationController.Phase
+import org.dashfoundation.example.util.PaymentFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -31,6 +34,14 @@ import org.junit.Test
 class RegistrationCoordinatorTest {
 
     private val walletA = ByteArray(32) { 0xAA.toByte() }
+
+    /** A wallet error carrying the native class (delivery discriminant, retry, held lock). */
+    private fun walletError(delivery: Int, retryable: Boolean, held: ByteArray? = null) =
+        DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 6, "boom", 0, 0, delivery, retryable, held),
+        )
+
+    private val heldRaw = ByteArray(32) { 7 } + byteArrayOf(1, 0, 0, 0)
     private val walletB = ByteArray(32) { 0xBB.toByte() }
 
     /** Build a coordinator whose clock and scheduler are the test's virtual time. */
@@ -81,10 +92,55 @@ class RegistrationCoordinatorTest {
         gate.completeExceptionally(IllegalStateException("asset lock rejected"))
         advanceUntilIdle()
 
+        // Unclassified: presented as unconfirmed, never run again.
         val phase = controller.phase.value
         assertTrue(phase is Phase.Failed)
-        assertEquals("asset lock rejected", (phase as Phase.Failed).message)
+        assertEquals("asset lock rejected", (phase as Phase.Failed).failure.detail)
+        assertEquals(PaymentFailure.Action.Wait, phase.failure.action)
         assertFalse(phase.isActive)
+        assertFalse(phase.permitsSubmit(null))
+    }
+
+    @Test
+    fun `a failure that may have left keeps its slot and runs no fresh registration`() = runTest {
+        val coordinator = coordinator()
+        var invocations = 0
+        val controller = coordinator.startRegistration(
+            walletA, 5,
+            body = { invocations++; throw walletError(delivery = 2, retryable = false) },
+        )
+        advanceUntilIdle()
+        val failed = controller.phase.value as Phase.Failed
+        assertEquals(PaymentFailure.Action.Wait, failed.failure.action)
+
+        val again = coordinator.startRegistration(walletA, 5, body = { invocations++; ByteArray(32) })
+        advanceUntilIdle()
+        assertSame(controller, again)
+        assertEquals(1, invocations)
+        assertTrue(controller.phase.value is Phase.Failed)
+    }
+
+    @Test
+    fun `a failure holding a lock restarts only by resuming that lock`() = runTest {
+        val coordinator = coordinator()
+        var invocations = 0
+        val controller = coordinator.startRegistration(
+            walletA, 6,
+            body = { invocations++; throw walletError(delivery = 3, retryable = false, held = heldRaw) },
+        )
+        advanceUntilIdle()
+        val failed = controller.phase.value as Phase.Failed
+        val held = PaymentFailure.outPoint(ByteArray(32) { 7 }, 1)
+        assertEquals(PaymentFailure.Action.Resume(held), failed.failure.action)
+
+        coordinator.startRegistration(walletA, 6, body = { invocations++; ByteArray(32) })
+        advanceUntilIdle()
+        assertEquals("no fresh registration while a lock is held", 1, invocations)
+
+        coordinator.startRegistration(walletA, 6, resuming = held, body = { invocations++; ByteArray(32) { 1 } })
+        advanceUntilIdle()
+        assertEquals(2, invocations)
+        assertTrue(controller.phase.value is Phase.Completed)
     }
 
     @Test
@@ -186,15 +242,16 @@ class RegistrationCoordinatorTest {
     @Test
     fun `retry after failure re-enters preparingKeys and re-fires the body`() = runTest {
         val coordinator = coordinator()
-        val failGate = CompletableDeferred<ByteArray>()
         val retryGate = CompletableDeferred<ByteArray>()
         var invocations = 0
 
+        // Any NOT_SENT allows running it again (here a retryable one). Thrown from the
+        // body itself: a deferred's await would rethrow a recovered copy
+        // without the native cause that carries the class.
         val controller = coordinator.startRegistration(
             walletA, 0,
-            body = { invocations++; failGate.await() },
+            body = { invocations++; throw walletError(delivery = 1, retryable = true) },
         )
-        failGate.completeExceptionally(RuntimeException("boom"))
         advanceUntilIdle()
         assertTrue(controller.phase.value is Phase.Failed)
 
@@ -253,19 +310,103 @@ class RegistrationCoordinatorTest {
         assertEquals(1, coordinator.controllers.value.size)
     }
 
+    /**
+     * Any NOT_SENT failure, retryable or not, releases the slot (← Swift
+     * `testRegistrationFailureIsDismissedOnlyWhenNothingWasSent`).
+     */
     @Test
-    fun `dismiss removes a failed controller`() = runTest {
+    fun `dismiss removes a failed controller whose payment was not sent`() = runTest {
         val coordinator = coordinator()
-        val gate = CompletableDeferred<ByteArray>()
+        listOf(true, false).forEachIndexed { index, retryable ->
+            coordinator.startRegistration(
+                walletA, index,
+                body = { throw walletError(delivery = 1, retryable = retryable) },
+            )
+            advanceUntilIdle()
+            assertTrue(coordinator.controller(walletA, index)?.phase?.value is Phase.Failed)
 
-        coordinator.startRegistration(walletA, 0, body = { gate.await() })
-        gate.completeExceptionally(RuntimeException("nope"))
-        advanceUntilIdle()
-        assertEquals(1, coordinator.controllers.value.size)
-
-        coordinator.dismiss(walletA, 0)
+            assertTrue(coordinator.dismiss(walletA, index))
+            assertNull(coordinator.controller(walletA, index))
+        }
         assertTrue(coordinator.controllers.value.isEmpty())
-        assertNull(coordinator.controller(walletA, 0))
+    }
+
+    /**
+     * A registration refused before anything was sent, even one the native
+     * wallet does not allow to retry as it is (too little in the asset lock,
+     * an earlier payment still settling), does not keep its index: a
+     * corrected new request on the slot runs (← Swift
+     * `testRegistrationNotSentFailureLetsANewRequestRun`).
+     */
+    @Test
+    fun `a not-sent failure lets a new request on the slot run`() = runTest {
+        val coordinator = coordinator()
+        coordinator.startRegistration(walletA, 7, body = { throw walletError(delivery = 1, retryable = false) })
+        advanceUntilIdle()
+
+        val id = ByteArray(32) { 6 }
+        val again = coordinator.startRegistration(walletA, 7, body = { id })
+        advanceUntilIdle()
+        assertEquals(Phase.Completed(id), again.phase.value)
+    }
+
+    /**
+     * Dismissing a failure that may have left, holds a lock, or has no class
+     * would drop the slot's gate: refused, so a fresh registration on the
+     * index still does not run.
+     */
+    @Test
+    fun `dismiss keeps a failed slot whose class forbids a fresh registration`() = runTest {
+        val coordinator = coordinator()
+        listOf(
+            walletError(delivery = 2, retryable = false),
+            walletError(delivery = 3, retryable = false, held = heldRaw),
+            RuntimeException("unclassified"),
+        ).forEachIndexed { index, error ->
+            val controller = coordinator.startRegistration(walletA, index, body = { throw error })
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
+
+            assertFalse(coordinator.dismiss(walletA, index))
+            assertSame(controller, coordinator.controller(walletA, index))
+            var ran = false
+            coordinator.startRegistration(walletA, index, body = { ran = true; ByteArray(32) })
+            advanceUntilIdle()
+            assertFalse("no fresh registration after a refused dismiss", ran)
+        }
+    }
+
+    /**
+     * Release drops a failed controller only when its failure holds the slot
+     * without a lock (may have left, or no class), after which a fresh
+     * payment runs; it refuses a held lock (resumed instead) and a NOT_SENT
+     * failure, keeping the controller (← Swift
+     * `testCoordinatorsReleaseOnlyAHoldWithoutALock`).
+     */
+    @Test
+    fun `release removes a failed controller only when it holds its slot without a lock`() = runTest {
+        val coordinator = coordinator()
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(delivery = 1, retryable = true) to false,
+            walletError(delivery = 3, retryable = false, held = heldRaw) to false,
+            walletError(delivery = 2, retryable = false) to true,
+            RuntimeException("unclassified") to true,
+        ).forEachIndexed { index, (error, releasable) ->
+            val controller = coordinator.startRegistration(walletA, index, body = { throw error })
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
+
+            assertEquals(error.toString(), releasable, coordinator.release(walletA, index))
+            if (!releasable) {
+                assertSame(controller, coordinator.controller(walletA, index))
+                return@forEachIndexed
+            }
+            assertNull(coordinator.controller(walletA, index))
+            val id = ByteArray(32) { 6 }
+            val again = coordinator.startRegistration(walletA, index, body = { id })
+            advanceUntilIdle()
+            assertEquals("a fresh registration runs after a release", Phase.Completed(id), again.phase.value)
+        }
     }
 
     @Test

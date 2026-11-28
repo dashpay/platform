@@ -39,13 +39,15 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.IdentityDetail
 import org.dashfoundation.example.services.IdentityRegistrationController
 import org.dashfoundation.example.services.IdentityRegistrationController.Phase
+import org.dashfoundation.example.ui.components.ReleasePaymentHoldButton
 import org.dashfoundation.example.ui.wallet.toHexString
 
 /**
  * Compact pending-registration row — port of `PendingRegistrationRow` in
  * `PendingRegistrationsList.swift`. Icon + phase label + slot fingerprint;
- * tapping opens [RegistrationProgressScreen]. The dismissal swipe (failed /
- * synced-unconfirmed) is a follow-up UX affordance.
+ * tapping opens [RegistrationProgressScreen]. The dismissal swipe (a failure
+ * that releases its slot, any NOT_SENT, or a synced unconfirmed row; the
+ * coordinator refuses any other failure) is a follow-up UX affordance.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,11 +143,20 @@ fun RegistrationProgressScreen(
                         navController.navigate(IdentityDetail(p.identityId.toHexString()))
                     }) { Text("View Identity") }
                 }
-                is Phase.Failed -> Text(
-                    p.message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("registrationProgress.failed"),
-                )
+                is Phase.Failed -> {
+                    Text(
+                        p.message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("registrationProgress.failed"),
+                    )
+                    // A hold without a lock to resume is released only once
+                    // the user confirmed the original payment in the history;
+                    // a held lock stays on the resume path (← Swift).
+                    ReleasePaymentHoldButton(p.failure, testTagPrefix = "registrationProgress") {
+                        container.registrationCoordinator.release(walletId, identityIndex)
+                        navController.popBackStack()
+                    }
+                }
                 is Phase.Unconfirmed -> Text(
                     "Confirmation pending — the identity may already be live. " + p.message,
                     color = Color(0xFFB26A00),
@@ -214,6 +225,6 @@ private fun phaseLabel(phase: Phase): String = when (phase) {
     is Phase.PreparingKeys -> "Preparing keys"
     is Phase.InFlight -> "In flight"
     is Phase.Completed -> "Registered"
-    is Phase.Failed -> "Failed"
+    is Phase.Failed -> phase.failure.title
     is Phase.Unconfirmed -> "Confirmation pending"
 }
