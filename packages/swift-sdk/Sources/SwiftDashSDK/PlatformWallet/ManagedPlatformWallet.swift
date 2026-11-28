@@ -3004,8 +3004,8 @@ extension ManagedPlatformWallet {
             var outURI: UnsafeMutablePointer<CChar>?
             // `out_outpoint` is required by the FFI. The funding outpoint is not
             // returned by this wrapper (the persistence layer tracks it via the
-            // asset-lock manager); it only names the held voucher lock when a
-            // successful call hands back no URI.
+            // asset-lock manager), and nothing here reads it: a successful call
+            // that hands back no URI throws `.maybeSent`, never a held lock.
             var outOutpoint = OutPointFFI()
             let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
                 () -> PlatformWalletFFIResult in

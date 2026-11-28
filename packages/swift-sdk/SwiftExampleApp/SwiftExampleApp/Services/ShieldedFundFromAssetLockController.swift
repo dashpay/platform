@@ -160,7 +160,8 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     ///     consumed lock.
     ///   - `.failed` whose class does not allow this operation
     ///     (`Phase.permitsSubmit`): a fresh shield only after a
-    ///     retryable failure, a resume only of the lock it holds.
+    ///     failure that released the slot (any `.notSent`), a resume
+    ///     only of the lock a held failure names.
     ///
     /// `operationId` names the operation the body performs (see
     /// `operationId`), `resuming` the lock it resumes (`nil` for a fresh

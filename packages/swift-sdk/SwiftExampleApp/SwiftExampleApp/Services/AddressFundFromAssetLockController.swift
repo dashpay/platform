@@ -149,7 +149,8 @@ final class AddressFundFromAssetLockController: ObservableObject {
     ///     consumed lock.
     ///   - `.failed` whose class does not allow this operation
     ///     (`Phase.permitsSubmit`): a fresh funding only after a
-    ///     retryable failure, a resume only of the lock it holds.
+    ///     failure that released the slot (any `.notSent`), a resume
+    ///     only of the lock a held failure names.
     ///
     /// `resuming` names the lock `body` resumes, `nil` for a fresh
     /// funding. `body` performs the actual FFI call. It runs detached on a

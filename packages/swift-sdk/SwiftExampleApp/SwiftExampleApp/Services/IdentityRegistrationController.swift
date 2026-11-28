@@ -216,7 +216,7 @@ final class IdentityRegistrationController: ObservableObject {
     ///     chain; re-submitting the same keys would fail the
     ///     registered-key-hash stateful check and burn the funds.
     ///   - `.failed` whose class does not allow this operation
-    ///     (`Phase.permitsSubmit`): only a retryable failure runs again,
+    ///     (`Phase.permitsSubmit`): any `.notSent` failure runs again,
     ///     and a held lock only by resuming that lock (`resuming`).
     /// `.idle` and `.preparingKeys` are allowed — the coordinator drives
     /// the legitimate-restart flow through them (callers must call
