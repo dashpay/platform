@@ -1,7 +1,6 @@
 package org.dashfoundation.example.util
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
-import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.example.ui.identity.dpnsTradeErrorMessage
 import org.junit.Assert.assertEquals

@@ -56,7 +56,6 @@ import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
-import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
@@ -70,6 +69,7 @@ import org.dashfoundation.example.ui.shielded.ShieldedPaymentOutcome
 import org.dashfoundation.example.ui.wallet.formatCreditsExact
 import org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator
 import org.dashfoundation.example.util.PaymentFailure
+import org.dashfoundation.example.util.PaymentRecovery
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.parseDashToCredits

@@ -1,5 +1,6 @@
-package org.dashfoundation.dashsdk.errors
+package org.dashfoundation.example.util
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.junit.Assert.assertEquals
@@ -7,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** The app's recovery policy over the native payment class; the SDK only marshals the class. */
 class PaymentRecoveryTest {
 
     private val held: ByteArray = ByteArray(32) { 7 } + byteArrayOf(2, 0, 0, 0)
@@ -65,21 +67,5 @@ class PaymentRecoveryTest {
         assertFalse(resume.invitationVoucherSuggestion.contains("Resume"))
         listOf(PaymentRecovery.Retry, PaymentRecovery.Wait, PaymentRecovery.Reconcile, PaymentRecovery.Unconfirmed)
             .forEach { assertEquals(it.suggestion, it.invitationVoucherSuggestion) }
-    }
-
-    @Test
-    fun shouldNotClaimAnOutcomeOrARetryWithoutTheClass() {
-        val changed = DashSdkError.PlatformWallet.DocumentPriceChanged("d", 1u, 2u)
-        assertFalse(changed.message!!.contains("Nothing was purchased"))
-
-        assertEquals(
-            "The wallet database is busy. Try again in a moment.",
-            native(51, 1, true).userMessage,
-        )
-        assertEquals("The wallet database is busy.", native(51, 1, false).userMessage)
-
-        assertFalse(DashSdkError.NetworkError("x").isRetryable)
-        assertFalse(DashSdkError.Timeout("x").isRetryable)
-        assertTrue(native(19, 1, true).isRetryable)
     }
 }

@@ -1,7 +1,6 @@
 package org.dashfoundation.example.util
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
-import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.example.services.shielded.WalletDrainAttemptException
 import java.nio.ByteBuffer
@@ -14,7 +13,7 @@ import java.nio.ByteOrder
  * an error's type, code or text. ← Swift `PaymentFailure`.
  *
  * The class is the error's delivery, retry and held lock, read through the
- * SDK's [PaymentRecovery]: a retryable NOT_SENT offers a retry, LOCK_HELD
+ * app's [PaymentRecovery]: a retryable NOT_SENT offers a retry, LOCK_HELD
  * resumes the named lock and never funds a new one (an invitation's voucher
  * lock is reclaimed instead, [invitationVoucher]), and everything else
  * waits (a non-retryable NOT_SENT, MAYBE_SENT, and an unclassified failure).

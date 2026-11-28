@@ -11,7 +11,6 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.PaymentDelivery
-import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutcome
@@ -23,6 +22,7 @@ import org.dashfoundation.dashsdk.wallet.shieldedFundFromWalletDrain
 import org.dashfoundation.dashsdk.wallet.shieldedWalletDrainStatus
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoordinator.StartFundingResult
 import org.dashfoundation.example.util.PaymentFailure
+import org.dashfoundation.example.util.PaymentRecovery
 import java.util.UUID
 
 /**

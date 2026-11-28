@@ -1022,4 +1022,25 @@ class DashSdkErrorTest {
         assertTrue(plain is DashSdkError.InternalError)
         assertNull(plain.consensusError)
     }
+
+    private fun native(code: Int, delivery: Int, retryable: Boolean) =
+        DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, "detail", 0, 0, delivery, retryable, null),
+        )
+
+    @Test
+    fun shouldNotClaimAnOutcomeOrARetryWithoutTheClass() {
+        val changed = DashSdkError.PlatformWallet.DocumentPriceChanged("d", 1u, 2u)
+        assertFalse(changed.message!!.contains("Nothing was purchased"))
+
+        assertEquals(
+            "The wallet database is busy. Try again in a moment.",
+            native(51, 1, true).userMessage,
+        )
+        assertEquals("The wallet database is busy.", native(51, 1, false).userMessage)
+
+        assertFalse(DashSdkError.NetworkError("x").isRetryable)
+        assertFalse(DashSdkError.Timeout("x").isRetryable)
+        assertTrue(native(19, 1, true).isRetryable)
+    }
 }

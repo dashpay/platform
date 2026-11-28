@@ -10,7 +10,6 @@ import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.PaymentDelivery
-import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutcome
 import org.dashfoundation.dashsdk.wallet.WalletDrainOutcome.State
@@ -24,6 +23,7 @@ import org.dashfoundation.example.services.shielded.WalletDrainCoordinator.RowSt
 import org.dashfoundation.example.services.shielded.WalletDrainCoordinator.StartResult
 import org.dashfoundation.example.testing.nativeWalletError
 import org.dashfoundation.example.util.PaymentFailure
+import org.dashfoundation.example.util.PaymentRecovery
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

@@ -1,15 +1,18 @@
-package org.dashfoundation.dashsdk.errors
+package org.dashfoundation.example.util
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 
 /**
- * What a host may offer a person after a failed payment, read from the
- * native wallet's class alone ([DashSdkError.delivery],
- * [DashSdkError.isRetryable], [DashSdkError.heldAssetLock]), never from the
- * error's type, code or text. Show [suggestion]; offer a retry only under
- * [Retry] and a resume only under [Resume] with its outpoint.
+ * What the app offers a person after a failed payment, read from the native
+ * wallet's class alone ([DashSdkError.delivery], [DashSdkError.isRetryable],
+ * [DashSdkError.heldAssetLock]), never from the error's type, code or text.
+ * The SDK only marshals that class; this mapping to an action and its texts
+ * is the app's policy, presented through [PaymentFailure].
  *
- * The Android analog of Swift's `PlatformPaymentRecovery`, with the same texts.
+ * The analog of SwiftExampleApp's recovery in `PaymentFailure.swift`, with
+ * the same texts.
  */
 sealed class PaymentRecovery {
     /** Text fit to show a person: what happened and the one action allowed. */
