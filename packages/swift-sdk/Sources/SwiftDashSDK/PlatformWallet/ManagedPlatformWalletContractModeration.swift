@@ -35,12 +35,15 @@ extension ManagedPlatformWallet {
     ///   contract; a failed read as the error its result code maps to.
     public func contractModerationOffer(contractId: Identifier) async throws -> ContractModerationOffer {
         let contract = try Self.moderationIdentifier(contractId, "contractId")
-        let json = try await moderationCall("contract_moderation_offer", signer: nil) { handle, _, out in
+        return try await moderationCall(
+            "contract_moderation_offer",
+            signer: nil,
+            decode: ContractModerationOffer.decode(fromJSON:)
+        ) { handle, _, out in
             contract.withUnsafeBufferPointer { contractBp in
                 platform_wallet_contract_moderation_offer(handle, contractBp.baseAddress!, out)
             }
         }
-        return try ContractModerationOffer.decode(fromJSON: json)
     }
 
     /// Send one moderation of `targetIdentityId` on `contractId`, signed by
@@ -72,7 +75,11 @@ extension ManagedPlatformWallet {
         let reasonDocument = try reason.reasonDocumentId.map { try Self.moderationIdentifier($0, "reasonDocumentId") }
         let reasonText = reason.text
         let tag = action.ffiTag
-        let json = try await moderationCall("contract_user_moderate", signer: signer) { handle, signerHandle, out in
+        return try await moderationCall(
+            "contract_user_moderate",
+            signer: signer,
+            decode: ModeratedContractUser.decode(fromJSON:)
+        ) { handle, signerHandle, out in
             withOptionalPointer(to: suspendUntilMs) { untilPtr in
                 withOptionalBytes(reasonDocument) { reasonDocumentPtr in
                     reasonText.withCString { reasonTextPtr in
@@ -98,7 +105,6 @@ extension ManagedPlatformWallet {
                 }
             }
         }
-        return try ModeratedContractUser.decode(fromJSON: json)
     }
 
     /// Delete document `documentId` of `documentTypeName` on `contractId` as
@@ -122,7 +128,11 @@ extension ManagedPlatformWallet {
         let document = try Self.moderationIdentifier(documentId, "documentId")
         let reasonDocument = try reason.reasonDocumentId.map { try Self.moderationIdentifier($0, "reasonDocumentId") }
         let reasonText = reason.text
-        let json = try await moderationCall("contract_document_delete", signer: signer) { handle, signerHandle, out in
+        return try await moderationCall(
+            "contract_document_delete",
+            signer: signer,
+            decode: ContractDocumentDeletion.decode(fromJSON:)
+        ) { handle, signerHandle, out in
             withOptionalBytes(reasonDocument) { reasonDocumentPtr in
                 reasonText.withCString { reasonTextPtr in
                     documentTypeName.withCString { typePtr in
@@ -147,7 +157,6 @@ extension ManagedPlatformWallet {
                 }
             }
         }
-        return try ContractDocumentDeletion.decode(fromJSON: json)
     }
 
     /// Restore a document of `documentTypeName` on `contractId` a moderator
@@ -170,7 +179,11 @@ extension ManagedPlatformWallet {
             throw PlatformWalletError.invalidParameter("documentBytes is empty")
         }
         let bytes = [UInt8](documentBytes)
-        let json = try await moderationCall("contract_document_restore", signer: signer) { handle, signerHandle, out in
+        return try await moderationCall(
+            "contract_document_restore",
+            signer: signer,
+            decode: ContractDocumentRestore.decode(fromJSON:)
+        ) { handle, signerHandle, out in
             documentTypeName.withCString { typePtr in
                 moderator.withUnsafeBufferPointer { moderatorBp in
                     contract.withUnsafeBufferPointer { contractBp in
@@ -190,7 +203,6 @@ extension ManagedPlatformWallet {
                 }
             }
         }
-        return try ContractDocumentRestore.decode(fromJSON: json)
     }
 
     /// Set the moderator fields `fieldsJSON` names on document `documentId`
@@ -217,7 +229,11 @@ extension ManagedPlatformWallet {
         let document = try Self.moderationIdentifier(documentId, "documentId")
         let reasonDocument = try reason.reasonDocumentId.map { try Self.moderationIdentifier($0, "reasonDocumentId") }
         let reasonText = reason.text
-        let json = try await moderationCall("contract_document_change_fields", signer: signer) { handle, signerHandle, out in
+        return try await moderationCall(
+            "contract_document_change_fields",
+            signer: signer,
+            decode: ContractDocumentFieldsChange.decode(fromJSON:)
+        ) { handle, signerHandle, out in
             withOptionalBytes(reasonDocument) { reasonDocumentPtr in
                 reasonText.withCString { reasonTextPtr in
                     fieldsJSON.withCString { fieldsPtr in
@@ -245,7 +261,6 @@ extension ManagedPlatformWallet {
                 }
             }
         }
-        return try ContractDocumentFieldsChange.decode(fromJSON: json)
     }
 
     /// Propose, as a member of the seated team of `contractId`, the deletion
@@ -269,7 +284,11 @@ extension ManagedPlatformWallet {
         let document = try Self.moderationIdentifier(documentId, "documentId")
         let reasonDocument = try reason.reasonDocumentId.map { try Self.moderationIdentifier($0, "reasonDocumentId") }
         let reasonText = reason.text
-        let json = try await moderationCall("contract_document_propose_settled_deletion", signer: signer) { handle, signerHandle, out in
+        return try await moderationCall(
+            "contract_document_propose_settled_deletion",
+            signer: signer,
+            decode: ContractTeamActionSignature.decode(fromJSON:)
+        ) { handle, signerHandle, out in
             withOptionalBytes(reasonDocument) { reasonDocumentPtr in
                 reasonText.withCString { reasonTextPtr in
                     documentTypeName.withCString { typePtr in
@@ -294,7 +313,6 @@ extension ManagedPlatformWallet {
                 }
             }
         }
-        return try ContractTeamActionSignature.decode(fromJSON: json)
     }
 
     /// Approve, as a member of the seated team of `contractId`, team action
@@ -312,7 +330,11 @@ extension ManagedPlatformWallet {
         let moderator = try Self.moderationIdentifier(moderatorIdentityId, "moderatorIdentityId")
         let contract = try Self.moderationIdentifier(contractId, "contractId")
         let action = try Self.moderationIdentifier(actionId, "actionId")
-        let json = try await moderationCall("contract_team_action_approve", signer: signer) { handle, signerHandle, out in
+        return try await moderationCall(
+            "contract_team_action_approve",
+            signer: signer,
+            decode: ContractTeamActionSignature.decode(fromJSON:)
+        ) { handle, signerHandle, out in
             moderator.withUnsafeBufferPointer { moderatorBp in
                 contract.withUnsafeBufferPointer { contractBp in
                     action.withUnsafeBufferPointer { actionBp in
@@ -328,7 +350,6 @@ extension ManagedPlatformWallet {
                 }
             }
         }
-        return try ContractTeamActionSignature.decode(fromJSON: json)
     }
 
     // MARK: - Marshalling
@@ -349,16 +370,17 @@ extension ManagedPlatformWallet {
     /// mid-call would destroy the handle the call uses, and Rust holds a
     /// `passUnretained` ctx pointer to the signer. `call` gets the signer's
     /// handle, `nil` without a signer. The JSON Rust hands over is freed with
-    /// `platform_wallet_string_free`.
-    private func moderationCall(
+    /// `platform_wallet_string_free` once `decode` has read it.
+    private func moderationCall<Output: Sendable>(
         _ name: String,
         signer: KeychainSigner?,
+        decode: @escaping @Sendable (String) throws -> Output,
         _ call: @escaping @Sendable (
             Handle,
             OpaquePointer?,
             UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
         ) -> PlatformWalletFFIResult
-    ) async throws -> String {
+    ) async throws -> Output {
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { [self] in
             var jsonPtr: UnsafeMutablePointer<CChar>? = nil
@@ -372,12 +394,21 @@ extension ManagedPlatformWallet {
             }
 
             try result.check()
+            // Every call with a signer broadcast a transition that Rust
+            // reported as done, so a guard past this point carries
+            // `.maybeSent`; the offer read takes no signer and pays nothing.
+            let paid = signer != nil
             // On success the Rust side always writes the JSON; a null pointer
             // is an FFI contract violation.
             guard let jsonPtr else {
-                throw PlatformWalletError.walletOperation("\(name) returned no JSON")
+                throw PlatformWalletError.walletOperation(
+                    "\(name) returned no JSON",
+                    payment: paid ? .maybeSent : nil
+                )
             }
-            return String(cString: jsonPtr)
+            let json = String(cString: jsonPtr)
+            guard paid else { return try decode(json) }
+            return try PlatformWalletError.readingPaidOutput { try decode(json) }
         }.value
     }
 }

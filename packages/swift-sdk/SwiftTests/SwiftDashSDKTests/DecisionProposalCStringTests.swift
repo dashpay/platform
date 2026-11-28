@@ -75,10 +75,10 @@ final class DecisionProposalCStringTests: XCTestCase {
             try withDecisionProposalCString(
                 "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF\0junk",
                 field: "startAfter",
-                invalid: PlatformWalletError.invalidParameter
+                invalid: { PlatformWalletError.invalidParameter($0) }
             ) { _ in }
         ) { error in
-            guard case PlatformWalletError.invalidParameter(let message) = error else {
+            guard case PlatformWalletError.invalidParameter(let message, _) = error else {
                 return XCTFail("expected PlatformWalletError.invalidParameter, got \(error)")
             }
             XCTAssertTrue(message.hasPrefix("startAfter "), message)

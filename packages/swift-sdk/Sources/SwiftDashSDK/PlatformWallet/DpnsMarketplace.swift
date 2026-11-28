@@ -858,7 +858,8 @@ extension ManagedPlatformWallet {
             try result.check()
             guard let givenUp = DpnsNameGivenUp(ffi: out) else {
                 throw PlatformWalletError.walletOperation(
-                    "dpns_give_up_name reported success but returned an unreadable result"
+                    "dpns_give_up_name reported success but returned an unreadable result",
+                    payment: .maybeSent
                 )
             }
             return givenUp
@@ -1075,7 +1076,8 @@ extension ManagedPlatformWallet {
     ) throws -> DpnsMarketplaceName {
         guard let ptr else {
             throw PlatformWalletError.walletOperation(
-                "\(operation) reported success but returned no confirmed name state"
+                "\(operation) reported success but returned no confirmed name state",
+                payment: .maybeSent
             )
         }
         defer { dpns_marketplace_name_free(ptr) }

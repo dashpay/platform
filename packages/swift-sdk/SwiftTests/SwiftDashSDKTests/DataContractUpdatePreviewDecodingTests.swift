@@ -203,7 +203,7 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
         XCTAssertThrowsError(
             try DataContractUpdateSource.split(#"{"description":"short"}"# + "\u{0}" + #"{"description":"long"}"#)
         ) { error in
-            guard case PlatformWalletError.invalidParameter(let message) = error else {
+            guard case PlatformWalletError.invalidParameter(let message, _) = error else {
                 return XCTFail("expected invalidParameter, got \(error)")
             }
             XCTAssertTrue(message.contains("Contract JSON"), message)
@@ -243,7 +243,7 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
         ]
         for testCase in cases {
             XCTAssertThrowsError(try testCase.run(), testCase.name) { error in
-                guard case PlatformWalletError.invalidParameter(let message) = error else {
+                guard case PlatformWalletError.invalidParameter(let message, _) = error else {
                     return XCTFail("expected invalidParameter, got \(error)")
                 }
                 XCTAssertTrue(message.contains(testCase.name), message)
@@ -280,7 +280,7 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
                 ),
                 "\(testCase.name): owner \(testCase.owner.count) bytes, contract \(testCase.contract.count) bytes"
             ) { error in
-                guard case PlatformWalletError.invalidParameter(let message) = error else {
+                guard case PlatformWalletError.invalidParameter(let message, _) = error else {
                     return XCTFail("expected invalidParameter, got \(error)")
                 }
                 XCTAssertTrue(message.contains(testCase.name), message)

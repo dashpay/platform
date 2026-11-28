@@ -2355,6 +2355,7 @@ struct TopUpAddressFromAssetLockView: View {
         }
         .disabled(
           viewModel.isLoading || !viewModel.isFormValid || appState.sdk == nil
+            || !viewModel.permitsTopUp
         )
         .padding(.horizontal)
 
@@ -2374,6 +2375,11 @@ struct TopUpAddressFromAssetLockView: View {
               .padding()
               .background(Color.red.opacity(0.1))
               .cornerRadius(8)
+              if let failure = viewModel.paymentFailure {
+                ReleasePaymentHoldButton(failure: failure) {
+                  viewModel.releasePaymentHold()
+                }
+              }
             } else if let result = viewModel.result {
               VStack(alignment: .leading, spacing: 12) {
                 Label("Top Up Successful!", systemImage: "checkmark.circle.fill")

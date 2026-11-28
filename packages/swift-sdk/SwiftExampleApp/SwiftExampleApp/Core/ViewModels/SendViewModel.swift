@@ -172,9 +172,26 @@ class SendViewModel: ObservableObject {
     @Published var isSending = false
     @Published var error: String?
     @Published var successMessage: String?
-    /// The send may already be on chain but is not proved: neither a success
-    /// nor a retryable error. Shown in its own alert.
-    @Published var unconfirmedMessage: String?
+    /// A send that failed, presented by Rust's payment class
+    /// (`PaymentFailure`): its title and text, and whether it may be
+    /// retried. Never shown as a success. One that holds its slot
+    /// (`PaymentFailure.holdsSlot`) stays stored after its alert is
+    /// acknowledged, so `canSend` and `executeSend` refuse a second payment
+    /// until the user leaves the form.
+    @Published var paymentFailure: PaymentFailure?
+
+    /// Whether the stored failure forbids another submission from this form.
+    var isHeldByPaymentFailure: Bool { paymentFailure?.holdsSlot == true }
+
+    /// Acknowledge the failure alert. Returns whether the form must close:
+    /// a failure that holds its slot stays stored (the form stays refused)
+    /// and the form closes; a `.notSent` one is cleared, so a corrected
+    /// request may go.
+    func acknowledgePaymentFailure() -> Bool {
+        if isHeldByPaymentFailure { return true }
+        paymentFailure = nil
+        return false
+    }
     /// The send was accepted but its effect is not confirmed yet (the
     /// identity shield: the wallet only verified the identity's balance at
     /// a block). Shown in its own "Submitted" alert, never as a success.
@@ -411,7 +428,7 @@ class SendViewModel: ObservableObject {
     }
 
     var canSend: Bool {
-        guard let flow = detectedFlow, !isSending else { return false }
+        guard let flow = detectedFlow, !isSending, !isHeldByPaymentFailure else { return false }
         // A source the screen no longer offers (its balance went away, or
         // it was never offered) must not be sent from.
         guard offeredSources.contains(selectedSource) else { return false }
@@ -739,6 +756,9 @@ class SendViewModel: ObservableObject {
         tappedIdentityId: Data?,
         tappedAmountText: String
     ) async {
+        // A failure that may have left the wallet or holds a lock stays
+        // stored: never pay again from this form.
+        guard !isHeldByPaymentFailure else { return }
         guard let flow = admitSend(
             tappedFlow: tappedFlow,
             tappedRecipient: tappedRecipient,
@@ -750,7 +770,7 @@ class SendViewModel: ObservableObject {
         isSending = true
         error = nil
         successMessage = nil
-        unconfirmedMessage = nil
+        paymentFailure = nil
         submittedMessage = nil
         identityDebitMayHaveBeenSaved = false
         defer { isSending = false }
@@ -1128,39 +1148,36 @@ class SendViewModel: ObservableObject {
     func applyIdentityShieldSubmitted() {
         error = nil
         successMessage = nil
-        unconfirmedMessage = nil
+        paymentFailure = nil
         submittedMessage = Self.identityShieldSubmittedMessage
     }
 
     /// Route a failed send to the right outcome.
     ///
-    /// A shielded operation that may have reached a node with its result not
-    /// proved (code 18), or a transition the SDK could not confirm after it
-    /// may have been accepted (code 20), may already be on chain. Rust keeps
-    /// any spent notes reserved, so it must not read as a retryable failure
-    /// (a retry signs a second transition) nor as a success: it goes to
-    /// `unconfirmedMessage`, and the next shielded sync reconciles it.
+    /// Every flow (Core, Platform, shielded, the identity shield) presents
+    /// its failure by Rust's payment class (`PaymentFailure`), never by the
+    /// error's case or code: a retry only for a retryable `.notSent`, the
+    /// held lock's resume for `.lockHeld`, and a wait for a payment that may
+    /// have left (never "failed"). An identity shield refused with nothing
+    /// sent keeps this flow's wording (`identityShieldRefusalMessage`) as the
+    /// failure's text. An error that is not an SDK error (an input check
+    /// before any send) shows as its own message; any wallet error, one
+    /// without a class included, is a payment failure.
     func applySendFailure(_ failure: Error, flow: SendFlow) {
         successMessage = nil
-        unconfirmedMessage = nil
         submittedMessage = nil
-        guard let walletError = failure as? PlatformWalletError else {
+        guard let classified = PaymentFailure.ofPayment(failure) else {
             error = failure.localizedDescription
             return
         }
-        if Self.mayHaveGoneThrough(walletError) {
-            unconfirmedMessage = flow == .identityToShielded
-                ? Self.identityShieldMayHaveGoneThroughMessage
-                : "Transaction may have gone through. Waiting for "
-                    + "the next shielded sync to confirm. Do not retry."
-            return
-        }
         if flow == .identityToShielded,
+           let walletError = failure as? PlatformWalletError,
+           case .notSent? = walletError.delivery,
            let message = Self.identityShieldRefusalMessage(walletError) {
-            error = message
+            paymentFailure = PaymentFailure(payment: walletError.payment, detail: message)
             return
         }
-        error = walletError.localizedDescription
+        paymentFailure = classified
     }
 
     /// Wallet refusals of an identity shield that happen before anything is
@@ -1170,7 +1187,7 @@ class SendViewModel: ObservableObject {
         switch error {
         case .shieldedIdentityDebitPending:
             return identityDebitPendingMessage
-        case .insufficientIdentityCredits(_, let required, let available):
+        case .insufficientIdentityCredits(_, let required, let available, _):
             return "The identity's balance on Platform is too low for this shield: "
                 + "it needs \(formatCredits(required)) including the fee and has "
                 + "\(formatCredits(available)). Nothing was sent."
@@ -1193,13 +1210,14 @@ class SendViewModel: ObservableObject {
     }
 
     /// Whether a shielded operation's error means it may already be on
-    /// chain, so no retry is offered: a spend whose result is not proved
-    /// (18) or a state transition the SDK could not confirm after it may
-    /// have been accepted (20).
+    /// chain, so no retry is offered: Rust classed the payment as maybe sent
+    /// (a spend whose result is not proved, a state transition the SDK could
+    /// not confirm, any other verdict no proof backs) or as holding an asset
+    /// lock. Read from the error's payment class, never from its case.
     nonisolated static func mayHaveGoneThrough(_ error: PlatformWalletError) -> Bool {
-        switch error {
-        case .shieldedSpendUnconfirmed, .transactionBroadcastUnconfirmed: return true
-        default: return false
+        switch error.delivery {
+        case .maybeSent, .lockHeld: return true
+        case .notSent, nil: return false
         }
     }
 
@@ -1250,11 +1268,6 @@ class SendViewModel: ObservableObject {
         "Shield from identity submitted. Its Shielded Activity row stays "
         + "pending until the shielded sync sees the new note."
 
-    nonisolated static let identityShieldMayHaveGoneThroughMessage =
-        "The shield from this identity may have gone through. Do not retry. "
-        + "It is listed under In-Progress Identity Shields in Shielded "
-        + "Activity, and the wallet keeps checking it on each shielded sync."
-
     /// Wallet-scoped on purpose: an unreadable record blocks shields from
     /// every identity in the wallet, and the error then names the requested
     /// identity, not the record's.
@@ -1277,13 +1290,25 @@ class SendViewModel: ObservableObject {
             successMessage = recipientCount > 1
                 ? "Payment sent to \(recipientCount) recipients"
                 : "Payment sent"
-        case .rejected(_, let reason):
+        case .rejected(_, let reason, let payment):
+            // Read by Rust's class of the result, as for any other payment
+            // failure: one that holds its slot (no class included) keeps
+            // the form refused.
             successMessage = nil
-            error = "Payment rejected by Dash Core: \(reason)"
-        case .unknown(let txid, let reason):
+            paymentFailure = PaymentFailure(
+                payment: payment,
+                detail: "Payment rejected by Dash Core: \(reason)"
+            )
+        case .unknown(let txid, let reason, let payment):
+            // The broadcast may have reached the network. The hold follows
+            // Rust's class of the result, as for any other payment failure
+            // (one without a class also holds the form).
             successMessage = nil
-            error = "Payment status could not be verified (\(txid)). "
-                + "It may already have been accepted; do not retry. \(reason)"
+            paymentFailure = PaymentFailure(
+                payment: payment,
+                detail: "Payment status could not be verified (\(txid)). "
+                    + "It may already have been accepted; do not retry. \(reason)"
+            )
         }
     }
 }

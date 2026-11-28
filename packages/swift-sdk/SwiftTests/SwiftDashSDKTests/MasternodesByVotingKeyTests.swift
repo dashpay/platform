@@ -20,7 +20,7 @@ final class MasternodesByVotingKeyTests: XCTestCase {
         do {
             _ = try await manager.masternodeProTxHashes(votingKeyId: votingKeyId)
             XCTFail("expected invalidParameter, call succeeded", file: file, line: line)
-        } catch PlatformWalletError.invalidParameter(let message) {
+        } catch PlatformWalletError.invalidParameter(let message, _) {
             XCTAssertEqual(message, reason, file: file, line: line)
         } catch {
             XCTFail("expected invalidParameter, got \(error)", file: file, line: line)

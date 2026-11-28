@@ -228,7 +228,7 @@ struct ClaimInvitationSheet: View {
                         nowUnix: UInt32(Date().timeIntervalSince1970)
                     )
                     newIdentityId = try managed.getId()
-                } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
+                } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId, _) {
                     // The invitation's identity is this wallet's. When the
                     // wallet already lists it, the claim continues with it;
                     // otherwise a rescan loads it.

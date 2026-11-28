@@ -48,11 +48,13 @@ final class IdentityRegistrationController: ObservableObject {
         /// 32-byte identifier the caller should persist /
         /// navigate to.
         case completed(identityId: Data)
-        /// Failure terminal state. The message is shown inline in
-        /// `RegistrationProgressView`'s step 5; the row stays in
-        /// the coordinator's map until the user dismisses it
-        /// manually.
-        case failed(String)
+        /// Failure terminal state, presented by `PaymentFailure` from
+        /// Rust's payment class: its message is shown inline in
+        /// `RegistrationProgressView`'s step 5, and its action says
+        /// whether the slot may run again (a retry, or only the resume
+        /// of the held lock). The row stays in the coordinator's map
+        /// until the user dismisses it manually.
+        case failed(PaymentFailure)
         /// Unconfirmed terminal state (shielded Type-20 only). The
         /// transition may have reached a node (a node's refusal or
         /// verdict included), its result is not proved, and a direct
@@ -83,8 +85,9 @@ final class IdentityRegistrationController: ObservableObject {
         /// controller flips to `.completed` the persister has
         /// (or is about to) write a `PersistentIdentity` row,
         /// which the identity-slot anti-join already covers.
-        /// `.failed` is NOT active either: the user is expected
-        /// to retry, so the lock should resurface for selection.
+        /// `.failed` is NOT active either: its lock resurfaces for
+        /// selection, and what may run on the slot again is decided by
+        /// `permitsSubmit` from the failure's payment class.
         /// `.unconfirmed` IS active: the identity may be live on
         /// chain, so the slot must stay held to block a re-submission
         /// that would burn funds against the registered-key-hash check.
@@ -93,6 +96,22 @@ final class IdentityRegistrationController: ObservableObject {
             case .preparingKeys, .inFlight, .unconfirmed:
                 return true
             case .idle, .completed, .failed:
+                return false
+            }
+        }
+
+        /// Whether an operation that resumes `resuming` (`nil` for a
+        /// fresh registration) may start on this slot from this phase:
+        /// always from `.idle` / `.preparingKeys`, from `.failed` only as
+        /// its class allows (`PaymentFailure.permitsRestart`), never
+        /// otherwise.
+        func permitsSubmit(resuming: AssetLockBuiltOutPoint?) -> Bool {
+            switch self {
+            case .idle, .preparingKeys:
+                return true
+            case .failed(let failure):
+                return failure.permitsRestart(resuming: resuming)
+            case .inFlight, .completed, .unconfirmed:
                 return false
             }
         }
@@ -196,10 +215,12 @@ final class IdentityRegistrationController: ObservableObject {
     ///   - `.unconfirmed`: the identity may already be live on
     ///     chain; re-submitting the same keys would fail the
     ///     registered-key-hash stateful check and burn the funds.
-    /// `.idle`, `.preparingKeys`, and `.failed` are allowed — the
-    /// coordinator drives the legitimate-restart flow through them
-    /// (callers must call `enterPreparingKeys()` before `submit()`,
-    /// `failed → preparingKeys → submit` is how a user retries).
+    ///   - `.failed` whose class does not allow this operation
+    ///     (`Phase.permitsSubmit`): any `.notSent` failure runs again,
+    ///     and a held lock only by resuming that lock (`resuming`).
+    /// `.idle` and `.preparingKeys` are allowed — the coordinator drives
+    /// the legitimate-restart flow through them (callers must call
+    /// `enterPreparingKeys()` before `submit()`).
     ///
     /// `body` performs the actual FFI call. It runs detached on a
     /// background priority and reports the identity id on success
@@ -210,13 +231,11 @@ final class IdentityRegistrationController: ObservableObject {
     /// was sent); every other error leaves `failureStage` nil (unattributed:
     /// the progress view uses its elapsed-time heuristic) rather than
     /// guessing a stage by elimination.
-    func submit(body: @escaping () async throws -> Data) {
-        switch phase {
-        case .idle, .preparingKeys, .failed:
-            break
-        case .inFlight, .completed, .unconfirmed:
-            return
-        }
+    func submit(
+        resuming: AssetLockBuiltOutPoint? = nil,
+        body: @escaping () async throws -> Data
+    ) {
+        guard phase.permitsSubmit(resuming: resuming) else { return }
         phase = .inFlight
         // Clear any stage attribution carried over from a previous failed
         // attempt before this one runs.
@@ -254,10 +273,11 @@ final class IdentityRegistrationController: ObservableObject {
                 } else {
                     stage = nil
                 }
+                let failure = PaymentFailure(error)
                 await MainActor.run {
                     self?.failureStage = stage
                     self?.terminalAt = Date()
-                    self?.phase = .failed(error.localizedDescription)
+                    self?.phase = .failed(failure)
                 }
             }
         }

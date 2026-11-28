@@ -47,6 +47,10 @@ struct CreateInvitationSheet: View {
     @State private var inviteURI: String?
     @State private var qrImage: UIImage?
     @State private var errorMessage: String?
+    /// The last create's failure. While it holds its slot (a voucher lock
+    /// held, a payment that may have left, or no class) no new invitation
+    /// is funded from this sheet (`PaymentFailure.permitsFreshPayment`).
+    @State private var failure: PaymentFailure?
     @State private var showShareSheet = false
     @State private var didCopy = false
 
@@ -161,7 +165,7 @@ struct CreateInvitationSheet: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .disabled(isCreating || amountDuffs == nil)
+            .disabled(isCreating || amountDuffs == nil || !PaymentFailure.permitsFreshPayment(after: failure))
             .accessibilityIdentifier("dashpay.invite.create.submit")
         } footer: {
             if amountDuffs == nil {
@@ -175,6 +179,12 @@ struct CreateInvitationSheet: View {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundColor(.red)
+                if let failure {
+                    ReleasePaymentHoldButton(failure: failure) {
+                        self.failure = nil
+                        self.errorMessage = nil
+                    }
+                }
             }
         }
     }
@@ -228,6 +238,8 @@ struct CreateInvitationSheet: View {
 
     private func create() async {
         guard !isCreating else { return }
+        // A held failure keeps the sheet from funding a second voucher.
+        guard PaymentFailure.permitsFreshPayment(after: failure) else { return }
         errorMessage = nil
         guard let amountDuffs else {
             errorMessage = "Enter a valid amount."
@@ -250,11 +262,23 @@ struct CreateInvitationSheet: View {
                 inviterUsername: optIn ? username : nil,
                 nowUnix: UInt32(Date().timeIntervalSince1970)
             )
+            failure = nil
             qrImage = Self.makeQRCode(from: uri)
             inviteURI = uri
         } catch {
-            errorMessage = error.localizedDescription
+            // By Rust's payment class; a held lock here is the invitation's
+            // voucher, which the user reclaims rather than resumes.
+            failure = Self.failureAfterCreate(failure, error: error)
+            errorMessage = PaymentFailure.ofPayment(error, invitationVoucher: true)?.message
+                ?? error.localizedDescription
         }
+    }
+
+    /// The failure the sheet keeps after a create threw `error`: its own,
+    /// read as an invitation (a held lock is the voucher), or `previous`
+    /// when `error` is not an SDK error.
+    nonisolated static func failureAfterCreate(_ previous: PaymentFailure?, error: Error) -> PaymentFailure? {
+        PaymentFailure.keptAfter(previous, error: error, invitationVoucher: true)
     }
 
     /// Copy the link to a **local-only, expiring** pasteboard: the link embeds

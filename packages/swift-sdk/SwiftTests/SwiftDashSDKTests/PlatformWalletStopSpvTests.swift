@@ -130,7 +130,7 @@ final class PlatformWalletStopSpvTests: XCTestCase {
     }
 
     private func assertIsStopRefusal(_ error: Error, _ name: String, file: StaticString, line: UInt) {
-        guard case PlatformWalletError.walletOperation(let message) = error,
+        guard case PlatformWalletError.walletOperation(let message, _) = error,
               message.contains("SPV stop in progress") else {
             return XCTFail("\(name): expected the in-flight stop refusal, got \(error)", file: file, line: line)
         }

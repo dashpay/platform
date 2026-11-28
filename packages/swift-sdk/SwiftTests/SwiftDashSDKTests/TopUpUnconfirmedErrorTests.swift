@@ -11,12 +11,18 @@ final class TopUpUnconfirmedErrorTests: XCTestCase {
             "wait timeout",
             "networkError: connection lost"
         ] {
+            // Rust classes every unconfirmed broadcast as maybe sent.
             let ffi = PlatformWalletFFIResult(
                 code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED,
-                message: strdup(detail)
+                message: strdup(detail),
+                consensus_code: 0,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT,
+                held_asset_lock: OutPointFFI(),
+                retryable: false
             )
             XCTAssertThrowsError(try ffi.check()) { error in
-                guard case PlatformWalletError.transactionBroadcastUnconfirmed(let message) = error else {
+                guard case PlatformWalletError.transactionBroadcastUnconfirmed(let message, _) = error else {
                     return XCTFail("Expected typed unconfirmed result, got \(error)")
                 }
                 XCTAssertEqual(message, detail)

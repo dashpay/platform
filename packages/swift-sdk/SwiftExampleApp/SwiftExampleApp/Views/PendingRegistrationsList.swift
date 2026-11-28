@@ -51,6 +51,7 @@ private extension IdentityRegistrationController {
 struct PendingRegistrationRow: View {
     @ObservedObject var controller: IdentityRegistrationController
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @State private var confirmingRelease = false
 
     /// Persisted identity rows for this slot, queried live so the
     /// `.unconfirmed` dismiss gate becomes enabled the moment the
@@ -95,7 +96,8 @@ struct PendingRegistrationRow: View {
             .padding(.vertical, 2)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            // `.failed` is always dismissable. `.unconfirmed` only becomes
+            // `.failed` is dismissable only when its failure releases the
+            // slot (see `isDismissable`). `.unconfirmed` only becomes
             // dismissable once the matching `PersistentIdentity` row appears
             // via sync (see `isDismissable`): the persisted `isUsed`
             // reservation is best-effort, so until the identity row lands the
@@ -115,15 +117,41 @@ struct PendingRegistrationRow: View {
                 }
                 .tint(.gray)
             }
+            // A hold without a lock to resume
+            // (`PaymentFailure.releasableAfterReconciliation`) is released
+            // only once the user confirmed the original payment in the history.
+            if case .failed(let failure) = controller.phase, failure.releasableAfterReconciliation {
+                Button {
+                    confirmingRelease = true
+                } label: {
+                    Label("Payment checked in history — release", systemImage: "checkmark.circle")
+                }
+                .tint(.orange)
+            }
+        }
+        .confirmationDialog(
+            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+            isPresented: $confirmingRelease,
+            titleVisibility: .visible
+        ) {
+            Button("Release", role: .destructive) {
+                walletManager.registrationCoordinator.release(
+                    walletId: controller.walletId,
+                    identityIndex: controller.identityIndex
+                )
+            }
         }
     }
 
     private var isDismissable: Bool {
         switch controller.phase {
-        case .failed:
-            // The user is expected to read the error and retry; always
-            // dismissable.
-            return true
+        case .failed(let failure):
+            // Only a failure that releases the slot (any `.notSent`): the
+            // live controller is what gates a fresh registration on this
+            // slot (`startRegistration`), so a failure that may have left,
+            // holds a lock, or has no class stays until its lock is resumed.
+            // The coordinator refuses the same dismissal.
+            return !failure.holdsSlot
         case .unconfirmed:
             // The slot is held to block a re-submission that would burn funds
             // (the identity is probably live on chain). The picker's
@@ -165,7 +193,7 @@ struct PendingRegistrationRow: View {
         case .preparingKeys: return "Preparing keys"
         case .inFlight: return "In flight"
         case .completed: return "Registered"
-        case .failed: return "Failed"
+        case .failed(let failure): return failure.title
         case .unconfirmed: return "Confirmation pending"
         }
     }

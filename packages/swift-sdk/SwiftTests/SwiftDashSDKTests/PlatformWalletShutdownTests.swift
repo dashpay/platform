@@ -155,7 +155,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         await fulfillment(of: [entered], timeout: 1)
 
         XCTAssertThrowsError(try manager.deleteWallet(walletId: walletId)) { error in
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("Expected an in-flight rejection, got \(error)")
             }
             XCTAssertTrue(message.contains("async native operation is in flight"), message)
@@ -166,7 +166,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         // Admission is released: deleteWallet now passes the in-flight check
         // and stops at the persistence handler this manager does not have.
         XCTAssertThrowsError(try manager.deleteWallet(walletId: walletId)) { error in
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("Expected the persistence-handler refusal, got \(error)")
             }
             XCTAssertTrue(message.contains("persistence handler"), message)
@@ -206,7 +206,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(manager.handle, NULL_HANDLE, "Admitted work owns its captured handle privately")
 
         func assertShutdownError(_ error: Error, operation: String) {
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("Expected shutdown rejection, got \(error)")
             }
             XCTAssertEqual(message, "PlatformWalletManager not configured", operation)
@@ -424,7 +424,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
             guard let walletError = error as? PlatformWalletError else {
                 return XCTFail("unexpected error: \(error)")
             }
-            guard case .invalidHandle(let message) = walletError else {
+            guard case .invalidHandle(let message, _) = walletError else {
                 return XCTFail("expected invalidHandle, got \(walletError)")
             }
             XCTAssertTrue(message.contains("cannot be configured after shutdown"))

@@ -20,7 +20,8 @@ final class ContactRequestOutcomesTests: XCTestCase {
     /// verdict included, may still land; nothing is offered again.
     func testShouldKeepAnUnconfirmedPrivateSubmissionPending() {
         let outcome = ContactRequestSubmissionOutcome.of(
-            PlatformWalletError.shieldedSpendUnconfirmed("result could not be confirmed")
+            PlatformWalletError.shieldedSpendUnconfirmed(
+                "result could not be confirmed", payment: .maybeSent)
         )
         XCTAssertEqual(outcome, .mayHaveGoneThrough)
     }
@@ -32,16 +33,77 @@ final class ContactRequestOutcomesTests: XCTestCase {
     func testShouldKeepAnUnconfirmedStateTransitionPending() {
         XCTAssertEqual(
             ContactRequestSubmissionOutcome.of(
-                PlatformWalletError.transactionBroadcastUnconfirmed("result could not be confirmed")),
+                PlatformWalletError.transactionBroadcastUnconfirmed(
+                    "result could not be confirmed", payment: .maybeSent)),
             .mayHaveGoneThrough)
     }
 
     /// A shielded send treats code 20 as it treats 18: it may have gone
     /// through, so no retry is offered; an ordinary failure is not.
     func testShouldNotOfferARetryForAShieldedOperationThatMayHaveGoneThrough() {
-        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.shieldedSpendUnconfirmed("not proved")))
-        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.transactionBroadcastUnconfirmed("not confirmed")))
-        XCTAssertFalse(SendViewModel.mayHaveGoneThrough(.shieldedBroadcastFailed("never sent")))
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(
+            .shieldedSpendUnconfirmed("not proved", payment: .maybeSent)))
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(
+            .transactionBroadcastUnconfirmed("not confirmed", payment: .maybeSent)))
+        XCTAssertFalse(SendViewModel.mayHaveGoneThrough(
+            .shieldedBroadcastFailed("never sent", payment: notSent)))
+    }
+
+    /// The send reads Rust's payment class, not the error's case: any case
+    /// Rust classed as maybe sent or holding a lock may have gone through,
+    /// and an unconfirmed case Rust classed as not sent does not.
+    func testShouldReadAShieldedOperationsPaymentClassNotItsCase() {
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(
+            .addressNonceMismatch("verdict after a dispatch", payment: .maybeSent)))
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(
+            .walletOperation("lock held", payment: lockHeld)))
+        XCTAssertFalse(SendViewModel.mayHaveGoneThrough(
+            .shieldedSpendUnconfirmed("never sent", payment: notSent)))
+    }
+
+    /// A contact request reads Rust's payment class, not the error's case:
+    /// a failure Rust classed as maybe sent or holding a lock may have gone
+    /// through whatever its case, and one classed as not sent is a failure.
+    func testShouldReadAContactRequestsPaymentClassNotItsCase() {
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.addressNonceMismatch(
+                    "verdict after a dispatch", payment: .maybeSent)),
+            .mayHaveGoneThrough)
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.walletOperation("lock held", payment: lockHeld)),
+            .mayHaveGoneThrough)
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.shieldedSpendUnconfirmed("never sent", payment: notSent)),
+            .failed(PlatformWalletError.shieldedSpendUnconfirmed(
+                "never sent", payment: notSent).localizedDescription))
+    }
+
+    /// Both contact-request holds keep their own outcome so the views mark
+    /// the contact pending, whatever their class: Rust classes the private
+    /// hold as not sent and not retryable (an earlier request blocks it) and
+    /// the public one as maybe sent.
+    func testShouldKeepAHoldsOutcomeOverItsPaymentClass() {
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.privateContactRequestPending(
+                    "held", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false))),
+            .privateRequestPending)
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.publicContactRequestUnconfirmed("held", payment: .maybeSent)),
+            .publicRequestUnconfirmed)
+    }
+
+    private var notSent: PlatformPaymentClass {
+        PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+    }
+
+    private var lockHeld: PlatformPaymentClass {
+        let outPoint = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 3, count: 36))!
+        return PlatformPaymentClass(delivery: .lockHeld(outPoint), isRetryable: false)
     }
 
     /// A pending private request (code 71), which a public send or accept
@@ -525,7 +587,8 @@ final class ContactRequestOutcomesTests: XCTestCase {
         // wallet holds the pair, the signed transition kept.
         wallet.publicUnconfirmed.insert(contact)
         let accepted = ContactRequestSubmissionOutcome.of(
-            PlatformWalletError.transactionBroadcastUnconfirmed("result could not be confirmed"))
+            PlatformWalletError.transactionBroadcastUnconfirmed(
+                "result could not be confirmed", payment: .maybeSent))
         XCTAssertEqual(accepted, .mayHaveGoneThrough)
         snapshot.recordOutcome(accepted, for: contact)
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))

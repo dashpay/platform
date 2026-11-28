@@ -25,6 +25,11 @@ struct DpnsMarketplaceView: View {
     @State private var activeAction: DpnsMarketplaceAction?
     @State private var historyRequest: DpnsHistoryRequest?
     @State private var alert: DpnsMarketplaceAlert?
+    /// The last trade's failure. While it holds its slot no trade (list,
+    /// delist, transfer, purchase) starts from this screen
+    /// (`PaymentFailure.permitsFreshPayment`); search, sync and history stay
+    /// available.
+    @State private var tradeFailure: PaymentFailure?
 
     private enum Segment: String, CaseIterable, Identifiable {
         case browse = "Browse"
@@ -38,9 +43,15 @@ struct DpnsMarketplaceView: View {
         return walletManager.wallet(for: walletId)
     }
 
+    private var tradesPermitted: Bool { PaymentFailure.permitsFreshPayment(after: tradeFailure) }
+
     var body: some View {
         List {
             syncSection
+
+            if let tradeFailure, tradeFailure.holdsSlot {
+                tradeHoldSection(tradeFailure)
+            }
 
             Section {
                 Picker("Marketplace section", selection: $segment) {
@@ -96,7 +107,8 @@ struct DpnsMarketplaceView: View {
                 DpnsMarketplaceActionSheet(
                     identity: identity,
                     wallet: wallet,
-                    action: action
+                    action: action,
+                    failure: $tradeFailure
                 ) { confirmed in
                     lastSummary = "Confirmed \(confirmed.label).dash"
                     Task { await refresh(runSync: false) }
@@ -115,6 +127,33 @@ struct DpnsMarketplaceView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+    }
+
+    /// A trade failure that holds its slot: what it says, and the confirmed
+    /// release when it has no lock to resume.
+    private func tradeHoldSection(_ failure: PaymentFailure) -> some View {
+        Section("Trades on hold") {
+            Text(failure.title)
+                .font(.headline)
+            Text(failure.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ReleasePaymentHoldButton(failure: failure) {
+                tradeFailure = nil
+            }
+        }
+        .accessibilityIdentifier("dpnsMarketplace.tradeHold")
+    }
+
+    /// Open a trade's sheet, unless a held failure refuses every trade.
+    private func startTrade(_ action: DpnsMarketplaceAction) {
+        guard tradesPermitted else {
+            if let tradeFailure {
+                alert = .init(title: "Trades on hold", message: tradeFailure.message)
+            }
+            return
+        }
+        activeAction = action
     }
 
     private var syncSection: some View {
@@ -233,20 +272,24 @@ struct DpnsMarketplaceView: View {
             Menu {
                 if ownedByIdentity {
                     Button("List or re-price", systemImage: "tag") {
-                        activeAction = .setPrice(name: name.label, currentPrice: name.priceCredits)
+                        startTrade(.setPrice(name: name.label, currentPrice: name.priceCredits))
                     }
+                    .disabled(!tradesPermitted)
                     if name.priceCredits != nil {
                         Button("Delist", systemImage: "tag.slash", role: .destructive) {
-                            activeAction = .delist(name: name.label, currentPrice: name.priceCredits)
+                            startTrade(.delist(name: name.label, currentPrice: name.priceCredits))
                         }
+                        .disabled(!tradesPermitted)
                     }
                     Button("Transfer", systemImage: "person.crop.circle.badge.arrow.forward") {
-                        activeAction = .transfer(name: name.label)
+                        startTrade(.transfer(name: name.label))
                     }
+                    .disabled(!tradesPermitted)
                 } else if let price = name.priceCredits {
                     Button("Purchase", systemImage: "cart") {
-                        activeAction = .purchase(name: name.label, expectedPrice: price)
+                        startTrade(.purchase(name: name.label, expectedPrice: price))
                     }
+                    .disabled(!tradesPermitted)
                 }
                 Button("History", systemImage: "clock.arrow.circlepath") {
                     historyRequest = .init(name: name.label)
@@ -283,16 +326,19 @@ struct DpnsMarketplaceView: View {
             Menu {
                 if case .owned = row.status {
                     Button("List or re-price", systemImage: "tag") {
-                        activeAction = .setPrice(name: row.label, currentPrice: row.priceCredits)
+                        startTrade(.setPrice(name: row.label, currentPrice: row.priceCredits))
                     }
+                    .disabled(!tradesPermitted)
                     if row.priceCredits != nil {
                         Button("Delist", systemImage: "tag.slash", role: .destructive) {
-                            activeAction = .delist(name: row.label, currentPrice: row.priceCredits)
+                            startTrade(.delist(name: row.label, currentPrice: row.priceCredits))
                         }
+                        .disabled(!tradesPermitted)
                     }
                     Button("Transfer", systemImage: "person.crop.circle.badge.arrow.forward") {
-                        activeAction = .transfer(name: row.label)
+                        startTrade(.transfer(name: row.label))
                     }
+                    .disabled(!tradesPermitted)
                 }
                 Button("History", systemImage: "clock.arrow.circlepath") {
                     historyRequest = .init(name: row.label)
@@ -397,6 +443,9 @@ private struct DpnsMarketplaceActionSheet: View {
     let identity: PersistentIdentity
     let wallet: ManagedPlatformWallet
     let action: DpnsMarketplaceAction
+    /// The screen's last trade failure, shared by every trade sheet: a held
+    /// one refuses this sheet's confirm too.
+    @Binding var failure: PaymentFailure?
     let onConfirmed: (DpnsMarketplaceName) -> Void
 
     @Environment(\.modelContext) private var modelContext
@@ -412,11 +461,13 @@ private struct DpnsMarketplaceActionSheet: View {
         identity: PersistentIdentity,
         wallet: ManagedPlatformWallet,
         action: DpnsMarketplaceAction,
+        failure: Binding<PaymentFailure?>,
         onConfirmed: @escaping (DpnsMarketplaceName) -> Void
     ) {
         self.identity = identity
         self.wallet = wallet
         self.action = action
+        self._failure = failure
         self.onConfirmed = onConfirmed
         if case .setPrice(_, let current) = action {
             _priceCredits = State(initialValue: current.map { String($0) } ?? "")
@@ -530,7 +581,7 @@ private struct DpnsMarketplaceActionSheet: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit || isSubmitting)
+            .disabled(!canSubmit || isSubmitting || !PaymentFailure.permitsFreshPayment(after: failure))
             .accessibilityIdentifier("dpnsMarketplace.action.confirm")
         } footer: {
             Text(
@@ -574,7 +625,7 @@ private struct DpnsMarketplaceActionSheet: View {
     }
 
     private func submit() {
-        guard canSubmit else { return }
+        guard canSubmit, PaymentFailure.permitsFreshPayment(after: failure) else { return }
         // Snapshot mutable form state before starting the asynchronous request.
         // `canSubmit` guarantees the fallback values are never sent, while the
         // snapshot also prevents an early return from leaving the sheet stuck
@@ -618,13 +669,17 @@ private struct DpnsMarketplaceActionSheet: View {
                     )
                 }
                 await MainActor.run {
+                    failure = nil
                     confirmed = state
                     isSubmitting = false
                     onConfirmed(state)
                 }
             } catch {
+                let tradeFailure = DpnsMarketplaceUI.tradeFailure(error)
                 await MainActor.run {
-                    alert = .init(title: "\(title) failed", message: DpnsMarketplaceUI.error(error))
+                    failure = DpnsMarketplaceUI.failureAfterTrade(failure, error: error)
+                    alert = tradeFailure.map { DpnsMarketplaceAlert(title: "\(title): \($0.title)", message: $0.message) }
+                        ?? DpnsMarketplaceAlert(title: title, message: error.localizedDescription)
                     isSubmitting = false
                 }
             }
@@ -749,26 +804,45 @@ enum DpnsMarketplaceUI {
         }
     }
 
+    /// A failed trade (list, delist, transfer, purchase): what happened to
+    /// the payment and the action its class allows (`PaymentFailure`),
+    /// followed by what the case says about the listing. `nil` when no
+    /// payment was attempted (`PaymentFailure.ofPayment`: not an SDK error):
+    /// the error shows as its own message.
+    static func tradeFailure(_ error: Error) -> PaymentFailure? {
+        guard PaymentFailure.ofPayment(error) != nil else { return nil }
+        return PaymentFailure(payment: PaymentFailure.paymentClass(of: error), detail: self.error(error))
+    }
+
+    /// The failure the screen keeps after a trade threw `error`: the trade's
+    /// own (`tradeFailure`), or `previous` when `error` is not an SDK error,
+    /// which never clears a hold (← Kotlin `PaymentFailure.keptAfter`).
+    static func failureAfterTrade(_ previous: PaymentFailure?, error: Error) -> PaymentFailure? {
+        tradeFailure(error) ?? previous
+    }
+
+    /// What the error says about the listing. Says nothing about whether
+    /// anything was purchased or may be tried again: for a trade that is the
+    /// payment class's, shown through `tradeFailure`.
     static func error(_ error: Error) -> String {
         guard let walletError = error as? PlatformWalletError else {
             return error.localizedDescription
         }
         switch walletError {
         case .notForSale:
-            return "This name is no longer listed for sale. Refresh before trying again."
-        case .priceChanged(_, let expected, let actual):
-            return "The listing changed from \(price(expected)) to \(price(actual)). "
-                + "Nothing was purchased; review the new price and confirm again."
-        case .insufficientIdentityCredits(_, let required, let available):
+            return "This name is not listed for sale."
+        case .priceChanged(_, let expected, let actual, _):
+            return "The listing changed from \(price(expected)) to \(price(actual))."
+        case .insufficientIdentityCredits(_, let required, let available, _):
             return "This identity has \(price(available)), but \(price(required)) is required "
                 + "including the fee reserve."
-        case .contestedNameNotTradable(let label, let endsAtMs):
+        case .contestedNameNotTradable(let label, let endsAtMs, _):
             if endsAtMs == 0 {
                 return "\(label).dash is in an active contest and cannot be traded until it resolves."
             }
             return "\(label).dash is in an active contest until \(date(endsAtMs)) and cannot be traded yet."
         case .signingKeyUnavailable:
-            return "The identity signing key is unavailable. Unlock or repair this wallet's keys, then retry."
+            return "The identity signing key is unavailable. Unlock or repair this wallet's keys."
         default:
             return walletError.localizedDescription
         }

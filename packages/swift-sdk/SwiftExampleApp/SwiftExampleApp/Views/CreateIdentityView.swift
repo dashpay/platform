@@ -308,6 +308,12 @@ struct CreateIdentityView: View {
     /// User-facing error surfaced via the `.alert` modifier.
     @State private var submitError: SubmitError? = nil
 
+    /// The last Platform-payment registration's failure. While it holds its
+    /// slot (the identity may exist, or no class) no registration starts
+    /// from this form (`PaymentFailure.permitsFreshPayment`). It clears on a
+    /// success, a later `.notSent` failure or the user's confirmed release.
+    @State private var platformPaymentFailure: PaymentFailure? = nil
+
     /// Success payload. Populated after the identity is persisted;
     /// the submit section swaps to a success banner and auto-dismiss.
     @State private var createdIdentityId: Data? = nil
@@ -382,6 +388,7 @@ struct CreateIdentityView: View {
                     // user already chose the lock on the Identities
                     // tab; re-prompting would be noise.
                     resumeSummarySection(for: lock)
+                    platformPaymentHoldSection
                     if canSubmit {
                         submitSection
                     }
@@ -391,6 +398,7 @@ struct CreateIdentityView: View {
                     amountSection
                     identityIndexSection
                     dashpayKeysSection
+                    platformPaymentHoldSection
                     if canSubmit {
                         submitSection
                     }
@@ -406,7 +414,7 @@ struct CreateIdentityView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Could not create identity"),
+                    title: Text(err.title),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -453,13 +461,13 @@ struct CreateIdentityView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Registration failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
@@ -956,6 +964,24 @@ struct CreateIdentityView: View {
         }
     }
 
+    /// A held Platform-payment failure: what it says, and the confirmed
+    /// release when it has no lock to resume.
+    @ViewBuilder
+    private var platformPaymentHoldSection: some View {
+        if let failure = platformPaymentFailure, failure.holdsSlot {
+            Section("Registration on hold") {
+                Text(failure.title)
+                    .font(.headline)
+                Text(failure.message)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                ReleasePaymentHoldButton(failure: failure) {
+                    platformPaymentFailure = nil
+                }
+            }
+        }
+    }
+
     private var submitSection: some View {
         // The active progress / success / error UI lives on the
         // pushed `RegistrationProgressView` destination, NOT
@@ -979,7 +1005,10 @@ struct CreateIdentityView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit || isCreating)
+            .disabled(
+                !canSubmit || isCreating
+                    || !PaymentFailure.permitsFreshPayment(after: platformPaymentFailure)
+            )
         }
     }
 
@@ -1074,6 +1103,13 @@ struct CreateIdentityView: View {
     /// The walletless raw-proof branch stays disabled via `canSubmit`
     /// until its FFI entry point lands.
     private func submit() {
+        // A held Platform-payment failure refuses every new registration
+        // from this form, checked before any key is persisted.
+        if let failure = platformPaymentFailure,
+           !PaymentFailure.permitsFreshPayment(after: failure) {
+            submitError = .init(title: failure.title, message: failure.message)
+            return
+        }
         // A rebuild counts every in-flight registration, whatever funds it,
         // before it stops SPV, so none may start once the rebuild has
         // reserved its slot. Checked before any key is persisted.
@@ -1250,6 +1286,9 @@ struct CreateIdentityView: View {
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
+            // Names the lock this body resumes, so a slot whose failure
+            // holds that lock may restart through it (and only it).
+            resuming: .resuming(txid: txidRaw, vout: vout),
             body: {
                 let (identityId, _) = try await managedWallet.resumeIdentityWithAssetLock(
                     outPointTxid: txidRaw,
@@ -1404,14 +1443,23 @@ struct CreateIdentityView: View {
                         identityIndex: identityIndex
                     )
                     try modelContext.save()
+                    self.platformPaymentFailure = nil
                     self.createdIdentityId = created.identityId
                     self.isCreating = false
                 }
             } catch {
+                // A failed registration reads by Rust's payment class and
+                // is kept, so a holding one refuses the next submit; an
+                // error that is not an SDK error (saving the created
+                // identity) shows as its own message and keeps any hold.
+                let failure = PaymentFailure.ofPayment(error)
                 await MainActor.run {
-                    self.submitError = .init(
-                        message: error.localizedDescription
+                    self.platformPaymentFailure = PaymentFailure.keptAfter(
+                        self.platformPaymentFailure,
+                        error: error
                     )
+                    self.submitError = failure.map { SubmitError(title: $0.title, message: $0.message) }
+                        ?? SubmitError(message: error.localizedDescription)
                     self.isCreating = false
                 }
             }
@@ -1543,8 +1591,8 @@ struct CreateIdentityView: View {
                     // anyway and is purged by the coordinator's
                     // ~30 s post-completion retention.
                     return
-                case .failed(let message):
-                    self.submitError = .init(message: message)
+                case .failed(let failure):
+                    self.submitError = .init(title: failure.title, message: failure.message)
                     self.isCreating = false
                     // Same rationale as `.completed`: keep the
                     // controller so the destination can render
@@ -2336,5 +2384,8 @@ private struct FundingAccountOption: Identifiable {
 /// time the error changes.
 private struct SubmitError: Identifiable {
     let id = UUID()
+    /// The failed payment's title (`PaymentFailure.title`), or the generic
+    /// one for an error no payment raised.
+    var title = "Could not create identity"
     let message: String
 }

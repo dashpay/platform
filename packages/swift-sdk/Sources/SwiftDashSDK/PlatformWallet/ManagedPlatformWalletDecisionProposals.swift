@@ -68,14 +68,14 @@ extension ManagedPlatformWallet {
             let result = try withExtendedLifetime((self, signer)) {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try withDecisionProposalCString(
-                        params.title, field: "title", invalid: PlatformWalletError.invalidParameter
+                        params.title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
                     ) { titlePtr in
                         try withDecisionProposalCString(
                             params.description, field: "description",
-                            invalid: PlatformWalletError.invalidParameter
+                            invalid: { PlatformWalletError.invalidParameter($0) }
                         ) { descriptionPtr in
                             try withDecisionProposalCString(
-                                params.url, field: "url", invalid: PlatformWalletError.invalidParameter
+                                params.url, field: "url", invalid: { PlatformWalletError.invalidParameter($0) }
                             ) { urlPtr in
                                 let ffiParams = DecisionProposalParamsFFI(
                                     title: titlePtr,
@@ -108,7 +108,8 @@ extension ManagedPlatformWallet {
             // is an FFI contract violation, not an empty proposal.
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "decision_proposal_create returned no canonical document JSON"
+                    "decision_proposal_create returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             return (Data(proposalIdBytes), String(cString: jsonPtr))
@@ -187,14 +188,14 @@ extension ManagedPlatformWallet {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try proposalBytes.withUnsafeBufferPointer { proposalBp -> PlatformWalletFFIResult in
                         try withDecisionProposalCString(
-                            edit.title, field: "title", invalid: PlatformWalletError.invalidParameter
+                            edit.title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
                         ) { titlePtr in
                             try withDecisionProposalCString(
                                 edit.description, field: "description",
-                                invalid: PlatformWalletError.invalidParameter
+                                invalid: { PlatformWalletError.invalidParameter($0) }
                             ) { descriptionPtr in
                                 try withDecisionProposalCString(
-                                    url, field: "url", invalid: PlatformWalletError.invalidParameter
+                                    url, field: "url", invalid: { PlatformWalletError.invalidParameter($0) }
                                 ) { urlPtr in
                                     let ffiEdit = DecisionProposalEditFFI(
                                         title: titlePtr,
@@ -222,7 +223,8 @@ extension ManagedPlatformWallet {
             try result.check()
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "decision_proposal_edit returned no canonical document JSON"
+                    "decision_proposal_edit returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             return String(cString: jsonPtr)

@@ -199,26 +199,80 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
 
     func test_rejectedBroadcastOutcome_doesNotShowSuccess() {
         let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+        let notSent = PlatformPaymentClass(delivery: .notSent, isRetryable: true)
 
         vm.applyCoreBroadcastOutcome(
-            .rejected(txid: "abc", reason: "mempool policy"),
+            .rejected(txid: "abc", reason: "mempool policy", payment: notSent),
             recipientCount: 1
         )
 
         XCTAssertNil(vm.successMessage)
-        XCTAssertEqual(vm.error, "Payment rejected by Dash Core: mempool policy")
+        XCTAssertTrue(vm.paymentFailure?.message.hasSuffix("Payment rejected by Dash Core: mempool policy") == true)
+        // Nothing was sent: the form is not held.
+        XCTAssertFalse(vm.isHeldByPaymentFailure)
+        XCTAssertTrue(vm.canSend)
+    }
+
+    /// A rejected broadcast is read by Rust's class like any payment
+    /// failure: one that may have left, or carries no class, holds the form.
+    func test_rejectedBroadcastOutcome_holdsTheFormByItsClass() {
+        for payment in [PlatformPaymentClass.maybeSent, nil] {
+            let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+            vm.applyCoreBroadcastOutcome(
+                .rejected(txid: "abc", reason: "mempool policy", payment: payment),
+                recipientCount: 1
+            )
+            XCTAssertTrue(vm.isHeldByPaymentFailure, "\(String(describing: payment))")
+            XCTAssertFalse(vm.canSend)
+        }
     }
 
     func test_unknownBroadcastOutcome_warnsAgainstRetry() {
         let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
 
         vm.applyCoreBroadcastOutcome(
-            .unknown(txid: "abc", reason: "request timed out"),
+            .unknown(txid: "abc", reason: "request timed out", payment: .maybeSent),
             recipientCount: 1
         )
 
         XCTAssertNil(vm.successMessage)
-        XCTAssertTrue(vm.error?.contains("do not retry") == true)
-        XCTAssertTrue(vm.error?.contains("abc") == true)
+        let failure = vm.paymentFailure
+        // The recovery is Rust's class of the result, carried by the outcome.
+        XCTAssertEqual(failure?.recovery, .reconcile)
+        XCTAssertTrue(failure?.message.contains("do not retry") == true)
+        XCTAssertTrue(failure?.message.contains("abc") == true)
+        // An unverified broadcast holds the form like any maybe-sent payment.
+        XCTAssertTrue(vm.isHeldByPaymentFailure)
+        XCTAssertFalse(vm.canSend)
+        XCTAssertTrue(vm.acknowledgePaymentFailure())
+    }
+
+    // MARK: - A failed payment's hold on the form
+
+    /// A failure that may have left the wallet, holds a lock, or has no
+    /// class stays stored once its alert is acknowledged: the form closes
+    /// and refuses a second payment. Any not-sent failure is cleared and
+    /// the corrected request may go.
+    func test_paymentFailureHoldsTheFormUnlessNothingWasSent() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([1, 0, 0, 0]))!
+        let cases: [(PlatformPaymentClass?, Bool)] = [
+            (PlatformPaymentClass(delivery: .notSent, isRetryable: true), false),
+            (PlatformPaymentClass(delivery: .notSent, isRetryable: false), false),
+            (PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false), true),
+            (.maybeSent, true),
+            (nil, true),
+        ]
+        for (payment, holds) in cases {
+            let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+            XCTAssertTrue(vm.canSend)
+            let failure = PaymentFailure(payment: payment, detail: "d")
+            vm.paymentFailure = failure
+
+            XCTAssertEqual(vm.canSend, !holds, "\(String(describing: payment))")
+            XCTAssertEqual(vm.isHeldByPaymentFailure, holds)
+            XCTAssertEqual(vm.acknowledgePaymentFailure(), holds, "OK closes the form only when held")
+            XCTAssertEqual(vm.paymentFailure, holds ? failure : nil)
+            XCTAssertEqual(vm.canSend, !holds, "still refused after OK when held")
+        }
     }
 }

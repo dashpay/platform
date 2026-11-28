@@ -781,7 +781,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             try result.check()
             guard outIdentityHandle != NULL_HANDLE else {
-                throw PlatformWalletError.walletOperation("identity handle not returned")
+                throw PlatformWalletError.walletOperation("identity handle not returned", payment: .maybeSent)
             }
 
             let idData = withUnsafeBytes(of: outIdentityId) { Data($0) }
@@ -2447,7 +2447,8 @@ extension ManagedPlatformWallet {
             defer { if let p = outPtr { platform_wallet_string_free(p) } }
             guard let p = outPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "register_dpns_name_with_signer returned a null full-domain-name pointer"
+                    "register_dpns_name_with_signer returned a null full-domain-name pointer",
+                    payment: .maybeSent
                 )
             }
             return String(cString: p)
@@ -3001,9 +3002,10 @@ extension ManagedPlatformWallet {
         let username = inviterUsername
         return try await Task.detached(priority: .userInitiated) { () -> String in
             var outURI: UnsafeMutablePointer<CChar>?
-            // `out_outpoint` is required by the FFI but the funding outpoint is
-            // not surfaced through this wrapper (the persistence layer tracks it
-            // via the asset-lock manager); pass a scratch struct.
+            // `out_outpoint` is required by the FFI. The funding outpoint is not
+            // returned by this wrapper (the persistence layer tracks it via the
+            // asset-lock manager), and nothing here reads it: a successful call
+            // that hands back no URI throws `.maybeSent`, never a held lock.
             var outOutpoint = OutPointFFI()
             let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
                 () -> PlatformWalletFFIResult in
@@ -3035,7 +3037,14 @@ extension ManagedPlatformWallet {
             }
             try result.check()
             guard let outURI else {
-                throw PlatformWalletError.nullPointer("createInvitation returned a null URI")
+                // The call succeeded, so the voucher lock was funded and
+                // recorded (reclaimable from Sent invitations). Only the
+                // wallet knows whether it is still resumable, and this guard
+                // cannot ask it: `.maybeSent`, never a held lock.
+                throw PlatformWalletError.nullPointer(
+                    "createInvitation returned a null URI",
+                    payment: .maybeSent
+                )
             }
             let uri = String(cString: outURI)
             platform_wallet_string_free(outURI)
@@ -3073,11 +3082,19 @@ extension ManagedPlatformWallet {
     /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
     /// different: a key was registered after the lookup, Platform refused
     /// the broadcast, and the voucher may have been charged.
-    /// `.assetLockNotChainLocked` means retry later. A node that has not seen an earlier landed claim
+    /// `.assetLockNotChainLocked` with a `.notSent` payment means nothing was
+    /// sent: retry once the funding transaction propagates or is
+    /// chain-locked. With `.maybeSent`, the claim submitted with its islock
+    /// proof was refused (stale islock, input cap, or a size verdict that may
+    /// be a node's) and no ChainLock fallback could be built yet: the claim
+    /// may have been sent, so check whether the invitation's identity exists
+    /// before claiming again. A node that has not seen an earlier landed claim
     /// lets the retry through; Platform then refuses it, and the identity is
     /// returned as the claim's result when it carries exactly these keys, or
     /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`
-    /// as above when it does not.
+    /// as above when it does not. Those two carry `.notSent` when the
+    /// preflight found the identity and `.maybeSent` when Platform refused
+    /// the claim; neither is retryable.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(
@@ -3131,7 +3148,8 @@ extension ManagedPlatformWallet {
             // NULL_HANDLE would defer the failure to a harder-to-debug point.
             guard outManagedHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation(
-                    "FFI returned success but managed-identity handle was NULL"
+                    "FFI returned success but managed-identity handle was NULL",
+                    payment: .maybeSent
                 )
             }
             return ManagedIdentity(handle: outManagedHandle)
@@ -5344,7 +5362,8 @@ extension ManagedPlatformWallet {
             // if it were the canonical document.
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "create_document_with_signer returned no canonical document JSON"
+                    "create_document_with_signer returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5431,7 +5450,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_replace returned no canonical document JSON"
+                    "document_replace returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5674,7 +5694,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_transfer returned no canonical document JSON"
+                    "document_transfer returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5746,7 +5767,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_set_price returned no canonical document JSON"
+                    "document_set_price returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5818,7 +5840,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_purchase returned no canonical document JSON"
+                    "document_purchase returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5932,7 +5955,8 @@ extension ManagedPlatformWallet {
             // accessor crashing on a NULL slot).
             guard outManagedHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation(
-                    "FFI returned success but managed-identity handle was NULL"
+                    "FFI returned success but managed-identity handle was NULL",
+                    payment: .maybeSent
                 )
             }
             // Copy the 32-byte tuple into a Data via withUnsafeBytes.
@@ -6057,7 +6081,8 @@ extension ManagedPlatformWallet {
             // Same defense as `registerIdentityWithFunding`.
             guard outManagedHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation(
-                    "FFI returned success but managed-identity handle was NULL"
+                    "FFI returned success but managed-identity handle was NULL",
+                    payment: .maybeSent
                 )
             }
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }

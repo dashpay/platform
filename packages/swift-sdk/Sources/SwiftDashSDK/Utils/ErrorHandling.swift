@@ -130,6 +130,13 @@ public enum ErrorFormatter {
         if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
             return "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again. \(walletError.localizedDescription)"
         }
+        // Any other wallet error shows its own text and never goes through
+        // the text matching below, which would print the case's `payment:`
+        // tail. What to offer after a failed payment is the host app's
+        // decision, read from the error's `payment`.
+        if let walletError = error as? PlatformWalletError {
+            return walletError.localizedDescription
+        }
         // Handle specific SDK error types
         let errorString = String(describing: error)
 
@@ -196,6 +203,11 @@ public enum ErrorFormatter {
 // MARK: - Error Recovery
 
 /// Provides recovery suggestions for common error types.
+///
+/// The category-based answers are for errors that move no money. A wallet
+/// error gets none: its retry is `PlatformWalletError.isRetryable`, and what
+/// to offer after a failed payment is the host app's decision, read from the
+/// error's `payment` class.
 public enum ErrorRecovery {
 
     /// Get recovery suggestion for an error category
@@ -345,6 +357,32 @@ public enum ErrorCategorizer {
                 category: .unknown,
                 underlyingError: String(describing: walletError),
                 isRetryable: false
+            )
+        }
+        // Any other wallet error: its own text, titled by its category, and
+        // Rust's retry. No category suggestion is added: one inferred from
+        // the text would offer a retry Rust did not allow. What to offer
+        // after a failed payment (retry, wait, resume) is the host app's
+        // decision, read from the error's `payment`.
+        if let walletError = error as? PlatformWalletError {
+            let category = categorize(walletError)
+            return UserFacingError(
+                title: category.rawValue,
+                message: ErrorFormatter.userFriendlyMessage(from: walletError),
+                category: category,
+                underlyingError: String(describing: walletError),
+                isRetryable: walletError.isRetryable
+            )
+        }
+        // The identity may already exist and its slot stays held: Rust's
+        // retry decision, and no generic "try again" suggestion.
+        if let unconfirmed = error as? ShieldedIdentityCreateUnconfirmedError {
+            return UserFacingError(
+                title: "Submission unconfirmed",
+                message: unconfirmed.message,
+                category: .unknown,
+                underlyingError: String(describing: unconfirmed),
+                isRetryable: unconfirmed.isRetryable
             )
         }
 
