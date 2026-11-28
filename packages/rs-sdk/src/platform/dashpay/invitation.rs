@@ -1544,6 +1544,12 @@ fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
 /// there is [`InvitationError::AlreadyClaimed`]; no identity or a failed
 /// lookup reports the original rejection.
 ///
+/// The consumed verdict is also read through an unconfirmed wrapper: a ChainLock
+/// fallback after an InstantSend primary that may have landed comes back
+/// unconfirmed, and Platform's answer that its outpoint is consumed is then the
+/// usual sign that the primary created the identity. The wrapper stays on the
+/// error reported when the identity is not adopted.
+///
 /// `fetch` looks up the identity at the prospective id: the injectable seam
 /// (production passes `Identity::fetch`).
 async fn adopt_already_landed_claim<F, Fut>(
@@ -1557,9 +1563,7 @@ where
     Fut: std::future::Future<Output = Result<Option<Identity>, Error>>,
 {
     let error = match submitted {
-        Err(InvitationError::Sdk(error)) if is_asset_lock_already_consumed(&error, out_point) => {
-            error
-        }
+        Err(InvitationError::Sdk(error)) if reports_consumed_out_point(&error, out_point) => error,
         other => return other,
     };
     match fetch().await {
@@ -1579,6 +1583,17 @@ where
             );
             Err(InvitationError::Sdk(error))
         }
+    }
+}
+
+/// Whether `error` is Platform's verdict that `out_point` is consumed, also
+/// when it arrives wrapped as unconfirmed (see [`adopt_already_landed_claim`]).
+fn reports_consumed_out_point(error: &Error, out_point: &OutPoint) -> bool {
+    match error {
+        Error::StateTransitionResultUnconfirmed(inner) => {
+            reports_consumed_out_point(inner, out_point)
+        }
+        other => is_asset_lock_already_consumed(other, out_point),
     }
 }
 
@@ -3262,6 +3277,33 @@ mod tests {
             .await;
             assert!(result.is_ok(), "our own landed claim is the claim's result");
             assert_eq!(lookups, 1);
+        }
+
+        /// A ChainLock fallback answered unconfirmed with the consumed verdict
+        /// (its InstantSend primary landed first) still adopts our identity;
+        /// with nothing to adopt it keeps the unconfirmed error.
+        #[tokio::test]
+        async fn should_adopt_our_identity_behind_an_unconfirmed_consumed_verdict() {
+            let unconfirmed_consumed = || match consumed(out_point()) {
+                InvitationError::Sdk(error) => Err(InvitationError::Sdk(error.into_unconfirmed())),
+                other => panic!("consumed() builds an SDK error, got {other:?}"),
+            };
+
+            let (result, lookups) = adopt(
+                unconfirmed_consumed(),
+                Ok(Some(identity_with_keys(our_keys()))),
+            )
+            .await;
+            assert!(result.is_ok(), "our own landed claim is the claim's result");
+            assert_eq!(lookups, 1);
+
+            let (result, _) = adopt(unconfirmed_consumed(), Ok(None)).await;
+            match result {
+                Err(InvitationError::Sdk(error)) => {
+                    assert!(error.is_state_transition_result_unconfirmed(), "{error:?}")
+                }
+                other => panic!("expected the unconfirmed error, got {other:?}"),
+            }
         }
 
         #[tokio::test]
