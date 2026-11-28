@@ -563,7 +563,7 @@ unsafe fn send_shielded_tip_inner(
 /// argument the wallet refuses, a tip to the account it is paid from among
 /// them. Nothing was sent in any of these.
 fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalletFFIResult {
-    match result {
+    match result.map_err(without_payment_class) {
         Err(e @ PlatformWalletError::IdentityNotFound(..))
         | Err(e @ PlatformWalletError::ShieldedTipRecipientMismatch { .. })
         | Err(e @ PlatformWalletError::InvalidParameter(..)) => e.into(),
