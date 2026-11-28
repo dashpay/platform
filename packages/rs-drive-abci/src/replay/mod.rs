@@ -1,22 +1,29 @@
+mod chain_answer;
 mod cli;
+mod core_answers;
 mod log_ingest;
+mod report;
 mod runner;
 
 use crate::abci::app::FullAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
-use crate::rpc::core::DefaultCoreRPC;
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use crate::verify;
 use cli::SkipSelector;
+use core_answers::CoreAnswers;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use log_ingest::LogRequestStream;
+use report::{DatabaseAt, ReplayChecks};
 use runner::{
     ensure_db_directory, execute_request, log_last_committed_block, stop_height_reached,
     LoadedRequest, ProgressReporter, ReplayItem,
 };
 use std::error::Error;
-use std::path::PathBuf;
+use std::fs::{self, File};
+use std::io;
+use std::path::{self, Component, Path, PathBuf};
 use tokio_util::sync::CancellationToken;
 
 pub use cli::ReplayArgs;
@@ -27,15 +34,18 @@ pub fn run(
     args: ReplayArgs,
     cancel: CancellationToken,
 ) -> Result<(), Box<dyn Error>> {
-    let db_path = args
-        .db_path
-        .clone()
-        .unwrap_or_else(|| config.db_path.clone());
-    config.db_path = db_path;
-    let db_was_created = ensure_db_directory(&config.db_path)?;
+    core_answers_need_unwinding(cfg!(panic = "unwind"), &args)?;
+    config.db_path = database_directory(&config, &args)?;
+    let db_is_new = database_is_new(&config.db_path)?;
 
-    tracing::info!("running database verification before replay");
-    verify::run(&config, true).map_err(|e| format!("verification failed before replay: {}", e))?;
+    if db_is_new {
+        // A new database has no platform state yet for a verification to read
+        tracing::info!("the database is new; nothing to verify before replay");
+    } else {
+        tracing::info!("running database verification before replay");
+        verify::run(&config, true)
+            .map_err(|e| format!("verification failed before replay: {}", e))?;
+    }
 
     let mut stream = LogRequestStream::open(&args.log)?;
     if stream.peek()?.is_some() {
@@ -48,28 +58,65 @@ pub fn run(
         .into());
     }
 
-    if db_was_created {
+    if db_is_new {
         let mut first_is_init_chain = false;
         advance_stream(&mut stream, None, &args.skip)?;
+        pass_over_info_requests(&mut stream)?;
         if let Some(item) = stream.peek()? {
             first_is_init_chain = matches!(item.request, LoadedRequest::InitChain(_));
         }
 
         if !first_is_init_chain {
-            return Err(
-                "database path did not exist; first replayed request must be init_chain".into(),
-            );
+            return Err("the database is new; first replayed request must be init_chain".into());
         }
     }
 
-    let core_rpc = DefaultCoreRPC::open(
-        config.core.consensus_rpc.url().as_str(),
-        config.core.consensus_rpc.username.clone(),
-        config.core.consensus_rpc.password.clone(),
-    )?;
+    // What the replay only reads is looked at before anything is made, and what it writes is
+    // kept out of the database directory, so that a replay that cannot start leaves nothing
+    // behind that a second start would take for a database
+    for written in [&args.report, &args.core_answers_record]
+        .into_iter()
+        .flatten()
+    {
+        if is_inside(written, &config.db_path)? {
+            return Err(format!(
+                "{} is inside the database directory {}; the replay's own files are kept outside it",
+                written.display(),
+                config.db_path.display()
+            )
+            .into());
+        }
+    }
+    if let Some(other) = &args.compare_report {
+        File::open(other)
+            .map_err(|error| format!("cannot open report {}: {}", other.display(), error))?;
+    }
 
+    let (core_rpc, core_answers) = open_core_rpc(&config, &args)?;
+
+    // For a new database the report files are opened before the database is made too
+    let checks_of_new_database = if db_is_new {
+        Some(open_checks(&args, None, core_answers.clone())?)
+    } else {
+        None
+    };
+
+    // A replay of a new database that was cancelled while it read its files makes no
+    // database: a directory GroveDB was opened in once is not taken for a new database
+    // again, and it would hold no block to go on from. A database that has blocks was opened
+    // by its verification above, and its replay is cancelled where the requests are
+    if db_is_new && cancel.is_cancelled() {
+        tracing::info!("replay interrupted by cancellation before its database was made");
+        return Ok(());
+    }
+
+    ensure_db_directory(&config.db_path)?;
     let platform: Platform<DefaultCoreRPC> =
         Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc, None)?;
+    tracing::info!(
+        storage_engine = %platform.drive.storage_engine(),
+        "replaying on GroveDB's storage engine",
+    );
     log_last_committed_block(&platform);
     let mut known_height = platform
         .state
@@ -77,6 +124,23 @@ pub fn run(
         .last_committed_block_info()
         .as_ref()
         .map(|info| info.basic_info().height);
+
+    // Before a replay that has nothing left to do ends well: its report has to be the
+    // database's too
+    let mut checks = match checks_of_new_database {
+        Some(checks) => checks,
+        None => {
+            let state = platform.state.load();
+            let database = known_height.map(|height| DatabaseAt {
+                height,
+                app_hash: state
+                    .last_committed_block_app_hash()
+                    .map(|app_hash| app_hash.to_vec())
+                    .unwrap_or_default(),
+            });
+            open_checks(&args, database.as_ref(), core_answers.clone())?
+        }
+    };
 
     if let Some(limit) = args.stop_height {
         if let Some(current) = known_height {
@@ -86,18 +150,192 @@ pub fn run(
                     current,
                     limit
                 );
+                // The counters say that this run executed no block; lines of an earlier run
+                // that were held against the other report are counted apart
+                log_checks(&checks, core_answers.as_ref());
                 return Ok(());
             }
         }
     }
 
     let app = FullAbciApplication::new(&platform);
+    let replayed = replay_requests(
+        &app,
+        &mut stream,
+        &args,
+        &cancel,
+        &mut known_height,
+        &mut checks,
+    );
+
+    // What the checks counted is said for a replay that failed too: the blocks it counts are
+    // the ones that passed every check before it stopped.
+    log_checks(&checks, core_answers.as_ref());
+    replayed
+}
+
+/// A replay with a file of Core's answers ends `FinalizeBlock` before the commit by unwinding
+/// where the answers fail (`CoreAnswers::finalizing`). A build that aborts on a panic would
+/// end the process there instead, so such a replay is not started in one.
+fn core_answers_need_unwinding(unwinds: bool, args: &ReplayArgs) -> Result<(), String> {
+    if unwinds || (args.core_answers.is_none() && args.core_answers_record.is_none()) {
+        return Ok(());
+    }
+    Err(
+        "this build aborts on a panic (panic = \"abort\"); --core-answers and --core-answers-record need a build that unwinds, since a failure of Core's answers ends FinalizeBlock before the commit by unwinding"
+            .to_owned(),
+    )
+}
+
+/// The database directory of the replay, as the one location that everything after looks at,
+/// keeps clear of the replay's files, verifies, makes and opens: a path with a part that does
+/// not exist yet may lead to a directory that does (`new/../db`).
+fn database_directory(
+    config: &PlatformConfig,
+    args: &ReplayArgs,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let given = args.db_path.as_ref().unwrap_or(&config.db_path);
+    resolved(given).map_err(|error| {
+        format!(
+            "cannot resolve the database directory {}: {}",
+            given.display(),
+            error
+        )
+        .into()
+    })
+}
+
+/// Whether the database at `path` has yet to be made: its directory is missing, or is there
+/// and empty.
+fn database_is_new(path: &Path) -> Result<bool, Box<dyn Error>> {
+    if !path.exists() {
+        return Ok(true);
+    }
+    if !path.is_dir() {
+        return Err(format!("{} exists but is not a directory", path.display()).into());
+    }
+    Ok(fs::read_dir(path)?.next().is_none())
+}
+
+/// Where `path` leads: every part of it that exists with its links followed, and the parts
+/// that do not exist yet as they are given, a `..` after such a part taking it away again (as
+/// it does when the directories are made).
+fn resolved(path: &Path) -> io::Result<PathBuf> {
+    let mut resolved = PathBuf::new();
+    // How many parts at the end of `resolved` do not exist yet
+    let mut missing = 0usize;
+    for part in path::absolute(path)?.components() {
+        match part {
+            Component::Prefix(_) | Component::RootDir => resolved.push(part),
+            Component::CurDir => {}
+            Component::ParentDir if missing > 0 => {
+                resolved.pop();
+                missing -= 1;
+            }
+            Component::Normal(_) if missing > 0 => {
+                resolved.push(part);
+                missing += 1;
+            }
+            Component::ParentDir | Component::Normal(_) => {
+                let next = resolved.join(part);
+                match fs::canonicalize(&next) {
+                    Ok(found) => resolved = found,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        // A link to a file that is not there would be followed once the file
+                        // is made
+                        if next
+                            .symlink_metadata()
+                            .is_ok_and(|metadata| metadata.is_symlink())
+                        {
+                            return Err(error);
+                        }
+                        resolved = next;
+                        missing = 1;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+/// Whether `path` is or would be inside the directory `directory`, links followed.
+fn is_inside(path: &Path, directory: &Path) -> Result<bool, Box<dyn Error>> {
+    let (path, directory) = (
+        resolved(path).map_err(|error| format!("cannot resolve {}: {}", path.display(), error))?,
+        resolved(directory)
+            .map_err(|error| format!("cannot resolve {}: {}", directory.display(), error))?,
+    );
+    Ok(path.starts_with(directory))
+}
+
+fn open_checks(
+    args: &ReplayArgs,
+    database: Option<&DatabaseAt>,
+    core_answers: Option<CoreAnswers>,
+) -> Result<ReplayChecks, Box<dyn Error>> {
+    Ok(ReplayChecks::open(
+        args.report.as_deref(),
+        args.compare_report.as_deref(),
+        database,
+    )?
+    .with_core_answers(core_answers))
+}
+
+/// The client block execution asks Dash Core through: one that keeps Core's answers in a
+/// file, one that answers from such a file, or the node's own.
+fn open_core_rpc(
+    config: &PlatformConfig,
+    args: &ReplayArgs,
+) -> Result<(DefaultCoreRPC, Option<CoreAnswers>), Box<dyn Error>> {
+    if let Some(path) = &args.core_answers {
+        tracing::info!("answering Core RPC requests from {}", path.display());
+        let (answers, core_rpc) = CoreAnswers::serve(path)?;
+        return Ok((core_rpc, Some(answers)));
+    }
+
+    let rpc = &config.core.consensus_rpc;
+    if let Some(path) = &args.core_answers_record {
+        tracing::info!("recording Core RPC answers in {}", path.display());
+        let (answers, core_rpc) = CoreAnswers::record(
+            path,
+            rpc.url().as_str(),
+            rpc.username.clone(),
+            rpc.password.clone(),
+        )?;
+        return Ok((core_rpc, Some(answers)));
+    }
+
+    let core_rpc = DefaultCoreRPC::open(
+        rpc.url().as_str(),
+        rpc.username.clone(),
+        rpc.password.clone(),
+    )?;
+    Ok((core_rpc, None))
+}
+
+/// Executes the stream's requests until it ends, the stop height is reached or the replay is
+/// cancelled. Where the stream ends, a report the replay is held against has to end too. A
+/// replay that reaches its stop height or the end of the stream directly after a block that
+/// was executed and not committed does not end well: its database is not at the block it
+/// stopped after. One that is cancelled there says the same in a warning, and ends as a
+/// cancelled replay does.
+fn replay_requests<C: CoreRPCLike>(
+    app: &FullAbciApplication<C>,
+    stream: &mut LogRequestStream,
+    args: &ReplayArgs,
+    cancel: &CancellationToken,
+    known_height: &mut Option<u64>,
+    checks: &mut ReplayChecks,
+) -> Result<(), Box<dyn Error>> {
     let mut progress = if args.progress {
         Some(ProgressReporter::new(args.stop_height))
     } else {
         None
     };
     let mut cancelled = false;
+    let mut log_ended = false;
     let mut validator = RequestSequenceValidator::new(stream.path().to_path_buf());
     let mut executed = 0usize;
     loop {
@@ -109,7 +347,7 @@ pub fn run(
             cancelled = true;
             break;
         }
-        if stop_height_reached(args.stop_height, known_height) {
+        if stop_height_reached(args.stop_height, *known_height) {
             tracing::info!(
                 "stop height {} reached; stopping replay for log {}",
                 args.stop_height.unwrap(),
@@ -117,26 +355,103 @@ pub fn run(
             );
             break;
         }
-        advance_stream(&mut stream, known_height, &args.skip)?;
+        advance_stream(stream, *known_height, &args.skip)?;
         let Some(item) = stream.next_item()? else {
+            log_ended = true;
             break;
         };
         validator.observe(&item)?;
-        let committed = execute_request(&app, item, progress.as_mut())?;
-        update_known_height(&mut known_height, committed);
+        let origin = item.describe();
+        let executed_request = execute_request(app, item, progress.as_mut(), checks);
+        // Block execution may read a failed request to Core as Core being away for a moment
+        // and go on, so a failure of the answers' file ends the replay whatever the request
+        // made of it
+        checks
+            .core_answers_failed()
+            .map_err(|failure| format!("{} (at {})", failure, origin))?;
+        update_known_height(known_height, executed_request?);
         executed += 1;
     }
     validator.finish()?;
+    if log_ended {
+        // A stop height that was reached is a bound the replay was given, and a replay that
+        // was cancelled says so below. Here the log itself has no further block, and a report
+        // the replay is held against may not have one either
+        checks.log_ended()?;
+    }
     tracing::info!(
         "replayed {} ABCI requests from log {}",
         executed,
         stream.path().display()
     );
 
+    let not_committed = checks.ended_on_a_block_not_committed().map(|height| {
+        format!(
+            "the replay ends after block {height}, which was executed and not committed: GroveDB's root hash is not the block's app hash, and the store does not hold the block, as on the chain, which went on from there. The database is not at block {height}; a replay that is to be gone on with is stopped before block {height}"
+        )
+    });
     if cancelled {
         tracing::info!("replay interrupted by cancellation");
+        if let Some(not_committed) = not_committed {
+            tracing::warn!("{}", not_committed);
+        }
+    } else if let Some(not_committed) = not_committed {
+        return Err(not_committed.into());
     }
 
+    Ok(())
+}
+
+/// Says what the replay's checks counted.
+fn log_checks(checks: &ReplayChecks, core_answers: Option<&CoreAnswers>) {
+    let summary = checks.summary();
+    tracing::info!(
+        blocks = summary.blocks,
+        first_height = summary.first_height,
+        last_height = summary.last_height,
+        state_transitions = summary.transitions,
+        blocks_held_against_logged_answers = summary.blocks_held_against_log,
+        blocks_without_their_proposal_answer = summary.blocks_without_proposal,
+        blocks_held_against_other_report = summary.blocks_held_against_report,
+        lines_of_an_earlier_run_held_against_other_report =
+            summary.earlier_lines_held_against_report,
+        proposals = summary.proposals,
+        proposals_held_against_logged_answers = summary.proposals_held_against_log,
+        proposals_without_logged_answer = summary.proposals_without_logged_answer,
+        proposals_with_unreadable_logged_answer = summary.proposals_with_unreadable_logged_answer,
+        info_requests_of_another_abci_version_passed_over = summary.info_passed_over,
+        "replay checks",
+    );
+    tracing::info!(
+        count = summary.root_not_app_hash.len(),
+        heights = ?summary.root_not_app_hash,
+        "heights after which the grovedb root is not the app hash",
+    );
+    if let Some(core_answers) = core_answers {
+        let summary = core_answers.summary();
+        tracing::info!(
+            requests_held = summary.held,
+            answers_added = summary.added,
+            asked = ?summary.asked,
+            "core answers",
+        );
+    }
+}
+
+/// Passes over `info` requests at the front of the stream. A node's log starts with the one
+/// Tenderdash sends before `init_chain`, and a new database is given `init_chain` first.
+fn pass_over_info_requests(stream: &mut LogRequestStream) -> Result<(), Box<dyn Error>> {
+    while let Some(item) = stream.peek()? {
+        if !matches!(item.request, LoadedRequest::Info(_)) {
+            break;
+        }
+        let description = item.describe();
+        stream.next_item()?;
+        tracing::info!(
+            "passing over info request {} before init_chain on a new database",
+            description
+        );
+    }
     Ok(())
 }
 
@@ -314,8 +629,13 @@ impl RequestSequenceValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use chain_answer::{ChainProposalAnswer, LoggedAnswer, TxOutcome};
     use runner::LoadedRequest;
     use std::io::Write;
+    use std::iter;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use tenderdash_abci::proto::abci::{
         RequestFinalizeBlock, RequestInfo, RequestInitChain, RequestProcessProposal,
     };
@@ -751,6 +1071,736 @@ mod tests {
         // Remaining item should be height 5
         let item = stream.next_item().unwrap().expect("expected height 5 item");
         assert_eq!(item.request.block_height(), Some(5));
+    }
+
+    // ---- the logged answers, a new database, the Core client ----
+
+    const INFO: &str = r#"Request { value: Some(Info(RequestInfo { version: "1.0", block_version: 14, p2p_version: 10, abci_version: "1.0" })) }"#;
+
+    const INIT_CHAIN: &str = r#"Request { value: Some(InitChain(RequestInitChain { time: None, chain_id: "test", consensus_params: None, validator_set: None, app_state_bytes: [], initial_height: 1, initial_core_height: 0 })) }"#;
+
+    /// The answer of a node to a proposal with one state transition, as its log has it.
+    const ACCEPTED: &str = r#""\"status\" \" \"Accepted\"\", \"app_hash\" \" \"26a5\"\", \"tx_results\" \" [\"\\\"code\\\" \\\" 0\\\", \\\"data\\\" \\\" \\\"\\\"\\\", \\\"log\\\" \\\" \\\"\\\"\\\", \\\"info\\\" \\\" \\\"\\\"\\\", \\\"gas_used\\\"\\n\\\" 117438280\\\", \\\"events\\\" \\\" \\\"[]\\\"\\\", \\\"codespace\\\" \\\" \\\"\\\"\\\",\"]\",\n\"consensus_param_updates\" \" \"None\"\", \"validator_set_update\" \" \"None\"\",""#;
+
+    fn process_proposal(height: u64) -> String {
+        format!(
+            "Request {{ value: Some(ProcessProposal(RequestProcessProposal {{ txs: [], proposed_last_commit: None, misbehavior: [], hash: [], height: {height}, round: 0, time: None, next_validators_hash: [], core_chain_locked_height: 0, core_chain_lock_update: None, proposer_pro_tx_hash: [], proposed_app_version: 1, version: None, quorum_hash: [] }})) }}"
+        )
+    }
+
+    /// A request line that the thread `thread` logged.
+    fn request_line_of(thread: u64, request: &str) -> String {
+        serde_json::json!({
+            "timestamp": "t",
+            "fields": {"message": "received ABCI request", "request": request},
+            "threadName": "main",
+            "threadId": format!("ThreadId({thread})"),
+        })
+        .to_string()
+    }
+
+    /// An answer line that the thread `thread` logged.
+    fn answer_line_of(thread: u64, response_log: &str) -> String {
+        serde_json::json!({
+            "timestamp": "t",
+            "fields": {"message": "sending ABCI response", "response_log": response_log},
+            "threadName": "main",
+            "threadId": format!("ThreadId({thread})"),
+        })
+        .to_string()
+    }
+
+    fn request_line(request: &str) -> String {
+        request_line_of(1, request)
+    }
+
+    fn answer_line(response_log: &str) -> String {
+        answer_line_of(1, response_log)
+    }
+
+    fn log_of(lines: &[String]) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        fs::write(&log_path, lines.join("\n")).unwrap();
+        (dir, log_path)
+    }
+
+    const INFO_ANSWER: &str = "\"Info(ResponseInfo { data: \\\"\\\" })\"";
+
+    fn of_another_thread(line: usize, what: &str) -> LoggedAnswer {
+        LoggedAnswer::Unreadable(format!(
+            "line {line} of the log, after the request, is {what} that does not name the request's thread"
+        ))
+    }
+
+    fn proposal_answers(lines: &[String]) -> Vec<LoggedAnswer> {
+        let (_dir, log_path) = log_of(lines);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        iter::from_fn(|| stream.next_item().unwrap())
+            .filter(|item| matches!(item.request, LoadedRequest::Process(_)))
+            .map(|item| item.logged_answer)
+            .collect()
+    }
+
+    fn accepted() -> LoggedAnswer {
+        LoggedAnswer::Proposal(ChainProposalAnswer {
+            status: "Accepted".to_owned(),
+            app_hash: "26a5".to_owned(),
+            tx: vec![TxOutcome(0, 117438280)],
+        })
+    }
+
+    #[test]
+    fn should_give_a_process_proposal_the_answer_the_log_has_for_it() {
+        let (_dir, log_path) = log_of(&[
+            request_line(INFO),
+            answer_line("\"Info(ResponseInfo { data: \\\"\\\" })\""),
+            request_line(&process_proposal(1)),
+            // Lines between a request and its answer that are neither
+            r#"{"timestamp":"t","fields":{"message":"something else"}}"#.to_owned(),
+            String::new(),
+            r#"{"timestamp":"t"}"#.to_owned(),
+            answer_line(ACCEPTED),
+            request_line(&process_proposal(2)),
+            answer_line(ACCEPTED),
+        ]);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+
+        // Only a proposal is given an answer
+        let info = stream.next_item().unwrap().unwrap();
+        assert!(matches!(info.request, LoadedRequest::Info(_)));
+        assert_eq!(info.logged_answer, LoggedAnswer::Absent);
+
+        let first = stream.next_item().unwrap().unwrap();
+        assert_eq!(first.request.block_height(), Some(1));
+        assert_eq!(first.source.line(), 3);
+        assert_eq!(first.logged_answer, accepted());
+
+        let second = stream.next_item().unwrap().unwrap();
+        assert_eq!(second.request.block_height(), Some(2));
+        assert_eq!(second.source.line(), 8);
+        assert_eq!(second.logged_answer, accepted());
+
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    #[test]
+    fn should_not_take_an_answer_after_a_line_that_cannot_be_read() {
+        // The line that cannot be read may have been the answer, or the next request
+        let (_dir, log_path) = log_of(&[
+            request_line(&process_proposal(1)),
+            "{\"timestamp\":\"t\",\"fields\":{\"message\":\"sending ABCI resp".to_owned(),
+            answer_line(ACCEPTED),
+            request_line(&process_proposal(2)),
+            "not json at all".to_owned(),
+            request_line(&process_proposal(3)),
+        ]);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        let first = stream.next_item().unwrap().unwrap();
+        assert_eq!(
+            first.logged_answer,
+            LoggedAnswer::Unreadable(
+                "line 2 of the log, after the request, cannot be read".to_owned()
+            )
+        );
+        let second = stream.next_item().unwrap().unwrap();
+        assert_eq!(second.request.block_height(), Some(2));
+        assert_eq!(
+            second.logged_answer,
+            LoggedAnswer::Unreadable(
+                "line 5 of the log, after the request, cannot be read".to_owned()
+            )
+        );
+        let third = stream.next_item().unwrap().unwrap();
+        assert_eq!(third.request.block_height(), Some(3));
+        assert_eq!(third.source.line(), 6);
+    }
+
+    #[test]
+    fn should_take_for_a_request_only_the_answer_its_thread_logged_next() {
+        // Two connections, each one request after the other, whose lines lie between each
+        // other's: thread 1 has P1, A1, Info, A(Info), thread 2 has Info, A(Info), P2, A2
+        assert_eq!(
+            proposal_answers(&[
+                request_line_of(1, &process_proposal(1)),
+                request_line_of(2, INFO),
+                answer_line_of(2, INFO_ANSWER),
+                request_line_of(2, &process_proposal(1)),
+                answer_line_of(1, ACCEPTED),
+                request_line_of(1, INFO),
+                answer_line_of(2, ACCEPTED),
+                answer_line_of(1, INFO_ANSWER),
+            ]),
+            vec![
+                of_another_thread(2, "a request"),
+                of_another_thread(5, "an answer"),
+            ]
+        );
+        // Two proposals of two threads, the first answered after the second was asked
+        assert_eq!(
+            proposal_answers(&[
+                request_line_of(1, &process_proposal(1)),
+                request_line_of(2, &process_proposal(1)),
+                answer_line_of(1, ACCEPTED),
+                answer_line_of(2, ACCEPTED),
+            ]),
+            vec![
+                of_another_thread(2, "a request"),
+                of_another_thread(3, "an answer"),
+            ]
+        );
+        // One after the other, on two threads
+        assert_eq!(
+            proposal_answers(&[
+                request_line_of(1, &process_proposal(1)),
+                answer_line_of(1, ACCEPTED),
+                request_line_of(2, &process_proposal(2)),
+                answer_line_of(2, ACCEPTED),
+            ]),
+            vec![accepted(), accepted()]
+        );
+        // The same thread id under another thread name is another thread
+        let other_name = answer_line(ACCEPTED).replace("\"main\"", "\"worker\"");
+        assert_eq!(
+            proposal_answers(&[request_line(&process_proposal(1)), other_name]),
+            vec![of_another_thread(2, "an answer")]
+        );
+    }
+
+    #[test]
+    fn should_take_no_answer_where_the_log_names_no_thread() {
+        let unnamed = |line: String| {
+            let mut value: serde_json::Value = serde_json::from_str(&line).unwrap();
+            value.as_object_mut().unwrap().remove("threadId");
+            value.to_string()
+        };
+        assert_eq!(
+            proposal_answers(&[
+                // The request's line names none
+                unnamed(request_line(&process_proposal(1))),
+                answer_line(ACCEPTED),
+                // The answer's line names none
+                request_line(&process_proposal(2)),
+                unnamed(answer_line(ACCEPTED)),
+                // Neither does
+                unnamed(request_line(&process_proposal(3))),
+                unnamed(answer_line(ACCEPTED)),
+            ]),
+            vec![
+                LoggedAnswer::Unreadable(
+                    "line 1 of the log does not name the thread that logged it, so no answer can be told to be this request's"
+                        .to_owned()
+                ),
+                of_another_thread(4, "an answer"),
+                LoggedAnswer::Unreadable(
+                    "line 5 of the log does not name the thread that logged it, so no answer can be told to be this request's"
+                        .to_owned()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn should_take_no_answer_for_a_request_a_node_was_stopped_in() {
+        let exception = serde_json::json!({
+            "timestamp": "t",
+            "fields": {"message": "sending ABCI exception", "response": "Exception"},
+            "threadName": "main",
+            "threadId": "ThreadId(1)",
+        })
+        .to_string();
+        assert_eq!(
+            proposal_answers(&[
+                // The node was stopped in a request: its next start asks for info first, and
+                // the proposal that follows is answered as any other
+                request_line(&process_proposal(1)),
+                request_line(INFO),
+                answer_line(INFO_ANSWER),
+                request_line(&process_proposal(1)),
+                answer_line(ACCEPTED),
+                // The node answered with an error
+                request_line(&process_proposal(2)),
+                exception,
+                // The log ends in a request
+                request_line(&process_proposal(3)),
+            ]),
+            vec![
+                LoggedAnswer::Absent,
+                accepted(),
+                LoggedAnswer::Absent,
+                LoggedAnswer::Absent,
+            ]
+        );
+    }
+
+    #[test]
+    fn should_keep_a_request_that_comes_before_any_answer() {
+        let (_dir, log_path) = log_of(&[
+            request_line(&process_proposal(1)),
+            request_line(&process_proposal(2)),
+            answer_line(ACCEPTED),
+            request_line(&process_proposal(3)),
+        ]);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+
+        // The line read while looking for the first request's answer is the second request
+        let first = stream.next_item().unwrap().unwrap();
+        assert_eq!(first.request.block_height(), Some(1));
+        assert_eq!(first.source.line(), 1);
+        assert_eq!(first.logged_answer, LoggedAnswer::Absent);
+
+        let second = stream.next_item().unwrap().unwrap();
+        assert_eq!(second.request.block_height(), Some(2));
+        assert_eq!(second.source.line(), 2);
+        assert_eq!(second.logged_answer, accepted());
+
+        // The log ends after the third request
+        let third = stream.next_item().unwrap().unwrap();
+        assert_eq!(third.request.block_height(), Some(3));
+        assert_eq!(third.source.line(), 4);
+        assert_eq!(third.logged_answer, LoggedAnswer::Absent);
+
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    #[test]
+    fn should_say_that_an_answer_is_of_another_kind_or_cannot_be_read() {
+        let (_dir, log_path) = log_of(&[
+            request_line(&process_proposal(1)),
+            answer_line("\"FinalizeBlock(ResponseFinalizeBlock { retain_height: 0 })\""),
+            request_line(&process_proposal(2)),
+            // An answer the log cut short
+            answer_line("\"\\\"status\\\" \\\" \\\"Accepted"),
+            request_line(&process_proposal(3)),
+            // An answer line with no answer in it
+            r#"{"timestamp":"t","fields":{"message":"sending ABCI response"},"threadName":"main","threadId":"ThreadId(1)"}"#.to_owned(),
+        ]);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+
+        let first = stream.next_item().unwrap().unwrap();
+        assert_eq!(first.logged_answer, LoggedAnswer::Absent);
+        let second = stream.next_item().unwrap().unwrap();
+        assert_eq!(
+            second.logged_answer,
+            LoggedAnswer::Unreadable("a string does not end".to_owned())
+        );
+        let third = stream.next_item().unwrap().unwrap();
+        assert_eq!(third.logged_answer, LoggedAnswer::Absent);
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    #[test]
+    fn should_pass_over_info_requests_before_init_chain() {
+        let (_dir, log_path) = log_of(&[
+            request_line(INFO),
+            request_line(INFO),
+            request_line(INIT_CHAIN),
+            request_line(INFO),
+        ]);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        pass_over_info_requests(&mut stream).unwrap();
+        let item = stream.next_item().unwrap().unwrap();
+        assert!(matches!(item.request, LoadedRequest::InitChain(_)));
+        assert_eq!(item.source.line(), 3);
+        // An info request after init_chain stays
+        let item = stream.next_item().unwrap().unwrap();
+        assert!(matches!(item.request, LoadedRequest::Info(_)));
+
+        // A log of info requests only is passed over whole
+        let (_dir, log_path) = log_of(&[request_line(INFO)]);
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        pass_over_info_requests(&mut stream).unwrap();
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    fn replay_args(log: &Path) -> ReplayArgs {
+        ReplayArgs {
+            db_path: None,
+            log: log.to_path_buf(),
+            progress: false,
+            skip: vec![],
+            stop_height: None,
+            core_answers_record: None,
+            core_answers: None,
+            report: None,
+            compare_report: None,
+        }
+    }
+
+    #[test]
+    fn should_take_a_missing_or_an_empty_directory_for_a_new_database() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let missing = dir.path().join("missing");
+        assert!(database_is_new(&missing).unwrap());
+        // Asking makes nothing
+        assert!(!missing.exists());
+
+        // A replay that could not start can leave the directory behind, empty
+        assert!(ensure_db_directory(&missing).unwrap());
+        assert!(database_is_new(&missing).unwrap());
+
+        fs::write(missing.join("CURRENT"), "MANIFEST-000001").unwrap();
+        assert!(!database_is_new(&missing).unwrap());
+
+        let file = dir.path().join("file");
+        fs::write(&file, "").unwrap();
+        let error = database_is_new(&file).unwrap_err().to_string();
+        assert!(error.contains("exists but is not a directory"), "{error}");
+    }
+
+    #[test]
+    fn should_refuse_the_report_files_before_a_new_database_is_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.jsonl");
+        let args = ReplayArgs {
+            report: Some(report.clone()),
+            compare_report: Some(report.clone()),
+            ..replay_args(&dir.path().join("abci.jsonl"))
+        };
+        let error = open_checks(&args, None, None).unwrap_err().to_string();
+        assert!(error.contains("cannot be held against itself"), "{error}");
+
+        let args = ReplayArgs {
+            compare_report: Some(dir.path().join("missing.jsonl")),
+            ..args
+        };
+        let error = open_checks(&args, None, None).unwrap_err().to_string();
+        assert!(error.starts_with("cannot open report "), "{error}");
+        assert!(!report.exists());
+    }
+
+    #[test]
+    fn should_look_at_the_database_directory_that_is_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("db");
+        fs::create_dir(&db).unwrap();
+        fs::write(db.join("CURRENT"), "a database").unwrap();
+        // A database that is there, named through a directory that is not: making the
+        // directories leads to it, so it is not a new database
+        let named = dir.path().join("new").join("..").join("db");
+        let args = ReplayArgs {
+            db_path: Some(named),
+            ..replay_args(Path::new("abci.jsonl"))
+        };
+        let config = PlatformConfig::default_testnet();
+        let opened = database_directory(&config, &args).unwrap();
+        assert_eq!(opened, fs::canonicalize(&db).unwrap());
+        assert!(!database_is_new(&opened).unwrap());
+
+        // Without the option it is the configuration's
+        let args = replay_args(Path::new("abci.jsonl"));
+        let config = PlatformConfig {
+            db_path: dir.path().join(".").join("db"),
+            ..config
+        };
+        assert_eq!(
+            database_directory(&config, &args).unwrap(),
+            fs::canonicalize(&db).unwrap()
+        );
+    }
+
+    #[test]
+    fn should_tell_a_file_inside_the_database_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("db");
+        assert!(is_inside(&db.join("report.jsonl"), &db).unwrap());
+        assert!(is_inside(&db.join("deeper").join("report.jsonl"), &db).unwrap());
+        assert!(!is_inside(&dir.path().join("report.jsonl"), &db).unwrap());
+        // A name that begins as the directory's does is beside it
+        assert!(!is_inside(&dir.path().join("db-report.jsonl"), &db).unwrap());
+
+        // Once the directory is there: through a link to it, and back out of it
+        fs::create_dir(&db).unwrap();
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("out");
+            symlink(&db, &link).unwrap();
+            assert!(is_inside(&link.join("core-answers.jsonl"), &db).unwrap());
+            // A link beside the directory to a file that would be made inside it
+            let to_be_made = dir.path().join("report.jsonl");
+            symlink(db.join("report.jsonl"), &to_be_made).unwrap();
+            let error = is_inside(&to_be_made, &db).unwrap_err().to_string();
+            assert!(error.starts_with("cannot resolve "), "{error}");
+        }
+        assert!(!is_inside(&db.join("..").join("beside.jsonl"), &db).unwrap());
+        // A database directory that is made through a directory that is not there yet
+        let to_be = dir.path().join("new").join("..").join("to-be");
+        assert!(!is_inside(&dir.path().join("report.txt"), &to_be).unwrap());
+        assert!(is_inside(&dir.path().join("to-be").join("report.txt"), &to_be).unwrap());
+        assert!(is_inside(&to_be.join("report.txt"), &dir.path().join("to-be")).unwrap());
+        assert!(!is_inside(&dir.path().join("new").join("report.txt"), &to_be).unwrap());
+        assert!(is_inside(&dir.path().join(".").join("db").join("r"), &db).unwrap());
+    }
+
+    #[test]
+    fn should_stop_before_anything_is_made_where_a_start_cannot_succeed() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("abci.jsonl");
+        fs::write(
+            &log,
+            format!("{}\n{}\n", request_line(INFO), request_line(INIT_CHAIN)),
+        )
+        .unwrap();
+        let db = dir.path().join("db");
+        let answers = dir.path().join("core-answers.jsonl");
+        let report = dir.path().join("report.jsonl");
+        let mut config = PlatformConfig::default_testnet();
+        config.core.consensus_rpc.host = "127.0.0.1".to_owned();
+        let args = ReplayArgs {
+            db_path: Some(db.clone()),
+            core_answers_record: Some(answers.clone()),
+            report: Some(report.clone()),
+            compare_report: Some(dir.path().join("missing.jsonl")),
+            ..replay_args(&log)
+        };
+
+        // The other report is not there
+        let error = run(config.clone(), args.clone(), CancellationToken::new())
+            .unwrap_err()
+            .to_string();
+        assert!(error.starts_with("cannot open report "), "{error}");
+        assert!(!db.exists() && !answers.exists() && !report.exists());
+
+        // A file the replay writes is inside the database directory
+        for inside in [
+            ReplayArgs {
+                report: Some(db.join("report.jsonl")),
+                compare_report: None,
+                ..args.clone()
+            },
+            ReplayArgs {
+                core_answers_record: Some(db.join("core-answers.jsonl")),
+                compare_report: None,
+                ..args.clone()
+            },
+        ] {
+            let error = run(config.clone(), inside, CancellationToken::new())
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("the replay's own files are kept outside it"),
+                "{error}"
+            );
+            assert!(!db.exists() && !answers.exists() && !report.exists());
+        }
+    }
+
+    #[test]
+    fn should_open_the_core_client_the_arguments_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let answers_path = dir.path().join("core-answers.jsonl");
+        let mut config = PlatformConfig::default_testnet();
+        // Nothing is asked of it: a client connects when it is first asked
+        config.core.consensus_rpc.host = "127.0.0.1".to_owned();
+
+        // The node's own client, with nothing kept
+        let args = replay_args(&dir.path().join("abci.jsonl"));
+        let (_, core_answers) = open_core_rpc(&config, &args).unwrap();
+        assert!(core_answers.is_none());
+        assert!(!answers_path.exists());
+
+        // A recording makes the file before the first request
+        let recording = ReplayArgs {
+            core_answers_record: Some(answers_path.clone()),
+            ..args.clone()
+        };
+        let (_, core_answers) = open_core_rpc(&config, &recording).unwrap();
+        let core_answers = core_answers.expect("a recording has a file");
+        assert_eq!(core_answers.summary().held, 0);
+        assert_eq!(
+            fs::read_to_string(&answers_path).unwrap(),
+            "{\"format\":\"drive-abci core answers\",\"version\":1}\n"
+        );
+        log_checks(&ReplayChecks::default(), Some(&core_answers));
+        let checks = open_checks(&recording, None, Some(core_answers.clone())).unwrap();
+        assert_eq!(checks.core_answers_failed(), Ok(()));
+
+        // The file is then answered from, and asks no node
+        let serving = ReplayArgs {
+            core_answers: Some(answers_path.clone()),
+            ..args.clone()
+        };
+        let (_, core_answers) = open_core_rpc(&config, &serving).unwrap();
+        let core_answers = core_answers.expect("answers are served from a file");
+        assert_eq!(core_answers.summary().held, 0);
+        assert_eq!(core_answers.failure(), None);
+
+        // A file that is not there is not served
+        let missing = ReplayArgs {
+            core_answers: Some(dir.path().join("missing.jsonl")),
+            ..args
+        };
+        assert!(open_core_rpc(&config, &missing).is_err());
+    }
+
+    // ---- where the log ends ----
+
+    #[test]
+    fn should_not_end_well_where_the_log_ends_and_the_other_report_goes_on() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        // A log of one request, which a replay passes over: the log then ends
+        let info = r#"Request { value: Some(Info(RequestInfo { version: "1.8.2", block_version: 14, p2p_version: 10, abci_version: "999.999.999" })) }"#;
+        let (dir, log_path) = log_of(&[request_line(info)]);
+        // Another run's report, of one block
+        let other = dir.path().join("other.jsonl");
+        fs::write(
+            &other,
+            "{\"height\":1,\"round\":0,\"core_height\":1,\"protocol_version\":1,\"app_hash\":\"26\",\"grove_root\":\"26\",\"root_is_app_hash\":true,\"tx\":[],\"held_against_log\":true,\"proposal_sha256\":\"00\",\"finalize_sha256\":\"00\"}\n",
+        )
+        .unwrap();
+        let report = dir.path().join("report.jsonl");
+
+        let replay = |stop_height: Option<u64>, database_at: Option<u64>, cancelled: bool| {
+            fs::write(&report, "").unwrap();
+            let mut checks = ReplayChecks::open(Some(&report), Some(&other), None).unwrap();
+            let mut stream = LogRequestStream::open(&log_path).unwrap();
+            let mut args = replay_args(&log_path);
+            args.stop_height = stop_height;
+            let cancel = CancellationToken::new();
+            if cancelled {
+                cancel.cancel();
+            }
+            let mut known_height = database_at;
+            replay_requests(
+                &app,
+                &mut stream,
+                &args,
+                &cancel,
+                &mut known_height,
+                &mut checks,
+            )
+            .map_err(|error| error.to_string())
+        };
+
+        let goes_on = format!(
+            "report {} goes on with height 1 (line 1) where the log ends: from that height on nothing was held against it",
+            other.display()
+        );
+        // The log ends, and the other report has a block this replay did not come to
+        assert_eq!(replay(None, None, false).unwrap_err(), goes_on);
+        // A stop height the replay did not reach is no bound
+        assert_eq!(replay(Some(5), None, false).unwrap_err(), goes_on);
+        // One it reached is the bound it was given
+        replay(Some(5), Some(5), false).unwrap();
+        // A replay that was cancelled ends as it did
+        replay(None, None, true).unwrap();
+    }
+
+    #[test]
+    fn should_not_end_well_directly_after_a_block_that_was_not_committed() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let app = FullAbciApplication::new(&platform.platform);
+        // A log of one request, which a replay passes over: the log then ends
+        let info = r#"Request { value: Some(Info(RequestInfo { version: "1.8.2", block_version: 14, p2p_version: 10, abci_version: "999.999.999" })) }"#;
+        let (_dir, log_path) = log_of(&[request_line(info)]);
+
+        // The replay has finalized block 5, and GroveDB's root is `root` after it
+        let replay = |root: [u8; 32], stop_height: Option<u64>, cancelled: bool| {
+            let mut checks = ReplayChecks::open(None, None, None).unwrap();
+            checks
+                .block_finalized(
+                    report::Finalized {
+                        height: 5,
+                        round: 0,
+                        block_hash: &[5; 32],
+                        transactions: 0,
+                        protocol_version: 1,
+                        app_hash: &[1; 32],
+                        grove_root: &root,
+                    },
+                    &Default::default(),
+                )
+                .unwrap();
+            let mut stream = LogRequestStream::open(&log_path).unwrap();
+            let mut args = replay_args(&log_path);
+            args.stop_height = stop_height;
+            let cancel = CancellationToken::new();
+            if cancelled {
+                cancel.cancel();
+            }
+            let mut known_height = Some(5);
+            replay_requests(
+                &app,
+                &mut stream,
+                &args,
+                &cancel,
+                &mut known_height,
+                &mut checks,
+            )
+            .map_err(|error| error.to_string())
+        };
+
+        let not_committed = "the replay ends after block 5, which was executed and not committed: ";
+        // The root is not block 5's app hash: the block was not committed, and the database
+        // is not at the block the replay stopped after, at its stop height
+        let error = replay([2; 32], Some(5), false).unwrap_err();
+        assert!(error.starts_with(not_committed), "{error}");
+        // or at the end of its log
+        let error = replay([2; 32], None, false).unwrap_err();
+        assert!(error.starts_with(not_committed), "{error}");
+        // A replay that was cancelled ends as it did
+        replay([2; 32], None, true).unwrap();
+        // After a block that was committed a replay ends well
+        replay([1; 32], Some(5), false).unwrap();
+        replay([1; 32], None, false).unwrap();
+    }
+
+    #[test]
+    fn should_make_no_database_for_a_replay_that_was_cancelled_before_it_opened_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("abci.jsonl");
+        fs::write(
+            &log,
+            format!("{}\n{}\n", request_line(INFO), request_line(INIT_CHAIN)),
+        )
+        .unwrap();
+        let db = dir.path().join("db");
+        let mut config = PlatformConfig::default_testnet();
+        config.core.consensus_rpc.host = "127.0.0.1".to_owned();
+        let args = ReplayArgs {
+            db_path: Some(db.clone()),
+            core_answers_record: Some(dir.path().join("core-answers.jsonl")),
+            report: Some(dir.path().join("report.jsonl")),
+            ..replay_args(&log)
+        };
+
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        run(config, args, cancel).unwrap();
+        // No directory that a second start would not take for a new database
+        assert!(!db.exists());
+    }
+
+    #[test]
+    fn should_take_core_answers_only_in_a_build_that_unwinds() {
+        let log = Path::new("abci.jsonl");
+        let recording = ReplayArgs {
+            core_answers_record: Some(PathBuf::from("core-answers.jsonl")),
+            ..replay_args(log)
+        };
+        let serving = ReplayArgs {
+            core_answers: Some(PathBuf::from("core-answers.jsonl")),
+            ..replay_args(log)
+        };
+        // The tests' build unwinds, as the node's builds do
+        assert!(cfg!(panic = "unwind"));
+        for args in [&recording, &serving, &replay_args(log)] {
+            core_answers_need_unwinding(true, args).unwrap();
+        }
+        // In a build that aborts on a panic a failure of the answers would end the process
+        // inside FinalizeBlock
+        for args in [&recording, &serving] {
+            let error = core_answers_need_unwinding(false, args).unwrap_err();
+            assert!(error.starts_with("this build aborts on a panic"), "{error}");
+        }
+        // A replay beside a Core node with nothing kept unwinds nowhere
+        core_answers_need_unwinding(false, &replay_args(log)).unwrap();
     }
 
     // ---- drain_skipped_entries ----

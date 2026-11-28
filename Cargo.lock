@@ -2465,6 +2465,7 @@ dependencies = [
  "rs-dapi-client",
  "rust_decimal",
  "rust_decimal_macros",
+ "same-file",
  "serde",
  "serde_json",
  "simple-signer",

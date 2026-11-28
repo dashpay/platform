@@ -11,8 +11,19 @@ pub struct ReplayArgs {
     pub db_path: Option<PathBuf>,
 
     /// drive-abci JSON log that contains TRACE level "received ABCI request" entries.
-    /// Relevant requests will be extracted and replayed chronologically.
-    /// Other log entries are ignored.
+    /// Relevant requests will be extracted and replayed chronologically. The answer the log
+    /// has after a ProcessProposal request ("sending ABCI response") is read as well, and the
+    /// replay stops where its own answer differs from it in status, app hash or a state
+    /// transition's result code or gas_used. After a ProcessProposal request, lines of white
+    /// space and log entries that are neither a request nor an answer ("sending ABCI
+    /// exception" is an answer too) are passed over, and the first other line decides: an
+    /// answer that names the thread ("threadName", "threadId") the request's line names is
+    /// taken for the request's; a request, an answer of another thread or of none, or text
+    /// that is no log entry leaves the request without an answer. A node logs a request and
+    /// its answer on one thread, with no other request or answer of that thread between
+    /// them; the log has to be of one node at a time. Elsewhere, log entries that are no
+    /// requests and lines of text that are no log entries are ignored. A line that is not
+    /// text stops the replay with an error.
     #[arg(long = "log", value_hint = clap::ValueHint::FilePath)]
     pub log: PathBuf,
 
@@ -29,9 +40,76 @@ pub struct ReplayArgs {
     )]
     pub skip: Vec<SkipSelector>,
 
-    /// Stop replay after reaching this block height (inclusive).
+    /// Stop replay after reaching this block height (inclusive). A replay that reaches its
+    /// stop height, or the end of its log, directly after a block that was executed and not
+    /// committed ends with an error, since its database is not at that block: mainnet's
+    /// block 32326 is one, as on the chain. A replay that is cancelled there says so in a
+    /// warning.
     #[arg(long, value_name = "HEIGHT")]
     pub stop_height: Option<u64>,
+
+    /// Keep Dash Core's answer to each request in this file while replaying beside a Core
+    /// node, so that a later replay can run without one (`--core-answers`). Each distinct
+    /// request is kept once, with the first answer Core gave to it that is not one of its
+    /// errors for a node that is not ready (starting, not connected, loading blocks). A file
+    /// that exists is
+    /// added to. Core has to answer a request alike each time it is asked, so record beside a
+    /// Core whose chain stands still (caught up, then `setnetworkactive false`); whether it
+    /// does answer alike is checked and not assumed: a second, different answer to a recorded
+    /// request (one of the errors for a node that is not ready aside) stops the replay, as
+    /// does a method Core refuses with HTTP status 403, or an error of a request that is
+    /// none of the connection (a reply with HTTP status 200 whose body is no JSON, for one).
+    /// A request Core gives no answer to (an
+    /// error of the connection, or one of the errors for a node that is not ready) is asked
+    /// up to four times; the replay goes on with the first answer, and stops when none of the
+    /// four is answered. The file may not be inside the database directory.
+    #[arg(
+        long,
+        value_name = "FILE",
+        value_hint = clap::ValueHint::FilePath,
+        conflicts_with = "core_answers"
+    )]
+    pub core_answers_record: Option<PathBuf>,
+
+    /// Answer every request to Dash Core from this file, recorded by `--core-answers-record`,
+    /// and ask no Core node. A request the file has no answer to stops the replay. Both
+    /// options need a build that unwinds on a panic, which the node's builds do.
+    #[arg(long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub core_answers: Option<PathBuf>,
+
+    /// Write one JSON line for each finalized block to this file: height, round, core height,
+    /// protocol version, app hash, GroveDB root hash, every state transition's result code
+    /// and gas_used (its storage and processing fee), whether those were held against the
+    /// log's answer, and a hash over each whole answer. Two replays of the same log that
+    /// answered every request alike and left the same root hashes write the same bytes. The
+    /// fields taken from the block's proposal and from the answer to it are null unless the last request
+    /// replayed before FinalizeBlock (Info, ExtendVote and VerifyVoteExtension requests
+    /// aside) was the accepted ProcessProposal of that very block. A report is written from a
+    /// new database on. For a database that has blocks the
+    /// report has to be its own: one block after the other, ending at the block the database
+    /// is at with its app hash. The file is locked while a replay writes it or is held
+    /// against it, and may not be inside the database directory.
+    #[arg(long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub report: Option<PathBuf>,
+
+    /// Hold every finalized block against the line another replay wrote for it with
+    /// `--report`, on another storage engine for one, and stop at the first block that
+    /// differs, naming each field that does; its line is then not written. Lines an earlier
+    /// run wrote to `--report` are held against that file first, and counted apart from the
+    /// blocks this run executes. The other replay's line for a block is read before the
+    /// first ProcessProposal of the block's height is executed, so a file that has none
+    /// stops the replay before that, and before the block is finalized (a PrepareProposal
+    /// of the height that comes earlier in the log has been executed by then); and where the
+    /// log ends, the file has to end too, unless `--stop-height` was reached. The file is
+    /// locked while a replay is held against it: one that another replay is still writing is
+    /// refused.
+    #[arg(
+        long,
+        value_name = "FILE",
+        value_hint = clap::ValueHint::FilePath,
+        requires = "report"
+    )]
+    pub compare_report: Option<PathBuf>,
 }
 
 /// Selector used by `--skip` flag to filter log line numbers.

@@ -1,3 +1,4 @@
+use crate::replay::chain_answer::{parse_response_log, LoggedAnswer};
 use crate::replay::{LoadedRequest, ReplayItem};
 use hex::encode as hex_encode;
 use serde::de::value;
@@ -9,7 +10,7 @@ use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Lines};
+use std::io::{self, BufRead, BufReader, Lines};
 use std::path::{Path, PathBuf};
 use tenderdash_abci::proto::serializers::timestamp::to_rfc3339_nanos;
 use time::OffsetDateTime;
@@ -18,6 +19,8 @@ pub struct LogRequestStream {
     path: PathBuf,
     lines: Lines<BufReader<File>>,
     line_number: usize,
+    /// A line read ahead of its turn, while looking for the answer to a request
+    held_line: Option<String>,
     buffered: Option<ReplayItem>,
 }
 
@@ -29,6 +32,7 @@ impl LogRequestStream {
             path: canonical,
             lines: BufReader::new(file).lines(),
             line_number: 0,
+            held_line: None,
             buffered: None,
         })
     }
@@ -77,10 +81,107 @@ impl LogRequestStream {
         Ok(skipped)
     }
 
+    /// The next line of the log. `line_number` is then that line's.
+    fn next_line(&mut self) -> Result<Option<String>, io::Error> {
+        if let Some(line) = self.held_line.take() {
+            // Counted when it was read
+            return Ok(Some(line));
+        }
+        match self.lines.next() {
+            Some(line) => {
+                self.line_number += 1;
+                line.map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// The node's answer to the `ProcessProposal` request that was just read, whose line says
+    /// that the thread `asked_by` logged it.
+    ///
+    /// The lines after the request are read one by one. Passed over are a line of white
+    /// space only and an entry of the log that is neither a request nor an answer (an
+    /// exception is an answer here). The first line that is anything else decides:
+    ///
+    /// - an answer that names the request's thread is the request's: an answer to a
+    ///   proposal that can be read is held against the replay's, and any other (an exception,
+    ///   an answer to another kind of request, one that is cut short or empty) is nothing to hold;
+    /// - a request, an answer that names another thread or none, or a line of text that
+    ///   cannot be read as an entry of the log gives the request no answer;
+    /// - a line that is not text, or that the file does not give, ends the reading of the
+    ///   log with an error, here as anywhere in it;
+    /// - the end of the log gives the request no answer.
+    ///
+    /// This is the request's answer because the node's handler (`tenderdash_abci`) logs a
+    /// request and the answer to it in one call, so on one thread and with no request or
+    /// answer line of that thread between the two: the first such line a thread logs after
+    /// a request is the answer to that request, whatever other threads log, and where a node
+    /// was stopped in a request, the first such line of a thread of its next start is a
+    /// request. Not judged here: the log of something that does not log this way, and a log
+    /// that two running nodes wrote into at one time, whose threads cannot be told apart.
+    fn read_logged_answer(
+        &mut self,
+        asked_by: Option<&LogThread>,
+    ) -> Result<LoggedAnswer, io::Error> {
+        let Some(asked_by) = asked_by else {
+            return Ok(LoggedAnswer::Unreadable(format!(
+                "line {} of the log does not name the thread that logged it, so no answer can be told to be this request's",
+                self.line_number
+            )));
+        };
+        while let Some(line) = self.next_line()? {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let Ok(entry) = serde_json::from_str::<LogEntry>(&line) else {
+                return Ok(LoggedAnswer::Unreadable(format!(
+                    "line {} of the log, after the request, cannot be read",
+                    self.line_number
+                )));
+            };
+            let by_the_same_thread = entry.thread().as_ref() == Some(asked_by);
+            let Some(fields) = entry.fields else {
+                continue;
+            };
+            let answer = match fields.message.as_deref() {
+                Some("received ABCI request") => {
+                    self.held_line = Some(line);
+                    return Ok(if by_the_same_thread {
+                        // The thread went on to another request: the node was stopped in
+                        // this one
+                        LoggedAnswer::Absent
+                    } else {
+                        LoggedAnswer::Unreadable(format!(
+                            "line {} of the log, after the request, is a request that does not name the request's thread",
+                            self.line_number
+                        ))
+                    });
+                }
+                // The node answered with an error, which is no answer to hold
+                Some("sending ABCI exception") => LoggedAnswer::Absent,
+                Some("sending ABCI response") => {
+                    match fields.response_log.as_deref().map(parse_response_log) {
+                        Some(Ok(Some(answer))) => LoggedAnswer::Proposal(answer),
+                        Some(Ok(None)) | None => LoggedAnswer::Absent,
+                        Some(Err(reason)) => LoggedAnswer::Unreadable(reason),
+                    }
+                }
+                _ => continue,
+            };
+            return Ok(if by_the_same_thread {
+                answer
+            } else {
+                LoggedAnswer::Unreadable(format!(
+                    "line {} of the log, after the request, is an answer that does not name the request's thread",
+                    self.line_number
+                ))
+            });
+        }
+        Ok(LoggedAnswer::Absent)
+    }
+
     fn read_next_request(&mut self) -> Result<Option<ReplayItem>, Box<dyn std::error::Error>> {
-        while let Some(line_result) = self.lines.next() {
-            let line = line_result?;
-            self.line_number += 1;
+        while let Some(line) = self.next_line()? {
             if line.trim().is_empty() {
                 continue;
             }
@@ -98,10 +199,12 @@ impl LogRequestStream {
                 }
             };
 
+            let logged_by = entry.thread();
             let LogEntry {
                 timestamp,
                 fields,
                 span,
+                ..
             } = entry;
 
             let Some(fields) = fields else {
@@ -120,13 +223,16 @@ impl LogRequestStream {
 
             match parse_logged_request(raw_request) {
                 Ok(Some(loaded)) => {
-                    return Ok(Some(ReplayItem::from_log(
-                        self.path(),
-                        self.line_number,
-                        timestamp,
-                        endpoint,
-                        loaded,
-                    )));
+                    let line_number = self.line_number;
+                    let logged_answer = if matches!(loaded, LoadedRequest::Process(_)) {
+                        self.read_logged_answer(logged_by.as_ref())?
+                    } else {
+                        LoggedAnswer::Absent
+                    };
+                    return Ok(Some(
+                        ReplayItem::from_log(self.path(), line_number, timestamp, endpoint, loaded)
+                            .with_logged_answer(logged_answer),
+                    ));
                 }
                 Ok(None) => {
                     // tracing::trace!(
@@ -155,12 +261,27 @@ struct LogEntry {
     timestamp: Option<String>,
     fields: Option<LogFields>,
     span: Option<LogSpan>,
+    #[serde(rename = "threadName")]
+    thread_name: Option<serde_json::Value>,
+    #[serde(rename = "threadId")]
+    thread_id: Option<serde_json::Value>,
+}
+
+/// The thread a line of the log says it was logged by: its name, if it has one, and its id.
+type LogThread = (Option<serde_json::Value>, serde_json::Value);
+
+impl LogEntry {
+    /// The thread that logged the line, if the line names it.
+    fn thread(&self) -> Option<LogThread> {
+        Some((self.thread_name.clone(), self.thread_id.clone()?))
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct LogFields {
     message: Option<String>,
     request: Option<String>,
+    response_log: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

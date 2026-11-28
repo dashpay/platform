@@ -18,7 +18,7 @@ bincode = { workspace = true, features = ["serde"] }
 ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "server",
   "grovedb_operations_logging",
@@ -54,6 +54,8 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v2.0.0-dev.2", features = [
   "grpc",
 ] }
+# `replay` command: whether two paths name one file
+same-file = { version = "1.0", optional = true }
 time = { version = "0.3", optional = true, features = [
   "macros",
   "formatting",
@@ -147,7 +149,7 @@ testing-config = []
 shielded_test_data = ["drive/shielded_test_data"]
 grovedbg = ["drive/grovedbg"]
 # `abci-server replay` command
-replay = ["dep:time", "tenderdash-abci/serde"]
+replay = ["dep:time", "dep:same-file", "tenderdash-abci/serde"]
 # Long-running shielded strategy tests (ZK proof generation)
 __shielded_strategy_tests = []
 [[bin]]
