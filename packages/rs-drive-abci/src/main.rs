@@ -176,7 +176,8 @@ impl Cli {
                     tracing::info!("shielded verifying key is ready");
                 });
 
-                server::start(runtime, Arc::new(platform), config, cancel);
+                server::start(runtime, Arc::new(platform), config, cancel)
+                    .map_err(|e| format!("shadow mode did not start: {e}"))?;
 
                 tracing::info!("drive-abci server is stopped");
 
