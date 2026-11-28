@@ -299,9 +299,10 @@ impl PlatformWallet {
                 }
                 Err(error) if snapshot.out_point.is_none() => {
                     // Every possibly durable or dispatched lock records its
-                    // outpoint first. A returned pre-build error proves no send.
+                    // outpoint first. A returned pre-build error proves no send,
+                    // so the error says `NotSent` too, as the operation does.
                     operation.set(AssetLockOperationState::NotSent, None);
-                    Err(error)
+                    Err(error.before_dispatch())
                 }
                 // The operation stays Pending on its lock, so its error is
                 // never `NotSent`: the lock is named as held only for a

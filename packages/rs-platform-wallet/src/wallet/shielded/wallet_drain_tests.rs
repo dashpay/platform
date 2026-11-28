@@ -494,10 +494,13 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
         } else {
             // Reaching ordinary recipient validation proves the abandoned
             // registration no longer blocks this same-context UUID retry.
+            // The refusal comes before any lock, so it is `NotSent`.
+            let error = result.unwrap_err();
             assert!(matches!(
-                result,
-                Err(PlatformWalletError::AddressOperation(_))
+                error.dispatched_source(),
+                PlatformWalletError::AddressOperation(_)
             ));
+            assert_eq!(error.payment_delivery(), PaymentDelivery::NotSent);
         }
     }
     assert_eq!(
@@ -608,6 +611,8 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
             "{error}"
         );
         assert_eq!(operation.snapshot().state, AssetLockOperationState::NotSent);
+        // The error the host gets says what the operation records.
+        assert_eq!(error.payment_delivery(), PaymentDelivery::NotSent);
         assert!(operation.snapshot().out_point.is_none());
         assert_eq!(persistence.committed.lock().unwrap().len(), 1);
         assert!(persistence.staged.lock().unwrap().is_empty());

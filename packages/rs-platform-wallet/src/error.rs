@@ -759,9 +759,11 @@ pub enum PlatformWalletError {
     /// broadcast for it, so it is `NotSent`. For the variants that also end
     /// a payment after its dispatch (an SDK error, a marketplace or balance
     /// verdict, a request blocked while another payment for the same pair
-    /// settles), where only the emitter knows nothing left. The diagnostic,
-    /// the FFI code and the retry decision stay `source`'s: only the payment
-    /// class changes. See [`Self::before_dispatch`].
+    /// settles), where only the emitter knows nothing left. The diagnostic
+    /// and the FFI code stay `source`'s. It is never retryable: `source` is a
+    /// variant that also ends a dispatched payment, so running the call again
+    /// is left to the user, not to an automatic retry. See
+    /// [`Self::before_dispatch`].
     #[error("{source}")]
     RefusedBeforeDispatch { source: Box<PlatformWalletError> },
 
@@ -2016,8 +2018,8 @@ impl PlatformWalletError {
 
     /// This error as a refusal proven before the payment's first dispatch:
     /// a variant classed as possibly sent becomes
-    /// [`Self::RefusedBeforeDispatch`] (`NotSent`), keeping its diagnostic,
-    /// FFI code and retry decision. A `NotSent` error is kept, and so is an
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`, not retryable), keeping its
+    /// diagnostic and FFI code. A `NotSent` error is kept, and so is an
     /// error that already records a dispatch ([`Self::PaymentAlreadyDispatched`]
     /// or a held lock): this only adds evidence of non-dispatch, it never
     /// erases evidence of one.
@@ -2171,8 +2173,10 @@ impl PlatformWalletError {
                 // retry a transient flush allows is another flush, not the
                 // operation.
                 Self::PersisterFlush(_) => false,
-                // Only the class changed: the source's own decision stands.
-                Self::RefusedBeforeDispatch { source } => source.is_retryable(),
+                // The source is a variant that also ends a dispatched payment
+                // (it is wrapped only when classed `MaybeSent`), so no
+                // automatic retry: the user decides to run the call again.
+                Self::RefusedBeforeDispatch { .. } => false,
                 // Another payment blocks this request. Running it again only
                 // meets the same refusal until that payment settles; the host
                 // waits for it instead.
@@ -4231,14 +4235,15 @@ mod payment_delivery_tests {
         ];
         for verdict in verdicts {
             let text = verdict.to_string();
-            let retryable = verdict.is_retryable();
             let refused = verdict.before_dispatch();
             assert_eq!(
                 refused.payment_delivery(),
                 PaymentDelivery::NotSent,
                 "{refused:?}"
             );
-            assert_eq!(refused.is_retryable(), retryable, "{refused:?}");
+            // Never an automatic retry: the source also ends dispatched
+            // payments.
+            assert!(!refused.is_retryable(), "{refused:?}");
             assert_eq!(refused.held_asset_lock(), None, "{refused:?}");
             assert_eq!(refused.to_string(), text);
             assert!(
