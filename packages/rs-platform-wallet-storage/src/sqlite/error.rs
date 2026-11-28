@@ -579,39 +579,6 @@ pub enum WalletStorageError {
     )]
     RehydrationEnsureDerivedFailed { index: u32 },
 
-    /// A pool's gap-limit refill would derive more addresses than
-    /// rehydration will spend on one pool, so the window stays short and a
-    /// previously-used address inside it can be re-issued as fresh. Costed
-    /// before the refill runs, so nothing is allocated on the way out.
-    #[error(
-        "refilling an address pool to derivation index {refill_target}, which already holds \
-         {already_generated} address(es), implies {implied} new addresses, over the {cap} \
-         rehydration cap; the pool's window stays short, so a previously-used address in it \
-         may be handed out again as fresh"
-    )]
-    RehydrationGapLimitRefillTooLarge {
-        refill_target: u32,
-        already_generated: u32,
-        implied: u32,
-        cap: u32,
-    },
-
-    /// A pool's persisted state implies a gap-limit refill target that is
-    /// not a derivable non-hardened child index — either the target
-    /// over/underflows `u32`, or it lands at or past the BIP-32
-    /// normal-child ceiling of `2^31`. Refused before the refill runs:
-    /// upstream computes the same target with raw arithmetic and would
-    /// panic on it, which no load policy can tolerate.
-    #[error(
-        "an address pool with highest used index {highest_used:?} and gap limit {gap_limit} \
-         implies a refill target that is not a derivable address index; the pool's window \
-         stays short, so a previously-used address in it may be handed out again as fresh"
-    )]
-    RehydrationGapLimitTargetOutOfRange {
-        highest_used: Option<u32>,
-        gap_limit: u32,
-    },
-
     /// The upstream gap-limit refill itself failed, leaving the pool's
     /// window short — a previously-used address inside it can be re-issued
     /// as fresh.
@@ -787,8 +754,6 @@ impl WalletStorageError {
             | Self::RehydrationPoolTypeMismatch { .. }
             | Self::ReadOnlyRecoveryMode { .. }
             | Self::RehydrationEnsureDerivedFailed { .. }
-            | Self::RehydrationGapLimitRefillTooLarge { .. }
-            | Self::RehydrationGapLimitTargetOutOfRange { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
             | Self::UnownedIdentityHasRegistrationIndex { .. }
@@ -897,8 +862,6 @@ impl WalletStorageError {
             | Self::RehydrationPoolTypeMismatch { .. }
             | Self::ReadOnlyRecoveryMode { .. }
             | Self::RehydrationEnsureDerivedFailed { .. }
-            | Self::RehydrationGapLimitRefillTooLarge { .. }
-            | Self::RehydrationGapLimitTargetOutOfRange { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
             | Self::UnownedIdentityHasRegistrationIndex { .. }
@@ -981,12 +944,6 @@ impl WalletStorageError {
             Self::RehydrationPoolTypeMismatch { .. } => "rehydration_pool_type_mismatch",
             Self::ReadOnlyRecoveryMode { .. } => "read_only_recovery_mode",
             Self::RehydrationEnsureDerivedFailed { .. } => "rehydration_ensure_derived_failed",
-            Self::RehydrationGapLimitRefillTooLarge { .. } => {
-                "rehydration_gap_limit_refill_too_large"
-            }
-            Self::RehydrationGapLimitTargetOutOfRange { .. } => {
-                "rehydration_gap_limit_target_out_of_range"
-            }
             Self::RehydrationGapLimitFailed { .. } => "rehydration_gap_limit_failed",
             Self::UsedAddressOwnerConflict { .. } => "used_address_owner_conflict",
             Self::UnownedIdentityHasRegistrationIndex { .. } => {
