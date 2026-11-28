@@ -297,8 +297,9 @@ class Tokens internal constructor(private val walletHandle: Long,
 
     /**
      * Update the token configuration. [change] renders the FFI change-item
-     * tag + JSON payload (only [TokenConfigChange.MaxSupply] is wired in this
-     * release, matching the FFI). Returns what the update did: still pending
+     * tag + JSON payload ([TokenConfigChange.MaxSupply] is the only change this
+     * Kotlin type offers; the FFI also decodes the marketplace trade mode,
+     * tag 1). Returns what the update did: still pending
      * (a group action), or applied with the contract it produced (or why
      * that contract could not be fetched), for the host to store. If the
      * caller is cancelled after the native call completed, the outcome is
@@ -352,9 +353,10 @@ enum class TokenDistributionType(val value: Int) {
 /**
  * A token-configuration change for [Tokens.updateConfig], rendered to the
  * flat `(tag, payloadJson)` the FFI decodes
- * (`rs-platform-wallet-ffi/src/tokens/update_config.rs`). Only MaxSupply is
- * wired by the FFI in this release; other change items are a documented
- * future follow-up on the Rust side.
+ * (`rs-platform-wallet-ffi/src/tokens/update_config.rs`). The FFI decodes
+ * MaxSupply (tag 0) and MarketplaceTradeMode (tag 1); this type offers only
+ * MaxSupply so far, and the trade mode variant is a follow-up here, not on
+ * the Rust side.
  */
 sealed class TokenConfigChange {
 

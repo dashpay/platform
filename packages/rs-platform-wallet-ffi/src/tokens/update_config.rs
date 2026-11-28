@@ -1,9 +1,10 @@
-//! FFI binding for `IdentityWallet::token_update_config_with_external_signer`.
+//! FFI binding for `IdentityWallet::token_update_config_and_refresh_with_external_signer`.
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use platform_wallet::TokenConfigUpdateOutcome;
@@ -18,7 +19,10 @@ use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
+/// `change_item_tag` for `TokenConfigurationChangeItem::MaxSupply`.
 const TAG_MAX_SUPPLY: u8 = 0;
+/// `change_item_tag` for `TokenConfigurationChangeItem::MarketplaceTradeMode`.
+const TAG_MARKETPLACE_TRADE_MODE: u8 = 1;
 
 unsafe fn decode_change_item(
     tag: u8,
@@ -26,13 +30,48 @@ unsafe fn decode_change_item(
 ) -> Result<TokenConfigurationChangeItem, PlatformWalletFFIResult> {
     match tag {
         TAG_MAX_SUPPLY => decode_max_supply_payload(payload_json),
+        TAG_MARKETPLACE_TRADE_MODE => decode_marketplace_trade_mode_payload(payload_json),
         other => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
-                "change_item_tag {other} not yet supported by FFI (only MaxSupply = 0 is wired in this release)"
+                "change_item_tag {other} not yet supported by FFI (only MaxSupply = 0 and MarketplaceTradeMode = 1 are wired in this release)"
             ),
         )),
     }
+}
+
+/// Decode `{"tradeMode":"Tradeable"}` or `{"tradeMode":"NotTradeable"}`, the
+/// names dpp gives the modes in a contract's JSON. Whether the token may take
+/// the mode is Platform's decision, not made here.
+unsafe fn decode_marketplace_trade_mode_payload(
+    payload_json: *const c_char,
+) -> Result<TokenConfigurationChangeItem, PlatformWalletFFIResult> {
+    if payload_json.is_null() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "change_item_payload_json is null (expected JSON object for MarketplaceTradeMode)",
+        ));
+    }
+    let payload_str = CStr::from_ptr(payload_json).to_str()?;
+    let parsed: Value = serde_json::from_str(payload_str)?;
+
+    let Some(trade_mode_field) = parsed.get("tradeMode") else {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "MarketplaceTradeMode payload missing required field 'tradeMode'",
+        ));
+    };
+    let trade_mode: TokenTradeMode =
+        serde_json::from_value(trade_mode_field.clone()).map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("'tradeMode' is not a token trade mode: {e}"),
+            )
+        })?;
+
+    Ok(TokenConfigurationChangeItem::MarketplaceTradeMode(
+        trade_mode,
+    ))
 }
 
 unsafe fn decode_max_supply_payload(
@@ -74,78 +113,6 @@ unsafe fn decode_max_supply_payload(
     };
 
     Ok(TokenConfigurationChangeItem::MaxSupply(new_max_supply))
-}
-
-/// Update the configuration of the token at `token_position` on `token_contract_id`.
-#[no_mangle]
-#[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn platform_wallet_token_update_config(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    token_contract_id: *const u8,
-    token_position: u16,
-    change_item_tag: u8,
-    change_item_payload_json: *const c_char,
-    public_note: *const c_char,
-    group_info_kind: u8,
-    group_info_position: u16,
-    group_info_action_id: *const u8,
-    group_info_action_is_proposer: bool,
-    _signing_key_id: u32,
-    signer_handle: *mut SignerHandle,
-) -> PlatformWalletFFIResult {
-    check_ptr!(signer_handle);
-
-    let id = unwrap_result_or_return!(read_identifier(identity_id));
-    let contract_id = unwrap_result_or_return!(read_identifier(token_contract_id));
-
-    let change_item = unwrap_result_or_return!(decode_change_item(
-        change_item_tag,
-        change_item_payload_json
-    ));
-
-    let public_note_str = if public_note.is_null() {
-        None
-    } else {
-        {
-            let s = unwrap_result_or_return!(CStr::from_ptr(public_note).to_str());
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.to_owned())
-            }
-        }
-    };
-
-    let group_info = unwrap_result_or_return!(decode_group_info(
-        group_info_kind,
-        group_info_position,
-        group_info_action_id,
-        group_info_action_is_proposer,
-    ));
-
-    let signer_addr = signer_handle as usize;
-
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            identity_wallet
-                .token_update_config_with_external_signer(
-                    id,
-                    contract_id,
-                    token_position,
-                    change_item,
-                    public_note_str,
-                    group_info,
-                    signer,
-                )
-                .await
-        })
-    });
-    let result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(result);
-    PlatformWalletFFIResult::ok()
 }
 
 /// The JSON `platform_wallet_token_update_config_and_refresh` writes for
@@ -192,8 +159,15 @@ fn outcome_json(
 }
 
 /// Update the configuration of the token at `token_position` on
-/// `token_contract_id` (the parameters of `platform_wallet_token_update_config`),
-/// then report what the update did.
+/// `token_contract_id`, then report what the update did.
+///
+/// `change_item_tag` names the one configuration item to change and
+/// `change_item_payload_json` carries its new value:
+///
+/// - `0`, max supply: `{"newMaxSupply":"<u64>"}`, or `{"newMaxSupply":null}`
+///   to remove the cap.
+/// - `1`, marketplace trade mode: `{"tradeMode":"Tradeable"}` or
+///   `{"tradeMode":"NotTradeable"}`.
 ///
 /// # Safety
 /// - `out_json` must be a writable `*mut *mut c_char`. On success it receives
@@ -353,10 +327,57 @@ mod tests {
     }
 
     #[test]
+    fn should_decode_both_marketplace_trade_modes() {
+        unsafe {
+            for (name, mode) in [
+                ("Tradeable", TokenTradeMode::Tradeable),
+                ("NotTradeable", TokenTradeMode::NotTradeable),
+            ] {
+                let payload = cstr(&format!(r#"{{"tradeMode":"{name}"}}"#));
+                let item =
+                    decode_change_item(TAG_MARKETPLACE_TRADE_MODE, payload.as_ptr()).unwrap();
+                assert_eq!(
+                    item,
+                    TokenConfigurationChangeItem::MarketplaceTradeMode(mode)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_marketplace_trade_mode_payload_without_a_known_mode() {
+        unsafe {
+            for payload in [
+                r#"{}"#,
+                r#"{"tradeMode":"Sometimes"}"#,
+                r#"{"tradeMode":1}"#,
+            ] {
+                let payload = cstr(payload);
+                let result = decode_change_item(TAG_MARKETPLACE_TRADE_MODE, payload.as_ptr());
+                match result {
+                    Err(r) if r.code == PlatformWalletFFIResultCode::ErrorInvalidParameter => {}
+                    other => panic!("expected ErrorInvalidParameter, got {other:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_null_marketplace_trade_mode_payload() {
+        unsafe {
+            let result = decode_change_item(TAG_MARKETPLACE_TRADE_MODE, std::ptr::null());
+            match result {
+                Err(r) if r.code == PlatformWalletFFIResultCode::ErrorNullPointer => {}
+                other => panic!("expected ErrorNullPointer, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn decode_unsupported_tag_rejected() {
         unsafe {
             let payload = cstr(r#"{}"#);
-            let result = decode_change_item(1, payload.as_ptr());
+            let result = decode_change_item(255, payload.as_ptr());
             match result {
                 Err(r) if r.code == PlatformWalletFFIResultCode::ErrorInvalidParameter => {}
                 _ => panic!("expected ErrorInvalidParameter for unsupported tag"),
