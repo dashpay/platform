@@ -118,15 +118,14 @@ struct PaymentFailure: Equatable {
 
     /// The failure a payment screen's `error` stands for, or `nil` when no
     /// payment was attempted, which the screen shows as its own message
-    /// (← Kotlin `PaymentFailure.ofPayment`): the screen's own input check (not
-    /// an SDK error), or a wallet error Rust gave no class. Rust classes every
-    /// failure of a payment the wallet ran, so a wallet error without one is a
-    /// refusal before any payment (a Swift-side input check, a native pointer
-    /// or handle refusal), as `ErrorCategorizer` presents it too.
+    /// (← Kotlin `PaymentFailure.ofPayment`): only the screen's own input
+    /// check (not an SDK error). Every SDK error comes from a call that may
+    /// have started the payment, so it is a failure; a wallet error with no
+    /// class (the FFI's `Unknown` delivery decodes to none, and a paid call
+    /// can come back that way) is unconfirmed and holds its slot, never a
+    /// refusal before any payment.
     static func ofPayment(_ error: Error, invitationVoucher: Bool = false) -> PaymentFailure? {
         switch error {
-        case let wallet as PlatformWalletError where wallet.payment == nil:
-            return nil
         case is PlatformWalletError, is ShieldedIdentityCreateUnconfirmedError, is SDKError:
             return PaymentFailure(error, invitationVoucher: invitationVoucher)
         default:

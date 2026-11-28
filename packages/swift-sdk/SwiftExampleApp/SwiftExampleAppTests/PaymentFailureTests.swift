@@ -90,18 +90,21 @@ final class PaymentFailureTests: XCTestCase {
         XCTAssertEqual(PaymentFailure(SDKError.timeout("timeout")).action, .wait)
     }
 
-    /// Only a payment that was attempted is a payment failure: an SDK error
-    /// (with or without Rust's class), never the screen's own input check or
-    /// a wallet error Rust gave no class (a Swift-side check before any
-    /// native call), which show as their own message (← Kotlin
+    /// Every SDK error is a payment failure, with or without Rust's class: a
+    /// wallet error with no class (the FFI's `Unknown` delivery decodes to
+    /// none) is unconfirmed and holds its slot. Only the screen's own input
+    /// check (not an SDK error) shows as its own message (← Kotlin
     /// `PaymentFailure.ofPayment`).
-    func testShouldPresentOnlyAnAttemptedPaymentAsAPaymentFailure() {
+    func testShouldPresentEverySdkErrorAsAPaymentFailure() {
         XCTAssertEqual(
             PaymentFailure.ofPayment(PlatformWalletError.walletOperation("lost", payment: .maybeSent)),
             PaymentFailure(payment: .maybeSent, detail: "lost")
         )
         XCTAssertEqual(PaymentFailure.ofPayment(SDKError.timeout("timeout"))?.action, .wait)
-        XCTAssertNil(PaymentFailure.ofPayment(PlatformWalletError.invalidParameter("Enter an amount")))
+        let classless = PaymentFailure.ofPayment(PlatformWalletError.invalidParameter("Enter an amount"))
+        XCTAssertEqual(classless?.recovery, .unconfirmed)
+        XCTAssertEqual(classless?.holdsSlot, true)
+        XCTAssertEqual(classless?.releasableAfterReconciliation, true)
         XCTAssertNil(PaymentFailure.ofPayment(CocoaError(.validationNumberTooSmall)))
     }
 

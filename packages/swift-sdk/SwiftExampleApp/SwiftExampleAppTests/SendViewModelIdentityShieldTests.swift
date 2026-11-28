@@ -297,7 +297,7 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         vm.applyIdentityShieldSubmitted()
         vm.applySendFailure(PlatformWalletError.walletOperation("x"), flow: .identityToShielded)
         XCTAssertNil(vm.submittedMessage)
-        XCTAssertNotNil(vm.error)
+        XCTAssertNotNil(vm.paymentFailure)
 
         // A classed failure clears it too.
         vm.applyIdentityShieldSubmitted()
@@ -618,17 +618,21 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
     }
 
     func test_otherWalletError_showsItsOwnDescription() {
-        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
-        // No class: no payment ran, so its own description shows.
+        // No class: the payment may have run (the FFI's `Unknown` delivery
+        // decodes to none), so it is an unconfirmed failure that holds the
+        // form, with its own description as the detail.
+        let unclassedVm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         let failure = PlatformWalletError.walletOperation("refused below protocol version 14")
-        vm.applySendFailure(failure, flow: .identityToShielded)
-        XCTAssertEqual(vm.error, failure.localizedDescription)
-        XCTAssertNil(vm.paymentFailure)
+        unclassedVm.applySendFailure(failure, flow: .identityToShielded)
+        XCTAssertNil(unclassedVm.error)
+        XCTAssertEqual(unclassedVm.paymentFailure?.recovery, .unconfirmed)
+        XCTAssertEqual(unclassedVm.paymentFailure?.detail, failure.localizedDescription)
+        XCTAssertTrue(unclassedVm.isHeldByPaymentFailure)
 
         // Classed, with no wording of this flow: its own description is the
         // failure's text.
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         let classed = PlatformWalletError.walletOperation("refused", payment: notSentFinal)
-        vm.error = nil
         vm.applySendFailure(classed, flow: .identityToShielded)
         XCTAssertEqual(vm.paymentFailure?.detail, classed.localizedDescription)
         XCTAssertNil(vm.error)

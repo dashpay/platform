@@ -1160,8 +1160,9 @@ class SendViewModel: ObservableObject {
     /// held lock's resume for `.lockHeld`, and a wait for a payment that may
     /// have left (never "failed"). An identity shield refused with nothing
     /// sent keeps this flow's wording (`identityShieldRefusalMessage`) as the
-    /// failure's text. An error no payment raised (an input check before any
-    /// send) shows as its own message.
+    /// failure's text. An error that is not an SDK error (an input check
+    /// before any send) shows as its own message; any wallet error, one
+    /// without a class included, is a payment failure.
     func applySendFailure(_ failure: Error, flow: SendFlow) {
         successMessage = nil
         submittedMessage = nil

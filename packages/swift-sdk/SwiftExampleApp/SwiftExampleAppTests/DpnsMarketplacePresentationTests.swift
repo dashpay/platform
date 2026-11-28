@@ -76,10 +76,12 @@ final class DpnsMarketplacePresentationTests: XCTestCase {
         XCTAssertTrue(unclassified.message.hasPrefix(PaymentFailure.Recovery.unconfirmed.suggestion))
         XCTAssertFalse(unclassified.message.lowercased().contains("try again"))
 
-        // No payment was attempted: a wallet error Rust gave no class (a
-        // Swift-side input check) or the sheet's own check is not a trade
-        // failure, and shows as its own message.
-        XCTAssertNil(DpnsMarketplaceUI.tradeFailure(PlatformWalletError.notForSale("gone")))
+        // A wallet error Rust gave no class is an unconfirmed trade failure
+        // that holds the screen; only an error that is not an SDK error (the
+        // sheet's own check) shows as its own message.
+        let classless = try XCTUnwrap(DpnsMarketplaceUI.tradeFailure(PlatformWalletError.notForSale("gone")))
+        XCTAssertEqual(classless.recovery, .unconfirmed)
+        XCTAssertTrue(classless.message.contains("not listed for sale"))
         XCTAssertNil(DpnsMarketplaceUI.tradeFailure(CocoaError(.validationNumberTooSmall)))
     }
 
