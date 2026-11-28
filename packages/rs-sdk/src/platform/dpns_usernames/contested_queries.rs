@@ -8,6 +8,10 @@ use super::normalize_dpns_label;
 use crate::platform::documents::contest_vote_state::read_not_older_than;
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
+use dash_context_provider::ContextProvider;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::document::{Document, DocumentV0};
+use dpp::fee::Credits;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
@@ -26,9 +30,12 @@ use drive_proof_verifier::types::{
 };
 use futures::{stream, StreamExt};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 // DPNS parent domain constant
 const DPNS_PARENT_DOMAIN: &str = "dash";
+/// The DPNS document type a name is registered as
+const DPNS_DOMAIN_DOCUMENT_TYPE: &str = "domain";
 /// Keep the fan-out small enough not to overwhelm one DAPI node while avoiding
 /// the previous one-network-round-trip-per-contest serial load.
 const DPNS_VOTE_STATE_QUERY_CONCURRENCY: usize = 8;
@@ -159,6 +166,68 @@ impl Sdk {
         };
 
         self.fetch_contested_resource_vote_state(&vote_poll, limit)
+            .await
+    }
+
+    /// The fund a registration of the DPNS name `name` pays to join the name's contest now, or
+    /// `None` when the name joins no contest: one the DPNS contract does not contest (today
+    /// a name of 20 characters or more, or one with a digit other than `0` and `1`), or an
+    /// empty one, for which nothing is read.
+    ///
+    /// It is the fund [`Sdk::contest_fund_to_join`] reads for the name's `domain` document,
+    /// judged contested by the DPNS contract the network stores now, the one a registration
+    /// builds its documents against. It is what a registration naming no maximum states
+    /// (`RegisterDpnsNameInput::contest_fund`), and it grows with the contest, so a
+    /// registration signed later may be charged more.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The username: a label or a full name, in any case (e.g. "alice",
+    ///   "Alice.DASH"). A `.dash` suffix, matched in any case, is stripped and the rest
+    ///   normalized (homograph-safe, lowercase), so both address the same contest.
+    ///
+    /// # Returns
+    ///
+    /// The fund to join in credits, or `None` when the name joins no contest
+    pub async fn dpns_contest_fund_to_join(&self, name: &str) -> Result<Option<Credits>, Error> {
+        let normalized_label = normalize_dpns_label(name);
+        if normalized_label.is_empty() {
+            return Ok(None);
+        }
+
+        let dpns_contract = self.fetch_current_dpns_contract().await?;
+
+        // The contenders are read with proofs the SDK verifies under the DPNS contract its
+        // context provider resolves, and a provider that was never given DPNS resolves none:
+        // give it the contract just proved, as a registration does
+        if let Some(provider) = self.context_provider() {
+            provider.register_data_contract(Arc::new(dpns_contract.clone()));
+        }
+
+        let domain_document_type = dpns_contract
+            .document_type_for_name(DPNS_DOMAIN_DOCUMENT_TYPE)
+            .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
+
+        // The properties the contested index of a domain reads; the contest is resolved on
+        // them alone, whoever would own the document
+        let domain: Document = DocumentV0 {
+            properties: BTreeMap::from([
+                (
+                    "parentDomainName".to_string(),
+                    Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+                ),
+                (
+                    "normalizedParentDomainName".to_string(),
+                    Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+                ),
+                ("label".to_string(), Value::Text(normalized_label.clone())),
+                ("normalizedLabel".to_string(), Value::Text(normalized_label)),
+            ]),
+            ..Default::default()
+        }
+        .into();
+
+        self.contest_fund_to_join(domain_document_type, &domain)
             .await
     }
 
@@ -749,8 +818,10 @@ mod vote_polls_by_end_date_paging_tests {
 mod tests {
     use super::*;
     use crate::error::StaleNodeError;
+    use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
     use dpp::block::block_info::BlockInfo;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::PlatformVersion;
     use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
@@ -1513,5 +1584,96 @@ mod tests {
             .await
             .expect("expected the best-effort read to answer");
         assert!(contests.is_empty());
+    }
+
+    /// Answers the fetch of the DPNS contract the network stores, and the refresh that fetch
+    /// makes first
+    async fn expect_network_dpns(sdk: &mut Sdk) {
+        expect_epoch_refresh(sdk).await;
+        let stored = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("expected the DPNS contract to load");
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored))
+            .await
+            .expect("expected to register the DPNS contract");
+    }
+
+    /// The contest fund of the protocol version `sdk` holds, before any doubling
+    fn contest_fund(sdk: &Sdk) -> Credits {
+        sdk.version()
+            .fee_version
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount
+    }
+
+    /// A full name in any case addresses the contest of its normalized label (`Alice.DASH` is
+    /// `a11ce`), and a contest nobody doubled yet costs the contest's fund
+    #[tokio::test]
+    async fn should_read_the_fund_to_join_a_contested_dpns_name() {
+        let mut sdk = mock_sdk();
+        expect_network_dpns(&mut sdk).await;
+        expect_contenders_page(&mut sdk, "a11ce", None, &contenders(0, 3)).await;
+
+        let fund = sdk
+            .dpns_contest_fund_to_join("Alice.DASH")
+            .await
+            .expect("expected to read the fund to join");
+
+        assert_eq!(fund, Some(contest_fund(&sdk)));
+    }
+
+    /// A contest of 250 contenders, read page by page, costs twice the contest's fund
+    #[tokio::test]
+    async fn should_read_the_doubled_fund_to_join_a_dpns_contest_of_250_contenders() {
+        let mut sdk = mock_sdk();
+        expect_network_dpns(&mut sdk).await;
+        expect_contenders_page(&mut sdk, "a11ce", None, &contenders(0, 100)).await;
+        expect_contenders_page(
+            &mut sdk,
+            "a11ce",
+            Some(contender(99)),
+            &contenders(100, 200),
+        )
+        .await;
+        expect_contenders_page(
+            &mut sdk,
+            "a11ce",
+            Some(contender(199)),
+            &contenders(200, 250),
+        )
+        .await;
+
+        let fund = sdk
+            .dpns_contest_fund_to_join("alice")
+            .await
+            .expect("expected to read the fund to join");
+
+        assert_eq!(fund, Some(2 * contest_fund(&sdk)));
+    }
+
+    /// A name of 20 characters, or with a digit other than 0 and 1, is not contested: its
+    /// contest is not read (no expectation answers it), and an empty name reads nothing at all
+    #[tokio::test]
+    async fn should_read_no_fund_to_join_for_a_dpns_name_that_joins_no_contest() {
+        let mut sdk = mock_sdk();
+        expect_network_dpns(&mut sdk).await;
+        for name in ["quantumexplorerdashx", "quantum2.dash"] {
+            assert_eq!(
+                sdk.dpns_contest_fund_to_join(name)
+                    .await
+                    .expect("expected no contest to be read"),
+                None
+            );
+        }
+
+        let sdk = mock_sdk();
+        for name in ["", ".dash", ".DASH"] {
+            assert_eq!(
+                sdk.dpns_contest_fund_to_join(name)
+                    .await
+                    .expect("expected nothing to be read"),
+                None
+            );
+        }
     }
 }

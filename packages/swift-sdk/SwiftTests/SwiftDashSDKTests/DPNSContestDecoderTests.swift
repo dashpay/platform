@@ -418,4 +418,27 @@ final class DPNSContestDecoderTests: XCTestCase {
     XCTAssertEqual(ContestedIndexValue.bytes(Data([0xFA, 0xCE, 0x00, 0x01])), "0xface0001")
     XCTAssertEqual(ContestedIndexValue.bytes(Data()), "0x")
   }
+
+  // MARK: - Contest fund to join
+
+  /// The payloads `rs-sdk-ffi`'s `dpns/queries/contest_fund.rs` emits.
+  func testShouldDecodeTheContestFundToJoinInCredits() throws {
+    XCTAssertEqual(
+      try SDK.decodeContestFundToJoin(json: #"{"contestFund":10000000000}"#),
+      10_000_000_000)
+    // Credits are a u64: a doubled fund must not pass through a Double.
+    XCTAssertEqual(
+      try SDK.decodeContestFundToJoin(json: #"{"contestFund":18446744073709551615}"#),
+      UInt64.max)
+  }
+
+  func testShouldDecodeANullContestFundAsNoContest() throws {
+    XCTAssertNil(try SDK.decodeContestFundToJoin(json: #"{"contestFund":null}"#))
+  }
+
+  func testShouldRefuseAContestFundPayloadThatIsNotTheExpectedObject() {
+    for json in ["{}", "not json", #"{"contestFund":"10"}"#, #"{"contestFund":-1}"#] {
+      XCTAssertThrowsError(try SDK.decodeContestFundToJoin(json: json), json)
+    }
+  }
 }

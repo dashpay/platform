@@ -29,6 +29,27 @@ struct RegisterNameView: View {
   @State private var availabilityGate = AvailabilityRequestGate()
   @State private var isRegistering = false
   @State private var registrationSuccess = false
+  @State private var contestFund = ContestFundState.idle
+  /// The normalized name `contestFund` was read for.
+  @State private var contestFundName = ""
+  /// Raised to read the fund of the same name again.
+  @State private var contestFundReadCount = 0
+
+  /// What a read of the contest fund is keyed by: the name, and how many
+  /// times its fund was asked for again.
+  private struct ContestFundRead: Hashable {
+    let name: String
+    let count: Int
+  }
+
+  /// The read of what joining the typed name's contest costs now.
+  private enum ContestFundState: Equatable {
+    case idle
+    case loading
+    /// The fund in credits; `nil` when Platform says the name joins no contest.
+    case loaded(UInt64?)
+    case failed(String)
+  }
 
   private var normalizedUsername: String {
     // Use the FFI function to normalize the username
@@ -154,6 +175,50 @@ struct RegisterNameView: View {
       let result = dash_sdk_dpns_is_contested_username(namePtr)
       return result == 1
     }
+  }
+
+  /// Reads the fund to join the contest of `name` from Platform
+  /// (`SDK.dpnsContestFundToJoin`), after a short pause so a name still
+  /// being typed is not read letter by letter.
+  private func loadContestFund(for name: String) async {
+    contestFund = .loading
+    contestFundName = name
+    guard let sdk = appState.sdk else {
+      contestFund = .failed("SDK not initialized")
+      return
+    }
+    do {
+      try await Task.sleep(nanoseconds: 500_000_000)
+      let credits = try await sdk.dpnsContestFundToJoin(name: name)
+      guard !Task.isCancelled else { return }
+      contestFund = .loaded(credits)
+    } catch is CancellationError {
+      return
+    } catch {
+      guard !Task.isCancelled else { return }
+      contestFund = .failed(error.localizedDescription)
+    }
+  }
+
+  /// The fund shown for the name now typed, which a registration states as
+  /// the most it pays into the contest (`maxContestFund`): what is paid never
+  /// exceeds what the form shows. `nil` while no fund is shown for this name.
+  private var shownContestFund: UInt64? {
+    guard contestFundName == normalizedUsername, case .loaded(let credits?) = contestFund else {
+      return nil
+    }
+    return credits
+  }
+
+  /// A contested name is not registered before its fund is shown: without a
+  /// stated maximum Rust would pay whatever the contest costs at signing.
+  private var isWaitingForContestFund: Bool {
+    isContested && shownContestFund == nil
+  }
+
+  /// 1 DASH is 100,000,000,000 credits.
+  private static func formatDash(credits: UInt64) -> String {
+    String(format: "%.4f DASH", Double(credits) / 100_000_000_000)
   }
 
   var body: some View {
@@ -291,6 +356,37 @@ struct RegisterNameView: View {
               }
             }
             .padding(.vertical, 4)
+
+            HStack {
+              Text("Fund to join")
+              Spacer()
+              switch contestFund {
+              case .idle, .loading:
+                ProgressView()
+              case .loaded(let credits?):
+                VStack(alignment: .trailing, spacing: 2) {
+                  Text(Self.formatDash(credits: credits))
+                  Text("\(credits) credits")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+              case .loaded(nil):
+                Text("None")
+                  .foregroundColor(.secondary)
+              case .failed(let message):
+                Text(message)
+                  .font(.caption)
+                  .foregroundColor(.red)
+                  .multilineTextAlignment(.trailing)
+              }
+            }
+            .accessibilityIdentifier("dpnsContestFundToJoin")
+          }
+          // Re-read whenever the contested name changes, or a registration
+          // failed; a read for a name the user has typed past is cancelled
+          // and its result dropped.
+          .task(id: ContestFundRead(name: normalizedUsername, count: contestFundReadCount)) {
+            await loadContestFund(for: normalizedUsername)
           }
         }
 
@@ -313,7 +409,8 @@ struct RegisterNameView: View {
             .background(isValidUsername && isAvailable == true && !isRegistering ? Color.blue : Color.gray)
             .cornerRadius(10)
           }
-          .disabled(!isValidUsername || isAvailable != true || isRegistering)
+          .disabled(
+            !isValidUsername || isAvailable != true || isRegistering || isWaitingForContestFund)
           .listRowInsets(EdgeInsets())
           .listRowBackground(Color.clear)
         }
@@ -423,6 +520,16 @@ struct RegisterNameView: View {
     // subsequent display.
     let displayLabel = username.trimmingCharacters(in: .whitespacesAndNewlines)
 
+    // The most the registration pays into its contest is the fund the form
+    // shows. If the contest grew past it meanwhile, Platform refuses the
+    // registration instead of charging more, and the form reads the fund again.
+    let maxContestFund = isContested ? shownContestFund : nil
+    guard !isWaitingForContestFund else {
+      errorMessage = "The fund to join this name's contest is not known yet"
+      showingError = true
+      return
+    }
+
     isRegistering = true
 
     Task {
@@ -430,7 +537,8 @@ struct RegisterNameView: View {
         let registeredName = try await wallet.registerDpnsName(
           identityId: identity.identityId,
           name: displayLabel,
-          signer: signer
+          signer: signer,
+          maxContestFund: maxContestFund
         )
 
         await MainActor.run {
@@ -470,6 +578,11 @@ struct RegisterNameView: View {
           errorMessage = "Registration failed: \(error.localizedDescription)"
           showingError = true
           isRegistering = false
+          // The contest may have grown past the fund this attempt stated,
+          // which Platform refuses for a fee. Drop the shown fund and read
+          // it again, so another attempt states a fund the user has seen.
+          contestFund = .loading
+          contestFundReadCount += 1
         }
       }
     }

@@ -39,6 +39,7 @@
     "dash_sdk_contract_moderation_get_team_actions": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_decision_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/transitions.rs",
+    "dash_sdk_dpns_get_contest_fund_to_join": "packages/rs-sdk-ffi/src/dpns/queries/contest_fund.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_masternode_voting_address_from_private_key": "packages/rs-sdk-ffi/src/voting/masternode_vote.rs",
     "dash_sdk_masternode_check_voting_key": "packages/rs-sdk-ffi/src/voting/voting_key_check.rs",
@@ -1342,6 +1343,94 @@
           "file": "packages/rs-platform-wallet/src/manager/accessors.rs",
           "id": "spv_rescan_only_rewinds_known_wallets",
           "command": "cargo test -p platform-wallet spv_rescan_only_rewinds_known_wallets",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dpns.contest_fund_to_join",
+      "title": "Read the fund a registration pays to join a DPNS name's contest",
+      "area": "shared_policy",
+      "shared_apis": [
+        "dash_sdk_dpns_get_contest_fund_to_join"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "The JNI does not bridge dash_sdk_dpns_get_contest_fund_to_join: Android can state a maxContestFund on a registration but cannot read the fund to join beforehand. Bridge it when an Android caller shows the cost of a contested name."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/dpns_usernames/contested_queries.rs",
+          "id": "should_read_the_fund_to_join_a_contested_dpns_name",
+          "command": "cargo test -p dash-sdk --features mocks --lib fund_to_join",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/dpns_usernames/contested_queries.rs",
+          "id": "should_read_the_doubled_fund_to_join_a_dpns_contest_of_250_contenders",
+          "command": "cargo test -p dash-sdk --features mocks --lib fund_to_join",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/dpns_usernames/contested_queries.rs",
+          "id": "should_read_no_fund_to_join_for_a_dpns_name_that_joins_no_contest",
+          "command": "cargo test -p dash-sdk --features mocks --lib fund_to_join",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/dpns/queries/contest_fund.rs",
+          "id": "should_refuse_a_null_sdk_handle_or_name_before_any_request",
+          "command": "cargo test -p rs-sdk-ffi --lib contest_fund",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/dpns/queries/contest_fund.rs",
+          "id": "should_return_a_null_fund_for_a_name_that_joins_no_contest",
+          "command": "cargo test -p rs-sdk-ffi --lib contest_fund",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DPNSContestDecoderTests.swift",
+          "id": "testShouldDecodeTheContestFundToJoinInCredits",
+          "command": "swift test --package-path packages/swift-sdk --filter DPNSContestDecoderTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DPNSContestDecoderTests.swift",
+          "id": "testShouldRefuseAContestFundPayloadThatIsNotTheExpectedObject",
+          "command": "swift test --package-path packages/swift-sdk --filter DPNSContestDecoderTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-14",
           "covers_restart": false
         }
       ]
