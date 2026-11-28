@@ -1,15 +1,16 @@
 // WithdrawPlatformAddressView.swift
 // SwiftExampleApp
 //
-// Production (wallet-signed) UI for ADDR-04: withdraw a Platform
-// payment account's credits back to a Core L1 address. Mirrors
+// Production (wallet-signed) UI for ADDR-04 and ADDR-05: withdraw a
+// Platform payment account's credits back to a Core L1 address. Mirrors
 // `FundFromAssetLockPlatformAddressView`'s shape and drives
-// `ManagedPlatformAddressWallet.withdraw(accountIndex:coreAddress:
-// coreFeePerByte:signer:)` with a `KeychainSigner`.
+// `ManagedPlatformAddressWallet.withdraw(...)` with a `KeychainSigner`.
 //
-// Withdrawals consume the FULL funded balance of the account (no
-// per-address amount, no change output), so this view shows the
-// computed total rather than an amount field. The Core destination
+// With the amount field empty the FULL funded balance of the account is
+// withdrawn (ADDR-04). With an amount entered, exactly that amount is
+// withdrawn and Rust chooses the addresses to draw from (ADDR-05); the
+// fee, the number of addresses and the allowed range shown here all come
+// from the Rust preflight. The Core destination
 // can be one of the wallet's own receive addresses ("My Wallet") or a
 // pasted/scanned external address; the address is network-checked on
 // the Rust side. No private keys are entered here — contrast with the
@@ -39,6 +40,8 @@ struct WithdrawPlatformAddressView: View {
     }
 
     @State private var sourceAccountIndex: UInt32? = nil
+    /// Amount to withdraw, in DASH. Empty means the full balance.
+    @State private var amountDash: String = ""
     @State private var destinationMode: DestinationMode = .myWallet
     /// Core L1 address derived from this wallet's Core receive pool
     /// (mode == .myWallet). Resolved lazily in `resolveMyWalletAddress`.
@@ -153,6 +156,7 @@ struct WithdrawPlatformAddressView: View {
                 } else {
                     walletSection
                     sourceAccountSection
+                    amountSection
                     destinationSection
                     feeSection
                     summarySection
@@ -198,6 +202,11 @@ struct WithdrawPlatformAddressView: View {
             }
             .onChange(of: coreFeePerByte) { _, _ in
                 recomputePreflight()
+            }
+            .onChange(of: amountDash) { _, _ in
+                // Typing changes the amount once per key; wait for it to
+                // settle so each keystroke is not its own proof query.
+                recomputePreflight(afterTypingSettles: true)
             }
             .onDisappear {
                 // Tear down any in-flight preflight when the sheet closes so a
@@ -267,7 +276,42 @@ struct WithdrawPlatformAddressView: View {
         } header: {
             Text("Source Account")
         } footer: {
-            Text("The full credit balance of this account is withdrawn — there is no partial amount.")
+            Text("Credits are withdrawn from this account's addresses.")
+        }
+    }
+
+    @ViewBuilder
+    private var amountSection: some View {
+        Section {
+            HStack {
+                TextField("Full balance", text: $amountDash)
+                    .keyboardType(.decimalPad)
+                    .disabled(isSubmitting)
+                    .accessibilityIdentifier("withdrawPlatform.amountField")
+                Text("DASH")
+                    .foregroundColor(.secondary)
+                // The largest amount Rust reported for this account and fee
+                // rate. An empty field stays the separate full-balance
+                // withdrawal, which spends every address.
+                Button("Max") {
+                    if let maximum = preflight?.maxWithdrawable {
+                        amountDash = KeyLimitsFormatting.dashNumber(maximum)
+                    }
+                }
+                    .buttonStyle(.borderless)
+                    .disabled(isSubmitting || preflight?.maxWithdrawable == nil)
+                    .accessibilityIdentifier("withdrawPlatform.maxButton")
+            }
+            if case .invalid = amountInput {
+                Text("Enter an amount in DASH, or leave the field empty.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("withdrawPlatform.amountInvalid")
+            }
+        } header: {
+            Text("Amount")
+        } footer: {
+            Text("Leave empty, or tap Max, to withdraw the full balance. With an amount, the wallet chooses which addresses to draw from.")
         }
     }
 
@@ -376,6 +420,16 @@ struct WithdrawPlatformAddressView: View {
                         .fontWeight(.semibold)
                         .accessibilityIdentifier("withdrawPlatform.netWithdrawable")
                 }
+                if let inputCount = preflight.inputCount {
+                    HStack {
+                        Label("Addresses Used", systemImage: "number")
+                        Spacer()
+                        Text("\(inputCount)")
+                            .foregroundColor(.secondary)
+                            .accessibilityIdentifier("withdrawPlatform.inputCount")
+                    }
+                }
+                amountRangeRows(preflight)
             } else if sourceAccountIndex != nil, let reason = cantWithdrawReason {
                 // A resolved preflight that can't fund (or couldn't confirm):
                 // explain why and keep submit disabled. (`cantWithdrawReason` is
@@ -385,11 +439,41 @@ struct WithdrawPlatformAddressView: View {
                     .font(.callout)
                     .foregroundColor(.orange)
                     .accessibilityIdentifier("withdrawPlatform.cantWithdrawReason")
+                if let preflight {
+                    amountRangeRows(preflight)
+                }
             }
         } header: {
             Text("Summary")
         } footer: {
             Text("The platform-side fee is deducted from these inputs. The remaining balance is converted to Core duffs and paid out on L1 (minus the L1 fee).")
+        }
+    }
+
+    /// The range Rust reported for a requested amount, at full credit
+    /// precision so the text shown can be typed back into the field. Shown
+    /// only when the amount preflight reported it.
+    @ViewBuilder
+    private func amountRangeRows(
+        _ preflight: ManagedPlatformAddressWallet.WithdrawalPreflight
+    ) -> some View {
+        if let minimum = preflight.minWithdrawable {
+            HStack {
+                Label("Minimum", systemImage: "arrow.down.to.line")
+                Spacer()
+                Text(formatCreditsAsDash(minimum))
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("withdrawPlatform.minWithdrawable")
+            }
+        }
+        if let maximum = preflight.maxWithdrawable {
+            HStack {
+                Label("Maximum", systemImage: "arrow.up.to.line")
+                Spacer()
+                Text(formatCreditsAsDash(maximum))
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("withdrawPlatform.maxWithdrawable")
+            }
         }
     }
 
@@ -502,6 +586,29 @@ struct WithdrawPlatformAddressView: View {
     /// unchanged and stay robust if the binding is ever widened.
     private var parsedFeePerByte: UInt32? {
         Self.validFeeRates.contains(coreFeePerByte) ? coreFeePerByte : nil
+    }
+
+    /// What the amount field asks for.
+    private enum AmountInput: Equatable {
+        /// Empty field: withdraw the full balance.
+        case fullBalance
+        /// Exactly this many credits.
+        case credits(UInt64)
+        /// Not a positive DASH amount.
+        case invalid
+    }
+
+    /// Exact decimal → credits conversion of the amount field, without
+    /// passing through `Double`; "." and the locale's decimal separator are
+    /// both read. Whether the amount can be withdrawn is Rust's call (the
+    /// preflight).
+    private var amountInput: AmountInput {
+        let raw = amountDash.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return .fullBalance }
+        guard let credits = KeyLimitsFormatting.credits(fromDash: raw), credits > 0 else {
+            return .invalid
+        }
+        return .credits(credits)
     }
 
     /// Resolved Core destination address for the current mode.
@@ -648,7 +755,7 @@ struct WithdrawPlatformAddressView: View {
     /// a guess. Both "can't fund" and a transient "can't confirm right now"
     /// (network/proof failure) are normal non-throwing results with
     /// `canWithdraw == false` and a `reason`.
-    private func recomputePreflight() {
+    private func recomputePreflight(afterTypingSettles: Bool = false) {
         // Cancel any in-flight query so its result can't land after ours.
         preflightTask?.cancel()
 
@@ -665,15 +772,28 @@ struct WithdrawPlatformAddressView: View {
             return
         }
 
+        let amount = amountInput
+        if amount == .invalid {
+            // Nothing to ask Rust about; the amount section says why.
+            preflightTask = nil
+            isCheckingPreflight = false
+            preflight = nil
+            return
+        }
+
         let fee = coreFeePerByte
         isCheckingPreflight = true
         preflightTask = Task { @MainActor in
+            if afterTypingSettles {
+                // The next keystroke cancels this task during the wait.
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled else { return }
+            }
             let result: ManagedPlatformAddressWallet.WithdrawalPreflight?
             do {
                 let addressWallet = try managedHolder.platformAddressWallet()
-                result = try await addressWallet.preflightWithdrawal(
-                    accountIndex: idx,
-                    coreFeePerByte: fee
+                result = try await Self.runPreflight(
+                    addressWallet, accountIndex: idx, amount: amount, coreFeePerByte: fee
                 )
             } catch {
                 // Structural failure (bad handle / missing account): leave
@@ -688,6 +808,27 @@ struct WithdrawPlatformAddressView: View {
             preflight = result
             isCheckingPreflight = false
         }
+    }
+
+    /// The Rust preflight for what the amount field asks for: the full
+    /// balance, or a requested amount.
+    private static func runPreflight(
+        _ addressWallet: ManagedPlatformAddressWallet,
+        accountIndex: UInt32,
+        amount: AmountInput,
+        coreFeePerByte: UInt32
+    ) async throws -> ManagedPlatformAddressWallet.WithdrawalPreflight {
+        if case .credits(let credits) = amount {
+            return try await addressWallet.preflightWithdrawal(
+                accountIndex: accountIndex,
+                amountCredits: credits,
+                coreFeePerByte: coreFeePerByte
+            )
+        }
+        return try await addressWallet.preflightWithdrawal(
+            accountIndex: accountIndex,
+            coreFeePerByte: coreFeePerByte
+        )
     }
 
     /// Resolve a Core receive address for the "My Wallet" destination and
@@ -723,6 +864,8 @@ struct WithdrawPlatformAddressView: View {
             let feePerByte = parsedFeePerByte,
             let coreAddress = resolvedCoreAddress
         else { return }
+        let amount = amountInput
+        guard amount != .invalid else { return }
 
         let managedHolder = walletManager.wallet(for: wallet.walletId)
         guard let managedHolder else {
@@ -746,14 +889,15 @@ struct WithdrawPlatformAddressView: View {
                 // Consent guard: the figures on this sheet come from the
                 // last `preflight`, but balances can change while the sheet
                 // is open (the background address sync), and `withdraw`
-                // below re-plans against CURRENT balances with full-balance
-                // semantics. Re-run the same Rust preflight now and require
+                // below re-plans against CURRENT balances. Re-run the same Rust preflight now and require
                 // it to match what the user confirmed; on drift, refresh
                 // the display and block instead of withdrawing an amount
                 // the user never saw.
                 let confirmed = preflight
-                let latest = try await addressWallet.preflightWithdrawal(
+                let latest = try await Self.runPreflight(
+                    addressWallet,
                     accountIndex: sourceAccount,
+                    amount: amount,
                     coreFeePerByte: feePerByte
                 )
                 guard let confirmed,
@@ -768,12 +912,23 @@ struct WithdrawPlatformAddressView: View {
                     )
                     return
                 }
-                let updated = try await addressWallet.withdraw(
-                    accountIndex: sourceAccount,
-                    coreAddress: coreAddress,
-                    coreFeePerByte: feePerByte,
-                    signer: signer
-                )
+                let updated: [ManagedPlatformAddressWallet.UpdatedBalance]
+                if case .credits(let credits) = amount {
+                    updated = try await addressWallet.withdraw(
+                        accountIndex: sourceAccount,
+                        coreAddress: coreAddress,
+                        amountCredits: credits,
+                        coreFeePerByte: feePerByte,
+                        signer: signer
+                    )
+                } else {
+                    updated = try await addressWallet.withdraw(
+                        accountIndex: sourceAccount,
+                        coreAddress: coreAddress,
+                        coreFeePerByte: feePerByte,
+                        signer: signer
+                    )
+                }
                 // The withdrawal has ALREADY succeeded on-chain here.
                 // Persist the drained balances Rust just reported BEFORE
                 // the resync so SwiftData stops showing the consumed

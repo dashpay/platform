@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
@@ -10,7 +11,7 @@ use dpp::state_transition::address_credit_withdrawal_transition::{
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{min_withdrawal_amount_with_core_fee, Pooling};
 
-use super::InputSelection;
+use super::{checked_sum_credits, InputSelection};
 use crate::error::promote_address_nonce_error_or_sdk;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
@@ -67,6 +68,13 @@ pub struct WithdrawalPlan {
     /// fee-source input, sized from the selected input count (no change
     /// output) and the active platform version's fee schedule.
     pub estimated_fee: Credits,
+    /// The smallest amount a withdrawal may carry at the chosen Core fee
+    /// rate (see `min_withdrawal_amount_for`).
+    pub min_withdrawable: Credits,
+    /// The largest amount this account can withdraw in one transition. For a
+    /// plan of everything it equals `net_withdrawable`; for a plan of a
+    /// requested amount it is the ceiling that amount was checked against.
+    pub max_withdrawable: Credits,
 }
 
 impl PlatformAddressWallet {
@@ -159,7 +167,13 @@ impl PlatformAddressWallet {
                     .await
                     .map_err(promote_address_nonce_error_or_sdk)?
             }
-            InputSelection::Auto => {
+            selection @ (InputSelection::Auto | InputSelection::AutoForAmount(_)) => {
+                // `Auto` withdraws everything; `AutoForAmount` withdraws the
+                // amount it carries. Both run the same planner.
+                let amount = match selection {
+                    InputSelection::AutoForAmount(amount) => Some(amount),
+                    _ => None,
+                };
                 // The AUTO path owns its own fee strategy: it picks the
                 // fee-source input by balance (largest selected input) and
                 // emits the matching `DeductFromInput(index)`, ignoring the
@@ -177,7 +191,7 @@ impl PlatformAddressWallet {
                 // the preflight gate and this spend path can never disagree
                 // about whether — or for how much — the account can withdraw.
                 let plan = self
-                    .plan_withdrawal(account_index, core_fee_per_byte, version)
+                    .plan_withdrawal(account_index, amount, core_fee_per_byte, version)
                     .await?;
                 self.sdk
                     .withdraw_address_funds(
@@ -240,7 +254,26 @@ impl PlatformAddressWallet {
         core_fee_per_byte: u32,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
         let version = self.sdk.version();
-        self.plan_withdrawal(account_index, core_fee_per_byte, version)
+        self.plan_withdrawal(account_index, None, core_fee_per_byte, version)
+            .await
+    }
+
+    /// Plan a withdrawal of exactly `amount` credits from `account_index`
+    /// ([`InputSelection::AutoForAmount`]), without signing or broadcasting.
+    ///
+    /// The amount counterpart of
+    /// [`preflight_withdrawal`](Self::preflight_withdrawal): same balance
+    /// read, same planner the spend runs. An amount the account cannot meet
+    /// comes back as [`PlatformWalletError::WithdrawalAmountOutOfRange`],
+    /// which carries the smallest and largest amount that would work.
+    pub async fn preflight_withdrawal_amount(
+        &self,
+        account_index: u32,
+        amount: Credits,
+        core_fee_per_byte: u32,
+    ) -> Result<WithdrawalPlan, PlatformWalletError> {
+        let version = self.sdk.version();
+        self.plan_withdrawal(account_index, Some(amount), core_fee_per_byte, version)
             .await
     }
 
@@ -307,9 +340,14 @@ impl PlatformAddressWallet {
     /// owns this strategy because only it knows the final BTreeMap ordering of
     /// the auto-selected inputs (and therefore which `DeductFromInput(index)`
     /// resolves to the largest input).
+    ///
+    /// With `amount: Some(credits)` the same candidates feed
+    /// [`plan_withdrawal_of_amount`] instead, which draws exactly that amount
+    /// from as few addresses as possible.
     pub(crate) async fn plan_withdrawal(
         &self,
         account_index: u32,
+        amount: Option<Credits>,
         core_fee_per_byte: u32,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
@@ -348,7 +386,16 @@ impl PlatformAddressWallet {
 
         let selected = select_withdrawable_inputs(funded, platform_version)?;
 
-        reserve_withdrawal_fee_on_largest_input(selected, core_fee_per_byte, platform_version)
+        match amount {
+            None => reserve_withdrawal_fee_on_largest_input(
+                selected,
+                core_fee_per_byte,
+                platform_version,
+            ),
+            Some(amount) => {
+                plan_withdrawal_of_amount(selected, amount, core_fee_per_byte, platform_version)
+            }
+        }
     }
 }
 
@@ -572,6 +619,17 @@ fn reserve_withdrawal_fee_on_largest_input(
         )));
     }
 
+    // The account ceiling, computed as the amount planner computes it, so
+    // both plans report the same figure. It can exceed `withdraw_total`: an
+    // address holding less than one input adds to the fee lowers the sweep.
+    let max_withdrawable = withdrawal_ceiling(
+        &reachable_input_counts(
+            &largest_first(selected.clone(), platform_version),
+            platform_version,
+        ),
+        platform_version,
+    );
+
     let fee_source_amount = fee_source_balance.saturating_sub(estimated_fee);
     if fee_source_amount < min_input_amount {
         // The largest input cannot absorb the fee while staying above the
@@ -604,6 +662,8 @@ fn reserve_withdrawal_fee_on_largest_input(
     )];
 
     Ok(WithdrawalPlan {
+        min_withdrawable: min_withdrawal_amount,
+        max_withdrawable,
         inputs: selected,
         fee_strategy,
         // `withdraw_total = accumulated − estimated_fee` is the net amount the
@@ -612,6 +672,217 @@ fn reserve_withdrawal_fee_on_largest_input(
         // `min_withdrawal_amount`, so it is the figure a UI should display.
         net_withdrawable: withdraw_total,
         estimated_fee,
+    })
+}
+
+/// Plan a withdrawal of exactly `amount` credits from `withdrawable`, the
+/// account's addresses that clear `min_input_amount` mapped to their full
+/// on-chain balance (the output of [`select_withdrawable_inputs`]).
+///
+/// `amount` is what leaves Platform: the sum of the planned inputs. The
+/// transition fee is paid on top of it, out of what stays on the largest
+/// chosen address.
+///
+/// Selection:
+/// 1. Order the addresses largest balance first and keep at most
+///    `max_address_inputs` of them, the most one transition may spend.
+/// 2. Take addresses from the top until their balances cover `amount` plus the
+///    fee for that many inputs. Fewer inputs means a lower fee.
+/// 3. Every chosen address except the largest gives its whole balance. The
+///    largest gives the rest of `amount` and keeps what is left over, which is
+///    at least the fee.
+/// 4. If that would have the largest give less than `min_input_amount`, it
+///    gives exactly the minimum and the difference stays on the smallest
+///    chosen addresses instead, each still giving at least the minimum.
+///
+/// An amount below the protocol minimum at `core_fee_per_byte`, or above what
+/// the addresses can cover, is refused with
+/// [`PlatformWalletError::WithdrawalAmountOutOfRange`] carrying both bounds.
+/// The addresses of `withdrawable` a single withdrawal may spend, largest
+/// balance first: at most `max_address_inputs` of them. The sort is stable and
+/// the map iterates in address order, so equal balances keep a deterministic
+/// order.
+fn largest_first(
+    withdrawable: BTreeMap<PlatformAddress, Credits>,
+    platform_version: &PlatformVersion,
+) -> Vec<(PlatformAddress, Credits)> {
+    let max_address_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+    let mut candidates: Vec<(PlatformAddress, Credits)> = withdrawable.into_iter().collect();
+    candidates.sort_by_key(|candidate| Reverse(candidate.1));
+    candidates.truncate(max_address_inputs);
+    candidates
+}
+
+/// For each count of inputs taken from the top of `candidates` (largest
+/// first): the count, their balances summed, and the fee a transition with
+/// that many inputs pays. A count is listed only when the largest address can
+/// hold that fee back and still give `min_input_amount`.
+fn reachable_input_counts(
+    candidates: &[(PlatformAddress, Credits)],
+    platform_version: &PlatformVersion,
+) -> Vec<(usize, Credits, Credits)> {
+    let min_input_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_input_amount;
+    let fee_source_balance = candidates.first().map_or(0, |candidate| candidate.1);
+
+    let mut covered: Credits = 0;
+    let mut reachable = Vec::with_capacity(candidates.len());
+    for (index, (_, balance)) in candidates.iter().enumerate() {
+        covered = covered.saturating_add(*balance);
+        let input_count = index + 1;
+        let fee = AddressCreditWithdrawalTransition::estimate_min_fee(
+            input_count,
+            false,
+            platform_version,
+        );
+        if fee_source_balance.saturating_sub(fee) >= min_input_amount {
+            reachable.push((input_count, covered, fee));
+        }
+    }
+    reachable
+}
+
+/// The most an account can withdraw in one transition. An address holding
+/// less than one input adds to the fee can lower it, so this is the best
+/// count of [`reachable_input_counts`], not always the last one, and never
+/// more than `max_withdrawal_amount`.
+fn withdrawal_ceiling(
+    reachable: &[(usize, Credits, Credits)],
+    platform_version: &PlatformVersion,
+) -> Credits {
+    reachable
+        .iter()
+        .map(|(_, covered, fee)| covered.saturating_sub(*fee))
+        .max()
+        .unwrap_or(0)
+        .min(platform_version.system_limits.max_withdrawal_amount)
+}
+
+fn plan_withdrawal_of_amount(
+    withdrawable: BTreeMap<PlatformAddress, Credits>,
+    amount: Credits,
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Result<WithdrawalPlan, PlatformWalletError> {
+    let min_input_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_input_amount;
+    let min_withdrawable = min_withdrawal_amount_for(core_fee_per_byte, platform_version);
+
+    let candidates = largest_first(withdrawable, platform_version);
+
+    let Some(&(fee_source, fee_source_balance)) = candidates.first() else {
+        return Err(PlatformWalletError::AddressOperation(
+            "No funded addresses available for withdrawal".to_string(),
+        ));
+    };
+
+    let reachable = reachable_input_counts(&candidates, platform_version);
+    if reachable.is_empty() {
+        let fee = AddressCreditWithdrawalTransition::estimate_min_fee(1, false, platform_version);
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Cannot reserve the withdrawal fee: the largest address holds {} credits, and it \
+             must keep the fee of {} on top of giving at least {}. Consolidate funds onto one \
+             address before withdrawing.",
+            fee_source_balance, fee, min_input_amount
+        )));
+    }
+    let max_withdrawable = withdrawal_ceiling(&reachable, platform_version);
+
+    if max_withdrawable < min_withdrawable {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Insufficient balance for withdrawal: at most {} credits can be withdrawn after \
+             the fee, below the minimum withdrawal amount {}",
+            max_withdrawable, min_withdrawable
+        )));
+    }
+    if amount < min_withdrawable || amount > max_withdrawable {
+        return Err(PlatformWalletError::WithdrawalAmountOutOfRange {
+            requested: amount,
+            min: min_withdrawable,
+            max: max_withdrawable,
+        });
+    }
+
+    // The fewest inputs that cover the amount and the fee. `amount` is within
+    // the ceiling, so one of the reachable counts covers it.
+    let Some(&(input_count, covered, estimated_fee)) = reachable
+        .iter()
+        .find(|(_, covered, fee)| *covered >= amount.saturating_add(*fee))
+    else {
+        return Err(PlatformWalletError::WithdrawalAmountOutOfRange {
+            requested: amount,
+            min: min_withdrawable,
+            max: max_withdrawable,
+        });
+    };
+
+    // Start from every chosen address giving its whole balance, then leave
+    // `surplus` behind: on the largest address first, down to the per-input
+    // minimum, and the remainder on the smallest ones.
+    let mut inputs: BTreeMap<PlatformAddress, Credits> =
+        candidates.iter().take(input_count).copied().collect();
+    let mut surplus = covered.saturating_sub(amount);
+
+    let kept_on_fee_source = surplus.min(fee_source_balance.saturating_sub(min_input_amount));
+    inputs.insert(
+        fee_source,
+        fee_source_balance.saturating_sub(kept_on_fee_source),
+    );
+    surplus = surplus.saturating_sub(kept_on_fee_source);
+
+    for (address, balance) in candidates.iter().take(input_count).skip(1).rev() {
+        if surplus == 0 {
+            break;
+        }
+        let kept = surplus.min(balance.saturating_sub(min_input_amount));
+        inputs.insert(*address, balance.saturating_sub(kept));
+        surplus = surplus.saturating_sub(kept);
+    }
+
+    if surplus > 0 {
+        // Every chosen address is already down to the per-input minimum and
+        // together they still exceed the amount.
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Cannot withdraw {} credits from {} addresses: each must give at least {} \
+             credits. Consolidate funds onto fewer addresses, or withdraw a larger amount.",
+            amount, input_count, min_input_amount
+        )));
+    }
+
+    let planned = checked_sum_credits(inputs.values().copied())?;
+    if planned != amount || kept_on_fee_source < estimated_fee {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: planned {planned} credits for a withdrawal of \
+             {amount}, keeping {kept_on_fee_source} for a fee of {estimated_fee}"
+        )));
+    }
+
+    let fee_source_index = inputs
+        .keys()
+        .position(|address| *address == fee_source)
+        .and_then(|index| u16::try_from(index).ok())
+        .ok_or_else(|| {
+            PlatformWalletError::AddressOperation(
+                "Internal selection error: the fee-source address is not among the inputs"
+                    .to_string(),
+            )
+        })?;
+
+    Ok(WithdrawalPlan {
+        inputs,
+        fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(
+            fee_source_index,
+        )],
+        net_withdrawable: amount,
+        estimated_fee,
+        min_withdrawable,
+        max_withdrawable,
     })
 }
 
@@ -1476,7 +1747,7 @@ mod plan_withdrawal_seam_tests {
         // sized from the CHAIN (100M), not the doubled cache (200M).
         let pv = PlatformVersion::latest();
         let plan = wallet
-            .plan_withdrawal(ACCOUNT, 1, pv)
+            .plan_withdrawal(ACCOUNT, None, 1, pv)
             .await
             .expect("plan must succeed against the on-chain balances");
 
@@ -1612,7 +1883,7 @@ mod plan_withdrawal_seam_tests {
 
         let pv = PlatformVersion::latest();
         let plan = wallet
-            .plan_withdrawal(ACCOUNT, 1, pv)
+            .plan_withdrawal(ACCOUNT, None, 1, pv)
             .await
             .expect("plan must succeed from the hydrated balance map even with an empty pool");
 
@@ -1629,5 +1900,301 @@ mod plan_withdrawal_seam_tests {
             funded_balance - plan.estimated_fee,
             "the sole input is the fee source, planned at balance − estimated fee"
         );
+    }
+}
+
+/// The planner for a withdrawal of a requested amount, on balances chosen by
+/// hand. The on-chain balance read that feeds it is covered by
+/// `plan_withdrawal_seam_tests`.
+#[cfg(test)]
+mod amount_plan_tests {
+    use super::*;
+
+    /// One Dash in credits.
+    const DASH: Credits = 100_000_000_000;
+    const CORE_FEE_PER_BYTE: u32 = 1;
+
+    fn addr(first_byte: u8) -> PlatformAddress {
+        let mut bytes = [0u8; 20];
+        bytes[0] = first_byte;
+        PlatformAddress::P2pkh(bytes)
+    }
+
+    fn fee_for(input_count: usize) -> Credits {
+        AddressCreditWithdrawalTransition::estimate_min_fee(
+            input_count,
+            false,
+            PlatformVersion::latest(),
+        )
+    }
+
+    fn min_input_amount() -> Credits {
+        PlatformVersion::latest()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount
+    }
+
+    fn balances<const N: usize>(entries: [(u8, Credits); N]) -> BTreeMap<PlatformAddress, Credits> {
+        entries
+            .into_iter()
+            .map(|(byte, balance)| (addr(byte), balance))
+            .collect()
+    }
+
+    fn plan(
+        balances: &BTreeMap<PlatformAddress, Credits>,
+        amount: Credits,
+    ) -> Result<WithdrawalPlan, PlatformWalletError> {
+        plan_withdrawal_of_amount(
+            balances.clone(),
+            amount,
+            CORE_FEE_PER_BYTE,
+            PlatformVersion::latest(),
+        )
+    }
+
+    /// What the chain requires of any plan: the inputs add up to the amount,
+    /// each is at least the per-input minimum and at most the address holds,
+    /// there are no more than the protocol allows, and the address the fee
+    /// strategy points at keeps the fee.
+    fn assert_plan_is_valid(
+        plan: &WithdrawalPlan,
+        balances: &BTreeMap<PlatformAddress, Credits>,
+        amount: Credits,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        assert_eq!(plan.net_withdrawable, amount);
+        assert_eq!(plan.inputs.values().sum::<Credits>(), amount);
+        assert!(
+            plan.inputs.len() <= platform_version.dpp.state_transitions.max_address_inputs as usize
+        );
+        assert_eq!(plan.estimated_fee, fee_for(plan.inputs.len()));
+        for (address, planned) in &plan.inputs {
+            assert!(*planned >= min_input_amount(), "{address} gives {planned}");
+            assert!(*planned <= balances[address], "{address} gives {planned}");
+        }
+        let [AddressFundsFeeStrategyStep::DeductFromInput(index)] = plan.fee_strategy.as_slice()
+        else {
+            panic!(
+                "expected one DeductFromInput step, got {:?}",
+                plan.fee_strategy
+            );
+        };
+        let (fee_source, planned) = plan
+            .inputs
+            .iter()
+            .nth(*index as usize)
+            .expect("the fee strategy points at a planned input");
+        assert!(balances[fee_source] - planned >= plan.estimated_fee);
+        assert_eq!(
+            balances[fee_source],
+            *balances.values().max().expect("balances are not empty"),
+            "the fee comes from the largest address"
+        );
+    }
+
+    #[test]
+    fn should_draw_five_from_the_two_largest_of_four_three_and_one() {
+        // The largest address sorts last, so the fee strategy has to find it.
+        let balances = balances([(1, DASH), (2, 3 * DASH), (9, 4 * DASH)]);
+
+        let plan = plan(&balances, 5 * DASH).expect("4 + 3 covers 5 and the fee");
+
+        assert_eq!(
+            plan.inputs,
+            BTreeMap::from([(addr(2), 3 * DASH), (addr(9), 2 * DASH)])
+        );
+        assert_eq!(
+            plan.fee_strategy,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(1)]
+        );
+        assert_plan_is_valid(&plan, &balances, 5 * DASH);
+    }
+
+    #[test]
+    fn should_use_one_address_when_it_covers_the_amount() {
+        let balances = balances([(1, 4 * DASH), (2, 3 * DASH), (3, DASH)]);
+
+        let plan = plan(&balances, DASH).expect("the largest address covers 1");
+
+        assert_eq!(plan.inputs, BTreeMap::from([(addr(1), DASH)]));
+        assert_plan_is_valid(&plan, &balances, DASH);
+    }
+
+    #[test]
+    fn should_plan_the_ceiling_like_a_withdrawal_of_everything() {
+        let balances = balances([(1, 4 * DASH), (2, 3 * DASH), (3, DASH)]);
+        let everything = reserve_withdrawal_fee_on_largest_input(
+            balances.clone(),
+            CORE_FEE_PER_BYTE,
+            PlatformVersion::latest(),
+        )
+        .expect("the account can withdraw everything");
+
+        let plan = plan(&balances, everything.net_withdrawable).expect("the ceiling is reachable");
+
+        assert_eq!(plan.inputs, everything.inputs);
+        assert_eq!(plan.fee_strategy, everything.fee_strategy);
+        assert_eq!(plan.estimated_fee, everything.estimated_fee);
+        assert_eq!(plan.max_withdrawable, everything.net_withdrawable);
+        assert_eq!(plan.min_withdrawable, everything.min_withdrawable);
+    }
+
+    #[test]
+    fn should_refuse_an_amount_outside_the_range_with_both_bounds() {
+        let balances = balances([(1, 4 * DASH), (2, 3 * DASH), (3, DASH)]);
+        let min = min_withdrawal_amount_for(CORE_FEE_PER_BYTE, PlatformVersion::latest());
+        let max = 8 * DASH - fee_for(3);
+
+        for requested in [min - 1, max + 1] {
+            let err = plan(&balances, requested).expect_err("the amount is out of range");
+            assert!(
+                matches!(
+                    err,
+                    PlatformWalletError::WithdrawalAmountOutOfRange { requested: r, min: lo, max: hi }
+                        if r == requested && lo == min && hi == max
+                ),
+                "unexpected error for {requested}: {err:?}"
+            );
+        }
+        assert_plan_is_valid(&plan(&balances, min).expect("the minimum"), &balances, min);
+        assert_plan_is_valid(&plan(&balances, max).expect("the ceiling"), &balances, max);
+    }
+
+    #[test]
+    fn should_keep_the_largest_input_at_the_minimum_when_the_rest_of_the_amount_is_smaller() {
+        // Two equal addresses and an amount just over one of them: the rest of
+        // the amount is half the per-input minimum, too small to be an input.
+        let balances = balances([(1, DASH), (2, DASH)]);
+        let amount = DASH + min_input_amount() / 2;
+
+        let plan = plan(&balances, amount).expect("two addresses cover the amount");
+
+        assert_eq!(
+            plan.inputs,
+            BTreeMap::from([
+                (addr(1), min_input_amount()),
+                (addr(2), DASH - min_input_amount() / 2),
+            ])
+        );
+        assert_plan_is_valid(&plan, &balances, amount);
+    }
+
+    #[test]
+    fn should_use_no_more_addresses_than_one_transition_may_spend() {
+        let platform_version = PlatformVersion::latest();
+        let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+        let balances: BTreeMap<PlatformAddress, Credits> = (0..max_inputs as u8 + 4)
+            .map(|byte| (addr(byte), DASH))
+            .collect();
+        let max = max_inputs as Credits * DASH - fee_for(max_inputs);
+
+        let plan_at_max = plan(&balances, max).expect("the largest addresses cover the ceiling");
+        assert_eq!(plan_at_max.inputs.len(), max_inputs);
+        assert_plan_is_valid(&plan_at_max, &balances, max);
+
+        let err = plan(&balances, max + 1).expect_err("more would need another input");
+        assert!(matches!(
+            err,
+            PlatformWalletError::WithdrawalAmountOutOfRange { max: hi, .. } if hi == max
+        ));
+    }
+
+    #[test]
+    fn should_leave_out_an_address_that_adds_more_fee_than_it_holds() {
+        let small = min_input_amount();
+        assert!(
+            fee_for(2) - fee_for(1) > small,
+            "the test needs an input to cost more than the per-input minimum"
+        );
+        let balances = balances([(1, 4 * DASH), (2, small)]);
+        let max = 4 * DASH - fee_for(1);
+
+        let plan = plan(&balances, max).expect("the large address alone reaches the ceiling");
+
+        assert_eq!(plan.max_withdrawable, max);
+        assert_eq!(plan.inputs.len(), 1);
+        assert_plan_is_valid(&plan, &balances, max);
+    }
+
+    #[test]
+    fn should_report_the_same_ceiling_for_the_full_balance_as_for_an_amount() {
+        let small = min_input_amount();
+        assert!(
+            fee_for(2) - fee_for(1) > small,
+            "the test needs an input to cost more than the per-input minimum"
+        );
+        let balances = balances([(1, 4 * DASH), (2, small)]);
+        let ceiling = 4 * DASH - fee_for(1);
+
+        let everything = reserve_withdrawal_fee_on_largest_input(
+            balances.clone(),
+            CORE_FEE_PER_BYTE,
+            PlatformVersion::latest(),
+        )
+        .expect("the account can withdraw everything");
+        let amount = plan(&balances, ceiling).expect("the ceiling can be withdrawn");
+
+        // Withdrawing everything spends both addresses and nets less than
+        // the large one alone, but the ceiling it reports is the account's.
+        assert_eq!(everything.inputs.len(), 2);
+        assert_eq!(everything.net_withdrawable, 4 * DASH + small - fee_for(2));
+        assert_eq!(everything.max_withdrawable, ceiling);
+        assert_eq!(amount.max_withdrawable, ceiling);
+    }
+
+    #[test]
+    fn should_say_the_largest_address_cannot_hold_the_fee() {
+        // Together the two cover the fee, but neither can hold it back and
+        // still give the per-input minimum.
+        let each = fee_for(1) + min_input_amount() - 1;
+        let balances = balances([(1, each), (2, each)]);
+
+        let err = plan(&balances, min_input_amount()).expect_err("no address can hold the fee");
+
+        assert!(
+            matches!(&err, PlatformWalletError::AddressOperation(reason)
+                if reason.starts_with("Cannot reserve the withdrawal fee")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_report_insufficient_balance_when_no_amount_can_be_withdrawn() {
+        // The only address cannot hold the fee back and still give the minimum.
+        let balances = balances([(1, min_input_amount() + fee_for(1) - 1)]);
+
+        let err = plan(&balances, DASH).expect_err("nothing can be withdrawn");
+
+        assert!(
+            matches!(err, PlatformWalletError::AddressOperation(_)),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_cap_the_ceiling_at_the_largest_withdrawal_the_protocol_allows() {
+        let protocol_max = PlatformVersion::latest()
+            .system_limits
+            .max_withdrawal_amount;
+        let balances = balances([(1, protocol_max + 10 * DASH)]);
+
+        let plan = plan(&balances, protocol_max).expect("the protocol maximum is allowed");
+        assert_eq!(plan.max_withdrawable, protocol_max);
+        assert_plan_is_valid(&plan, &balances, protocol_max);
+
+        let err = plan_withdrawal_of_amount(
+            balances,
+            protocol_max + 1,
+            CORE_FEE_PER_BYTE,
+            PlatformVersion::latest(),
+        )
+        .expect_err("above the protocol maximum");
+        assert!(matches!(
+            err,
+            PlatformWalletError::WithdrawalAmountOutOfRange { max: hi, .. } if hi == protocol_max
+        ));
     }
 }

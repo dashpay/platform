@@ -732,6 +732,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A Platform-address withdrawal amount outside what the account can
+    /// withdraw keeps its own code and typed case, apart from the shielded
+    /// pool's range error (79).
+    func testShouldReportAPlatformAddressWithdrawalAmountOutOfRangeByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WITHDRAWAL_AMOUNT_OUT_OF_RANGE
+        )
+        XCTAssertEqual(code, .errorWithdrawalAmountOutOfRange)
+        XCTAssertEqual(code.rawValue, 89)
+        let detail = "Cannot withdraw 1 credits: the amount must be between 380000 and 700000000000 credits"
+        guard case .withdrawalAmountOutOfRange(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed withdrawal-amount-out-of-range error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     /// A network on a protocol version this SDK has no tables for keeps its
     /// own code and typed case, apart from a generic shielded build error, so
     /// a host can ask for an app update.

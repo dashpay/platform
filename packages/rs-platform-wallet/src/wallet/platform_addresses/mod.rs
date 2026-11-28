@@ -80,4 +80,20 @@ pub enum InputSelection {
     /// is below `min_input_amount`, and the generic
     /// [`PlatformWalletError::AddressOperation`] otherwise.
     Auto,
+    /// Withdraw exactly this many credits, with the wallet choosing the
+    /// input addresses. Withdrawal only: a transfer's amount is the sum of
+    /// its outputs, so [`PlatformAddressWallet::transfer`] refuses this
+    /// variant with [`PlatformWalletError::InvalidParameter`].
+    ///
+    /// The amount is what leaves Platform (the sum of the inputs), the same
+    /// figure [`WithdrawalPlan::net_withdrawable`] reports. Addresses below
+    /// `min_input_amount` are skipped, the rest are taken largest first until
+    /// they cover the amount plus the transition fee, and the fee is paid
+    /// from what stays on the largest address.
+    ///
+    /// # Errors
+    ///
+    /// [`PlatformWalletError::WithdrawalAmountOutOfRange`] when the amount is
+    /// below the protocol minimum or above what the account can withdraw.
+    AutoForAmount(Credits),
 }

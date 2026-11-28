@@ -406,6 +406,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// `errorWalletOperation`. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedMerkleWitnessUnavailable = 88
+    /// A withdrawal of a requested amount from Platform addresses asked for
+    /// less than the protocol minimum at its Core fee rate, or for more than
+    /// the account's addresses can withdraw in one transition. Refused while
+    /// the withdrawal was planned: nothing was signed or sent, and another
+    /// amount fits. The amount preflight reports the range.
+    case errorWithdrawalAmountOutOfRange = 89
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -587,6 +593,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBalanceBusy
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE:
             self = .errorShieldedMerkleWitnessUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WITHDRAWAL_AMOUNT_OUT_OF_RANGE:
+            self = .errorWithdrawalAmountOutOfRange
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -980,6 +988,12 @@ public enum PlatformWalletError: LocalizedError {
     /// diagnostic, which says how to get past it. Distinct from
     /// `shieldedSpendUnconfirmed`, which must NOT be retried.
     case shieldedMerkleWitnessUnavailable(String)
+    /// A withdrawal of a requested amount from Platform addresses is below
+    /// the protocol minimum or above what the account can withdraw (code 89).
+    /// Nothing was signed or sent. The message names the range;
+    /// `ManagedPlatformAddressWallet.preflightWithdrawal(accountIndex:
+    /// amountCredits:coreFeePerByte:)` reports it as numbers.
+    case withdrawalAmountOutOfRange(String)
     /// The cached Platform Payment-account input set cannot cover a shield's
     /// requested amount plus the fee reserve retained on input 0. Despite the
     /// retained public Swift/FFI name, this is not a shielded-pool balance
@@ -1205,6 +1219,7 @@ public enum PlatformWalletError: LocalizedError {
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedMerkleWitnessUnavailable(let m),
+             .withdrawalAmountOutOfRange(let m),
              .shieldedInsufficientBalance(let m),
              .shieldedIdentityDebitPending(let m),
              .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
@@ -1393,6 +1408,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .errorShieldedMerkleWitnessUnavailable:
             self = .shieldedMerkleWitnessUnavailable(detail)
+        case .errorWithdrawalAmountOutOfRange:
+            self = .withdrawalAmountOutOfRange(detail)
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)

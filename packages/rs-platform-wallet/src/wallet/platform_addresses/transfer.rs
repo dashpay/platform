@@ -249,6 +249,9 @@ impl PlatformAddressWallet {
                     .await
                     .map_err(promote_address_nonce_error_or_sdk)?
             }
+            InputSelection::AutoForAmount(_) => {
+                return Err(amount_selection_is_withdrawal_only());
+            }
             InputSelection::Auto => {
                 // Auto-select supports `[DeductFromInput(0)]` and `[ReduceOutput(0)]`;
                 // any other shape must use `Explicit`.
@@ -359,6 +362,9 @@ impl PlatformAddressWallet {
                 .iter()
                 .map(|(addr, (_nonce, credits))| (*addr, *credits))
                 .collect(),
+            InputSelection::AutoForAmount(_) => {
+                return Err(amount_selection_is_withdrawal_only());
+            }
             InputSelection::Auto => {
                 return Err(PlatformWalletError::AddressOperation(
                     "transfer_with_change_address requires InputSelection::Explicit or \
@@ -593,6 +599,16 @@ impl PlatformAddressWallet {
 
         remaining_fee
     }
+}
+
+/// A transfer's amount is the sum of its outputs, so the withdrawal-only
+/// [`InputSelection::AutoForAmount`] has nothing to say here.
+fn amount_selection_is_withdrawal_only() -> PlatformWalletError {
+    PlatformWalletError::InvalidParameter(
+        "InputSelection::AutoForAmount is for withdrawals; a transfer takes its amount \
+         from the outputs, so use InputSelection::Auto"
+            .to_string(),
+    )
 }
 
 /// Build the auto-selection candidate list: keep only addresses whose balance
@@ -1978,6 +1994,30 @@ mod auto_select_tests {
             }
             other => panic!("expected AddressOperation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_the_withdrawal_only_amount_selection_in_a_transfer() {
+        let wallet = build_short_circuit_wallet();
+        let signer = NullSigner;
+        let outputs: BTreeMap<PlatformAddress, Credits> = outputs_for(p2pkh(0x77), 10_000_000);
+
+        let err = wallet
+            .transfer(
+                0,
+                InputSelection::AutoForAmount(10_000_000),
+                outputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("a transfer takes its amount from the outputs");
+
+        assert!(
+            matches!(err, PlatformWalletError::InvalidParameter(_)),
+            "expected InvalidParameter, got {err:?}"
+        );
     }
 
     /// Smoke test for the standard `transfer_with_change_address` entry: a
