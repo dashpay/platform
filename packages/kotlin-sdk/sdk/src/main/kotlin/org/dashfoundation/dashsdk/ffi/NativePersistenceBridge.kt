@@ -267,7 +267,7 @@ abstract class NativePersistenceBridge {
      * `CoreAddressEntryFFI` inside each `AccountAddressPoolFFI`. The owning
      * account spec fields are flattened onto every row so the handler can
      * resolve the parent account. Descriptor
-     * `([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I`.
+     * `([BBBIII[B[BB[BZBIZLjava/lang/String;Ljava/lang/String;)I`.
      *
      * @param poolTypeTag AddressPoolTypeTagFFI raw value
      * @param publicKey 33-byte compressed pubkey (valid iff hasPublicKey)
@@ -288,7 +288,6 @@ abstract class NativePersistenceBridge {
         addressPoolTypeTag: Byte,
         addressIndex: Int,
         isUsed: Boolean,
-        balance: Long,
         addressBase58: String,
         derivationPath: String,
     ): Int = 0
@@ -1395,15 +1394,14 @@ class CoreAddressPoolRestoreData(
  * length (`== 33`). [addressBase58] and [derivationPath] are both required
  * non-null on the Rust load path (`address_info_from_ffi` rejects a null
  * for either), so the Kotlin builder emits them unconditionally.
- * [poolTypeTag] mirrors the enclosing pool's tag; [isUsed] and [balance]
- * round-trip the persisted `AddressInfo.used` / `AddressInfo.balance`.
+ * [poolTypeTag] mirrors the enclosing pool's tag; [isUsed] round-trips the
+ * persisted used flag.
  */
 class CoreAddressRestoreData(
     @JvmField val publicKey: ByteArray,
     @JvmField val poolTypeTag: Byte,
     @JvmField val addressIndex: Int,
     @JvmField val isUsed: Boolean,
-    @JvmField val balance: Long,
     @JvmField val addressBase58: String,
     @JvmField val derivationPath: String,
 )

@@ -602,9 +602,6 @@ struct AccountDetailView: View {
                     } else if addr.isUsed {
                         Text("• used")
                     }
-                    if addr.balance > 0 {
-                        Text("• \(formatBalance(addr.balance))")
-                    }
                 }
                 .font(.caption2)
                 .foregroundColor(.secondary)

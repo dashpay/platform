@@ -4929,7 +4929,6 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("m/44'/1'/0'/0/100", far.derivationPath)
         assertEquals(100, far.addressIndex)
         assertTrue(far.isUsed)
-        assertEquals(12_345L, far.balance)
         assertTrue(pubkey.contentEquals(far.publicKey))
         assertEquals(0.toByte(), far.poolTypeTag)
 
@@ -6015,7 +6014,6 @@ class PlatformWalletPersistenceHandlerTest {
             addressPoolTypeTag = 3,
             addressIndex = 0,
             isUsed = true,
-            balance = 0,
             addressBase58 = "yTestInvitationPoolAddress000000",
             derivationPath = "m/9'/1'/5'/3'/0'",
         )
