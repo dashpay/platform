@@ -5,6 +5,16 @@ import SwiftDashSDK
 /// The text is Rust's; the controller shows it as `.failed(message)`.
 struct WalletDrainAttemptError: LocalizedError, Equatable {
     let message: String
+    /// Rust's class of the failed attempt, read by `PaymentFailure` like a
+    /// `PlatformWalletError`'s: the class of the error Rust returned with it,
+    /// `nil` when it may have run and Rust gave none.
+    let payment: PlatformPaymentClass?
+
+    init(message: String, payment: PlatformPaymentClass? = nil) {
+        self.message = message
+        self.payment = payment
+    }
+
     var errorDescription: String? { message }
 }
 
@@ -192,11 +202,11 @@ final class WalletDrainCoordinator: ObservableObject {
             + "check this transfer again and follow the status it reports."
 
     /// The error a resume throws for `error`: a lock the wallet does not
-    /// track gets a message that says how to recover, any other error
-    /// passes through unchanged.
+    /// track gets a message that says how to recover, with Rust's class kept;
+    /// any other error passes through unchanged.
     nonisolated static func resumeError(for error: Error) -> Error {
-        if case PlatformWalletError.assetLockNotTracked = error {
-            return WalletDrainAttemptError(message: assetLockNotTrackedMessage)
+        if case PlatformWalletError.assetLockNotTracked(_, let payment) = error {
+            return WalletDrainAttemptError(message: assetLockNotTrackedMessage, payment: payment)
         }
         return error
     }
@@ -302,21 +312,31 @@ final class WalletDrainCoordinator: ObservableObject {
     /// finished (`WalletDrainRules.attemptFinished`: `completed`, even if it
     /// also carried an error, such as "already consumed" for a repeated
     /// operation id).
+    ///
+    /// It carries Rust's class: the class of the outcome's error, and for a
+    /// `notSent` outcome whose error has none, Rust's own state (nothing was
+    /// sent; no retry is granted, Rust gave no retry decision).
     nonisolated static func attemptError(for outcome: WalletDrainOutcome) -> WalletDrainAttemptError? {
         if WalletDrainRules.attemptFinished(outcome.state) {
             return nil
         }
         let rustText = outcome.error?.localizedDescription
+        let notice = "This transfer is not finished: resume it from the wallet screen "
+            + "and do not start a new Max."
+        let unfinishedMessage = rustText.map { "\($0) \(notice)" } ?? notice
         switch outcome.state {
         case .notSent:
-            return WalletDrainAttemptError(message: rustText ?? "Nothing was sent.")
-        case .pending, .completed:
-            // `completed` lands here only if the rule call itself failed:
-            // shown as unfinished, the fail-closed reading.
-            let notice = "This transfer is not finished: resume it from the wallet screen "
-                + "and do not start a new Max."
-            let message = rustText.map { "\($0) \(notice)" } ?? notice
-            return WalletDrainAttemptError(message: message)
+            return WalletDrainAttemptError(
+                message: rustText ?? "Nothing was sent.",
+                payment: outcome.error?.payment
+                    ?? PlatformPaymentClass(delivery: .notSent, isRetryable: false)
+            )
+        case .pending:
+            return WalletDrainAttemptError(message: unfinishedMessage, payment: outcome.error?.payment)
+        case .completed:
+            // Lands here only if the rule call itself failed: shown as
+            // unfinished with no class, the fail-closed reading.
+            return WalletDrainAttemptError(message: unfinishedMessage)
         }
     }
 
@@ -437,7 +457,7 @@ final class WalletDrainCoordinator: ObservableObject {
                 "Could not save the transfer id, so nothing was sent: \(error.localizedDescription)"
             )
         }
-        let result = run(record, isResume: false, walletManager: walletManager) {
+        let result = run(record, resuming: nil, walletManager: walletManager) {
             let outcome = await walletManager.shieldedFundFromWalletDrain(
                 walletId: record.walletId,
                 operationId: record.operationId,
@@ -475,7 +495,13 @@ final class WalletDrainCoordinator: ObservableObject {
         outpoint: WalletDrainOutpoint,
         walletManager: PlatformWalletManager
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
-        run(record, isResume: true, walletManager: walletManager) {
+        // Names the lock it resumes, so a failure that holds this lock lets
+        // the resume run on its slot.
+        run(
+            record,
+            resuming: .resuming(txid: outpoint.txidWire, vout: outpoint.vout),
+            walletManager: walletManager
+        ) {
             do {
                 try await walletManager.shieldedResumeFundFromAssetLock(
                     walletId: record.walletId,
@@ -532,11 +558,13 @@ final class WalletDrainCoordinator: ObservableObject {
     /// Runs `attempt` for `record` through the shielded-funding coordinator
     /// under the operation's controller id, then reconciles the operation
     /// and rethrows the attempt's error for the controller to show.
-    /// `isResume` marks an attempt that only finishes an existing lock, so
-    /// its progress never shows that lock being built.
+    /// `resuming` is the lock an attempt that only finishes an existing lock
+    /// resumes (`nil` for a start): the funding coordinator lets it run on a
+    /// failure that holds that lock, and its progress never shows the lock
+    /// being built.
     private func run(
         _ record: WalletDrainOperationRecord,
-        isResume: Bool,
+        resuming: AssetLockBuiltOutPoint?,
         walletManager: PlatformWalletManager,
         attempt: @escaping () async throws -> Void
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
@@ -564,6 +592,7 @@ final class WalletDrainCoordinator: ObservableObject {
             walletId: record.walletId,
             recipientRaw43: record.recipientRaw43,
             operationId: Self.controllerOperationId(id),
+            resuming: resuming,
             body: body
         )
         // Undo the running count when the body was not scheduled, as the
@@ -574,7 +603,7 @@ final class WalletDrainCoordinator: ObservableObject {
         switch result {
         case .started(let controller, let bodyScheduled):
             if bodyScheduled {
-                controller.isResumingExistingLock = isResume
+                controller.isResumingExistingLock = resuming != nil
             } else {
                 finishRunning(id)
             }

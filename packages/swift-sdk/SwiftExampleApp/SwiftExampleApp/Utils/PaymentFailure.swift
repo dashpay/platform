@@ -76,6 +76,7 @@ struct PaymentFailure: Equatable {
         switch error {
         case let wallet as PlatformWalletError: return wallet.payment
         case let unconfirmed as ShieldedIdentityCreateUnconfirmedError: return unconfirmed.payment
+        case let drain as WalletDrainAttemptError: return drain.payment
         default: return nil
         }
     }
