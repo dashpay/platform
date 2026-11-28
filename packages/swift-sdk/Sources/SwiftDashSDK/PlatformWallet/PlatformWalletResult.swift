@@ -1567,8 +1567,9 @@ private enum InvitationErrorDetail {
 
 extension PlatformWalletFFIResult {
     /// A result built from the `{ code, message }` pair alone, carrying no
-    /// consensus verdict: the same defaults Rust's own `ok()` / `err()`
-    /// constructors fill in.
+    /// consensus verdict, no payment-delivery class (`None` on success,
+    /// `Unknown` otherwise), no held asset lock and no retry: the same
+    /// defaults Rust's own `ok()` / `err()` constructors fill in.
     ///
     /// Swift-side call sites that fabricate a result (the manager's
     /// null-pointer guard, the native call doubles in the tests) describe a
@@ -1579,7 +1580,12 @@ extension PlatformWalletFFIResult {
             code: code,
             message: message,
             consensus_code: 0,
-            consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE
+            consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+            payment_delivery: code == PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
+                ? PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE
+                : PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_UNKNOWN,
+            held_asset_lock: OutPointFFI(),
+            retryable: false
         )
     }
 
