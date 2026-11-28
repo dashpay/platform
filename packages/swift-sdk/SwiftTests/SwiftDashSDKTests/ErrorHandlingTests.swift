@@ -1782,55 +1782,29 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
-    // MARK: - Recovery follows Rust's payment class
+    // MARK: - A wallet error shows its own text
 
-    /// Every class maps to one recovery and one displayed suggestion: a retry
-    /// only for a retryable `.notSent`, a wait for a non-retryable one, a
-    /// resume naming the held lock, a reconcile for `.maybeSent`, and an
-    /// unconfirmed outcome (never a retry) when nothing classified it.
-    func testShouldDecideTheRecoveryFromThePaymentClassAlone() {
+    /// A wallet error shows its own text, titled by its category, with no
+    /// category suggestion whatever its message says, and Rust's retry: what
+    /// to offer after a failed payment is the host app's decision, read from
+    /// the error's `payment`. A classed error reads the same as one without a
+    /// class, and its message does not leak the case's `payment:` tail.
+    func testShouldShowAWalletErrorsOwnTextWithRustsRetry() {
         let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
-        let cases: [(PlatformPaymentClass?, PlatformPaymentRecovery, String)] = [
-            (PlatformPaymentClass(delivery: .notSent, isRetryable: true), .retry,
-             "Nothing was sent. You can try again."),
-            (PlatformPaymentClass(delivery: .notSent, isRetryable: false), .wait,
-             "Nothing was sent. This request cannot go through as it is."),
-            (PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false), .resume(held),
-             "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."),
-            (.maybeSent, .reconcile,
-             "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
-                + "do not send it again."),
-            (nil, .unconfirmed,
-             "Submission result is unconfirmed. Check history and reconcile the original operation "
-                + "before submitting again."),
+        let errors: [PlatformWalletError] = [
+            .walletOperation("network timeout", payment: .maybeSent),
+            .invalidParameter("invalid input", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)),
+            .walletOperation("connection lost", payment: PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false)),
+            .shieldedBroadcastFailed("network refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)),
+            .invalidParameter("Amount must be greater than zero"),
+            .notFound("not found"),
+            .walletOperation("timeout"),
         ]
-        for (payment, recovery, text) in cases {
-            XCTAssertEqual(PlatformPaymentRecovery(payment), recovery, "\(String(describing: payment))")
-            XCTAssertEqual(PlatformPaymentRecovery(payment).suggestion, text)
-            XCTAssertEqual(ErrorRecovery.suggestion(for: payment), text)
-        }
-    }
-
-    /// The displayed text of a wallet error leads with its class's
-    /// suggestion and adds no category suggestion, whatever its message
-    /// says: a "network timeout" that may have been sent never reads
-    /// "try again", and its message does not leak the case's `payment:` tail.
-    func testShouldDisplayTheClassSuggestionNotOneInferredFromTheText() {
-        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
-        let cases: [(PlatformWalletError, String, String)] = [
-            (.walletOperation("network timeout", payment: .maybeSent), "Submission unconfirmed",
-             PlatformPaymentRecovery.reconcile.suggestion),
-            (.invalidParameter("invalid input", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)),
-             "Not sent", PlatformPaymentRecovery.wait.suggestion),
-            (.walletOperation("connection lost", payment: PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false)),
-             "Payment held", PlatformPaymentRecovery.resume(held).suggestion),
-            (.shieldedBroadcastFailed("network refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)),
-             "Not sent", PlatformPaymentRecovery.retry.suggestion),
-        ]
-        for (error, title, suggestion) in cases {
+        for error in errors {
             let shown = ErrorCategorizer.toUserFacingError(error)
-            XCTAssertEqual(shown.title, title, "\(error)")
-            XCTAssertEqual(shown.message, "\(suggestion) \(error.localizedDescription)")
+            XCTAssertEqual(shown.title, ErrorCategorizer.categorize(error).rawValue, "\(error)")
+            XCTAssertEqual(shown.message, error.localizedDescription)
+            XCTAssertEqual(ErrorFormatter.userFriendlyMessage(from: error), error.localizedDescription)
             XCTAssertNil(shown.recoverySuggestion, "no category suggestion for \(error)")
             XCTAssertFalse(shown.fullDescription.contains("payment:"), shown.fullDescription)
             XCTAssertEqual(shown.isRetryable, error.isRetryable)
@@ -1838,44 +1812,6 @@ final class ErrorHandlingTests: XCTestCase {
                 XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
             }
         }
-    }
-
-    /// A held invitation voucher is reclaimed, not resumed; every other
-    /// class reads as it always does (← Kotlin `PaymentRecovery`).
-    func testShouldTellAnInvitationVoucherToBeReclaimed() {
-        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
-        let resume = PlatformPaymentRecovery.resume(held)
-        XCTAssertTrue(resume.invitationVoucherSuggestion.contains("Reclaim the voucher"))
-        XCTAssertFalse(resume.invitationVoucherSuggestion.contains("Resume"))
-        for other in [PlatformPaymentRecovery.retry, .wait, .reconcile, .unconfirmed] {
-            XCTAssertEqual(other.invitationVoucherSuggestion, other.suggestion)
-        }
-    }
-
-    /// A wallet error that carries no class attempted no payment (a Swift
-    /// input check before any native call, a native refusal before the wallet
-    /// ran): it is titled by its category, not "Submission unconfirmed", shows
-    /// its own text, and is still offered no retry or retry text.
-    func testShouldNotTitleAnUnclassifiedWalletErrorAsAnUnconfirmedSubmission() {
-        for error in [
-            PlatformWalletError.invalidParameter("Amount must be greater than zero"),
-            PlatformWalletError.notFound("not found"),
-            PlatformWalletError.walletOperation("timeout"),
-        ] {
-            let shown = ErrorCategorizer.toUserFacingError(error)
-            XCTAssertEqual(shown.title, ErrorCategorizer.categorize(error).rawValue, "\(error)")
-            XCTAssertNotEqual(shown.title, "Submission unconfirmed")
-            XCTAssertEqual(shown.message, error.localizedDescription)
-            XCTAssertEqual(ErrorFormatter.userFriendlyMessage(from: error), error.localizedDescription)
-            XCTAssertNil(shown.recoverySuggestion)
-            XCTAssertFalse(shown.isRetryable)
-            XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
-        }
-        // The same error once Rust classed its payment follows the class.
-        let classed = ErrorCategorizer.toUserFacingError(
-            PlatformWalletError.walletOperation("timeout", payment: .maybeSent)
-        )
-        XCTAssertEqual(classed.title, "Submission unconfirmed")
     }
 
     /// The marketplace and persister texts do not claim an outcome the class

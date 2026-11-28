@@ -23,8 +23,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorWalletAlreadyExists = 15
     /// Shielded-broadcast failure, typically refused before anything was
     /// sent (no node address, or the SDK's own refusal). Whether it may run
-    /// again is the result's payment class (`PlatformPaymentRecovery`), not
-    /// this code. A node's refusal or consensus verdict is unconfirmed
+    /// again is the result's payment class (`payment`), not this code. A node's refusal or consensus verdict is unconfirmed
     /// instead (18, or 17 for identity-create).
     case errorShieldedBroadcastFailed = 16
     /// An identity create from the pool may have reached a node (accepted, a
@@ -695,11 +694,11 @@ public struct PlatformConsensusError: Equatable, Sendable {
 /// Whether a failed payment may have left the wallet, as the Rust wallet
 /// classified it.
 ///
-/// Decide "retry", "wait" or "resume" from this, never from lists of error
-/// cases (`PlatformPaymentRecovery` does it): `.notSent` offers a retry only
-/// where `isRetryable` allows it, `.maybeSent` waits for sync and never
-/// offers a second payment, `.lockHeld` resumes the named asset lock and never
-/// pays again. Mirror of `PlatformWalletFFIPaymentDelivery`, with the held
+/// The host app decides what to offer a person from this, never from lists
+/// of error cases: Rust allows running the operation again only for
+/// `.notSent` with `isRetryable`; `.maybeSent` may execute or already has, so
+/// a second payment could pay twice; `.lockHeld` goes on only by resuming the
+/// named asset lock. Mirror of `PlatformWalletFFIPaymentDelivery`, with the held
 /// lock's outpoint from the result's `held_asset_lock`.
 public enum PlatformPaymentDelivery: Equatable, Sendable {
     /// The payment never left the wallet and can never execute.
@@ -756,72 +755,6 @@ public struct PlatformPaymentClass: Equatable, Sendable {
     /// before Rust is asked carries no class at all (`payment: nil`): the
     /// class and retry decision are Rust's.
     public static let maybeSent = PlatformPaymentClass(delivery: .maybeSent, isRetryable: false)
-}
-
-/// What a host may offer a person after a failed payment, read from Rust's
-/// class alone (`delivery`, `isRetryable` and the held lock), never from the
-/// error's case, code or text. Build it with `init(_:)` and show
-/// `suggestion`; offer a retry only under `.retry`, and a resume only under
-/// `.resume` with its outpoint.
-public enum PlatformPaymentRecovery: Equatable, Sendable {
-    /// Nothing left the wallet and Rust allows running the operation again.
-    case retry
-    /// Nothing left the wallet, and Rust does not allow running it again as
-    /// it is. The reason is the error's own (its message); offer no retry.
-    case wait
-    /// The payment holds the tracked asset lock at this outpoint: resume it,
-    /// never fund a new one.
-    case resume(AssetLockBuiltOutPoint)
-    /// The payment may have left the wallet: let sync settle it and never
-    /// offer a second one.
-    case reconcile
-    /// No wallet error classified the failure: unconfirmed, never retried.
-    case unconfirmed
-
-    public init(_ payment: PlatformPaymentClass?) {
-        guard let payment else {
-            self = .unconfirmed
-            return
-        }
-        switch payment.delivery {
-        case .notSent: self = payment.isRetryable ? .retry : .wait
-        case .maybeSent: self = .reconcile
-        case .lockHeld(let outPoint): self = .resume(outPoint)
-        }
-    }
-
-    /// Text fit to show a person: what happened to the payment and the one
-    /// action the class allows.
-    public var suggestion: String {
-        switch self {
-        case .retry:
-            return "Nothing was sent. You can try again."
-        case .wait:
-            return "Nothing was sent. This request cannot go through as it is."
-        case .resume:
-            return "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."
-        case .reconcile:
-            return "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
-                + "do not send it again."
-        case .unconfirmed:
-            return "Submission result is unconfirmed. Check history and reconcile the original operation "
-                + "before submitting again."
-        }
-    }
-
-    /// `suggestion` for a failed invitation create, whose held lock is the
-    /// invitation's voucher: the generic resume refuses a voucher lock, and
-    /// its funds come back through the voucher's reclaim. The host knows it
-    /// from the operation that failed; the class is the same.
-    public var invitationVoucherSuggestion: String {
-        switch self {
-        case .resume:
-            return "The funds are held in the invitation's voucher lock. Reclaim the voucher from Sent "
-                + "invitations to get them back; do not create a new invitation."
-        case .retry, .wait, .reconcile, .unconfirmed:
-            return suggestion
-        }
-    }
 }
 
 extension PlatformWalletError {
@@ -1562,7 +1495,7 @@ public enum PlatformWalletError: LocalizedError {
         // the machine-readable JSON detail — showing that raw would be
         // gibberish in a UI alert.
         // Whether anything was purchased is the payment class's to say
-        // (`PlatformPaymentRecovery`), not this text's.
+        // (`payment`), not this text's.
         case .priceChanged(_, let expected, let actual, _):
             return "The price changed from \(expected) to \(actual) credits before the purchase "
                 + "could be confirmed."

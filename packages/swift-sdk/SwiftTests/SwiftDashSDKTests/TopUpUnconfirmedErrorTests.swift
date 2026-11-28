@@ -29,7 +29,7 @@ final class TopUpUnconfirmedErrorTests: XCTestCase {
                 XCTAssertEqual(error.localizedDescription, detail)
                 let formatted = ErrorFormatter.userFriendlyMessage(from: error)
                 let displayed = ErrorCategorizer.toUserFacingError(error)
-                XCTAssertTrue(formatted.hasPrefix(PlatformPaymentRecovery.reconcile.suggestion), formatted)
+                XCTAssertTrue(formatted.contains("before submitting again"))
                 XCTAssertTrue(formatted.contains(detail))
                 XCTAssertEqual(displayed.message, formatted)
                 XCTAssertFalse(displayed.isRetryable)

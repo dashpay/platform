@@ -7,7 +7,8 @@ import SwiftDashSDK
 /// error's case, code or text.
 ///
 /// The class is the error's `payment` (delivery, `isRetryable`, the held
-/// lock), read through the SDK's `PlatformPaymentRecovery`:
+/// lock), read through `Recovery`. The SDK only carries the class; this
+/// mapping is the app's (← Kotlin app `PaymentFailure`):
 /// - a retryable `.notSent` offers a retry;
 /// - `.lockHeld` resumes the named lock and never funds a new one (an
 ///   invitation's voucher lock is reclaimed instead, `invitationVoucher`);
@@ -30,7 +31,69 @@ struct PaymentFailure: Equatable {
         case wait
     }
 
-    let recovery: PlatformPaymentRecovery
+    /// What the app may offer a person after a failed payment, read from
+    /// Rust's class alone (`delivery`, `isRetryable` and the held lock),
+    /// never from the error's case, code or text.
+    enum Recovery: Equatable {
+        /// Nothing left the wallet and Rust allows running the operation again.
+        case retry
+        /// Nothing left the wallet, and Rust does not allow running it again
+        /// as it is. The reason is the error's own (its message).
+        case wait
+        /// The payment holds the tracked asset lock at this outpoint: resume
+        /// it, never fund a new one.
+        case resume(AssetLockBuiltOutPoint)
+        /// The payment may have left the wallet: let sync settle it and never
+        /// offer a second one.
+        case reconcile
+        /// No wallet error classified the failure: unconfirmed, never retried.
+        case unconfirmed
+
+        init(_ payment: PlatformPaymentClass?) {
+            guard let payment else {
+                self = .unconfirmed
+                return
+            }
+            switch payment.delivery {
+            case .notSent: self = payment.isRetryable ? .retry : .wait
+            case .maybeSent: self = .reconcile
+            case .lockHeld(let outPoint): self = .resume(outPoint)
+            }
+        }
+
+        /// What happened to the payment and the one action the class allows.
+        var suggestion: String {
+            switch self {
+            case .retry:
+                return "Nothing was sent. You can try again."
+            case .wait:
+                return "Nothing was sent. This request cannot go through as it is."
+            case .resume:
+                return "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."
+            case .reconcile:
+                return "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
+                    + "do not send it again."
+            case .unconfirmed:
+                return "Submission result is unconfirmed. Check history and reconcile the original operation "
+                    + "before submitting again."
+            }
+        }
+
+        /// `suggestion` for a failed invitation create, whose held lock is
+        /// the invitation's voucher: the generic resume refuses a voucher
+        /// lock, and its funds come back through the voucher's reclaim.
+        var invitationVoucherSuggestion: String {
+            switch self {
+            case .resume:
+                return "The funds are held in the invitation's voucher lock. Reclaim the voucher from Sent "
+                    + "invitations to get them back; do not create a new invitation."
+            case .retry, .wait, .reconcile, .unconfirmed:
+                return suggestion
+            }
+        }
+    }
+
+    let recovery: Recovery
     /// The error's own description, shown after the class's text.
     let detail: String
     /// Whether the operation that failed created an invitation, so a held
@@ -48,7 +111,7 @@ struct PaymentFailure: Equatable {
     }
 
     init(payment: PlatformPaymentClass?, detail: String, invitationVoucher: Bool = false) {
-        self.recovery = PlatformPaymentRecovery(payment)
+        self.recovery = Recovery(payment)
         self.detail = detail
         self.invitationVoucher = invitationVoucher
     }

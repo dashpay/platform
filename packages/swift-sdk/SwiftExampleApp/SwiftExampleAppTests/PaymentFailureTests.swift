@@ -20,7 +20,7 @@ final class PaymentFailureTests: XCTestCase {
     private static let lockHeld = PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false)
 
     func testShouldMapEachClassToOneActionAndText() {
-        let cases: [(PlatformPaymentClass?, PaymentFailure.Action, PlatformPaymentRecovery)] = [
+        let cases: [(PlatformPaymentClass?, PaymentFailure.Action, PaymentFailure.Recovery)] = [
             (Self.retryable, .retry, .retry),
             (Self.blocked, .wait, .wait),
             (Self.lockHeld, .resume(Self.held), .resume(Self.held)),
@@ -39,6 +39,40 @@ final class PaymentFailureTests: XCTestCase {
         let resume = PaymentFailure(payment: Self.lockHeld, detail: "d")
         XCTAssertEqual(resume.heldLock, Self.held)
         XCTAssertTrue(resume.message.contains(Self.held.outPointHex))
+    }
+
+    /// Every class maps to one recovery and one displayed suggestion: a retry
+    /// only for a retryable `.notSent`, a wait for a non-retryable one, a
+    /// resume naming the held lock, a reconcile for `.maybeSent`, and an
+    /// unconfirmed outcome (never a retry) when nothing classified it.
+    func testShouldDecideTheRecoveryFromThePaymentClassAlone() {
+        let cases: [(PlatformPaymentClass?, PaymentFailure.Recovery, String)] = [
+            (Self.retryable, .retry, "Nothing was sent. You can try again."),
+            (Self.blocked, .wait, "Nothing was sent. This request cannot go through as it is."),
+            (Self.lockHeld, .resume(Self.held),
+             "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."),
+            (.maybeSent, .reconcile,
+             "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
+                + "do not send it again."),
+            (nil, .unconfirmed,
+             "Submission result is unconfirmed. Check history and reconcile the original operation "
+                + "before submitting again."),
+        ]
+        for (payment, recovery, text) in cases {
+            XCTAssertEqual(PaymentFailure.Recovery(payment), recovery, "\(String(describing: payment))")
+            XCTAssertEqual(PaymentFailure.Recovery(payment).suggestion, text)
+        }
+    }
+
+    /// A held invitation voucher is reclaimed, not resumed; every other
+    /// class reads as it always does (← Kotlin app `PaymentFailure`).
+    func testShouldTellAnInvitationVoucherToBeReclaimed() {
+        let resume = PaymentFailure.Recovery.resume(Self.held)
+        XCTAssertTrue(resume.invitationVoucherSuggestion.contains("Reclaim the voucher"))
+        XCTAssertFalse(resume.invitationVoucherSuggestion.contains("Resume"))
+        for other in [PaymentFailure.Recovery.retry, .wait, .reconcile, .unconfirmed] {
+            XCTAssertEqual(other.invitationVoucherSuggestion, other.suggestion)
+        }
     }
 
     /// The class is read from the error itself, never from its case: a
@@ -78,7 +112,7 @@ final class PaymentFailureTests: XCTestCase {
         let voucher = PaymentFailure(payment: Self.lockHeld, detail: "d", invitationVoucher: true)
         XCTAssertEqual(voucher.action, .resume(Self.held))
         XCTAssertFalse(voucher.permitsRestart(resuming: nil), "never fund a new invitation")
-        XCTAssertTrue(voucher.message.hasPrefix(PlatformPaymentRecovery.resume(Self.held).invitationVoucherSuggestion))
+        XCTAssertTrue(voucher.message.hasPrefix(PaymentFailure.Recovery.resume(Self.held).invitationVoucherSuggestion))
         XCTAssertTrue(voucher.message.contains("Reclaim the voucher"), voucher.message)
         XCTAssertFalse(voucher.message.contains("Resume that lock"), voucher.message)
         XCTAssertTrue(voucher.message.contains(Self.held.outPointHex))
