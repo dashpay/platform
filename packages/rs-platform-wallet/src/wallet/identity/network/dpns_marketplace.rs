@@ -744,6 +744,16 @@ impl IdentityWallet {
         name: &str,
     ) -> Result<Option<DpnsDomainState>, PlatformWalletError> {
         let contract = self.dpns_contract().await?;
+        self.dpns_name_state_in_contract(contract, name).await
+    }
+
+    /// [`Self::dpns_name_state`] read through `contract`, the DPNS contract the caller
+    /// resolved for the whole operation.
+    async fn dpns_name_state_in_contract(
+        &self,
+        contract: Arc<DataContract>,
+        name: &str,
+    ) -> Result<Option<DpnsDomainState>, PlatformWalletError> {
         let normalized = convert_to_homograph_safe_chars(dpns_label(name));
         if normalized.is_empty() {
             return Err(PlatformWalletError::InvalidParameter(
@@ -914,9 +924,13 @@ impl IdentityWallet {
     /// [`PlatformWalletError::DpnsNameNotFound`] otherwise.
     async fn fetch_dpns_domain_state_required(
         &self,
+        contract: &Arc<DataContract>,
         name: &str,
     ) -> Result<DpnsDomainState, PlatformWalletError> {
-        if let Some(state) = self.dpns_name_state(name).await? {
+        if let Some(state) = self
+            .dpns_name_state_in_contract(Arc::clone(contract), name)
+            .await?
+        {
             return Ok(state);
         }
         let label = dpns_label(name);
@@ -1108,21 +1122,23 @@ impl IdentityWallet {
             )));
         }
         let _operation = self.dpns_operation_gate.lock().await;
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {}, not by {owner_identity_id}",
                 state.owner_id
             )));
         }
-        let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
         let gated = GatedSigner::new(signer, self);
         let confirmed = self
-            .set_document_price_with_signer(
+            .set_document_price_in_contract(
                 owner_identity_id,
-                &contract_id,
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 price,
@@ -1157,7 +1173,10 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let _operation = self.dpns_operation_gate.lock().await;
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {}, not by {owner_identity_id}",
@@ -1169,14 +1188,13 @@ impl IdentityWallet {
                 document_id: state.document_id,
             });
         }
-        let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
         let gated = GatedSigner::new(signer, self);
         let confirmed = self
-            .transfer_document_with_signer(
+            .transfer_document_in_contract(
                 owner_identity_id,
-                &contract_id,
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 owner_identity_id,
@@ -1225,21 +1243,23 @@ impl IdentityWallet {
                     .to_string(),
             ));
         }
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {}, not by {owner_identity_id}",
                 state.owner_id
             )));
         }
-        let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
         let gated = GatedSigner::new(signer, self);
         let confirmed = self
-            .transfer_document_with_signer(
+            .transfer_document_in_contract(
                 owner_identity_id,
-                &contract_id,
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 recipient_id,
@@ -1319,7 +1339,10 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let _operation = self.dpns_operation_gate.lock().await;
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id == *purchaser_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "identity {purchaser_identity_id} already owns DPNS name {name:?}"
@@ -1350,16 +1373,15 @@ impl IdentityWallet {
                 available,
             });
         }
-        let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
         let gated = GatedSigner::new(signer, self);
         let confirmed = self
-            .purchase_document_with_signer(
-                purchaser_identity_id,
-                &contract_id,
+            .purchase_document_in_contract(
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
+                purchaser_identity_id,
                 expected_price,
                 &gated,
             )
@@ -1417,7 +1439,10 @@ impl IdentityWallet {
     ) -> Result<Vec<DpnsNameHistoryEvent>, PlatformWalletError> {
         // Resolve the domain document id (live first, local rows for
         // departed names) and the registration timestamp when known.
-        let live = self.dpns_name_state(name).await?;
+        let contract = self.dpns_contract().await?;
+        let live = self
+            .dpns_name_state_in_contract(Arc::clone(&contract), name)
+            .await?;
         let (document_id, registered_at_ms) = match &live {
             Some(state) => (state.document_id, state.created_at_ms),
             None => {
@@ -1433,7 +1458,7 @@ impl IdentityWallet {
                         // Reuse the contested-aware classification for the
                         // typed error. If the name appeared between the two
                         // reads (registration race), just use it.
-                        match self.fetch_dpns_domain_state_required(name).await {
+                        match self.fetch_dpns_domain_state_required(&contract, name).await {
                             Ok(state) => (state.document_id, state.created_at_ms),
                             Err(e) => return Err(e),
                         }
@@ -4053,7 +4078,15 @@ mod tests {
             .expect("the domain type");
 
         let key = wallet
-            .select_document_signing_key(&owner_id, &domain, &KeyFilter(|_| true))
+            .select_document_signing_key(
+                &owner_id,
+                &domain,
+                SigningScope::DocumentType {
+                    contract_id: contract.id(),
+                    document_type_name: DPNS_DOCUMENT_TYPE,
+                },
+                &KeyFilter(|_| true),
+            )
             .await
             .expect("a key is selected");
         assert_eq!(key.id(), 2, "the key bound to another contract is skipped");

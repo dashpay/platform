@@ -3,11 +3,14 @@
 use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
+use dpp::consensus::ConsensusError;
+use dpp::identity::core_script::CoreScript;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
+use dpp::state_transition::identity_credit_withdrawal_transition::methods::validate_withdrawal_output_script;
 use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
@@ -21,7 +24,10 @@ use dash_sdk::platform::transition::withdraw_from_identity::{
 use crate::error::PlatformWalletError;
 use crate::BlockTime;
 
-use super::signing_key::credit_signing_key;
+use super::key_selection::{
+    check_signing_key_eligibility, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+};
+use super::signing_key::{credit_signing_key, CREDIT_SIGNING_LEVELS};
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs`/`transfer.rs` for the same
@@ -103,7 +109,8 @@ impl IdentityWallet {
                 Some(to_address.clone()),
                 amount,
                 None, // core_fee_per_byte
-                Some(credit_signing_key(&identity, None, signer, true)?),
+                // Platform refuses an OWNER key for a withdrawal to a chosen address.
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 SignerRef(signer),
                 settings,
             )
@@ -180,8 +187,15 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
-        let signing_key =
-            credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
+        check_withdrawal_destination(to_address.as_ref(), signing_withdrawal_key_to_use)?;
+
+        // Automatic selection considers OWNER only for the identity's payout address.
+        let signing_key = credit_signing_key(
+            identity,
+            signing_withdrawal_key_to_use,
+            &signer,
+            signing_withdrawal_key_to_use.is_some() || to_address.is_none(),
+        )?;
         identity
             .withdraw(
                 &self.sdk,
@@ -194,6 +208,27 @@ impl IdentityWallet {
             )
             .await
     }
+}
+
+/// Refuse an explicit OWNER key with a destination before expiry or signer availability.
+pub(crate) fn check_withdrawal_destination(
+    to_address: Option<&DashAddress>,
+    signing_key: Option<&IdentityPublicKey>,
+) -> Result<(), dash_sdk::Error> {
+    if let Some((address, key)) = to_address.zip(signing_key) {
+        check_signing_key_eligibility(
+            key,
+            &[Purpose::TRANSFER, Purpose::OWNER],
+            &CREDIT_SIGNING_LEVELS,
+            &PLATFORM_SIGNING_KEY_TYPES,
+            SigningScope::NonBatch,
+        )?;
+        // Drive rejects the output script before expiry and signer availability.
+        let output_script = CoreScript::new(address.script_pubkey());
+        validate_withdrawal_output_script(key, Some(&output_script))
+            .map_err(ConsensusError::from)?;
+    }
+    Ok(())
 }
 
 /// Select the OWNER-purpose `IdentityPublicKey` on a masternode identity

@@ -27,8 +27,10 @@
 //!     post-broadcast GroveDB proof-verification recursion. The owner's
 //!     balance the proof carries (from protocol version 14) is kept.
 
-use super::key_selection::usable_authentication_key_preferring_types;
-use super::signing_key::require_available;
+use super::key_selection::{
+    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+    WALLET_SIGNING_KEY_TYPES,
+};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -45,9 +47,8 @@ use dpp::document::Document;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -103,37 +104,42 @@ where
     }
 }
 
-/// Build the set of `SecurityLevel`s an AUTHENTICATION key may carry to
-/// satisfy a document state-transition whose document type requires
-/// `requirement`.
-///
-/// This reproduces the consensus rule the network enforces in
-/// `BatchTransition::combined_security_level_requirement`
-/// (`rs-dpp/.../batch_transition/methods/v0/mod.rs`): the signing key's
-/// security level must be **stronger-or-equal** to the document type's
-/// requirement, expressed as the inclusive range `CRITICAL..=requirement`
-/// over the `MASTER(0) < CRITICAL(1) < HIGH(2) < MEDIUM(3)` ordering —
-/// with `MASTER` handled as its own degenerate `[MASTER]` set. MASTER is
-/// otherwise excluded: it is reserved for identity-self-modification and
-/// the document-batch purpose requirement (`vec![AUTHENTICATION]`) never
-/// admits it for an ordinary document create.
-///
-/// Picking the key against this exact set (rather than a hardcoded
-/// CRITICAL, which the contract-create path uses) is what makes the
-/// flow correct for *any* document type — e.g. DPNS `preorder` requires
-/// `HIGH`, so both `CRITICAL` and `HIGH` keys qualify, but `MEDIUM` does
-/// not.
-pub(super) fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
-    if requirement == SecurityLevel::MASTER {
-        return vec![SecurityLevel::MASTER];
-    }
-    // `CRITICAL as u8 == 1`; iterate down to (and including) the
-    // requirement. `SecurityLevel::try_from` only fails for values
-    // outside 0..=3, and every value in this range is valid by
-    // construction.
-    (SecurityLevel::CRITICAL as u8..=requirement as u8)
-        .filter_map(|level| SecurityLevel::try_from(level).ok())
-        .collect()
+/// The key that signs a document batch in `scope` whose document type requires
+/// `requirement`: an AUTHENTICATION key of one of [`WALLET_SIGNING_KEY_TYPES`] at a level
+/// consensus accepts, in [`usable_signing_key`]'s order of preference.
+pub(super) fn document_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+    requirement: SecurityLevel,
+    scope: SigningScope<'_>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_signing_key(
+        identity,
+        signer,
+        Purpose::AUTHENTICATION,
+        &SecurityLevel::accepted_for_requirement(requirement),
+        &WALLET_SIGNING_KEY_TYPES,
+        scope,
+    )
+}
+
+/// Check a key the caller chose to sign a document batch in `scope` whose document type
+/// requires `requirement`, by the rules [`document_signing_key`] applies, except that any key
+/// type Platform verifies is accepted.
+pub(super) fn check_document_signing_key(
+    key: &IdentityPublicKey,
+    signer: &impl Signer<IdentityPublicKey>,
+    requirement: SecurityLevel,
+    scope: SigningScope<'_>,
+) -> Result<(), dash_sdk::Error> {
+    check_signing_key(
+        key,
+        signer,
+        &[Purpose::AUTHENTICATION],
+        &SecurityLevel::accepted_for_requirement(requirement),
+        &PLATFORM_SIGNING_KEY_TYPES,
+        scope,
+    )
 }
 
 impl IdentityWallet {
@@ -167,12 +173,12 @@ impl IdentityWallet {
     ///      the canonical document id is derived from
     ///      `(contract, owner, type, entropy)` there — the placeholder
     ///      id this build step assigns is overwritten.
-    ///   3. Selects the signing `IdentityPublicKey` with
-    ///      [`Self::select_document_create_signing_key`]: the owner's
-    ///      AUTHENTICATION key (ECDSA_SECP256K1, else ECDSA_HASH160) that
-    ///      the document type's security level allows, whose contract
-    ///      bounds cover the type and every type its create may consume,
-    ///      and that `signer` can sign with. Returns a clear error
+    ///   3. Selects the signing `IdentityPublicKey` from the in-memory
+    ///      wallet manager: an AUTHENTICATION-purpose ECDSA key
+    ///      (`ECDSA_SECP256K1` preferred, `ECDSA_HASH160` accepted) whose security level satisfies the document type's
+    ///      `security_level_requirement()` and whose bounds cover the
+    ///      document type and every type its create may consume (see
+    ///      [`document_signing_key`]). Returns a clear error
     ///      if the owner identity isn't loaded or carries no qualifying
     ///      key.
     ///   4. Broadcasts via
@@ -264,7 +270,14 @@ impl IdentityWallet {
         //    the document type's requirement (NOT a fixed CRITICAL like
         //    the contract-create path).
         let signing_key = self
-            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentCreate {
+                    document_type: document_type.as_ref(),
+                },
+                signer,
+            )
             .await?;
 
         // 4. Broadcast via `PutDocument` on the platform-wallet 8 MB
@@ -299,93 +312,22 @@ impl IdentityWallet {
         })
     }
 
-    /// The key a replace, delete, transfer, set-price or purchase of a
-    /// `document_type` document by `signing_identity_id` is signed with,
-    /// and a decision or multiple-choice proposal edit: see
-    /// [`Self::select_document_key_covering`], over `document_type` alone.
+    /// The key a `document_type` state transition of `signing_identity_id`
+    /// in `scope` is signed with when the caller names none:
+    /// [`document_signing_key`]'s choice among the owner identity's keys in
+    /// the wallet manager. The wallet manager lock is released before
+    /// `signer` is asked.
     pub(super) async fn select_document_signing_key<S>(
         &self,
         signing_identity_id: &Identifier,
         document_type: &DocumentType,
+        scope: SigningScope<'_>,
         signer: &S,
     ) -> Result<IdentityPublicKey, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey>,
     {
-        self.select_document_key_covering(
-            signing_identity_id,
-            document_type.data_contract_id(),
-            &[document_type.name()],
-            document_type.security_level_requirement(),
-            signer,
-        )
-        .await
-    }
-
-    /// The key a create of a `document_type` document by
-    /// `signing_identity_id` is signed with (a generic document, a decision
-    /// or multiple-choice proposal, a choice): see
-    /// [`Self::select_document_key_covering`], over `document_type` and every
-    /// type a create of it may consume. Platform checks the signing key's
-    /// contract bounds against each of those types, since a create deletes
-    /// the document it consumes along with its own write.
-    pub(super) async fn select_document_create_signing_key<S>(
-        &self,
-        signing_identity_id: &Identifier,
-        document_type: &DocumentType,
-        signer: &S,
-    ) -> Result<IdentityPublicKey, PlatformWalletError>
-    where
-        S: Signer<IdentityPublicKey>,
-    {
-        let document_type_names: Vec<&str> = std::iter::once(document_type.name().as_str())
-            .chain(document_type.as_ref().consumable_document_type_names())
-            .collect();
-        self.select_document_key_covering(
-            signing_identity_id,
-            document_type.data_contract_id(),
-            &document_type_names,
-            document_type.security_level_requirement(),
-            signer,
-        )
-        .await
-    }
-
-    /// The one automatic document key policy of this wallet, behind
-    /// [`Self::select_document_signing_key`] and
-    /// [`Self::select_document_create_signing_key`].
-    ///
-    /// `signing_identity_id` must be an identity this wallet holds and can
-    /// sign for. The key is its first AUTHENTICATION key at a security
-    /// level `required_level` admits (`SecurityLevel::document_signing_levels`),
-    /// whose contract bounds cover every one of `document_type_names` of
-    /// `contract_id`, and that `signer` can sign with. See
-    /// [`usable_authentication_key_preferring_types`]: a key bound to another
-    /// contract or document type, a group-bound key (group membership is not
-    /// wallet state), a disabled key and an expired key are skipped, and a
-    /// key without limits is preferred, so an ineligible key with a lower id
-    /// never shadows a usable later one.
-    ///
-    /// Order: keys without limits first, then limited ones (whose budget may
-    /// be spent, which the wallet cannot see offline); within each tier
-    /// ECDSA_SECP256K1 keys before ECDSA_HASH160 keys, each in key-id order.
-    /// So an unlimited HASH160 key is taken before a limited SECP256K1 one,
-    /// and a HASH160 key never shadows a SECP256K1 key of the same tier.
-    /// The wallet manager lock is released before `signer` is asked. An
-    /// eligible key the signer cannot use keeps the structured
-    /// key-unavailable failure; no eligible key at all is refused as
-    /// `InvalidIdentityData`.
-    async fn select_document_key_covering<S>(
-        &self,
-        signing_identity_id: &Identifier,
-        contract_id: Identifier,
-        document_type_names: &[&str],
-        required_level: SecurityLevel,
-        signer: &S,
-    ) -> Result<IdentityPublicKey, PlatformWalletError>
-    where
-        S: Signer<IdentityPublicKey>,
-    {
+        let required_level = document_type.security_level_requirement();
         let identity = {
             let wm = self.wallet_manager.read().await;
             self.current_wallet_info(&wm)?
@@ -394,24 +336,15 @@ impl IdentityWallet {
                 .map(|managed| managed.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*signing_identity_id))?
         };
-        let levels = required_level.document_signing_levels();
-        usable_authentication_key_preferring_types(
-            &identity,
-            signer,
-            contract_id,
-            document_type_names,
-            &levels,
-            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
-        )?
-        .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
-                 {required_level}, with contract bounds allowing the {} type of contract \
-                 {contract_id}, found on identity {signing_identity_id}",
-                document_type_names.join(" + ")
-            ))
-        })
+        let signing_key = document_signing_key(&identity, signer, required_level, scope)?
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *signing_identity_id,
+                purposes: vec![Purpose::AUTHENTICATION],
+                security_levels: SecurityLevel::accepted_for_requirement(required_level),
+                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+                transition: format!("a {} document transition", document_type.name()),
+            })?;
+        Ok(signing_key.clone())
     }
 
     /// Put `document` (a create at revision 1, a replace above it),
@@ -535,8 +468,9 @@ impl IdentityWallet {
     /// `owner_identity_id` from the in-process wallet manager, for
     /// [`Self::erase_document_with_signer`], which takes an explicit key.
     ///
-    /// The key must exist, be AUTHENTICATION-purpose and be
-    /// ECDSA_SECP256K1, the purpose `create` uses: signing with a
+    /// The key must exist and pass [`check_document_signing_key`]:
+    /// AUTHENTICATION-purpose, a key type Platform verifies, at an accepted
+    /// level, enabled, unexpired and inside its contract bounds. Signing with a
     /// non-AUTHENTICATION key, e.g. a TRANSFER/CRITICAL key, is rejected
     /// by consensus with "requires AUTHENTICATION". `signer` must be able
     /// to sign with it.
@@ -544,8 +478,19 @@ impl IdentityWallet {
         &self,
         owner_identity_id: &Identifier,
         signing_key_id: u32,
+        data_contract: &DataContract,
+        document_type_name: &str,
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
+        let requirement = data_contract
+            .document_type_for_name(document_type_name)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Document type {document_type_name:?} not found on contract {}: {e}",
+                    data_contract.id()
+                ))
+            })?
+            .security_level_requirement();
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(
@@ -566,21 +511,15 @@ impl IdentityWallet {
                 ))
             })?
             .clone();
-        if key.purpose() != Purpose::AUTHENTICATION {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "Signing key {signing_key_id} on identity {owner_identity_id} has purpose {:?}, \
-                 but a document state transition must be signed with an AUTHENTICATION key",
-                key.purpose()
-            )));
-        }
-        if key.key_type() != KeyType::ECDSA_SECP256K1 {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "Signing key {signing_key_id} on identity {owner_identity_id} has key type {:?}, \
-                 but a document state transition must be signed with an ECDSA_SECP256K1 key",
-                key.key_type()
-            )));
-        }
-        require_available(&key, signer)?;
+        check_document_signing_key(
+            &key,
+            signer,
+            requirement,
+            SigningScope::DocumentType {
+                contract_id: data_contract.id(),
+                document_type_name,
+            },
+        )?;
         Ok(key)
     }
 
@@ -659,7 +598,15 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentType {
+                    contract_id: data_contract.id(),
+                    document_type_name,
+                },
+                signer,
+            )
             .await?;
 
         let builder = DocumentReplaceTransitionBuilder::new(
@@ -712,6 +659,10 @@ impl IdentityWallet {
             .select_document_signing_key(
                 owner_identity_id,
                 document_type_of(&data_contract, document_type_name)?,
+                SigningScope::DocumentType {
+                    contract_id: data_contract.id(),
+                    document_type_name,
+                },
                 signer,
             )
             .await?;
@@ -797,6 +748,10 @@ impl IdentityWallet {
             .select_document_signing_key(
                 owner_identity_id,
                 document_type_of(&data_contract, document_type_name)?,
+                SigningScope::DocumentType {
+                    contract_id: data_contract.id(),
+                    document_type_name,
+                },
                 signer,
             )
             .await?;
@@ -854,7 +809,13 @@ impl IdentityWallet {
             .await?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .resolve_authentication_signing_key(
+                owner_identity_id,
+                signing_key_id,
+                &data_contract,
+                document_type_name,
+                signer,
+            )
             .await?;
 
         // Erase is keyed by (document_id, owner_id) like delete; the
@@ -912,6 +873,32 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
+        self.transfer_document_in_contract(
+            owner_identity_id,
+            data_contract,
+            document_type_name,
+            document_id,
+            recipient_id,
+            signer,
+        )
+        .await
+    }
+
+    /// Transfer like [`Self::transfer_document_with_signer`], on `data_contract` as the
+    /// caller resolved it: the signing key is selected against that same contract, so the
+    /// key and the transition it signs are judged by one contract snapshot.
+    pub(super) async fn transfer_document_in_contract<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        data_contract: Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+        recipient_id: &Identifier,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
@@ -926,6 +913,10 @@ impl IdentityWallet {
             .select_document_signing_key(
                 owner_identity_id,
                 document_type_of(&data_contract, document_type_name)?,
+                SigningScope::DocumentType {
+                    contract_id: data_contract.id(),
+                    document_type_name,
+                },
                 signer,
             )
             .await?;
@@ -981,6 +972,32 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
+        self.set_document_price_in_contract(
+            owner_identity_id,
+            data_contract,
+            document_type_name,
+            document_id,
+            price,
+            signer,
+        )
+        .await
+    }
+
+    /// Set a price like [`Self::set_document_price_with_signer`], on `data_contract` as the
+    /// caller resolved it: the signing key is selected against that same contract, so the
+    /// key and the transition it signs are judged by one contract snapshot.
+    pub(super) async fn set_document_price_in_contract<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        data_contract: Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+        price: u64,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
@@ -995,6 +1012,10 @@ impl IdentityWallet {
             .select_document_signing_key(
                 owner_identity_id,
                 document_type_of(&data_contract, document_type_name)?,
+                SigningScope::DocumentType {
+                    contract_id: data_contract.id(),
+                    document_type_name,
+                },
                 signer,
             )
             .await?;
@@ -1052,6 +1073,32 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
+        self.purchase_document_in_contract(
+            data_contract,
+            document_type_name,
+            document_id,
+            purchaser_identity_id,
+            price,
+            signer,
+        )
+        .await
+    }
+
+    /// Purchase like [`Self::purchase_document_with_signer`], on `data_contract` as the
+    /// caller resolved it: the signing key is selected against that same contract, so the
+    /// key and the transition it signs are judged by one contract snapshot.
+    pub(super) async fn purchase_document_in_contract<S>(
+        &self,
+        data_contract: Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+        purchaser_identity_id: &Identifier,
+        price: u64,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
@@ -1065,6 +1112,10 @@ impl IdentityWallet {
             .select_document_signing_key(
                 purchaser_identity_id,
                 document_type_of(&data_contract, document_type_name)?,
+                SigningScope::DocumentType {
+                    contract_id: data_contract.id(),
+                    document_type_name,
+                },
                 signer,
             )
             .await?;
@@ -1182,7 +1233,6 @@ mod tests {
     use super::super::decision_proposal::tests::proposals_sdk;
     use super::super::signing_key::tests::{
         available, lock_checking_signer, wallet_with_signing_keys, wallet_with_signing_keys_on,
-        KeyFilter,
     };
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
@@ -1191,7 +1241,6 @@ mod tests {
     use dash_sdk::query_types::IdentityContractNonceFetcher;
     use dpp::data_contract::factory::DataContractFactory;
     use dpp::document::DocumentV0;
-    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
@@ -1228,6 +1277,21 @@ mod tests {
             )
             .unwrap()
             .data_contract_owned()
+    }
+
+    /// The scope of a write to existing documents of `document_type`.
+    fn type_scope(document_type: &DocumentType) -> SigningScope<'_> {
+        SigningScope::DocumentType {
+            contract_id: document_type.data_contract_id(),
+            document_type_name: document_type.name(),
+        }
+    }
+
+    /// The scope of a create of a `document_type` document.
+    fn create_scope(document_type: &DocumentType) -> SigningScope<'_> {
+        SigningScope::DocumentCreate {
+            document_type: document_type.as_ref(),
+        }
     }
 
     /// The `note` type of [`contract_requiring`] `requirement`.
@@ -1291,11 +1355,13 @@ mod tests {
     /// `identity_id` and a `note` of a HIGH contract, with a signer that
     /// holds every key.
     async fn automatic_key(wallet: &PlatformWallet, identity_id: Identifier) -> u32 {
+        let note = note_type(SecurityLevel::HIGH);
         wallet
             .identity()
             .select_document_signing_key(
                 &identity_id,
-                &note_type(SecurityLevel::HIGH),
+                &note,
+                type_scope(&note),
                 &KeyFilter(|_| true),
             )
             .await
@@ -1327,7 +1393,7 @@ mod tests {
                     .with_limits(None, Some(1)),
                 // Limited too, but unexpired: it sits in the same tier as the
                 // expired key 2, so only the expiry check puts it first.
-                auth_key(3, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1)
+                auth_key(3, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1)
                     .with_limits(None, Some(u64::MAX)),
             ],
         )
@@ -1412,13 +1478,10 @@ mod tests {
             ],
         )
         .await;
+        let note = note_type(SecurityLevel::HIGH);
         let key = wallet
             .identity()
-            .select_document_signing_key(
-                &identity_id,
-                &note_type(SecurityLevel::HIGH),
-                &available(&[2]),
-            )
+            .select_document_signing_key(&identity_id, &note, type_scope(&note), &available(&[2]))
             .await
             .unwrap();
         assert_eq!(key.id(), 2);
@@ -1478,13 +1541,13 @@ mod tests {
         let signer = KeyFilter(|_| true);
         let create = wallet
             .identity()
-            .select_document_create_signing_key(&creator, tombstone, &signer)
+            .select_document_signing_key(&creator, tombstone, create_scope(tombstone), &signer)
             .await
             .unwrap();
         assert_eq!(create.id(), 2);
         let replace = wallet
             .identity()
-            .select_document_signing_key(&creator, tombstone, &signer)
+            .select_document_signing_key(&creator, tombstone, type_scope(tombstone), &signer)
             .await
             .unwrap();
         assert_eq!(replace.id(), 1);
@@ -1493,12 +1556,11 @@ mod tests {
         hold_identity(&wallet, narrow, 2, vec![tombstone_only()]).await;
         let error = wallet
             .identity()
-            .select_document_create_signing_key(&narrow, tombstone, &signer)
+            .select_document_signing_key(&narrow, tombstone, create_scope(tombstone), &signer)
             .await
             .unwrap_err();
         assert!(
-            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
-                if message.contains("No ECDSA (or ECDSA_HASH160) authentication key")),
+            matches!(error, PlatformWalletError::NoUsableSigningKey { .. }),
             "{error:?}"
         );
     }
@@ -1654,11 +1716,13 @@ mod tests {
         let select = |ids: &'static [u32]| {
             let wallet = Arc::clone(&wallet);
             async move {
+                let note = note_type(SecurityLevel::HIGH);
                 wallet
                     .identity()
                     .select_document_signing_key(
                         &owner(),
-                        &note_type(SecurityLevel::HIGH),
+                        &note,
+                        type_scope(&note),
                         &available(ids),
                     )
                     .await
@@ -1679,7 +1743,7 @@ mod tests {
         let signer = lock_checking_signer(wallet.identity());
         let error = wallet
             .identity()
-            .select_document_signing_key(&owner(), &note, &signer)
+            .select_document_signing_key(&owner(), &note, type_scope(&note), &signer)
             .await
             .unwrap_err();
         assert_signer_key_unavailable(error);
@@ -1687,7 +1751,7 @@ mod tests {
         let stranger = Identifier::from([5; 32]);
         let error = wallet
             .identity()
-            .select_document_signing_key(&stranger, &note, &available(&[1]))
+            .select_document_signing_key(&stranger, &note, type_scope(&note), &available(&[1]))
             .await
             .unwrap_err();
         assert!(
@@ -1724,9 +1788,15 @@ mod tests {
         let select = |requirement, ids: &'static [u32]| {
             let wallet = Arc::clone(&wallet);
             async move {
+                let note = note_type(requirement);
                 wallet
                     .identity()
-                    .select_document_signing_key(&owner(), &note_type(requirement), &available(ids))
+                    .select_document_signing_key(
+                        &owner(),
+                        &note,
+                        type_scope(&note),
+                        &available(ids),
+                    )
                     .await
                     .map(|key| key.id())
             }
@@ -1742,7 +1812,13 @@ mod tests {
         let signer = lock_checking_signer(wallet.identity());
         let error = wallet
             .identity()
-            .resolve_authentication_signing_key(&Identifier::default(), 1, &signer)
+            .resolve_authentication_signing_key(
+                &Identifier::default(),
+                1,
+                &super::super::dashpay_contract().unwrap(),
+                "contactRequest",
+                &signer,
+            )
             .await
             .unwrap_err();
         assert!(
@@ -1787,39 +1863,186 @@ mod tests {
         );
     }
 
-    #[test]
-    fn allowed_levels_high_requirement_admits_critical_and_high_only() {
-        // DPNS `preorder` requires HIGH: CRITICAL + HIGH qualify,
-        // MEDIUM does not, MASTER is excluded.
-        let levels = allowed_signing_security_levels(SecurityLevel::HIGH);
-        assert_eq!(levels, vec![SecurityLevel::CRITICAL, SecurityLevel::HIGH]);
+    use super::super::key_selection::tests::{bound_key, identity, key};
+    use super::super::signing_key::tests::KeyFilter;
+    use dpp::identity::identity_public_key::accessors::v0::{
+        IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+    };
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::KeyType;
+
+    const CONTRACT: [u8; 32] = [0xDA; 32];
+
+    fn scope() -> SigningScope<'static> {
+        SigningScope::DocumentType {
+            contract_id: Identifier::from(CONTRACT),
+            document_type_name: "note",
+        }
+    }
+
+    fn pick(identity: &Identity, requirement: SecurityLevel) -> Option<u32> {
+        document_signing_key(identity, &KeyFilter(|_| true), requirement, scope())
+            .unwrap()
+            .map(|key| key.id())
+    }
+
+    #[tokio::test]
+    async fn should_sign_a_document_write_for_an_identity_holding_only_hash160_keys() {
+        use dpp::bls::native_bls::NativeBlsModule;
+        use dpp::data_contracts::SystemDataContract;
+        use dpp::document::DocumentV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::system_data_contracts::load_system_data_contract;
+        use dpp::util::hash::ripemd160_sha256;
+        use dpp::version::PlatformVersion;
+        use simple_signer::signer::SimpleSigner;
+
+        // The default key layout of identities older Dash Evo Tool versions created: every
+        // key a HASH160 of its public key
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+        let keys: Vec<IdentityPublicKey> = [
+            (0, SecurityLevel::MASTER),
+            (1, SecurityLevel::CRITICAL),
+            (2, SecurityLevel::HIGH),
+        ]
+        .into_iter()
+        .map(|(id, security_level)| {
+            let private_key = [id as u8 + 1; 32];
+            let secret = dpp::secp256k1::SecretKey::from_secret_bytes(private_key)
+                .expect("a valid secret key");
+            let public_key = secret.public_key().serialize();
+            let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_HASH160,
+                read_only: false,
+                data: BinaryData::new(ripemd160_sha256(&public_key).to_vec()),
+                disabled_at: None,
+            });
+            signer.add_identity_public_key(key.clone(), private_key);
+            key
+        })
+        .collect();
+        let identity = identity(keys);
+
+        let dashpay = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+            .expect("the DashPay contract loads");
+        let profile = dashpay
+            .document_type_for_name("profile")
+            .expect("the profile type");
+        let key = document_signing_key(
+            &identity,
+            &signer,
+            profile.security_level_requirement(),
+            SigningScope::DocumentCreate {
+                document_type: profile,
+            },
+        )
+        .expect("the signer reaches the keys")
+        .expect("a HASH160 key signs a document write");
+        assert_eq!(key.id(), 2, "the HIGH key, as the profile type requires");
+
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([7; 32]),
+            owner_id: identity.id(),
+            properties: BTreeMap::from([(
+                "displayName".to_string(),
+                Value::Text("Alice".to_string()),
+            )]),
+            ..Default::default()
+        });
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            profile,
+            [9; 32],
+            key,
+            1,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("the HASH160 key signs the batch");
+        transition
+            .verify_identity_signed_signature(key, &NativeBlsModule, platform_version)
+            .expect("Platform verifies the signature by the HASH160 key");
+    }
+
+    fn bound_elsewhere(id: u32, level: SecurityLevel) -> IdentityPublicKey {
+        bound_key(
+            id,
+            level,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from([0x0E; 32]),
+            }),
+        )
     }
 
     #[test]
-    fn allowed_levels_medium_requirement_admits_critical_high_medium() {
-        let levels = allowed_signing_security_levels(SecurityLevel::MEDIUM);
-        assert_eq!(
-            levels,
-            vec![
-                SecurityLevel::CRITICAL,
-                SecurityLevel::HIGH,
-                SecurityLevel::MEDIUM
-            ]
+    fn should_choose_a_document_key_whose_bounds_cover_the_document_type() {
+        let identity = identity(vec![
+            bound_elsewhere(1, SecurityLevel::CRITICAL),
+            key(2, SecurityLevel::HIGH),
+        ]);
+        assert_eq!(pick(&identity, SecurityLevel::HIGH), Some(2));
+    }
+
+    #[test]
+    fn should_choose_an_unlimited_document_key_before_a_limited_one() {
+        let identity = identity(vec![
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(2, SecurityLevel::HIGH),
+        ]);
+        assert_eq!(pick(&identity, SecurityLevel::HIGH), Some(2));
+    }
+
+    #[test]
+    fn should_choose_only_levels_the_document_type_accepts() {
+        let identity = identity(vec![
+            key(0, SecurityLevel::MASTER),
+            key(1, SecurityLevel::MEDIUM),
+            key(2, SecurityLevel::HIGH),
+        ]);
+        assert_eq!(pick(&identity, SecurityLevel::HIGH), Some(2));
+        assert_eq!(pick(&identity, SecurityLevel::CRITICAL), None);
+        assert_eq!(pick(&identity, SecurityLevel::MEDIUM), Some(1));
+    }
+
+    #[test]
+    fn should_refuse_an_explicit_document_key_platform_would_refuse() {
+        let check = |key: &IdentityPublicKey| {
+            check_document_signing_key(key, &KeyFilter(|_| true), SecurityLevel::HIGH, scope())
+        };
+        check(&key(1, SecurityLevel::HIGH)).expect("a HIGH key meets a HIGH requirement");
+        assert!(
+            check(&key(1, SecurityLevel::MEDIUM)).is_err(),
+            "MEDIUM is below the requirement"
         );
-    }
-
-    #[test]
-    fn allowed_levels_critical_requirement_admits_only_critical() {
-        let levels = allowed_signing_security_levels(SecurityLevel::CRITICAL);
-        assert_eq!(levels, vec![SecurityLevel::CRITICAL]);
-    }
-
-    #[test]
-    fn allowed_levels_master_requirement_is_master_only() {
-        // Degenerate case mirrored from the consensus rule: a MASTER
-        // requirement collapses to the single `[MASTER]` set rather
-        // than the CRITICAL..=MASTER range (which would be empty).
-        let levels = allowed_signing_security_levels(SecurityLevel::MASTER);
-        assert_eq!(levels, vec![SecurityLevel::MASTER]);
+        assert!(
+            check(&bound_elsewhere(1, SecurityLevel::HIGH)).is_err(),
+            "the key is bound to another contract"
+        );
+        assert!(
+            check(&key(1, SecurityLevel::HIGH).with_limits(None, Some(1))).is_err(),
+            "the key has expired"
+        );
+        for key_type in [KeyType::ECDSA_HASH160, KeyType::BLS12_381] {
+            let mut explicit = key(1, SecurityLevel::HIGH);
+            explicit.set_key_type(key_type);
+            check(&explicit).expect("Platform verifies a signature by this key type");
+        }
+        let mut eddsa = key(1, SecurityLevel::HIGH);
+        eddsa.set_key_type(KeyType::EDDSA_25519_HASH160);
+        assert!(
+            check(&eddsa).is_err(),
+            "Platform cannot verify an identity signature by this key type"
+        );
     }
 }

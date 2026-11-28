@@ -16,7 +16,9 @@ use dpp::data_contract::{DataContract, DataContractWithSerialization, TokenContr
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 
+use super::helpers::check_token_signing_key;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -184,6 +186,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> Result<(ConfigUpdateResult, ResponseMetadata), dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 
+        check_token_signing_key(
+            signing_key,
+            signer,
+            &data_contract,
+            token_position,
+            TokenTransitionActionType::ConfigUpdate,
+        )?;
+
         let mut builder = TokenConfigUpdateTransitionBuilder::new(
             data_contract,
             token_position,
@@ -223,7 +233,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, PlatformWalletError>
     {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
+        let signing_key = self
+            .token_resolve_signing_key(
+                &identity_id,
+                token_contract_id,
+                token_position,
+                signer,
+                TokenTransitionActionType::ConfigUpdate,
+            )
+            .await?;
 
         self.token_update_config_with_signer(
             data_contract,
@@ -266,7 +284,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> Result<TokenConfigUpdateOutcome, PlatformWalletError> {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let minimum_version = data_contract.version().saturating_add(1);
-        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
+        let signing_key = self
+            .token_resolve_signing_key(
+                &identity_id,
+                token_contract_id,
+                token_position,
+                signer,
+                TokenTransitionActionType::ConfigUpdate,
+            )
+            .await?;
 
         let (result, metadata) = self
             .token_update_config_with_metadata(

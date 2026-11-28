@@ -43,12 +43,9 @@ impl IdentityWallet {
     /// Platform charges the owner the multiple choice proposal processing
     /// fee (0.2 Dash, `Sdk::multiple_choice_proposal_processing_fee`) on
     /// top of the fees; the create does not state it. The transition is
-    /// signed with the owner's key that `select_document_create_signing_key`
-    /// picks for the `multipleChoiceProposal` type: the first
-    /// AUTHENTICATION key (ECDSA_SECP256K1, else ECDSA_HASH160) at a
-    /// security level the type accepts, whose contract bounds allow it and
-    /// any type its create consumes, that `signer` can sign with. The owner's balance the proof carries
-    /// is kept. Platform refuses a proposal that gives neither a
+    /// signed with the owner's key [`usable_signing_key`] picks for a
+    /// `multipleChoiceProposal` create that `signer` can sign with, and
+    /// the owner's balance the proof carries is kept. Platform refuses a proposal that gives neither a
     /// description document nor a url. The proposal's id is the id of the
     /// returned document.
     ///
@@ -72,7 +69,14 @@ impl IdentityWallet {
             .build_multiple_choice_proposal(*owner_identity_id, input)
             .await?;
         let signing_key = self
-            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentCreate {
+                    document_type: document_type.as_ref(),
+                },
+                signer,
+            )
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(
@@ -129,7 +133,15 @@ impl IdentityWallet {
         let replacement =
             multiple_choice_proposal_replacement(owner_identity_id, proposal_id, read, edit)?;
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentType {
+                    contract_id: DECISION_PROPOSALS_CONTRACT_ID,
+                    document_type_name: MULTIPLE_CHOICE_PROPOSAL_DOCUMENT_TYPE_NAME,
+                },
+                signer,
+            )
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(
@@ -177,7 +189,14 @@ impl IdentityWallet {
         let DecisionProposalDocument { document, entropy } =
             self.sdk.build_choice(*owner_identity_id, input).await?;
         let signing_key = self
-            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentCreate {
+                    document_type: document_type.as_ref(),
+                },
+                signer,
+            )
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(

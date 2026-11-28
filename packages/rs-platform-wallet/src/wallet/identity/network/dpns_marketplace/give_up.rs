@@ -22,7 +22,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::DataContract;
 use dpp::prelude::Identifier;
@@ -32,8 +32,7 @@ use crate::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameState
 use crate::error::{promote_identity_insufficient_balance_or, PlatformWalletError};
 
 use super::super::contact_requests::GatedSigner;
-use super::super::document::allowed_signing_security_levels;
-use super::super::usable_authentication_key_for_types;
+use super::super::{usable_signing_key, SigningScope, WALLET_SIGNING_KEY_TYPES};
 use super::{now_ms, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE};
 
 /// DPNS document type of a name given up for good, from DPNS v3.
@@ -413,8 +412,14 @@ impl IdentityWallet {
             .fetch_current_dpns_contract()
             .await
             .map_err(|error| give_up_error(error, name))?;
-        let document_types: Vec<&str> = match method {
-            DpnsNameGiveUpMethod::Delete => vec![DPNS_DOCUMENT_TYPE],
+        let (document_types, scope): (Vec<&str>, SigningScope<'_>) = match method {
+            DpnsNameGiveUpMethod::Delete => (
+                vec![DPNS_DOCUMENT_TYPE],
+                SigningScope::DocumentType {
+                    contract_id: current_contract.id(),
+                    document_type_name: DPNS_DOCUMENT_TYPE,
+                },
+            ),
             DpnsNameGiveUpMethod::Tombstone => {
                 let tombstone_type = current_contract
                     .document_type_for_name(DPNS_TOMBSTONE_DOCUMENT_TYPE)
@@ -424,9 +429,14 @@ impl IdentityWallet {
                              type: {error}"
                         ))
                     })?;
-                std::iter::once(DPNS_TOMBSTONE_DOCUMENT_TYPE)
-                    .chain(tombstone_type.consumable_document_type_names())
-                    .collect()
+                (
+                    std::iter::once(DPNS_TOMBSTONE_DOCUMENT_TYPE)
+                        .chain(tombstone_type.consumable_document_type_names())
+                        .collect(),
+                    SigningScope::DocumentCreate {
+                        document_type: tombstone_type,
+                    },
+                )
             }
         };
         let signing_key = self
@@ -434,6 +444,7 @@ impl IdentityWallet {
                 owner_identity_id,
                 &current_contract,
                 &document_types,
+                scope,
                 signer,
             )
             .await?;
@@ -661,17 +672,18 @@ impl IdentityWallet {
         }
     }
 
-    /// The signing key of a give-up acting on `document_type_names` of `contract`: an
-    /// AUTHENTICATION ECDSA key of `identity_id` at a security level every one of those
-    /// types accepts, whose contract bounds cover all of them
-    /// ([`usable_authentication_key_for_types`]). A key bound to one of the types alone is
-    /// skipped for a later key that covers both, rather than signing a transition the
+    /// The signing key of a give-up in `scope`, acting on `document_type_names` of
+    /// `contract`: an AUTHENTICATION key of one of [`WALLET_SIGNING_KEY_TYPES`] of
+    /// `identity_id` at a security level every one of those types accepts, whose contract
+    /// bounds cover `scope` ([`usable_signing_key`]). A key bound to one of the types alone
+    /// is skipped for a later key that covers both, rather than signing a transition the
     /// network refuses.
     async fn select_give_up_signing_key(
         &self,
         identity_id: &Identifier,
         contract: &DataContract,
         document_type_names: &[&str],
+        scope: SigningScope<'_>,
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let mut security_levels: Option<Vec<SecurityLevel>> = None;
@@ -684,7 +696,7 @@ impl IdentityWallet {
                     ))
                 })?
                 .security_level_requirement();
-            let allowed = allowed_signing_security_levels(required);
+            let allowed = required.document_signing_levels();
             security_levels = Some(match security_levels {
                 None => allowed,
                 Some(levels) => levels
@@ -702,23 +714,21 @@ impl IdentityWallet {
                 .map(|managed| managed.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
-        usable_authentication_key_for_types(
+        usable_signing_key(
             &identity,
             signer,
-            contract.id(),
-            document_type_names,
+            Purpose::AUTHENTICATION,
             &security_levels,
-            // Both ECDSA representations sign a document batch, as for DashPay profiles
-            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+            &WALLET_SIGNING_KEY_TYPES,
+            scope,
         )?
         .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No ECDSA (or ECDSA_HASH160) authentication key of identity {identity_id} may sign a DPNS \
-                 {} transition: none is at a security level every type accepts with \
-                 contract bounds covering them all",
-                document_type_names.join(" + ")
-            ))
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: *identity_id,
+            purposes: vec![Purpose::AUTHENTICATION],
+            security_levels,
+            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+            transition: format!("a DPNS {} transition", document_type_names.join(" + ")),
         })
     }
 }

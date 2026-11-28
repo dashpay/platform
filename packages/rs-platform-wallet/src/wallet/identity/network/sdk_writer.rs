@@ -1,9 +1,9 @@
 //! Concrete helper over the SDK's DashPay write/broadcast surface.
 //!
 //! The two operations `IdentityWallet` performs over the SDK —
-//! [`Sdk::sign_contact_request`](dash_sdk::Sdk::sign_contact_request)
+//! [`Sdk::sign_prepared_contact_request`](dash_sdk::Sdk::sign_prepared_contact_request)
 //! and a document put — cannot be expressed as plain method calls at
-//! the call sites: `sign_contact_request` is generic over **seven**
+//! the call sites: `sign_prepared_contact_request` is generic over **seven**
 //! type parameters (the signer plus three ECDH/xpub closure pairs) and
 //! the document put rides on the signer-generic
 //! [`PutDocument`](dash_sdk::platform::transition::put_document::PutDocument)
@@ -27,8 +27,8 @@ use dpp::identity::{Identity, IdentityPublicKey};
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
-    ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
-    SignedContactRequest,
+    ContactRequestInput, EcdhProvider, PreparedContactRequest, RecipientIdentity,
+    SendContactRequestInput, SignedContactRequest,
 };
 
 use crate::error::PlatformWalletError;
@@ -91,6 +91,9 @@ where
 /// either the resident seed or the Keychain signer without the helper
 /// knowing which.
 pub(crate) struct SendContactRequestParams<'a> {
+    /// The DashPay contract snapshot `signing_public_key` was chosen by;
+    /// the document is built and submitted as its `contactRequest` type.
+    pub prepared: PreparedContactRequest,
     /// Sender (owner) identity — already loaded from local state.
     pub sender_identity: Identity,
     /// Recipient identity — already fetched from Platform.
@@ -153,7 +156,7 @@ pub(crate) struct PutDocumentParams<'a> {
 ///
 /// Held as a field on [`IdentityWallet`](super::IdentityWallet),
 /// forwarding to the real SDK. Its two methods erase the SDK's
-/// generic write signatures (`sign_contact_request`'s seven type
+/// generic write signatures (`sign_prepared_contact_request`'s seven type
 /// params, the signer-generic `PutDocument`) behind concrete, by-value
 /// inputs so the call sites in `contact_requests.rs` /
 /// `contact_info.rs` stay simple.
@@ -190,6 +193,7 @@ impl SdkWriter {
         params: SendContactRequestParams<'_>,
     ) -> Result<SignedContactRequest, PlatformWalletError> {
         let SendContactRequestParams {
+            prepared,
             sender_identity,
             recipient_identity,
             sender_key_index,
@@ -254,9 +258,12 @@ impl SdkWriter {
 
         let xpub_bytes_clone = xpub_bytes.clone();
         self.sdk
-            .sign_contact_request(send_input, ecdh_provider, |_account_ref: u32| async move {
-                Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone)
-            })
+            .sign_prepared_contact_request(
+                prepared,
+                send_input,
+                ecdh_provider,
+                |_account_ref: u32| async move { Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone) },
+            )
             .await
             .map_err(PlatformWalletError::Sdk)
     }

@@ -16,12 +16,13 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::DocumentV0Getters;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType};
+use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::{DataContract, Identifier};
 
-use super::document::SignerRef;
-use super::{usable_authentication_key, IdentityWallet};
+use super::document::{document_signing_key, SignerRef};
+use super::{IdentityWallet, SigningScope, WALLET_SIGNING_KEY_TYPES};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 /// A proved lifecycle, or a read that could not establish one.
@@ -128,21 +129,20 @@ fn select_erase_key(
     contract_id: Identifier,
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Result<IdentityPublicKey, PlatformWalletError> {
-    usable_authentication_key(
-        identity,
-        signer,
+    let requirement = document_type.security_level_requirement();
+    let scope = SigningScope::DocumentType {
         contract_id,
-        document_type.name(),
-        &document_type
-            .security_level_requirement()
-            .document_signing_levels(),
-        &[KeyType::ECDSA_SECP256K1],
-    )
-    .map_err(PlatformWalletError::Sdk)?
-    .cloned()
-    .ok_or_else(|| {
-        PlatformWalletError::InvalidIdentityData("No eligible document erase signing key".into())
-    })
+        document_type_name: document_type.name(),
+    };
+    document_signing_key(identity, signer, requirement, scope)?
+        .cloned()
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: identity.id(),
+            purposes: vec![Purpose::AUTHENTICATION],
+            security_levels: SecurityLevel::accepted_for_requirement(requirement),
+            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+            transition: format!("a {} document transition", document_type.name()),
+        })
 }
 
 fn observation(history: Option<&DocumentHistory>) -> DocumentLifecycleObservation {
@@ -328,6 +328,7 @@ mod tests {
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::KeyType;
     use dpp::version::PlatformVersion;
 
     fn observed(state: DocumentHistoryState) -> DocumentLifecycleObservation {
@@ -522,8 +523,37 @@ mod tests {
         identity.add_public_key(key(0, SecurityLevel::MASTER));
         assert!(matches!(
             select_erase_key(&identity, &document_type, contract.id(), &signer),
-            Err(PlatformWalletError::InvalidIdentityData(_))
+            Err(PlatformWalletError::NoUsableSigningKey {
+                purposes,
+                ..
+            }) if purposes == [Purpose::AUTHENTICATION]
         ));
+    }
+
+    #[test]
+    fn should_select_an_ecdsa_hash160_erase_key() {
+        use super::super::signing_key::tests::available;
+        use dpp::identity::{Identity, SecurityLevel};
+        let contract = contract();
+        let document_type = contract.document_type_cloned_for_name("note").unwrap();
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_key(
+            dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 1,
+                purpose: dpp::identity::Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                key_type: KeyType::ECDSA_HASH160,
+                data: vec![1; 20].into(),
+                ..Default::default()
+            }
+            .into(),
+        );
+        assert_eq!(
+            select_erase_key(&identity, &document_type, contract.id(), &available(&[1]))
+                .unwrap()
+                .id(),
+            1
+        );
     }
 
     #[derive(Default)]

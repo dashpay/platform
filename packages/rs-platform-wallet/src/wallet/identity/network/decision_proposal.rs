@@ -40,12 +40,9 @@ impl IdentityWallet {
     /// rs-sdk builds the proposal (`Sdk::build_decision_proposal`); its
     /// create states the decision proposal fund (0.5 Dash), which the
     /// owner pays on top of the fees. The transition is signed with the
-    /// owner's key that `select_document_create_signing_key` picks for the
-    /// `proposal` type: the first AUTHENTICATION key (ECDSA_SECP256K1,
-    /// else ECDSA_HASH160) at a security level the type accepts, whose
-    /// contract bounds allow it and any type its create consumes, that
-    /// `signer` can sign with. The
-    /// owner's balance the proof carries is kept. Platform refuses a rule
+    /// owner's key [`usable_signing_key`] picks for a `proposal` create
+    /// that `signer` can sign with, and the owner's balance the proof
+    /// carries is kept. Platform refuses a rule
     /// outside the contract's limits and an end date less than a week or
     /// more than four weeks after the block that creates the proposal.
     /// The proposal's id is the id of the returned document.
@@ -70,7 +67,14 @@ impl IdentityWallet {
             .build_decision_proposal(*owner_identity_id, input)
             .await?;
         let signing_key = self
-            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentCreate {
+                    document_type: document_type.as_ref(),
+                },
+                signer,
+            )
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(
@@ -122,7 +126,15 @@ impl IdentityWallet {
         let replacement =
             decision_proposal_replacement(owner_identity_id, proposal_id, read, edit)?;
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_signing_key(
+                owner_identity_id,
+                &document_type,
+                SigningScope::DocumentType {
+                    contract_id: DECISION_PROPOSALS_CONTRACT_ID,
+                    document_type_name: PROPOSAL_DOCUMENT_TYPE_NAME,
+                },
+                signer,
+            )
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(
