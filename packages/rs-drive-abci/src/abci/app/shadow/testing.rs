@@ -351,6 +351,12 @@ pub fn no_shadow_for_the_chains_of_this_thread() {
 /// The environment variable that gives the applications of the strategy tests a shadow:
 /// `other` for one on the other storage engine, `same` for one on the engine of the
 /// primary, which is the control.
+///
+/// A run with it is made with a process for each test, as `cargo nextest` makes it. The
+/// Platform of a shadow stays open to the end of its process ([`shadow_for_tests`]), so
+/// in one process for all the strategy tests, as `cargo test` makes it, the files that
+/// the shadows of the chains before hold open add up, and under a limit of 1,024 open
+/// files chains fail to open their databases.
 pub const SHADOW: &str = "DRIVE_TEST_SHADOW";
 
 /// The environment variable that names a file to which every shadow of a test appends its
