@@ -50,6 +50,18 @@ pub struct PreparedContactRequest {
     with_shielded_address: bool,
 }
 
+/// Refuse an auto-accept proof outside 38-102 bytes. It depends on the input alone, so callers
+/// run it before resolving the DashPay contract or asking the host for anything.
+fn check_auto_accept_proof(proof: Option<&[u8]>) -> Result<(), Error> {
+    match proof {
+        Some(proof) if proof.len() < 38 || proof.len() > 102 => Err(Error::Generic(format!(
+            "autoAcceptProof must be 38-102 bytes, got {}",
+            proof.len()
+        ))),
+        _ => Ok(()),
+    }
+}
+
 impl PreparedContactRequest {
     /// Refuse a request whose address presence differs from the preparation: the contract
     /// was resolved for a request with or without an address, and one sent the other way
@@ -409,6 +421,7 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        check_auto_accept_proof(input.auto_accept_proof.as_deref())?;
         let prepared = self
             .prepare_contact_request(input.shielded_address.is_some())
             .await?;
@@ -466,15 +479,7 @@ impl Sdk {
     {
         prepared.check_address_mode(input.shielded_address.is_some())?;
 
-        // Validate auto accept proof size if provided
-        if let Some(ref proof) = input.auto_accept_proof {
-            if proof.len() < 38 || proof.len() > 102 {
-                return Err(Error::Generic(format!(
-                    "autoAcceptProof must be 38-102 bytes, got {}",
-                    proof.len()
-                )));
-            }
-        }
+        check_auto_accept_proof(input.auto_accept_proof.as_deref())?;
 
         // Fetch recipient identity if only ID was provided
         let recipient_identity = match input.recipient {
@@ -734,6 +739,7 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        check_auto_accept_proof(input.contact_request.auto_accept_proof.as_deref())?;
         let prepared = self
             .prepare_contact_request(input.contact_request.shielded_address.is_some())
             .await?;
@@ -763,6 +769,7 @@ impl Sdk {
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
         prepared.check_address_mode(input.contact_request.shielded_address.is_some())?;
+        check_auto_accept_proof(input.contact_request.auto_accept_proof.as_deref())?;
         let contract_id = prepared.dashpay_contract_id();
         self.context_provider_arc()
             .get_data_contract(&contract_id, self.version())?
@@ -820,6 +827,7 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        check_auto_accept_proof(input.contact_request.auto_accept_proof.as_deref())?;
         let prepared = self
             .prepare_contact_request(input.contact_request.shielded_address.is_some())
             .await?;
@@ -1420,6 +1428,41 @@ mod tests {
         );
         assert!(refusal.to_string().contains(&format!("{contract_id}")));
         assert_eq!(signer.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    /// A malformed auto-accept proof is refused from the input alone, before the DashPay
+    /// contract is resolved: an SDK whose provider lacks it and cannot fetch it still reports
+    /// the proof.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_malformed_auto_accept_proof_before_resolving_dashpay() {
+        let version = PlatformVersion::latest();
+        // No fetch expectations: resolving DashPay would fail with a mock error.
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DashPayProvider::default())
+            .build()
+            .expect("the SDK builds");
+        let mut input = contact_request_input(None);
+        input.auto_accept_proof = Some(vec![0u8; 1]);
+
+        let refusal = sdk
+            .create_contact_request(
+                input,
+                EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
+                    get_shared_secret:
+                        |_: &PublicKey| -> std::future::Ready<Result<[u8; 32], Error>> {
+                            panic!("a malformed proof must be refused before ECDH");
+                        },
+                },
+                |_| std::future::ready(Ok(vec![4u8; COMPACT_XPUB_LEN])),
+            )
+            .await
+            .expect_err("the malformed proof is refused");
+        assert!(
+            matches!(&refusal, Error::Generic(message) if message.contains("autoAcceptProof")),
+            "{refusal}"
+        );
     }
 
     /// An address that does not match the preparation is refused as an invalid request even
