@@ -181,6 +181,7 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
     catch_panic_to_code(
         "platform_wallet_manager_identity_sync_sync_now",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Balances read before the failure may already be stored; run the sync again.",
         || {
             let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {

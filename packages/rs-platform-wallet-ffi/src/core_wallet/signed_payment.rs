@@ -94,44 +94,54 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
             let c_txid = match CString::new(txid.to_string()) {
                 Ok(s) => s,
                 Err(_) => {
-                    return PlatformWalletFFIResult::err(
+                    // The broadcast went out; only its txid could not be
+                    // handed back.
+                    return PlatformWalletFFIResult::handback_failure(
                         PlatformWalletFFIResultCode::ErrorUtf8Conversion,
-                        "txid string contained an interior NUL".to_string(),
+                        "txid string contained an interior NUL",
                     );
                 }
             };
             *out_txid = c_txid.into_raw();
             PlatformWalletFFIResult::ok()
         }
-        // Split the three deferred-token failures into distinct sibling codes so
-        // a host can message each precisely. All are non-retryable-in-place and
-        // none touched the network.
-        Err(e @ SignedPaymentError::StaleReservationToken(_)) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorStaleReservationToken,
-            e.to_string(),
-        ),
-        Err(e @ SignedPaymentError::StaleToken(_)) => PlatformWalletFFIResult::err(
+        // Split the deferred-token refusals into distinct sibling codes so a
+        // host can message each precisely. None is retryable in place.
+        Err(e @ SignedPaymentError::StaleReservationToken(_)) => {
+            token_refusal(PlatformWalletFFIResultCode::ErrorStaleReservationToken, &e)
+        }
+        Err(e @ SignedPaymentError::StaleToken(_)) => token_refusal(
             PlatformWalletFFIResultCode::ErrorReservationTokenConsumed,
-            e.to_string(),
+            &e,
         ),
-        Err(e @ SignedPaymentError::WalletMismatch(_)) => PlatformWalletFFIResult::err(
+        Err(e @ SignedPaymentError::WalletMismatch(_)) => token_refusal(
             PlatformWalletFFIResultCode::ErrorReservationWalletMismatch,
-            e.to_string(),
+            &e,
         ),
         // The wallet was REMOVED from the manager, so there is no live
         // generation to broadcast through. Reported as the existing `NotFound`
         // (98) rather than a new code: it is exactly the "the thing you named
         // does not exist" case 98 already means, and both hosts already map it.
         // Distinct from `ErrorReservationWalletMismatch` (36), where a DIFFERENT
-        // live generation answers to the same id. Did NOT touch the network and
-        // is NOT retryable — the wallet is gone.
+        // live generation answers to the same id. Did NOT touch the network.
         Err(e @ SignedPaymentError::WalletRemoved(_)) => {
-            PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::NotFound, e.to_string())
+            token_refusal(PlatformWalletFFIResultCode::NotFound, &e)
         }
         // Preserve the typed underlying wallet error (keeps the ambiguous
         // "may already be on the network" retry semantics intact).
         Err(SignedPaymentError::Broadcast(e)) => PlatformWalletFFIResult::from(e),
     }
+}
+
+/// A deferred-token refusal under `code`, carrying the class the wallet gives
+/// it ([`SignedPaymentError::payment_delivery`] and
+/// [`SignedPaymentError::is_retryable`]).
+fn token_refusal(
+    code: PlatformWalletFFIResultCode,
+    error: &SignedPaymentError,
+) -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(code, error.to_string())
+        .with_payment_class((error.payment_delivery(), error.is_retryable()))
 }
 
 /// Release the funding reservation behind `token` and drop it — the "payment
@@ -146,4 +156,91 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
 pub unsafe extern "C" fn core_wallet_signed_payment_release(token: u64) -> PlatformWalletFFIResult {
     runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(ReservationToken::from(token)));
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+
+    /// A token the registry no longer holds may already have been broadcast,
+    /// so the refusal crosses as the wallet classes it: `MaybeSent`, never
+    /// retryable, under its own code. Before, it crossed unclassified.
+    #[test]
+    fn should_class_an_unknown_token_broadcast_as_maybe_sent() {
+        let (_manager, core) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let core = wallet.core().clone();
+            (manager, core)
+        });
+        let core_handle = crate::handle::CORE_WALLET_STORAGE.insert(core);
+        let mut out_txid: *mut c_char = std::ptr::null_mut();
+
+        let result =
+            unsafe { core_wallet_signed_payment_broadcast(core_handle, u64::MAX, &mut out_txid) };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorReservationTokenConsumed
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+        assert!(!result.retryable);
+        assert!(out_txid.is_null());
+        crate::handle::CORE_WALLET_STORAGE.remove(core_handle);
+    }
+
+    /// A payment whose result could not be handed back crosses with the
+    /// wallet's class for it: `MaybeSent`, not retryable, naming no lock
+    /// (the one helper every binding's hand-back guard uses).
+    #[test]
+    fn should_class_a_result_that_cannot_be_handed_back_as_maybe_sent() {
+        let result = PlatformWalletFFIResult::handback_failure(
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+            "txid string contained an interior NUL",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+        assert!(!result.retryable);
+        assert_eq!(result.held_asset_lock.txid, [0; 32]);
+    }
+
+    /// The refusals that sent nothing cross as `NotSent`, not retryable, each
+    /// under its own code.
+    #[test]
+    fn should_class_the_refusals_that_sent_nothing_as_not_sent() {
+        let token = ReservationToken::from(7);
+        for (code, error) in [
+            (
+                PlatformWalletFFIResultCode::ErrorReservationWalletMismatch,
+                SignedPaymentError::WalletMismatch(token),
+            ),
+            (
+                PlatformWalletFFIResultCode::NotFound,
+                SignedPaymentError::WalletRemoved(token),
+            ),
+            (
+                PlatformWalletFFIResultCode::ErrorStaleReservationToken,
+                SignedPaymentError::StaleReservationToken(token),
+            ),
+        ] {
+            let result = token_refusal(code, &error);
+            assert_eq!(result.code, code);
+            assert_eq!(
+                result.payment_delivery,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+                "{error:?}"
+            );
+            assert!(!result.retryable, "{error:?}");
+        }
+    }
 }

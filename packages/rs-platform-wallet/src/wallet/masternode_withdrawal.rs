@@ -406,6 +406,38 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
     destination: Option<DashAddress>,
     signer: &S,
 ) -> Result<u64, PlatformWalletError> {
+    // Nothing reached the network before the broadcast: every error of the
+    // fetch, key selection, nonce read, build and signature is a refusal
+    // before dispatch, keeping its diagnostic.
+    let (state_transition, identity_id) = sign_masternode_withdrawal(
+        sdk,
+        pro_tx_hash,
+        amount_credits,
+        signing_key,
+        expected_hash160,
+        path,
+        destination,
+        signer,
+    )
+    .await
+    .map_err(PlatformWalletError::before_dispatch)?;
+    broadcast_masternode_withdrawal(sdk, &state_transition, identity_id, amount_credits).await
+}
+
+/// The local half of [`execute_masternode_withdrawal`]: the owner identity
+/// fetched, its key selected, and the withdrawal built and signed with the
+/// identity id it withdraws from. Nothing is sent.
+#[allow(clippy::too_many_arguments)]
+async fn sign_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>(
+    sdk: &dash_sdk::Sdk,
+    pro_tx_hash: [u8; 32],
+    amount_credits: u64,
+    signing_key: MasternodeWithdrawalKey,
+    expected_hash160: [u8; 20],
+    path: DerivationPath,
+    destination: Option<DashAddress>,
+    signer: &S,
+) -> Result<(StateTransition, Identifier), PlatformWalletError> {
     if amount_credits == 0 {
         return Err(PlatformWalletError::InvalidParameter(
             "masternode withdrawal amount must be greater than zero".to_string(),
@@ -486,7 +518,7 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
     .await
     .map_err(|e| definitive(dash_sdk::Error::Protocol(e)))?;
 
-    broadcast_masternode_withdrawal(sdk, &state_transition, identity_id, amount_credits).await
+    Ok((state_transition, identity_id))
 }
 
 /// Broadcast the signed masternode withdrawal `state_transition`, keeping
@@ -544,7 +576,8 @@ where
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
                 "masternode withdrawal failed: {e}"
-            )));
+            ))
+            .before_dispatch());
         }
         BroadcastDelivery::MaybeDelivered(e) => {
             tracing::warn!(
@@ -911,7 +944,8 @@ mod tests {
     }
 
     /// Only a withdrawal whose transition never left the wallet is an
-    /// ordinary, retryable failure, and nothing waits for its result.
+    /// ordinary failure, reported `NotSent`, and nothing waits for its
+    /// result.
     #[tokio::test]
     async fn should_report_a_masternode_withdrawal_failed_only_when_nothing_was_sent() {
         let waited = Cell::new(false);
@@ -927,9 +961,18 @@ mod tests {
             },
         )
         .await;
+        let error = settled.expect_err("a withdrawal never sent must fail");
+        assert_eq!(
+            error.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent,
+            "{error:?}"
+        );
         assert!(
-            matches!(settled, Err(PlatformWalletError::InvalidIdentityData(_))),
-            "{settled:?}"
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::InvalidIdentityData(_)
+            ),
+            "{error:?}"
         );
         assert!(!waited.get(), "nothing was sent, so nothing is waited for");
     }
@@ -994,8 +1037,16 @@ mod tests {
             WITHDRAWN,
         )
         .await;
+        let never_sent = never_sent.expect_err("nothing was sent");
+        assert_eq!(
+            never_sent.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
         assert!(
-            matches!(never_sent, Err(PlatformWalletError::InvalidIdentityData(_))),
+            matches!(
+                never_sent.dispatched_source(),
+                PlatformWalletError::InvalidIdentityData(_)
+            ),
             "{never_sent:?}"
         );
     }
@@ -1047,6 +1098,51 @@ mod tests {
             disabled_at: None,
         });
         (FixedKeySigner { secret }, hash, key)
+    }
+
+    /// A withdrawal refused before its broadcast (here the masternode
+    /// identity holds no key matching the wallet's) is `NotSent`, keeping its
+    /// diagnostic, whatever its variant would say after a dispatch.
+    #[tokio::test]
+    async fn should_report_a_withdrawal_refused_before_its_broadcast_as_not_sent() {
+        use dpp::identity::v0::IdentityV0;
+        let (signer, hash, _) = fixture();
+        let identity_id = Identifier::from(WITHDRAWN_FROM);
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.mock()
+            .expect_fetch::<Identity, Identifier>(
+                identity_id,
+                Some(Identity::V0(IdentityV0 {
+                    id: identity_id,
+                    public_keys: Default::default(),
+                    balance: WITHDRAWN,
+                    revision: 0,
+                })),
+            )
+            .await
+            .expect("set the identity fetch expectation");
+
+        let error = execute_masternode_withdrawal(
+            &sdk,
+            WITHDRAWN_FROM,
+            WITHDRAWN,
+            MasternodeWithdrawalKey::Owner,
+            hash,
+            DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            None,
+            &signer,
+        )
+        .await
+        .expect_err("no key of the identity matches");
+
+        assert_eq!(error.payment_delivery(), crate::PaymentDelivery::NotSent);
+        assert!(
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::InvalidIdentityData(message) if message.contains("not broadcasting")
+            ),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]

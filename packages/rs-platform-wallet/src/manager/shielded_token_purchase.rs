@@ -184,7 +184,9 @@ impl ShieldedTokenPurchaser {
     /// sending, or the refusal the spend would meet on these notes. It prices
     /// at the version the spend would sign at, and refuses an SDK whose
     /// version is not the network's as the spend does
-    /// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]).
+    /// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]). Every
+    /// refusal is `NotSent`; one whose variant is otherwise classed possibly
+    /// sent arrives wrapped in [`PlatformWalletError::RefusedBeforeDispatch`].
     pub async fn preview_spend(
         &self,
         account: u32,

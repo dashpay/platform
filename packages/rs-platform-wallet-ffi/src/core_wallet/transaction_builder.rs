@@ -188,8 +188,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
             PlatformWalletFFIResultCode::NotFound,
             "wallet is no longer registered in the manager (removed or re-created while the \
              transaction was being signed); no transaction handle was published and its \
-             reservation was reconciled"
-                .to_string(),
+             reservation was reconciled",
         );
     }
 
@@ -365,8 +364,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
             PlatformWalletFFIResultCode::NotFound,
             "wallet is no longer registered in the manager (removed or re-created while the \
              payment was being signed); the payment was not registered and its reservation was \
-             reconciled"
-                .to_string(),
+             reconciled",
         );
     }
 
@@ -382,9 +380,10 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
         Err(_) => {
             // Nothing registered yet — release the reservation finalize took.
             runtime().block_on(wallet.core().abandon_transaction(&finalized));
+            let message = "txid string contained an interior NUL";
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorUtf8Conversion,
-                "txid string contained an interior NUL".to_string(),
+                message,
             );
         }
     };
@@ -426,7 +425,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
             runtime().block_on(wallet.core().abandon_transaction(&err.signed));
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorReservationWalletMismatch,
-                "deferred payment was finalized against a different wallet generation".to_string(),
+                "deferred payment was finalized against a different wallet generation",
             );
         }
     };

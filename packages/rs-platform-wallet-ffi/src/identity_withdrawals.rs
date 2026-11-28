@@ -187,6 +187,7 @@ pub unsafe extern "C" fn platform_wallet_identity_withdrawals(
     catch_panic_to_code(
         "platform_wallet_identity_withdrawals",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Nothing was changed; read the withdrawals again.",
         || unsafe { identity_withdrawals_inner(wallet_handle, identity_id, out_rows, out_count) },
     )

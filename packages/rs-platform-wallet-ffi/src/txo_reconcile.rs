@@ -41,6 +41,7 @@ fn catch_reconcile_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         RECONCILE_PANIC_GUIDANCE,
         body,
     )

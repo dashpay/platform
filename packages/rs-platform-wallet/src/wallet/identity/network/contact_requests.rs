@@ -1088,21 +1088,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if store_read && !managed.dashpay().private_contact_requests_read() {
             return Err(PlatformWalletError::PrivateContactStoreNotRead(*sender));
         }
+        // An earlier public request to the pair blocks this one: its outcome
+        // is the earlier send's, and this request is refused before anything
+        // is signed (`NotSent`, not retryable until that one settles).
         if managed
             .dashpay()
             .public_contact_request_unconfirmed(recipient)
         {
-            return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
-                *recipient,
-            ));
+            return Err(
+                PlatformWalletError::PublicContactRequestUnconfirmed(*recipient).before_dispatch(),
+            );
         }
         private_pair_refusal(managed, &self.persister, sender, recipient)?;
         // One public send per pair: a second, built from the same tracked
         // requests, would sign a request of its own while the first may
         // still execute.
-        let attempt = managed.claim_public_contact_request(*recipient).ok_or(
-            PlatformWalletError::PublicContactRequestUnconfirmed(*recipient),
-        )?;
+        let attempt = managed
+            .claim_public_contact_request(*recipient)
+            .ok_or_else(|| {
+                PlatformWalletError::PublicContactRequestUnconfirmed(*recipient).before_dispatch()
+            })?;
         Ok(Some(PublicContactClaim {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
@@ -1312,7 +1317,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         .await;
         let confirmed = match delivery {
             BroadcastDelivery::NeverDelivered(error) => {
-                return Err(PlatformWalletError::Sdk(error))
+                return Err(PlatformWalletError::Sdk(error).before_dispatch())
             }
             BroadcastDelivery::MaybeDelivered(error) if carries_consensus_rejection(&error) => {
                 Err(error)

@@ -66,9 +66,9 @@ use dpp::group::group_action_status::GroupActionStatus;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::prelude::Identifier;
 use platform_wallet::{
-    ContractDocumentDeletion, ContractDocumentRestore, ContractModerationOffer,
-    ContractModeratorRole, ContractUserModerationKind, DocumentTypeModerationOffer,
-    PlatformWalletError,
+    panicked_payment_class, ContractDocumentDeletion, ContractDocumentRestore,
+    ContractModerationOffer, ContractModeratorRole, ContractUserModerationKind,
+    DocumentTypeModerationOffer, PlatformWalletError,
 };
 use rs_sdk_ffi::{
     contract_document_removal_json, contract_moderation_status_json, SignerHandle, VTableSigner,
@@ -413,6 +413,7 @@ pub unsafe extern "C" fn platform_wallet_contract_moderation_offer(
     catch_panic_to_code(
         "platform_wallet_contract_moderation_offer",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         OFFER_PANIC_GUIDANCE,
         || unsafe { contract_moderation_offer_inner(wallet_handle, contract_id, out_json) },
     )
@@ -508,6 +509,8 @@ pub unsafe extern "C" fn platform_wallet_contract_user_moderate(
     catch_panic_to_code(
         "platform_wallet_contract_user_moderate",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         WRITE_PANIC_GUIDANCE,
         || unsafe {
             contract_user_moderate_inner(
@@ -646,6 +649,8 @@ pub unsafe extern "C" fn platform_wallet_contract_document_delete(
     catch_panic_to_code(
         "platform_wallet_contract_document_delete",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         WRITE_PANIC_GUIDANCE,
         || unsafe {
             contract_document_delete_inner(
@@ -772,6 +777,8 @@ pub unsafe extern "C" fn platform_wallet_contract_document_restore(
     catch_panic_to_code(
         "platform_wallet_contract_document_restore",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         WRITE_PANIC_GUIDANCE,
         || unsafe {
             contract_document_restore_inner(
@@ -910,6 +917,8 @@ pub unsafe extern "C" fn platform_wallet_contract_document_change_fields(
     catch_panic_to_code(
         "platform_wallet_contract_document_change_fields",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         WRITE_PANIC_GUIDANCE,
         || unsafe {
             contract_document_change_fields_inner(
@@ -1042,6 +1051,8 @@ pub unsafe extern "C" fn platform_wallet_contract_document_propose_settled_delet
     catch_panic_to_code(
         "platform_wallet_contract_document_propose_settled_deletion",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         WRITE_PANIC_GUIDANCE,
         || unsafe {
             contract_document_propose_settled_deletion_inner(
@@ -1157,6 +1168,8 @@ pub unsafe extern "C" fn platform_wallet_contract_team_action_approve(
     catch_panic_to_code(
         "platform_wallet_contract_team_action_approve",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         WRITE_PANIC_GUIDANCE,
         || unsafe {
             contract_team_action_approve_inner(

@@ -1165,9 +1165,12 @@ impl IdentityWallet {
             )));
         }
         if state.price.is_none() {
+            // Refused before anything is signed: not Platform's verdict on a
+            // submitted delist.
             return Err(PlatformWalletError::DocumentNotForSale {
                 document_id: state.document_id,
-            });
+            }
+            .before_dispatch());
         }
         let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
@@ -1292,11 +1295,14 @@ impl IdentityWallet {
     /// [`PlatformWalletError::InsufficientIdentityCredits`] when the
     /// buyer's local balance can't cover
     /// `expected_price + `[`DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS`].
+    /// The pre-flight refusals are wrapped as
+    /// [`PlatformWalletError::RefusedBeforeDispatch`] (`NotSent`; the typed
+    /// variant is its [`PlatformWalletError::dispatched_source`]).
     ///
     /// The broadcast transition carries `expected_price` — NEVER the
     /// re-read price — so a listing change between pre-flight and
     /// broadcast is rejected by consensus (code 40109) and surfaces as
-    /// the same typed `DocumentPriceChanged`.
+    /// the same typed `DocumentPriceChanged`, unwrapped (`MaybeSent`).
     ///
     /// On success both sides are reconciled locally: the buyer gains the
     /// label and the name-state row (`Owned`), and a wallet-owned seller
@@ -1344,11 +1350,13 @@ impl IdentityWallet {
         };
         let required = required_purchase_credits(expected_price)?;
         if available < required {
+            // The local pre-flight, before anything is signed.
             return Err(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *purchaser_identity_id,
                 required,
                 available,
-            });
+            }
+            .before_dispatch());
         }
         let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
@@ -2204,8 +2212,15 @@ fn preflight_purchase_price(
     name: &str,
     expected_price: Credits,
 ) -> Result<(), PlatformWalletError> {
-    let listed_price = state.price.ok_or(PlatformWalletError::DocumentNotForSale {
-        document_id: state.document_id,
+    // Both refusals are the wallet's own reading of the fetched listing,
+    // before anything is signed, so they are `NotSent`
+    // ([`PlatformWalletError::before_dispatch`]); the same variants from
+    // Platform after a submission are not.
+    let listed_price = state.price.ok_or_else(|| {
+        PlatformWalletError::DocumentNotForSale {
+            document_id: state.document_id,
+        }
+        .before_dispatch()
     })?;
     if listed_price == 0 {
         return Err(PlatformWalletError::InvalidParameter(format!(
@@ -2218,7 +2233,8 @@ fn preflight_purchase_price(
             document_id: state.document_id,
             expected: expected_price,
             actual: listed_price,
-        });
+        }
+        .before_dispatch());
     }
     Ok(())
 }
@@ -4259,9 +4275,18 @@ mod tests {
                 .expect("fixture document must decode")
         };
 
+        // The wallet's own reading of the listing, before anything is
+        // signed: `NotSent`, though the same variants from Platform after a
+        // submission are `MaybeSent`.
+        let not_for_sale = preflight_purchase_price(&state(None), DEPARTED_LABEL, 5_000)
+            .expect_err("an unlisted name must be refused");
+        assert_eq!(
+            not_for_sale.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
         assert!(matches!(
-            preflight_purchase_price(&state(None), DEPARTED_LABEL, 5_000),
-            Err(PlatformWalletError::DocumentNotForSale { document_id: got }) if got == document_id
+            not_for_sale.dispatched_source(),
+            PlatformWalletError::DocumentNotForSale { document_id: got } if *got == document_id
         ));
 
         match preflight_purchase_price(&state(Some(0)), DEPARTED_LABEL, 5_000) {
@@ -4274,13 +4299,19 @@ mod tests {
             ),
         }
 
+        let moved = preflight_purchase_price(&state(Some(7_000)), DEPARTED_LABEL, 5_000)
+            .expect_err("a moved price must be refused");
+        assert_eq!(
+            moved.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
         assert!(matches!(
-            preflight_purchase_price(&state(Some(7_000)), DEPARTED_LABEL, 5_000),
-            Err(PlatformWalletError::DocumentPriceChanged {
+            moved.dispatched_source(),
+            PlatformWalletError::DocumentPriceChanged {
                 expected: 5_000,
                 actual: 7_000,
                 ..
-            })
+            }
         ));
         assert!(preflight_purchase_price(&state(Some(5_000)), DEPARTED_LABEL, 5_000).is_ok());
     }

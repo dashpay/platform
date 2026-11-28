@@ -35,7 +35,7 @@ use std::slice;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::Identifier;
-use platform_wallet::AssetLockFunding;
+use platform_wallet::{panicked_payment_class, AssetLockFunding};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -70,6 +70,8 @@ fn catch_address_top_up_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The panic may come after the broadcast: maybe sent, never retried.
+        Some(panicked_payment_class()),
         ADDRESS_TOP_UP_PANIC_GUIDANCE,
         body,
     )
@@ -412,6 +414,35 @@ const MIN_TOP_UP_DUFFS: u64 = 50_500;
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    amount_duffs: u64,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("funded identity top-up", || {
+        platform_wallet_top_up_identity_with_funding_signer_inner(
+            wallet_handle,
+            identity_id,
+            amount_duffs,
+            account_index,
+            core_signer_handle,
+            out_new_balance,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_top_up_identity_with_funding_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn platform_wallet_top_up_identity_with_funding_signer_inner(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
     amount_duffs: u64,

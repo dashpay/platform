@@ -2676,6 +2676,12 @@ mod remove_wallet_lifecycle_tests {
             PlatformWalletFFIResultCode::NotFound,
             "a finalized handle whose wallet was removed must be refused without a send"
         );
+        assert_eq!(
+            result.payment_delivery,
+            crate::error::PlatformWalletFFIPaymentDelivery::Unknown,
+            "the FFI's own refusal carries no wallet class"
+        );
+        assert!(!result.retryable);
         assert!(
             out_txid.is_null(),
             "no txid may be produced for a refused broadcast"

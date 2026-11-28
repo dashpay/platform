@@ -34,7 +34,9 @@ use dash_sdk::platform::transition::contract_fee_claim::ClaimedContractFees;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
-use platform_wallet::{ContractFeeClaimEligibility, ModeratorsPotTeam, PlatformWalletError};
+use platform_wallet::{
+    panicked_payment_class, ContractFeeClaimEligibility, ModeratorsPotTeam, PlatformWalletError,
+};
 use rs_sdk_ffi::{contract_fee_pot_json, SignerHandle, VTableSigner};
 use serde_json::{json, Value as JsonValue};
 
@@ -203,6 +205,8 @@ pub unsafe extern "C" fn platform_wallet_contract_fee_claim(
     catch_panic_to_code(
         "platform_wallet_contract_fee_claim",
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        // The write may be broadcast before the panic: maybe sent, never retried.
+        Some(panicked_payment_class()),
         CLAIM_PANIC_GUIDANCE,
         || unsafe {
             contract_fee_claim_inner(
@@ -300,6 +304,7 @@ pub unsafe extern "C" fn platform_wallet_contract_fee_claim_eligibility(
     catch_panic_to_code(
         "platform_wallet_contract_fee_claim_eligibility",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         ELIGIBILITY_PANIC_GUIDANCE,
         || unsafe { contract_fee_claim_eligibility_inner(wallet_handle, contract_id, out_json) },
     )

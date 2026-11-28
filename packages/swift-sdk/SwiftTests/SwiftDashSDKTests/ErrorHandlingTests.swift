@@ -266,7 +266,10 @@ final class ErrorHandlingTests: XCTestCase {
                 code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
                 message: nil,
                 consensus_code: 40722,
-                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE,
+                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT,
+                held_asset_lock: OutPointFFI(),
+                retryable: false
             )
         )
         XCTAssertEqual(

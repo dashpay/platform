@@ -144,6 +144,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_token_pool_watch(
     catch_panic_to_code(
         "platform_wallet_manager_shielded_token_pool_watch",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Watching a token pool again is safe; ask again.",
         || unsafe {
             shielded_token_pool_watch_inner(
@@ -209,6 +210,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_token_pool_unwatch(
     catch_panic_to_code(
         "platform_wallet_manager_shielded_token_pool_unwatch",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Unwatching a token pool again is safe; ask again.",
         || unsafe { shielded_token_pool_unwatch_inner(handle, wallet_id_bytes, token_id) },
     )
@@ -276,6 +278,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_token_pool_balances(
     catch_panic_to_code(
         "platform_wallet_manager_shielded_token_pool_balances",
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "Nothing was changed; read the token pool balances again.",
         || unsafe {
             shielded_token_pool_balances_inner(handle, wallet_id_bytes, out_rows, out_count)
