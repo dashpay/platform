@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-24.04
     # Cold helper-image pulls can consume most of 15 minutes before tests start.
     timeout-minutes: 30
+    # Pulls the CI images of this commit; only the image build may push them.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -32,13 +36,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Login to ECR
-        uses: ./.github/actions/aws_ecr_login
-        with:
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: ${{ vars.AWS_REGION }}
-          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+      - name: Login to GHCR
+        id: registry
+        uses: ./.github/actions/ghcr_login
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -53,25 +53,25 @@ jobs:
         run: |
           set -e
 
-          # Login to ECR
-          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+          # Images built for this commit by the build-images job
+          IMAGE_ORG="${{ steps.registry.outputs.image_org }}"
 
           SHA_TAG=sha-${{ github.sha }}
 
           # Drive
           DRIVE_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.drive.abci.docker.image)
-          docker pull $DOCKER_HUB_ORG/drive:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/drive:$SHA_TAG $DRIVE_IMAGE_AND_VERSION
+          docker pull $IMAGE_ORG/drive:$SHA_TAG
+          docker tag $IMAGE_ORG/drive:$SHA_TAG $DRIVE_IMAGE_AND_VERSION
 
           # RS-DAPI
           RS_DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.rsDapi.docker.image)
-          docker pull $DOCKER_HUB_ORG/rs-dapi:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/rs-dapi:$SHA_TAG $RS_DAPI_IMAGE_AND_VERSION
+          docker pull $IMAGE_ORG/rs-dapi:$SHA_TAG
+          docker tag $IMAGE_ORG/rs-dapi:$SHA_TAG $RS_DAPI_IMAGE_AND_VERSION
 
           # Dashmate helper image is hardcoded so we replace it with the built one
           VERSION=$(cat package.json | jq -r '.version')
-          docker pull $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
+          docker pull $IMAGE_ORG/dashmate-helper:$SHA_TAG
+          docker tag $IMAGE_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
         shell: bash
 
       - name: Get dashmate fingerprint

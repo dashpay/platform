@@ -22,6 +22,16 @@ on:
   schedule:
     - cron: "0 23 * * *"
 
+# What a job gets unless its call below asks for more. The CI images on GHCR
+# belong to this repository, so no job may write packages except the one that
+# builds them.
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  statuses: read
+  packages: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -36,19 +46,21 @@ jobs:
           && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
     runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     outputs:
-      has_ecr: ${{ steps.check.outputs.has_ecr }}
+      can_build_images: ${{ steps.check.outputs.can_build_images }}
     steps:
-      - name: Check if ECR credentials are available
+      # The image builds need the build cache credentials, and they push to
+      # GHCR with the run's GITHUB_TOKEN. A run that gets no secrets (a pull
+      # request from a fork) gets a read-only token too, so it can do neither.
+      - name: Check if Docker images can be built and pushed
         id: check
         env:
-          HAS_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
-          HAS_AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID != '' }}
+          HAS_CACHE_KEY_ID: ${{ secrets.CACHE_KEY_ID != '' }}
         run: |
-          if [[ "$HAS_AWS_ACCESS_KEY_ID" == "true" && "$HAS_AWS_ACCOUNT_ID" == "true" ]]; then
-            echo "has_ecr=true" >> "$GITHUB_OUTPUT"
+          if [[ "$HAS_CACHE_KEY_ID" == "true" ]]; then
+            echo "can_build_images=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_ecr=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::ECR credentials not available — Docker image builds and dependent tests will be skipped (expected for fork PRs)"
+            echo "can_build_images=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Repository secrets not available — Docker image builds and dependent tests will be skipped (expected for fork PRs)"
           fi
 
   changes:
@@ -168,7 +180,7 @@ jobs:
               - packages/js-evo-sdk/**
               - packages/dapi/.env.example
               - packages/rs-drive-abci/.env.local
-              - .github/actions/aws_ecr_login/**
+              - .github/actions/ghcr_login/**
               - .github/actions/docker/**
               - .github/actions/local-network/**
               - .github/actions/nodejs/**
@@ -476,8 +488,11 @@ jobs:
       - changes
     # Build Docker images for platform E2E changes, version changes, nightly schedules, or manual dispatches
     if: >-
-      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.check-secrets.outputs.can_build_images == 'true' &&
       (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      packages: write
     secrets: inherit
     strategy:
       fail-fast: false
@@ -626,6 +641,9 @@ jobs:
       - changes
       - build-js
     if: ${{ needs.changes.outputs.js-lint != '[]' }}
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
     uses: ./.github/workflows/tests-js-package.yml
     with:
@@ -638,6 +656,9 @@ jobs:
       - changes
       - build-js
     if: ${{ needs.changes.outputs.js-test-jobs != '[]' }}
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
     strategy:
       fail-fast: false
@@ -695,7 +716,7 @@ jobs:
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
     if: >-
       always() &&
-      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.check-secrets.outputs.can_build_images == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
       (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -710,7 +731,7 @@ jobs:
     secrets: inherit
     if: >-
       always() &&
-      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.check-secrets.outputs.can_build_images == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
       (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -747,7 +768,7 @@ jobs:
     secrets: inherit
     if: >-
       always() &&
-      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.check-secrets.outputs.can_build_images == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
       (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')

@@ -1,0 +1,36 @@
+---
+name: "ghcr_login"
+description: |
+  Log in to the GitHub Container Registry (GHCR) and report where this
+  repository keeps the Docker images that the Tests workflow builds for a
+  commit and hands to its test jobs.
+
+  The login uses the job's GITHUB_TOKEN, so no registry credentials are stored
+  in the repository. The job that pushes the images declares `packages: write`
+  and the jobs that pull them declare `packages: read`. A pull request from a
+  fork gets a read-only token whatever a job declares, so it cannot push.
+inputs:
+  token:
+    description: GITHUB_TOKEN of the calling job
+    default: ${{ github.token }}
+outputs:
+  image_org:
+    description: Registry path of the CI images, like `ghcr.io/dashpay/platform/ci`
+    value: ${{ steps.image_org.outputs.image_org }}
+
+runs:
+  using: composite
+  steps:
+    - name: Login to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    # Docker accepts lowercase repository names only, and the owner of a fork
+    # may have capitals in its name.
+    - name: Set CI image path
+      id: image_org
+      shell: bash
+      run: echo "image_org=ghcr.io/${GITHUB_REPOSITORY,,}/ci" >> "$GITHUB_OUTPUT"
