@@ -453,7 +453,7 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                                 // A top-up that may have left (MAYBE_SENT) is pending,
                                 // not a failure: no alert, and the button stays off.
                                 val paymentFailure = PaymentFailure.ofPayment(e)
-                                failure = paymentFailure
+                                failure = PaymentFailure.keptAfter(failure, e)
                                 if (paymentFailure?.recovery != PaymentRecovery.Reconcile) {
                                     error = paymentFailure?.message ?: e.message ?: "Top up failed"
                                 }

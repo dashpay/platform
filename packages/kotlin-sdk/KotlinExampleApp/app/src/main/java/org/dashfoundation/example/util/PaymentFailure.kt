@@ -145,6 +145,15 @@ data class PaymentFailure(
             else -> null
         }
 
+        /**
+         * The failure a payment screen keeps after [error]: [error]'s own
+         * ([ofPayment]), or [previous] when [error] is not an SDK error. Such
+         * a throwable says nothing about the payment, so it never clears a
+         * hold an earlier failure put on the form.
+         */
+        fun keptAfter(previous: PaymentFailure?, error: Throwable): PaymentFailure? =
+            ofPayment(error) ?: previous
+
         /** The outpoint a resume call takes, from its wire-order txid and vout. */
         fun outPoint(txid: ByteArray, vout: Int): AssetLockBuiltOutPoint =
             AssetLockBuiltOutPoint.fromRawBytes(

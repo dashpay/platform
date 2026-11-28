@@ -247,7 +247,7 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                     } catch (e: Exception) {
                         val paymentFailure = PaymentFailure.ofPayment(e)
                         error = paymentFailure?.message ?: e.message ?: "Top up failed"
-                        failure = paymentFailure
+                        failure = PaymentFailure.keptAfter(failure, e)
                         // A held lock goes on through the existing-lock
                         // resume, preselected above; never a new lock.
                         if (paymentFailure?.heldLock != null) mode = TopUpCoreMode.EXISTING_LOCK

@@ -85,6 +85,24 @@ class PaymentFailureTest {
     }
 
     /**
+     * A screen's stored hold survives a later throwable that is not an SDK
+     * error (it says nothing about the payment); a later SDK error replaces
+     * it with its own class.
+     */
+    @Test
+    fun shouldKeepAStoredHoldAfterANonSdkThrowable() {
+        val heldFailure = PaymentFailure.of(walletError(6, 3, false, heldRaw))
+        val kept = PaymentFailure.keptAfter(heldFailure, IllegalStateException("not an SDK error"))
+        assertEquals(heldFailure, kept)
+        assertEquals(held, kept?.heldLock)
+        assertFalse(kept!!.permitsRestart(null))
+
+        val replaced = PaymentFailure.keptAfter(heldFailure, walletError(6, 1, true))
+        assertEquals(PaymentRecovery.Retry, replaced?.recovery)
+        assertNull(PaymentFailure.keptAfter(null, IllegalStateException("x")))
+    }
+
+    /**
      * A failure that may have left (MAYBE_SENT), holds a lock (LOCK_HELD) or
      * has no class holds its slot; any NOT_SENT one, retryable or not,
      * releases it (← Swift `testShouldHoldTheSlotUnlessNothingWasSent`).
