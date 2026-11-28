@@ -135,7 +135,8 @@ impl SigningScope<'_> {
 
 /// The key of `identity` that should sign in `scope`: one of `purpose`, at one of
 /// `security_levels`, of one of `key_types`, that Platform would accept now AND that `signer`
-/// reports it can sign with.
+/// reports it can sign with. For batch scopes, the key must also satisfy the batch
+/// signature security levels for its purpose, in addition to `security_levels`.
 ///
 /// A key whose contract bounds do not cover `scope` is skipped, and so is a key bound to a
 /// contract group: membership is state the wallet does not hold. A key without limits is
@@ -183,10 +184,7 @@ fn usable_signing_key_at<'a>(
     now: Option<u64>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let qualifies = |key: &IdentityPublicKey| {
-        key.purpose() == purpose
-            && security_levels.contains(&key.security_level())
-            && key_types.contains(&key.key_type())
-            && !key.is_disabled()
+        check_signing_key_eligibility(key, &[purpose], security_levels, key_types, scope).is_ok()
             && !expired_or_unknown(key, now)
             && scope.bounds_check(key) == BatchedTransitionBoundsCheck::Allowed
     };
@@ -464,6 +462,77 @@ pub(super) mod tests {
         key.set_key_type(KeyType::ECDSA_HASH160);
         key.set_data(BinaryData::new(vec![key.id() as u8; 20]));
         key
+    }
+
+    #[test]
+    fn should_accept_every_automatically_selected_key() {
+        for purpose in [Purpose::AUTHENTICATION, Purpose::TRANSFER] {
+            for scope in [
+                SigningScope::NonBatch,
+                document_scope(),
+                whole_contract(),
+                SigningScope::Token {
+                    contract_id: Identifier::from(CONTRACT),
+                    position: 0,
+                },
+            ] {
+                for levels in [
+                    vec![SecurityLevel::CRITICAL, SecurityLevel::HIGH],
+                    vec![SecurityLevel::HIGH],
+                    vec![SecurityLevel::MASTER, SecurityLevel::MEDIUM],
+                ] {
+                    for level in [
+                        SecurityLevel::MASTER,
+                        SecurityLevel::CRITICAL,
+                        SecurityLevel::HIGH,
+                        SecurityLevel::MEDIUM,
+                    ] {
+                        let mut candidate = key(1, level);
+                        candidate.set_purpose(purpose);
+                        let identity = identity(vec![candidate]);
+                        let signer = KeyFilter(|_| true);
+                        if let Some(selected) =
+                            usable_signing_key(&identity, &signer, purpose, &levels, &TYPES, scope)
+                                .unwrap()
+                        {
+                            check_signing_key(
+                                selected,
+                                &signer,
+                                &[purpose],
+                                &levels,
+                                &TYPES,
+                                scope,
+                            )
+                            .unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_filter_batch_transfer_signature_levels() {
+        let mut high = key(1, SecurityLevel::HIGH);
+        high.set_purpose(Purpose::TRANSFER);
+        let mut critical = key(2, SecurityLevel::CRITICAL);
+        critical.set_purpose(Purpose::TRANSFER);
+        for (keys, expected) in [(vec![high.clone()], None), (vec![high, critical], Some(2))] {
+            let identity = identity(keys);
+            let selected = usable_signing_key(
+                &identity,
+                &KeyFilter(|_| true),
+                Purpose::TRANSFER,
+                &[SecurityLevel::CRITICAL, SecurityLevel::HIGH],
+                &TYPES,
+                SigningScope::Token {
+                    contract_id: Identifier::from(CONTRACT),
+                    position: 0,
+                },
+            )
+            .unwrap();
+            assert_eq!(selected.map(|key| key.id()), expected);
+        }
     }
 
     #[test]
