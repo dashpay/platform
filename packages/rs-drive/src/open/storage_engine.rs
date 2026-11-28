@@ -271,8 +271,10 @@ const LIGNINDB_MANIFEST: &str = "MANIFEST";
 /// Hands the directory at `path` to LigninDB's removal where it looks like what a creation
 /// or a deletion of a checkpoint left that was cut short:
 ///
-/// - a directory under the name a checkpoint of a height is built under, whatever it
-///   holds, or
+/// - a directory under the name a checkpoint of a height is built under. LigninDB then
+///   removes it only where it lists nothing but what a creation puts there, its lock file
+///   and the directory the checkpoint is built in. One that lists anything else is
+///   refused by the removal and stays as it was, or
 /// - a directory named after a height that holds a file with the name of a deletion's
 ///   mark and nothing with the name of the manifest. LigninDB then removes it only where
 ///   the mark holds a manifest.
@@ -335,9 +337,25 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grovedb::engine::either::lignindb::checkpoint::BUILDING_DIR_NAME;
     use grovedb::engine::LigninEngine;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
+
+    /// The name of the lock file in the directory LigninDB builds a checkpoint under. The
+    /// engine keeps the name to itself: it is `LOCK_FILE_NAME` in the files of
+    /// `lignindb::checkpoint`.
+    const STAGING_LOCK: &str = "LOCK";
+
+    /// Puts at `staging` what a creation of a checkpoint that was cut short leaves under
+    /// the name it builds under: the lock file, empty, and the directory the checkpoint
+    /// is built in, with a file in it.
+    fn stage_what_a_creation_leaves(staging: &Path) {
+        let built_in = staging.join(BUILDING_DIR_NAME);
+        std::fs::create_dir_all(&built_in).expect("the directory a checkpoint is built in");
+        std::fs::write(staging.join(STAGING_LOCK), b"").expect("the lock file");
+        std::fs::write(built_in.join("part"), b"a part").expect("a file in it");
+    }
 
     fn on(engine: StorageEngine) -> DriveConfig {
         DriveConfig {
@@ -635,8 +653,9 @@ mod tests {
     }
 
     /// At a start on LigninDB the engine removes what a creation or a deletion of a
-    /// checkpoint that was cut short left: the directory a checkpoint was being built in,
-    /// and a checkpoint whose deletion had begun. The first stands beside a checkpoint of
+    /// checkpoint that was cut short left: the directory a checkpoint was being built
+    /// under, with the lock file and the directory a creation puts there, and a
+    /// checkpoint whose deletion had begun. The first stands beside a checkpoint of
     /// its own height, which is loaded: a removal that named the checkpoint in place of
     /// the directory would take it. A directory that is neither is left as it was.
     #[test]
@@ -656,8 +675,7 @@ mod tests {
             }
         }
         let being_made = checkpoints.join(format!("5{CREATING_SUFFIX}"));
-        std::fs::create_dir(&being_made).expect("the directory a checkpoint is built in");
-        std::fs::write(being_made.join("part"), b"a part").expect("a file in it");
+        stage_what_a_creation_leaves(&being_made);
         let being_deleted = checkpoints.join("7");
         std::fs::rename(
             being_deleted.join(LIGNINDB_MANIFEST),
@@ -682,6 +700,44 @@ mod tests {
         assert_eq!(
             std::fs::read(neither.join("note")).expect("the file"),
             b"a note"
+        );
+    }
+
+    /// A directory under the name a checkpoint is built under that lists what no creation
+    /// puts there is refused by the engine's removal. A start on LigninDB leaves it as it
+    /// was and goes on: the checkpoint beside it is loaded. So it is for a directory that
+    /// holds a file alone, and for one that holds what a creation leaves and a file more.
+    #[test]
+    fn a_start_on_lignindb_leaves_a_directory_under_the_staging_name_that_no_creation_left() {
+        if !the_engine_is_chosen_at_the_open() {
+            return;
+        }
+        let engine = StorageEngine::LigninDb;
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("db");
+        let checkpoints = path.join("checkpoints");
+        {
+            let (drive, _) = Drive::open(&path, Some(on(engine))).expect("a database");
+            std::fs::create_dir(&checkpoints).expect("the directory of checkpoints");
+            (drive.grove.create_checkpoint(checkpoints.join("5"))).expect("a checkpoint");
+        }
+        let a_file_alone = checkpoints.join(format!("5{CREATING_SUFFIX}"));
+        std::fs::create_dir(&a_file_alone).expect("a directory under the staging name");
+        std::fs::write(a_file_alone.join("part"), b"a part").expect("a file in it");
+        let a_file_more = checkpoints.join(format!("6{CREATING_SUFFIX}"));
+        stage_what_a_creation_leaves(&a_file_more);
+        std::fs::write(a_file_more.join("note"), b"a note").expect("a file no creation puts");
+        let before = [contents(&a_file_alone), contents(&a_file_more)];
+        assert_eq!(before[0].len(), 1);
+        assert_eq!(before[1].len(), 4);
+
+        let (drive, _) = Drive::open(&path, Some(on(engine))).expect("the database again");
+        let loaded = drive.checkpoints.load();
+        assert_eq!(loaded.keys().copied().collect::<Vec<_>>(), [5]);
+        assert_eq!(
+            [contents(&a_file_alone), contents(&a_file_more)],
+            before,
+            "a directory that no creation left was changed"
         );
     }
 

@@ -406,6 +406,7 @@ mod tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
+    use drive::grovedb::engine::either::lignindb::checkpoint::CREATING_SUFFIX;
     use drive::grovedb::Transaction;
     use drive::grovedb_path::SubtreePath;
     use drive::grovedb_storage::error::{CommitError, Error as StorageError};
@@ -1458,7 +1459,9 @@ mod tests {
 
     /// A start says which directories of checkpoints it did not load. One that could not
     /// be opened is a warning. One in which no database was ever made is skipped at every
-    /// start and is no warning.
+    /// start and is no warning. A directory under the name LigninDB builds a checkpoint
+    /// under, holding what no creation puts there, stays: on LigninDB the engine's removal
+    /// refuses it, which is a warning, and RocksDB is not asked and says nothing of it.
     #[test]
     fn a_start_logs_each_checkpoint_directory_it_skips() {
         let platform = checkpointing_platform();
@@ -1475,6 +1478,9 @@ mod tests {
         std::fs::create_dir(&damaged).expect("a directory for a damaged database");
         std::fs::write(damaged.join("CURRENT"), b"no manifest")
             .expect("a file that names no manifest");
+        let no_creations = checkpoints_path.join(format!("9{CREATING_SUFFIX}"));
+        std::fs::create_dir(&no_creations).expect("a directory under the staging name");
+        std::fs::write(no_creations.join("note"), b"a note").expect("a file in it");
 
         drop(app);
         let TempPlatform {
@@ -1518,6 +1524,21 @@ mod tests {
                 .expect("the entries of the directory with no database")
                 .count(),
             0
+        );
+        let refused = logs.events().iter().any(|(level, message)| {
+            *level == tracing::Level::WARN
+                && message.contains(&no_creations.display().to_string())
+                && message.contains("returned an error")
+        });
+        assert_eq!(
+            refused,
+            platform.drive.lignindb_stats().is_some(),
+            "{:?}",
+            logs.events()
+        );
+        assert_eq!(
+            std::fs::read(no_creations.join("note")).expect("the file"),
+            b"a note"
         );
     }
 
