@@ -1443,26 +1443,71 @@ mod tests {
             .with_context_provider(DashPayProvider::default())
             .build()
             .expect("the SDK builds");
-        let mut input = contact_request_input(None);
-        input.auto_accept_proof = Some(vec![0u8; 1]);
+        let preparing_sdk = crate::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DashPayProvider {
+                contract: Some(Arc::new(dashpay(version))),
+                ..Default::default()
+            })
+            .build()
+            .expect("the preparing SDK builds");
 
-        let refusal = sdk
-            .create_contact_request(
-                input,
-                EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
-                    get_shared_secret:
-                        |_: &PublicKey| -> std::future::Ready<Result<[u8; 32], Error>> {
-                            panic!("a malformed proof must be refused before ECDH");
-                        },
+        for entry in ["create", "send", "sign", "submit"] {
+            let mut input = contact_request_input(None);
+            input.auto_accept_proof = Some(vec![0u8; 1]);
+            let signer = Arc::new(CountingSigner::default());
+            let ecdh = EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
+                get_shared_secret: |_: &PublicKey| -> std::future::Ready<Result<[u8; 32], Error>> {
+                    panic!("a malformed proof must be refused before ECDH");
                 },
-                |_| std::future::ready(Ok(vec![4u8; COMPACT_XPUB_LEN])),
-            )
-            .await
+            };
+            let xpub = |_| -> std::future::Ready<Result<Vec<u8>, Error>> {
+                panic!("a malformed proof must be refused before deriving an xpub");
+            };
+            let signing_input = SendContactRequestInput {
+                contact_request: input,
+                identity_public_key:
+                    IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                        3,
+                        Some(1),
+                        version,
+                    )
+                    .unwrap()
+                    .0,
+                signer: Arc::clone(&signer),
+            };
+            let refusal = match entry {
+                "create" => sdk
+                    .create_contact_request(signing_input.contact_request, ecdh, xpub)
+                    .await
+                    .map(|_| ()),
+                "send" => sdk
+                    .send_contact_request(signing_input, ecdh, xpub)
+                    .await
+                    .map(|_| ()),
+                "sign" => sdk
+                    .sign_contact_request(signing_input, ecdh, xpub)
+                    .await
+                    .map(|_| ()),
+                "submit" => {
+                    let prepared = preparing_sdk.prepare_contact_request(false).await.unwrap();
+                    sdk.submit_contact_request(prepared, signing_input, ecdh, xpub)
+                        .await
+                        .map(|_| ())
+                }
+                _ => unreachable!(),
+            }
             .expect_err("the malformed proof is refused");
-        assert!(
-            matches!(&refusal, Error::Generic(message) if message.contains("autoAcceptProof")),
-            "{refusal}"
-        );
+            assert!(
+                matches!(&refusal, Error::Generic(message) if message.contains("autoAcceptProof")),
+                "{entry}: {refusal}"
+            );
+            assert_eq!(
+                signer.0.load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "{entry}"
+            );
+        }
     }
 
     /// An address that does not match the preparation is refused as an invalid request even
