@@ -1285,37 +1285,95 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(error.payment, lockHeld(heldLock))
     }
 
-    /// A drain Rust reported as not sent releases its slot: Dismiss drops
-    /// it and a new Max may start.
+    /// A drain Rust reported as not sent releases its slot, with or without
+    /// an error of its own: a new attempt runs and Dismiss drops it.
     @MainActor
     func testShouldReleaseTheSlotOfANotSentDrain() async throws {
-        let coordinator = ShieldedFundFromAssetLockCoordinator()
-        let stored = record()
-        let operationId = WalletDrainCoordinator.controllerOperationId(stored.operationId)
-        guard case .started(let failed, _) = coordinator.startFunding(
+        let outcomes = [
+            WalletDrainOutcome(state: .notSent, outpoint: nil),
+            WalletDrainOutcome(
+                state: .notSent,
+                outpoint: nil,
+                error: .walletOperation("refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false))
+            ),
+        ]
+        for outcome in outcomes {
+            let coordinator = ShieldedFundFromAssetLockCoordinator()
+            let stored = record()
+            let operationId = WalletDrainCoordinator.controllerOperationId(stored.operationId)
+            guard case .started(let failed, _) = coordinator.startFunding(
+                walletId: stored.walletId,
+                recipientRaw43: stored.recipientRaw43,
+                operationId: operationId,
+                body: { throw WalletDrainCoordinator.attemptError(for: outcome)! }
+            ) else {
+                return XCTFail("the drain did not start")
+            }
+            try await waitUntil { if case .failed = failed.phase { return true }; return false }
+
+            guard case .started(let again, let scheduled) = coordinator.startFunding(
+                walletId: stored.walletId,
+                recipientRaw43: stored.recipientRaw43,
+                operationId: operationId,
+                body: {}
+            ) else {
+                return XCTFail("a new attempt was blocked")
+            }
+            XCTAssertTrue(again === failed)
+            XCTAssertTrue(scheduled, "error: \(String(describing: outcome.error))")
+            try await waitUntil { failed.phase == .completed }
+            XCTAssertTrue(coordinator.dismiss(failed))
+        }
+    }
+
+    /// Puts a drain that failed holding `heldLock` in `manager`'s slot for
+    /// `stored`.
+    @MainActor
+    private func failHoldingTheLock(
+        _ stored: WalletDrainOperationRecord,
+        manager: PlatformWalletManager
+    ) async throws -> ShieldedFundFromAssetLockController? {
+        let held = lockHeld(heldLock)
+        let lock = outpoint
+        guard case .started(let failed, _) = manager.shieldedFundFromAssetLockCoordinator.startFunding(
             walletId: stored.walletId,
             recipientRaw43: stored.recipientRaw43,
-            operationId: operationId,
+            operationId: WalletDrainCoordinator.controllerOperationId(stored.operationId),
             body: {
-                throw WalletDrainCoordinator.attemptError(for: WalletDrainOutcome(state: .notSent, outpoint: nil))!
+                throw WalletDrainCoordinator.attemptError(for: WalletDrainOutcome(
+                    state: .pending, outpoint: lock, error: .walletOperation("timed out", payment: held)
+                ))!
             }
         ) else {
-            return XCTFail("the drain did not start")
+            XCTFail("the drain did not start")
+            return nil
         }
         try await waitUntil { if case .failed = failed.phase { return true }; return false }
+        return failed
+    }
 
-        guard case .started(let again, let scheduled) = coordinator.startFunding(
+    /// A new Max refused by a held failure runs nothing and leaves no
+    /// stored id behind.
+    @MainActor
+    func testShouldLeaveNoStoredIdWhenANewMaxIsRefused() async throws {
+        let manager = PlatformWalletManager()
+        let store = WalletDrainOperationStore(directory: directory)
+        let drain = WalletDrainCoordinator(store: store)
+        let stored = record()
+        guard let failed = try await failHoldingTheLock(stored, manager: manager) else { return }
+
+        guard case .started(let presented) = drain.start(
             walletId: stored.walletId,
+            networkRaw: stored.networkRaw,
+            fundingAccountIndex: stored.fundingAccountIndex,
             recipientRaw43: stored.recipientRaw43,
-            operationId: operationId,
-            body: {}
+            walletManager: manager
         ) else {
-            return XCTFail("a new attempt was blocked")
+            return XCTFail("the refused Max did not re-present the held failure")
         }
-        XCTAssertTrue(again === failed)
-        XCTAssertTrue(scheduled)
-        try await waitUntil { failed.phase == .completed }
-        XCTAssertTrue(coordinator.dismiss(failed))
+        XCTAssertTrue(presented === failed)
+        XCTAssertTrue(try store.records().isEmpty)
+        XCTAssertTrue(drain.unfinished.isEmpty)
     }
 
     /// A drain that failed holding its lock is resumed through the drain's
@@ -1328,21 +1386,8 @@ final class WalletDrainRecoveryTests: XCTestCase {
         let drain = WalletDrainCoordinator(store: WalletDrainOperationStore(directory: directory))
         let stored = record()
         let operationId = WalletDrainCoordinator.controllerOperationId(stored.operationId)
-        let held = lockHeld(heldLock)
         let lock = outpoint
-        guard case .started(let failed, _) = funding.startFunding(
-            walletId: stored.walletId,
-            recipientRaw43: stored.recipientRaw43,
-            operationId: operationId,
-            body: {
-                throw WalletDrainCoordinator.attemptError(for: WalletDrainOutcome(
-                    state: .pending, outpoint: lock, error: .walletOperation("timed out", payment: held)
-                ))!
-            }
-        ) else {
-            return XCTFail("the drain did not start")
-        }
-        try await waitUntil { if case .failed = failed.phase { return true }; return false }
+        guard let failed = try await failHoldingTheLock(stored, manager: manager) else { return }
 
         // Neither a new Max nor the resume of another lock runs on the slot.
         guard case .started(_, let freshScheduled) = funding.startFunding(

@@ -434,7 +434,8 @@ final class WalletDrainCoordinator: ObservableObject {
     }
 
     /// Mints an operation id, stores it, then runs the drain. Nothing is
-    /// called when the marker cannot be written.
+    /// called when the marker cannot be written, and a start whose body is
+    /// not scheduled leaves no marker.
     func start(
         walletId: Data,
         networkRaw: UInt32,
@@ -469,20 +470,31 @@ final class WalletDrainCoordinator: ObservableObject {
             }
         }
         switch result {
-        case .started(let controller, _):
-            // Listed as unread until the reconcile after the attempt reads it.
+        case .started(let controller, let bodyScheduled):
+            if !bodyScheduled {
+                // The slot re-presented a failure that refuses a new Max:
+                // the body never ran, so nothing was sent under this id.
+                removeUnusedMarker(record)
+            }
+            // Otherwise listed as unread until the reconcile after the
+            // attempt reads it.
             refreshFromStore()
             return .started(controller)
         case .blockedByOtherWalletFunding(let blocker):
             // The body never ran, so nothing was sent under this id.
-            do {
-                try store.remove(operationId: record.operationId)
-            } catch {
-                // Left for reconcile, which will read it as not sent.
-                SDKLogger.error("Could not remove unused wallet drain marker: \(error.localizedDescription)")
-            }
+            removeUnusedMarker(record)
             refreshFromStore()
             return .blockedByOtherWalletFunding(blocker)
+        }
+    }
+
+    /// Removes the marker of a start whose body never ran.
+    private func removeUnusedMarker(_ record: WalletDrainOperationRecord) {
+        do {
+            try store.remove(operationId: record.operationId)
+        } catch {
+            // Left for reconcile, which will read it as not sent.
+            SDKLogger.error("Could not remove unused wallet drain marker: \(error.localizedDescription)")
         }
     }
 
