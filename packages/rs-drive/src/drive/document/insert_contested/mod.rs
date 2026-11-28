@@ -209,9 +209,14 @@ mod tests {
         ) {
             let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-            let dpns_contract =
-                get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
-                    .data_contract_owned();
+            // A named owner: the contract then has the same id, and the state the same root
+            // hash, at every run.
+            let dpns_contract = get_dpns_data_contract_fixture(
+                Some(Identifier::from([0x33; 32])),
+                0,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
             drive
                 .apply_contract(
                     &dpns_contract,
@@ -371,14 +376,23 @@ mod tests {
             }
         }
 
-        /// PROTOCOL_VERSION_13 keeps v0, which trips over the orphaned tree.
-        /// Pinned so the replay boundary stays explicit.
+        /// PROTOCOL_VERSION_13 keeps v0, which trips over the orphaned tree where the
+        /// storage engine still shows one: on RocksDB the second contest fails, and on
+        /// LigninDB it is made. Pinned so the replay boundary stays explicit.
         #[test]
-        fn a_resource_can_not_be_contested_again_at_protocol_version_13() {
+        fn a_second_contest_at_protocol_version_13_fails_on_rocksdb_and_is_made_on_lignindb() {
             let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
 
-            let (_, _, result) =
+            let (drive, _, result) =
                 restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version);
+            // The orphaned vote tree is a state that only RocksDB keeps: it still shows a
+            // tree below one that was deleted, and LigninDB removes a tree with everything
+            // below it. So on LigninDB v0 has nothing to trip over and makes the new
+            // contest, and the error this test pins is RocksDB's.
+            if drive.storage_engine() != crate::config::StorageEngine::RocksDb {
+                result.expect("no orphaned vote tree stands in the way on LigninDB");
+                return;
+            }
 
             let err =
                 result.expect_err("expected the new contest to fail on the orphaned vote tree");
@@ -386,6 +400,50 @@ mod tests {
             assert!(
                 matches!(err, Error::Drive(DriveError::CorruptedContractIndexes(_))),
                 "unexpected error: {err:?}"
+            );
+        }
+
+        /// From protocol version 14 the second contest is made on both storage engines,
+        /// with the same root hash and the same storage fee, and each engine has its own
+        /// processing fee for it. v1 asks the storage engine whether the vote tree is
+        /// there. Only RocksDB still shows the one the first contest left, so only there
+        /// the record that is found and the look for what is reachable are paid for.
+        ///
+        /// The root hash is read after the document's write and before any fee is taken
+        /// from a payer. A node takes the fee from the payer's balance afterwards, so two
+        /// nodes on the two engines would write different balances for this contest. The
+        /// engines are not interchangeable for it, and this test pins that, as the test at
+        /// protocol version 13 pins the other difference.
+        #[test]
+        fn a_second_contest_at_protocol_version_14_has_one_root_hash_and_each_engines_processing_fee(
+        ) {
+            let platform_version = PlatformVersion::get(14).expect("expected platform version 14");
+
+            let (drive, _, result) =
+                restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version);
+            let fee = result.expect("expected the new contest to be created on either engine");
+            let root_hash = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected the root hash");
+
+            assert_eq!(
+                hex::encode(root_hash),
+                "853c9640a219edf646c9adcf1fc10d7d1c5acfa3b4319da9dd4b5969d19898b7",
+                "on {}",
+                drive.storage_engine()
+            );
+            assert_eq!(fee.storage_fee, 40_176_000, "on {}", drive.storage_engine());
+            let processing_fee = match drive.storage_engine() {
+                crate::config::StorageEngine::RocksDb => 1_208_660,
+                crate::config::StorageEngine::LigninDb => 1_198_620,
+            };
+            assert_eq!(
+                fee.processing_fee,
+                processing_fee,
+                "on {}",
+                drive.storage_engine()
             );
         }
     }

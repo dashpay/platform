@@ -11,10 +11,10 @@
 
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
+use drive::grovedb::engine::{DefaultEngine, Engine};
 use drive::grovedb::Element;
 use drive::grovedb::TransactionArg;
 use drive::grovedb_path::SubtreePath;
-use drive::grovedb_storage::{Storage, StorageBatch};
 use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentEntry, CommitmentTree, DashMemo};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
@@ -168,7 +168,7 @@ impl<C> Platform<C> {
         }
 
         // Fast-path: if `DRIVE_SHIELDED_SNAPSHOT` is set, load the
-        // precomputed snapshot via SST ingest instead of running the (very
+        // precomputed snapshot through GroveDB's subtree load instead of running the (very
         // slow) runtime seeder. The snapshot file is produced offline by the
         // snapshot-bake binary against a chain whose `ShieldedSeedConfig`
         // matches what this build expects.
@@ -290,10 +290,10 @@ impl<C> Platform<C> {
                 "batched seed requires an empty commitment tree"
             );
 
-            // Open a CommitmentTree on the subtree's storage context. The
-            // StorageBatch buffers every BulkAppendTree / frontier write and
-            // is committed once at the end via `commit_multi_context_batch`
-            // — same shape as the production `commitment_tree_insert` path.
+            // Open a CommitmentTree on the storage engine's handle of the
+            // subtree. The engine's batch buffers every BulkAppendTree /
+            // frontier write and is applied to the transaction once at the
+            // end — same shape as the production `commitment_tree_insert` path.
             let subtree_path_segs: Vec<Vec<u8>> = pool_path_arr
                 .iter()
                 .map(|s| s.to_vec())
@@ -303,13 +303,9 @@ impl<C> Platform<C> {
                 subtree_path_segs.iter().map(|v| v.as_slice()).collect();
             let subtree_path = SubtreePath::from(subtree_path_refs.as_slice());
 
-            let data_batch = StorageBatch::new();
-            let storage_ctx = self
-                .drive
-                .grove
-                .raw_storage()
-                .get_transactional_storage_context(subtree_path, Some(&data_batch), tx)
-                .unwrap();
+            let engine = self.drive.grove.engine();
+            let data_batch = <DefaultEngine as Engine>::Batch::default();
+            let storage_ctx = engine.subtree(subtree_path, Some(&data_batch), tx).unwrap();
             let mut ct = CommitmentTree::<_, DashMemo>::open(
                 0,
                 chunk_power,
@@ -334,9 +330,9 @@ impl<C> Platform<C> {
             //   4. Logs the running anchor + bulk-state root so progress is
             //      observable and post-hoc replay is debuggable.
             //
-            // The whole `data_batch` is committed once at the end. A crash
+            // The whole `data_batch` is applied once at the end. A crash
             // mid-bake loses every batch; durability per batch would require
-            // a per-batch `commit_multi_context_batch`. For a bake binary
+            // a batch applied and committed per round. For a bake binary
             // that lives in a single Docker stage producing an artifact, the
             // simpler shape is fine (re-run on failure).
             const BATCH_SIZE: usize = 10_000;
@@ -454,19 +450,14 @@ impl<C> Platform<C> {
             );
             drop(ct);
 
-            // Commit the subtree's data_batch through the transaction —
+            // Apply the subtree's data_batch to the transaction —
             // makes all the BulkAppendTree / frontier writes visible to
             // subsequent reads (including replace_subtree_root's own batch).
-            self.drive
-                .grove
-                .raw_storage()
-                .commit_multi_context_batch(data_batch, Some(tx))
-                .value
-                .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: commit_multi_context_batch: {e}").into_boxed_str(),
-                    )))
-                })?;
+            engine.apply_batch(data_batch, tx).value.map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                    format!("seed: apply the subtree's batch: {e}").into_boxed_str(),
+                )))
+            })?;
 
             // --- Update parent Merk leaf with the new state ---
             let new_element = drive::grovedb::Element::new_commitment_tree(
@@ -851,7 +842,12 @@ mod platform_tests {
         let seed_elapsed = start.elapsed();
 
         let commit_start = std::time::Instant::now();
-        tx.commit().expect("commit");
+        platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .expect("commit");
         let commit_elapsed = commit_start.elapsed();
 
         let total = seed_elapsed + commit_elapsed;
@@ -878,171 +874,6 @@ mod platform_tests {
              under 30 min — investigate if this fails",
             total,
             n,
-        );
-    }
-
-    /// Empirically verify the snapshot design's data-location claim — that the
-    /// shielded commitment-tree subtree's RocksDB state lives entirely in the
-    /// `default` + `aux` CFs under a deterministic subtree prefix. If
-    /// `roots` or `meta` CFs ALSO have entries for our subtree prefix, the
-    /// snapshot file format needs to include them and `apply_shielded_snapshot`
-    /// must ingest into 4 CFs not 2.
-    ///
-    /// What this proves:
-    /// 1. The subtree prefix is path-deterministic (built via
-    ///    `RocksDbStorage::build_prefix` from `[shielded_credit_pool_path()..,
-    ///    SHIELDED_NOTES_KEY]`).
-    /// 2. After seeding N notes, the CFs with non-zero key counts under that
-    ///    prefix tell us which CFs the dump must include.
-    /// 3. Counts scale with N as expected (default CF has chunks + buffer + MMR
-    ///    + META; aux CF has exactly 1 entry, the Sinsemilla frontier).
-    #[test]
-    #[ignore = "raw-rocksdb introspection; long-ish setup"]
-    fn dump_only_default_and_aux_cfs_under_shielded_subtree_prefix() {
-        use grovedb_path::SubtreePath;
-        use grovedb_storage::rocksdb_storage::RocksDbStorage;
-        use rocksdb::{ColumnFamilyDescriptor, OptimisticTransactionDB, Options};
-
-        let platform_version = PlatformVersion::latest();
-        let temp = build_regtest_platform();
-
-        // Seed a small N so the test is fast but still exercises every key
-        // family the BulkAppendTree writes (META, ≥1 buffer entry, ≥1 chunk if
-        // N ≥ 2^chunk_power).
-        let cfg = ShieldedSeedConfig {
-            total_notes: 4096, // > one chunk at chunk_power=11 → exercises e/m keys
-            rng_seed: 0xDEAD_BEEF,
-        };
-        let tx = temp.drive.grove.start_transaction();
-        temp.seed_shielded_pool_with_config(
-            &cfg,
-            &BlockInfo::default(),
-            Some(&tx),
-            platform_version,
-        )
-        .expect("seed");
-        tx.commit().expect("commit");
-        let anchor = read_current_anchor(&temp, None, platform_version);
-        assert_ne!(anchor, EMPTY_SINSEMILLA_ROOT);
-
-        // Compute the shielded subtree's deterministic prefix using grovedb's
-        // own helper — same algorithm production uses, no reimplementation.
-        let pool = drive::drive::shielded::paths::shielded_credit_pool_path_vec();
-        let mut path_segments: Vec<Vec<u8>> = pool;
-        path_segments.push(vec![drive::drive::shielded::paths::SHIELDED_NOTES_KEY]);
-        let path = SubtreePath::from(path_segments.as_slice());
-        let prefix = RocksDbStorage::build_prefix(path).unwrap();
-        let prefix_bytes: [u8; 32] = prefix.into();
-        eprintln!("subtree_prefix = {}", hex::encode(prefix_bytes));
-
-        // Close the Platform so we can take an exclusive lock on RocksDB.
-        // Destructure to keep the TempDir alive while the Platform's GroveDb
-        // handle is dropped — otherwise dropping the whole TempPlatform also
-        // drops the TempDir and deletes the directory underneath us.
-        let crate::test::helpers::setup::TempPlatform {
-            platform: pf,
-            tempdir,
-        } = temp;
-        let tempdir_path = tempdir.path().to_path_buf();
-        drop(pf);
-
-        // Open the same DB directly via rocksdb. CF names match grovedb's
-        // pub(crate) consts in `grovedb-storage/src/rocksdb_storage/storage.rs`:
-        // "default" is the implicit primary CF, the other three are named.
-        // If those names ever change in grovedb, this test must be updated;
-        // the production snapshot code will need the same update.
-        let cf_names = ["default", "aux", "roots", "meta"];
-        let opts = {
-            let mut o = Options::default();
-            o.create_if_missing(false);
-            o.create_missing_column_families(false);
-            o
-        };
-        let cf_descs: Vec<ColumnFamilyDescriptor> = cf_names
-            .iter()
-            .map(|n| ColumnFamilyDescriptor::new(*n, Options::default()))
-            .collect();
-        let db: OptimisticTransactionDB =
-            OptimisticTransactionDB::open_cf_descriptors(&opts, &tempdir_path, cf_descs)
-                .expect("open A rocksdb");
-
-        // For each CF, count keys whose first 32 bytes equal the subtree prefix.
-        // Capture the first few key bytes too so a regression has actionable
-        // info, not just a count mismatch.
-        let mut per_cf_counts: Vec<(&str, usize, Vec<Vec<u8>>)> = vec![];
-        for cf_name in cf_names {
-            let cf = db.cf_handle(cf_name).unwrap_or_else(|| {
-                panic!("missing CF {cf_name} — grovedb's CF layout may have changed")
-            });
-            let mut iter = db.raw_iterator_cf(&cf);
-            iter.seek(&prefix_bytes[..]);
-            let mut count = 0usize;
-            let mut samples: Vec<Vec<u8>> = vec![];
-            while iter.valid() {
-                let k = match iter.key() {
-                    Some(k) => k,
-                    None => break,
-                };
-                if !k.starts_with(&prefix_bytes) {
-                    break;
-                }
-                count += 1;
-                if samples.len() < 5 {
-                    samples.push(k.to_vec());
-                }
-                iter.next();
-            }
-            eprintln!(
-                "CF {:>7}: {} keys under subtree prefix (first {} sampled)",
-                cf_name,
-                count,
-                samples.len(),
-            );
-            for s in &samples {
-                eprintln!("  sample key (len={}): {}", s.len(), hex::encode(s));
-            }
-            per_cf_counts.push((cf_name, count, samples));
-        }
-        drop(db);
-
-        let counts: std::collections::HashMap<&str, usize> =
-            per_cf_counts.iter().map(|(n, c, _)| (*n, *c)).collect();
-
-        let default_count = *counts.get("default").unwrap();
-        let aux_count = *counts.get("aux").unwrap();
-        let roots_count = *counts.get("roots").unwrap();
-        let meta_count = *counts.get("meta").unwrap();
-
-        // Empirical claim: the shielded commitment-tree subtree's ENTIRE state
-        // — DenseFixedSizedMerkleTree buffer nodes (2-byte BE position keys),
-        // chunk MMR nodes, META, and the Sinsemilla frontier
-        // (`COMMITMENT_TREE_DATA_KEY`) — lives in the **default CF only**. The
-        // frontier is written via `put(...)` not `put_aux(...)` despite the
-        // misleading internal naming.
-        //
-        // This is a simplification of the original snapshot design which
-        // assumed default + aux. With only default CF in scope, the snapshot
-        // format reduces to "one SST per subtree" not "two SSTs per subtree".
-        assert!(
-            default_count > 0,
-            "default CF must have entries under subtree prefix; \
-             snapshot design is broken if this fails"
-        );
-        assert_eq!(
-            aux_count, 0,
-            "aux CF unexpectedly has {aux_count} entries — the Sinsemilla frontier \
-             was relocated to aux somewhere. Re-verify storage layout in \
-             grovedb-commitment-tree::commitment_tree::mod.rs (search for `put_aux`)"
-        );
-        assert_eq!(
-            roots_count, 0,
-            "roots CF unexpectedly has {roots_count} entries under shielded subtree prefix; \
-             snapshot dump must include the roots CF (currently doesn't)"
-        );
-        assert_eq!(
-            meta_count, 0,
-            "meta CF unexpectedly has {meta_count} entries under shielded subtree prefix; \
-             snapshot dump must include the meta CF (currently doesn't)"
         );
     }
 
@@ -1077,7 +908,12 @@ mod platform_tests {
                 platform_version,
             )
             .expect("seed A");
-        tx_a.commit().expect("commit A");
+        platform_a
+            .drive
+            .grove
+            .commit_transaction(tx_a)
+            .unwrap()
+            .expect("commit A");
         let anchor_a = read_current_anchor(&platform_a, None, platform_version);
         assert_ne!(
             anchor_a, EMPTY_SINSEMILLA_ROOT,
@@ -1096,8 +932,8 @@ mod platform_tests {
         )
         .expect("dump");
         eprintln!(
-            "dump: total_count={} key_count={} sst_bytes={}",
-            dump_stats.total_count, dump_stats.key_count, dump_stats.sst_bytes,
+            "dump: total_count={} key_count={} body_bytes={}",
+            dump_stats.total_count, dump_stats.key_count, dump_stats.body_bytes,
         );
         assert_eq!(dump_stats.total_count, u64::from(cfg.total_notes));
         // The DenseFixedSizedMerkleTree + chunk MMR + frontier produces O(N)
@@ -1147,54 +983,94 @@ mod platform_tests {
         );
     }
 
-    /// Reproduces the production devnet InitChain failure:
-    ///   `DRIVE_SHIELDED_SNAPSHOT apply failed: grovedb: ingest_subtree_sst:
-    ///    ... ingest_subtree_sst(default, /tmp/drv-shielded-snapshot-*.sst)
-    ///    failed: Invalid argument: Global seqno is required, but disabled`
+    /// An `InitChain` that applies the snapshot and never reaches the block-1
+    /// commit (a later genesis/block-1 failure, a drive-abci restart, or a
+    /// Tenderdash InitChain retry) must leave nothing behind, so the next
+    /// attempt applies the snapshot to an empty pool again.
     ///
-    /// Root cause: `apply_shielded_snapshot`'s SST ingest commits DIRECTLY to
-    /// the underlying RocksDB (`ingest_external_file_cf`), bypassing the
-    /// InitChain GroveDB transaction — and nothing wipes the DB on InitChain.
-    /// The genesis transaction is committed only at the end of finalizing
-    /// block 1, so if InitChain never reaches that commit (any genesis/block-1
-    /// failure, a drive-abci restart, or a Tenderdash InitChain retry) the
-    /// transaction rolls back but the **already-ingested SST keys persist** in
-    /// the committed `default` CF. The next InitChain attempt re-runs the
-    /// ingest over the now-committed keys; the SST's key range overlaps
-    /// existing committed keys, so RocksDB needs to assign a global sequence
-    /// number, which grovedb's `ingest_subtree_sst` forbids
-    /// (`allow_global_seqno=false`) → "Global seqno is required, but disabled",
-    /// and the devnet can never initialize.
+    /// The apply is a write of the transaction it is given: the loaded
+    /// records and the parent-leaf patch leave with that transaction's
+    /// rollback. (The first snapshot format ingested a file into the storage
+    /// outside the transaction, and a retry then met the first attempt's
+    /// records; this test reproduced the devnet that could never initialize.)
     ///
-    /// Applying a deterministic genesis snapshot must therefore be IDEMPOTENT:
-    /// after a failed attempt's transaction rolls back, the next attempt must
-    /// succeed even though the orphaned ingest survived the rollback.
-    ///
-    /// This test models the production scenario exactly:
-    ///   1. apply the snapshot WITH a transaction (`Some(tx1)`) — the ingest
-    ///      writes straight to RocksDB, the parent-leaf patch goes into `tx1`;
-    ///   2. DROP `tx1` without committing — the InitChain failure path. This
-    ///      rolls back the parent-leaf patch (and, in production, all genesis
-    ///      writes) but NOT the ingest, which never went through `tx1`;
-    ///   3. apply again WITH a fresh transaction (`Some(tx2)`) — the retry.
-    ///
-    /// The key point (and the answer to "shouldn't rollback restore an empty
-    /// DB?"): rollback would restore an empty DB only if the ingest were
-    /// transactional. It is not — so after step 2 the `default` CF still holds
-    /// the orphaned SST keys, and step 3's re-ingest overlaps them.
-    ///
-    /// Would have caught the production failure in CI:
-    ///   ✖ step 3 errors with "Global seqno is required, but disabled" before
-    ///     the fix,
-    ///   ✔ step 3 succeeds (safe no-op) after.
+    /// This test models the scenario exactly:
+    ///   1. apply the snapshot WITH a transaction (`Some(tx1)`);
+    ///   2. DROP `tx1` without committing — the InitChain failure path. The
+    ///      pool reads as empty again, through no transaction;
+    ///   3. apply again WITH a fresh transaction (`Some(tx2)`) — the retry —
+    ///      and commit it.
     #[test]
     fn snapshot_reapply_is_idempotent_under_initchain_retry() {
         let platform_version = PlatformVersion::latest();
 
         // --- A: seed a small pool and dump it to a snapshot file ---
+        let (snapshot_dir, anchor_a) = dump_seeded_pool(5_000, platform_version);
+        let snapshot_path = snapshot_dir.path().join("shielded-pool.snap");
+
+        // --- B, attempt 1: apply inside a transaction, then ROLL BACK ---
+        let platform_b = build_regtest_platform();
+        {
+            let tx1 = platform_b.drive.grove.start_transaction();
+            crate::shielded_snapshot::apply_shielded_snapshot(
+                &platform_b.drive.grove,
+                Some(&tx1),
+                &snapshot_path,
+                platform_version,
+            )
+            .expect("first apply (inside tx1) must succeed");
+            assert_eq!(
+                read_current_anchor(&platform_b, Some(&tx1), platform_version),
+                anchor_a,
+                "the transaction that applied the snapshot reads the pool it loaded"
+            );
+            assert_eq!(
+                read_current_anchor(&platform_b, None, platform_version),
+                EMPTY_SINSEMILLA_ROOT,
+                "nothing of the apply is committed before its transaction is"
+            );
+            // Drop tx1 WITHOUT committing — the failure/rollback path.
+            drop(tx1);
+        }
+        assert_eq!(
+            read_current_anchor(&platform_b, None, platform_version),
+            EMPTY_SINSEMILLA_ROOT,
+            "a rolled-back apply leaves the pool empty"
+        );
+
+        // --- B, attempt 2: the retry, in a fresh transaction ---
+        let tx2 = platform_b.drive.grove.start_transaction();
+        let retry = crate::shielded_snapshot::apply_shielded_snapshot(
+            &platform_b.drive.grove,
+            Some(&tx2),
+            &snapshot_path,
+            platform_version,
+        );
+        assert!(
+            retry.is_ok(),
+            "re-applying a genesis snapshot after a rolled-back attempt must \
+             succeed (InitChain retry path), but it failed: {retry:?}"
+        );
+        platform_b
+            .drive
+            .grove
+            .commit_transaction(tx2)
+            .unwrap()
+            .expect("commit retry tx");
+
+        let anchor_b = read_current_anchor(&platform_b, None, platform_version);
+        assert_eq!(anchor_b, anchor_a, "anchor must match after the retry");
+    }
+
+    /// Seed a pool of `total_notes`, dump it to `shielded-pool.snap` in a new
+    /// temporary directory, and return the directory with the pool's anchor.
+    fn dump_seeded_pool(
+        total_notes: u32,
+        platform_version: &PlatformVersion,
+    ) -> (tempfile::TempDir, [u8; 32]) {
         let platform_a = build_regtest_platform();
         let cfg = ShieldedSeedConfig {
-            total_notes: 5_000,
+            total_notes,
             rng_seed: 0xDEAD_BEEF,
         };
         let tx_a = platform_a.drive.grove.start_transaction();
@@ -1206,63 +1082,233 @@ mod platform_tests {
                 platform_version,
             )
             .expect("seed A");
-        tx_a.commit().expect("commit A");
+        platform_a
+            .drive
+            .grove
+            .commit_transaction(tx_a)
+            .unwrap()
+            .expect("commit A");
         let anchor_a = read_current_anchor(&platform_a, None, platform_version);
         assert_ne!(anchor_a, EMPTY_SINSEMILLA_ROOT);
 
         let dump_dir = tempfile::tempdir().expect("tempdir");
-        let snapshot_path = dump_dir.path().join("shielded-pool.snap");
         crate::shielded_snapshot::dump_shielded_subtree(
             &platform_a.drive.grove,
+            None,
+            &dump_dir.path().join("shielded-pool.snap"),
+            platform_version,
+        )
+        .expect("dump");
+        (dump_dir, anchor_a)
+    }
+
+    /// The snapshot is only ever applied to an empty pool: a second apply,
+    /// over the records the first one committed, is refused and changes
+    /// nothing.
+    #[test]
+    fn snapshot_apply_refuses_a_populated_shielded_pool() {
+        let platform_version = PlatformVersion::latest();
+        let (snapshot_dir, anchor_a) = dump_seeded_pool(3_000, platform_version);
+        let snapshot_path = snapshot_dir.path().join("shielded-pool.snap");
+
+        let platform_b = build_regtest_platform();
+        crate::shielded_snapshot::apply_shielded_snapshot(
+            &platform_b.drive.grove,
             None,
             &snapshot_path,
             platform_version,
         )
-        .expect("dump");
+        .expect("apply to the empty pool");
+        assert_eq!(
+            read_current_anchor(&platform_b, None, platform_version),
+            anchor_a
+        );
 
-        // --- B, attempt 1: apply inside a transaction, then ROLL BACK ---
-        // Models an InitChain that ingests the snapshot but never reaches the
-        // block-1 commit (a later genesis/block failure, a restart, or a
-        // Tenderdash InitChain retry).
-        let platform_b = build_regtest_platform();
-        {
-            let tx1 = platform_b.drive.grove.start_transaction();
-            crate::shielded_snapshot::apply_shielded_snapshot(
-                &platform_b.drive.grove,
-                Some(&tx1),
-                &snapshot_path,
-                platform_version,
-            )
-            .expect("first apply (inside tx1) must succeed");
-            // Drop tx1 WITHOUT committing — the failure/rollback path. The
-            // parent-leaf patch (in tx1) is discarded; the ingest is NOT.
-            drop(tx1);
-        }
-
-        // --- B, attempt 2: the retry, in a fresh transaction ---
-        // The orphaned ingest from attempt 1 is still committed in the
-        // `default` CF, so this re-ingest overlaps it — the exact production
-        // failure ("Global seqno is required, but disabled").
-        let tx2 = platform_b.drive.grove.start_transaction();
-        let retry = crate::shielded_snapshot::apply_shielded_snapshot(
+        let again = crate::shielded_snapshot::apply_shielded_snapshot(
             &platform_b.drive.grove,
-            Some(&tx2),
+            None,
             &snapshot_path,
             platform_version,
         );
         assert!(
-            retry.is_ok(),
-            "re-applying a deterministic genesis snapshot after a rolled-back \
-             attempt must be idempotent (InitChain retry path), but it failed: \
-             {retry:?}"
+            matches!(
+                &again,
+                Err(crate::shielded_snapshot::ShieldedSnapshotError::GroveDb(_))
+            ),
+            "a pool that holds records must refuse the snapshot: {again:?}"
         );
-        tx2.commit().expect("commit retry tx");
-
-        let anchor_b = read_current_anchor(&platform_b, None, platform_version);
         assert_eq!(
-            anchor_b, anchor_a,
-            "anchor must match after an idempotent re-apply"
+            read_current_anchor(&platform_b, None, platform_version),
+            anchor_a,
+            "the refused apply changed nothing"
         );
+    }
+
+    /// Offsets of the snapshot header's fields: magic (8), format version (4),
+    /// total count (8), chunk power (1), flags (2), combined root (32), body
+    /// length (8).
+    const HEADER_FORMAT_VERSION: std::ops::Range<usize> = 8..12;
+    const HEADER_TOTAL_COUNT: std::ops::Range<usize> = 12..20;
+    const HEADER_COMBINED_ROOT: std::ops::Range<usize> = 23..55;
+    const HEADER_LEN: usize = 63;
+
+    /// Write `bytes` as a snapshot file whose trailing checksum is right for
+    /// them, so that a test reaches the checks behind the checksum.
+    fn write_with_checksum(path: &std::path::Path, bytes: &[u8]) {
+        let content = &bytes[..bytes.len() - 32];
+        let mut out = content.to_vec();
+        out.extend_from_slice(blake3::hash(content).as_bytes());
+        std::fs::write(path, out).expect("write snapshot");
+    }
+
+    /// Each of these changes of a snapshot file is refused, and a refused
+    /// apply with no transaction commits nothing: the version field alone set
+    /// to 2, a changed byte of the body with the file's checksum as it was
+    /// and made right, the file cut short at two lengths, bytes after the
+    /// checksum, a header that states another root or another count than the
+    /// dump, and a root that the header and the dump both state and the
+    /// records do not give.
+    #[test]
+    fn snapshot_apply_rejects_a_damaged_file_and_commits_nothing() {
+        use crate::shielded_snapshot::ShieldedSnapshotError;
+
+        let platform_version = PlatformVersion::latest();
+        let (snapshot_dir, _anchor_a) = dump_seeded_pool(3_000, platform_version);
+        let good = std::fs::read(snapshot_dir.path().join("shielded-pool.snap")).expect("read");
+        let damaged_path = snapshot_dir.path().join("damaged.snap");
+
+        let platform_b = build_regtest_platform();
+        let apply = |bytes: &[u8], checksum_made_right: bool| {
+            if checksum_made_right {
+                write_with_checksum(&damaged_path, bytes);
+            } else {
+                std::fs::write(&damaged_path, bytes).expect("write snapshot");
+            }
+            let result = crate::shielded_snapshot::apply_shielded_snapshot(
+                &platform_b.drive.grove,
+                None,
+                &damaged_path,
+                platform_version,
+            );
+            assert_eq!(
+                read_current_anchor(&platform_b, None, platform_version),
+                EMPTY_SINSEMILLA_ROOT,
+                "a refused apply must commit nothing: {result:?}"
+            );
+            result.expect_err("a damaged snapshot must be refused")
+        };
+
+        // The version field of the format before this one, on a file that is
+        // otherwise as written and whose checksum is made right: the version
+        // is refused before the fields after it, the checksums and the load.
+        let mut older = good.clone();
+        older[HEADER_FORMAT_VERSION].copy_from_slice(&2u32.to_be_bytes());
+        let error = apply(&older, true);
+        assert!(
+            matches!(
+                error,
+                ShieldedSnapshotError::FormatVersionMismatch {
+                    expected: 3,
+                    found: 2
+                }
+            ),
+            "{error:?}"
+        );
+
+        // A byte of the body changed after the file was written.
+        let mut flipped = good.clone();
+        let last_byte_of_the_dump = good.len() - 32 - 1;
+        flipped[last_byte_of_the_dump] ^= 0x01;
+        let error = apply(&flipped, false);
+        assert!(
+            matches!(error, ShieldedSnapshotError::ChecksumMismatch { .. }),
+            "{error:?}"
+        );
+
+        // The same change with the file's checksum made right: the dump's own
+        // checksum refuses it.
+        let error = apply(&flipped, true);
+        assert!(
+            matches!(error, ShieldedSnapshotError::Inconsistent(_)),
+            "{error:?}"
+        );
+
+        // A file cut short.
+        let error = apply(&good[..good.len() - 100], false);
+        assert!(
+            matches!(error, ShieldedSnapshotError::Inconsistent(_)),
+            "{error:?}"
+        );
+        let error = apply(&good[..HEADER_LEN], false);
+        assert!(
+            matches!(error, ShieldedSnapshotError::Inconsistent(_)),
+            "{error:?}"
+        );
+
+        // Bytes after the checksum.
+        let mut longer = good.clone();
+        longer.extend_from_slice(b"more");
+        let error = apply(&longer, false);
+        assert!(
+            matches!(error, ShieldedSnapshotError::Inconsistent(_)),
+            "{error:?}"
+        );
+
+        // A header that states another root than the dump.
+        let mut other_root = good.clone();
+        other_root[HEADER_COMBINED_ROOT.start] ^= 0x01;
+        let error = apply(&other_root, true);
+        assert!(
+            matches!(error, ShieldedSnapshotError::Inconsistent(_)),
+            "{error:?}"
+        );
+
+        // A root that the header and the dump both state and the records do
+        // not give. The dump's checksum and the file's are made right, so the
+        // load takes the records, and the roots read from them refuse it. The
+        // dump states its root after its magic (8), its version (4), and the
+        // element with its length (4).
+        let mut wrong_root = other_root;
+        let dump = HEADER_LEN..good.len() - 32;
+        let element_len = u32::from_be_bytes(
+            good[dump.start + 12..dump.start + 16]
+                .try_into()
+                .expect("four bytes"),
+        ) as usize;
+        let root_in_dump = dump.start + 16 + element_len;
+        assert_eq!(
+            good[root_in_dump..root_in_dump + 32],
+            good[HEADER_COMBINED_ROOT],
+            "the dump does not state its root there"
+        );
+        wrong_root[root_in_dump] ^= 0x01;
+        let checksum_of_dump = dump.end - 32;
+        let checksum = blake3::hash(&wrong_root[dump.start..checksum_of_dump]);
+        wrong_root[checksum_of_dump..dump.end].copy_from_slice(checksum.as_bytes());
+        let error = apply(&wrong_root, true);
+        assert!(
+            matches!(error, ShieldedSnapshotError::CombinedRootMismatch { .. }),
+            "{error:?}"
+        );
+
+        // A header that states another leaf than the dump carries.
+        let mut other_count = good.clone();
+        other_count[HEADER_TOTAL_COUNT].copy_from_slice(&7u64.to_be_bytes());
+        let error = apply(&other_count, true);
+        assert!(
+            matches!(error, ShieldedSnapshotError::Inconsistent(_)),
+            "{error:?}"
+        );
+
+        // The file as it was written still applies after all of that.
+        std::fs::write(&damaged_path, &good).expect("write snapshot");
+        crate::shielded_snapshot::apply_shielded_snapshot(
+            &platform_b.drive.grove,
+            None,
+            &damaged_path,
+            platform_version,
+        )
+        .expect("the undamaged file applies");
     }
 
     // Real InitChain hook coverage happens via the dashmate devnet flow

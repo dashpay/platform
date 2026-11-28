@@ -4,23 +4,38 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
-use grovedb::GroveDb;
 
+use super::storage_engine::{
+    no_entry_says_a_database, open_grove, remove_checkpoint_leftover, Role,
+};
+use crate::config::DriveConfig;
 use crate::drive::{Checkpoint, CheckpointInfo, CheckpointsMap};
 use crate::error::Error;
 
 /// Loads existing checkpoints from the checkpoints directory.
 ///
 /// This function scans the `<db_path>/checkpoints/` directory for existing checkpoint
-/// subdirectories (named by block height), opens each one as a GroveDb, and returns
-/// an ArcSwap containing the loaded checkpoints.
+/// subdirectories (named by block height), opens each one as a checkpoint on the storage
+/// engine of `config`, and returns an ArcSwap containing the loaded checkpoints. A directory
+/// that holds no database of that engine is skipped, and none is made in it. Each skip is
+/// logged with the directory: as a warning with the error of the open, or as information
+/// where no entry of the directory says a database, which every start meets again.
+///
+/// On LigninDB, a directory is handed to the engine's removal first where its name is a
+/// height with the suffix a checkpoint is built under, or where its name is a height and
+/// it holds the mark of a deletion and no manifest. Every other entry goes on through the
+/// scan: one whose name is a height is opened, and the rest are passed over.
 ///
 /// # Arguments
 /// * `db_path` - The path to the database directory (parent of the checkpoints directory)
+/// * `config` - The configuration the database was opened with
 ///
 /// # Returns
 /// * An `ArcSwap` containing a `BTreeMap` of checkpoints keyed by block height
-pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<CheckpointsMap, Error> {
+pub fn load_current_checkpoints<P: AsRef<Path>>(
+    db_path: P,
+    config: &DriveConfig,
+) -> Result<CheckpointsMap, Error> {
     let checkpoints_dir = db_path.as_ref().join("checkpoints");
 
     let mut checkpoints = BTreeMap::new();
@@ -44,6 +59,24 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<Checkpoint
             continue;
         }
 
+        if let Some(removed) = remove_checkpoint_leftover(&path, config) {
+            match removed {
+                Ok(()) => tracing::info!(
+                    "removed the directory {}: it had the name a checkpoint is built under, \
+                     or held the mark of a deletion and no manifest",
+                    path.display()
+                ),
+                Err(error) => tracing::warn!(
+                    %error,
+                    "the removal of the directory {} returned an error: it was chosen for \
+                     the name a checkpoint is built under, or for the mark of a deletion \
+                     and no manifest",
+                    path.display()
+                ),
+            }
+            continue;
+        }
+
         // Try to parse the directory name as a block height
         let file_name = match path.file_name().and_then(|n| n.to_str()) {
             Some(name) => name,
@@ -56,13 +89,29 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<Checkpoint
         };
 
         // Try to open the checkpoint as a GroveDb
-        let grove_db = match GroveDb::open(&path) {
+        let grove_db = match open_grove(&path, config, Role::Checkpoint) {
             Ok(db) => db,
-            Err(_) => continue, // Skip corrupted or invalid checkpoints
+            Err(error) => {
+                if no_entry_says_a_database(&path) {
+                    tracing::info!(
+                        "the checkpoint directory {} holds no database and is skipped",
+                        path.display()
+                    );
+                } else {
+                    tracing::warn!(
+                        %error,
+                        "the checkpoint directory {} could not be opened as a checkpoint and \
+                         is skipped",
+                        path.display()
+                    );
+                }
+                continue;
+            }
         };
 
         // Get the modification time as the checkpoint timestamp
-        // If we can't get the metadata, use 0 as a fallback
+        // If we can't get the metadata, use 0 as a fallback. The node replaces it with the
+        // time of the checkpoint's block where it has the state saved with the checkpoint.
         let timestamp_ms: TimestampMillis = std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .ok()

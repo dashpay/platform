@@ -139,9 +139,9 @@ where
             request.round,
         );
         if let Some(tx) = transaction_guard.as_ref() {
-            tx.rollback_to_savepoint()
-                .map_err(drive::grovedb::error::Error::StorageError)?;
-            tx.set_savepoint();
+            let grove = &app.platform().drive.grove;
+            grove.rollback_to_savepoint(tx)?;
+            grove.set_savepoint(tx)?;
         }
         transaction_guard
     } else {

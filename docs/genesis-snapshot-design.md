@@ -1,5 +1,49 @@
 # Shielded-pool genesis snapshot — design
 
+> **This document is the original proposal and is kept as history.** What the code
+> does today is the section "What is built (snapshot format 3)" right below. Where the
+> rest of the document says otherwise, that section holds: the SST files, the column
+> families, `ingest_external_file_cf`, the GroveDB revision in the header, the replay of
+> every note, the standalone bake binary and the comparison of whole GroveDB roots are
+> the proposal's and are not what is built.
+
+## What is built (snapshot format 3)
+
+- **Build.** Two switches, and the image built with `SHIELDED_TEST_DATA=true` has both.
+  The Cargo feature `shielded_test_data` compiles the subcommand and the functions that
+  dump and apply a snapshot. The cfg `create_sdk_test_data`
+  (`.cargo/config-test-sdk-data.toml` sets it) compiles the test-data step of genesis
+  creation and makes genesis creation call it. With both, that step holds the seeder and
+  the place where a snapshot is applied. The step refuses any network but regtest and
+  devnet.
+  With the feature and without the cfg, the subcommand dumps a pool that was never
+  seeded, and `InitChain` neither applies a snapshot nor seeds.
+- **Bake.** `drive-abci snapshot-bake --out <file>`, in a build with both switches. It
+  seeds the pool in a temporary database and dumps the shielded subtree with GroveDB's
+  `dump_subtree`.
+- **File.** A 63-byte header (magic, format version 3, note count, chunk power, the
+  parent leaf's flags, the subtree's root, the body's length), the body, and a BLAKE3
+  checksum of both. The body is the stream `dump_subtree` writes, which has a checksum
+  of its own and names no storage engine. A file of an earlier format is refused
+  (`FormatVersionMismatch`) and is baked again.
+- **Apply.** At `InitChain` of a regtest or devnet node built with both switches, when
+  `DRIVE_SHIELDED_SNAPSHOT` names a file,
+  `apply_shielded_snapshot` loads it in the `InitChain` transaction: `load_subtree`,
+  the checks below, then `replace_subtree_root`. Any failure fails `InitChain`; there is
+  no fallback to the seeder. With the variable unset, the runtime seeder runs.
+- **What is checked.** Both checksums; that the file is exactly header, body and
+  checksum; that the header and the dump state the same leaf and the same root; that
+  the root GroveDB derives from the loaded records (`subtree_root_as`) and the root the
+  commitment tree reads from them are the header's. The notes are not replayed one by
+  one, and the GroveDB revision that baked the file is not recorded.
+- **Rollback.** Everything an apply writes is in the `InitChain` transaction, so an
+  attempt that is rolled back leaves nothing in the database and a retry starts from an
+  empty pool. A pool that holds records refuses the snapshot. A database in which a
+  failed attempt of the first format left ingested records needs a clean start.
+- **Tests.** A dump applied to a second database gives the same anchor and note count;
+  an apply that is rolled back and tried again; a populated pool; a file changed after
+  it was written.
+
 Pivots PR #3732 away from runtime seeding into a **shielded-pool-specific
 snapshot bake + RocksDB ingest** model. One-shot tool, no future-proof
 genericity — every Element kind that ever needs this gets its own dedicated

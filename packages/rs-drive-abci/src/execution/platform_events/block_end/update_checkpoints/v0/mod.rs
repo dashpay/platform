@@ -6,7 +6,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::drive::{Checkpoint, CheckpointInfo};
 use drive::error::Error::IOErrorWithInfoString;
-use drive::grovedb::GroveDb;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -54,7 +53,7 @@ where
         self.drive.grove.create_checkpoint(&checkpoint_path)?;
 
         // Open the checkpoint as a GroveDb instance and wrap it in a Checkpoint
-        let checkpoint_db = GroveDb::open(&checkpoint_path)?;
+        let checkpoint_db = self.drive.open_checkpoint(&checkpoint_path)?;
         let checkpoint = Checkpoint::new(checkpoint_db, checkpoint_path);
 
         // Calculate how many old checkpoints we can keep (reserving 1 slot for the new one)

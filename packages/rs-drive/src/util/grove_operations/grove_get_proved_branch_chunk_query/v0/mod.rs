@@ -39,7 +39,7 @@ impl Drive {
                     .ok_or(Error::Drive(DriveError::NoCheckpointsAvailable))?;
                 let CostContext { value, cost } = checkpoint_info
                     .checkpoint
-                    .grove_db
+                    .grove_db()
                     .prove_branch_chunk(query, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
                 value.map_err(Error::from)
@@ -51,7 +51,7 @@ impl Drive {
                     .ok_or(Error::Drive(DriveError::CheckpointNotFound(block_height)))?;
                 let CostContext { value, cost } = checkpoint_info
                     .checkpoint
-                    .grove_db
+                    .grove_db()
                     .prove_branch_chunk(query, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
                 value.map_err(Error::from)

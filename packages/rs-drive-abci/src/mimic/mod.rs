@@ -382,10 +382,13 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                     ),
                 ))?;
 
-                transaction
-                    .rollback_to_savepoint()
+                let grove = &self.platform.drive.grove;
+                grove
+                    .rollback_to_savepoint(transaction)
                     .expect("expected to rollback to savepoint");
-                transaction.set_savepoint();
+                grove
+                    .set_savepoint(transaction)
+                    .expect("expected to set savepoint");
 
                 let start_root_hash = self
                     .platform

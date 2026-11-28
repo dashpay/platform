@@ -28,7 +28,7 @@ where
 
     let response = app.platform().init_chain(request, transaction)?;
 
-    transaction.set_savepoint();
+    app.platform().drive.grove.set_savepoint(transaction)?;
 
     let app_hash = hex::encode(&response.app_hash);
 

@@ -216,7 +216,7 @@ where
 
     // Mainnet's vote-cleanup incident began at 32326 (platform#2309). Tenderdash#966
     // let validators continue after the resulting commit conflict with partially committed
-    // state and updated caches. Reproduce that outcome only for the expected Busy error.
+    // state and updated caches. Reproduce that outcome only for a commit conflict.
     // The upper bound must match Drive::remove_all_votes_given_by_identities: starting
     // at 32329, vote deletions stay inside the block transaction again.
     let config = &app.platform().config;
@@ -225,13 +225,7 @@ where
         && (32326..32329).contains(&block_height)
         && matches!(
             &result,
-            Err(Error::Drive(drive::error::Error::GroveDB(error)))
-                if matches!(
-                    error.as_ref(),
-                    drive::grovedb::Error::StorageError(
-                        drive::grovedb_storage::error::Error::RocksDBError(error)
-                    ) if error.kind() == rocksdb::ErrorKind::Busy
-                )
+            Err(Error::Drive(drive::error::Error::GroveDB(error))) if error.is_commit_conflict()
         );
 
     if historical_conflict {
@@ -370,6 +364,11 @@ where
                 );
             }
         }
+        // What LigninDB counts of the live database, at the pace of the checkpoints: the
+        // call reads every count the engine keeps.
+        if let Some(stats) = platform.drive.lignindb_stats() {
+            metrics::grovedb_lignindb_stats(&stats);
+        }
     }
 
     #[cfg(debug_assertions)]
@@ -407,7 +406,10 @@ mod tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
+    use drive::grovedb::engine::either::lignindb::checkpoint::CREATING_SUFFIX;
     use drive::grovedb::Transaction;
+    use drive::grovedb_path::SubtreePath;
+    use drive::grovedb_storage::error::{CommitError, Error as StorageError};
     use std::sync::{Arc, Mutex, RwLock};
     use tenderdash_abci::proto::abci::CommitInfo;
     use tenderdash_abci::proto::google::protobuf::Timestamp;
@@ -419,7 +421,7 @@ mod tests {
 
     /// An ABCI application whose `commit_transaction` always fails.
     ///
-    /// Injects either a real RocksDB error or an unrelated execution error to verify
+    /// Injects either a real commit conflict or another error to verify
     /// that only historical transaction conflicts are tolerated.
     struct FailingCommitApplication<'a> {
         platform: &'a Platform<MockCoreRPCLike>,
@@ -762,26 +764,48 @@ mod tests {
         config
     }
 
-    /// Produce the actual RocksDB error returned when another transaction writes the same key.
+    /// Produce the actual error a commit returns when a write outside its transaction
+    /// took a key the transaction wrote.
     fn busy_commit_error() -> Error {
         let directory = tempfile::tempdir().expect("temporary database directory");
-        let db = rocksdb::OptimisticTransactionDB::<rocksdb::SingleThreaded>::open_default(
-            directory.path(),
-        )
-        .expect("open database");
-        let transaction = db.transaction();
-        transaction
-            .put(b"key", b"pending")
+        let grove = drive::grovedb::GroveDb::open(directory.path()).expect("open database");
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let item = |value: &[u8]| drive::grovedb::Element::new_item(value.to_vec());
+        let transaction = grove.start_transaction();
+        grove
+            .insert(
+                SubtreePath::empty(),
+                b"key",
+                item(b"pending"),
+                None,
+                Some(&transaction),
+                grove_version,
+            )
+            .unwrap()
             .expect("transaction write");
-        db.put(b"key", b"committed").expect("independent write");
-        let error = transaction
-            .commit()
+        grove
+            .insert(
+                SubtreePath::empty(),
+                b"key",
+                item(b"committed"),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("independent write");
+        let error = grove
+            .commit_transaction(transaction)
+            .unwrap()
             .expect_err("conflicting commit must fail");
-        assert_eq!(error.kind(), rocksdb::ErrorKind::Busy);
-        drive::grovedb::Error::StorageError(drive::grovedb_storage::error::Error::RocksDBError(
-            error,
-        ))
-        .into()
+        assert!(error.is_commit_conflict(), "not a conflict: {error:?}");
+        error.into()
+    }
+
+    /// A commit error of the storage that is no conflict.
+    fn storage_commit_error(error: StorageError) -> Error {
+        assert!(!error.is_commit_conflict());
+        drive::grovedb::Error::StorageError(error).into()
     }
 
     #[test]
@@ -873,11 +897,22 @@ mod tests {
         )
         .expect_err("WAL path is not a directory");
         assert_eq!(error.kind(), rocksdb::ErrorKind::IOError);
-        let error = drive::grovedb::Error::StorageError(
-            drive::grovedb_storage::error::Error::RocksDBError(error),
-        )
-        .into();
+        let error = storage_commit_error(StorageError::RocksDBError(error));
         let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32328, error);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_a_commit_that_is_not_durable_during_incident() {
+        let error = storage_commit_error(StorageError::Commit(CommitError::NotDurable));
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32327, error);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_an_unsettled_commit_during_incident() {
+        let error = storage_commit_error(StorageError::Commit(CommitError::Unsettled));
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32326, error);
     }
 
     #[test]
@@ -1309,6 +1344,202 @@ mod tests {
         finalize_real_block(&platform, &app, 3, next_interval_time, Some(second_time))
             .expect("third block after the restart");
         assert_eq!(registered_checkpoint_heights(&platform), vec![3]);
+    }
+
+    #[cfg(unix)]
+    fn set_modified_ms(directory: &std::path::Path, time_ms: u64) {
+        std::fs::File::open(directory)
+            .and_then(|directory| {
+                directory
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_millis(time_ms))
+            })
+            .expect("set the modification time of the directory");
+    }
+
+    #[cfg(unix)]
+    fn time_of_the_checkpoint_at_height_1(platform: &TempPlatform<MockCoreRPCLike>) -> Option<u64> {
+        let checkpoints = platform.drive.checkpoints.load();
+        checkpoints
+            .get(&1)
+            .map(|checkpoint| checkpoint.timestamp_ms)
+    }
+
+    /// A checkpoint loaded at a start is timed by its block where the state saved with it
+    /// names one, as a checkpoint made in a run is, so the next checkpoint after a restart
+    /// is scheduled as it is without one. Three more starts show what a start reads where
+    /// the saved state names no block, is no state or is missing: a state with no block,
+    /// or none. Which time the checkpoint then has is held by the test of
+    /// `time_of_a_loaded_checkpoint`, with times it is given: a start cannot be asked what
+    /// its scan read.
+    #[cfg(unix)]
+    #[test]
+    fn a_checkpoint_loaded_at_a_start_is_timed_by_its_block_where_its_state_names_one() {
+        // An hour ahead, to tell the block's time from a time of the directory.
+        let now = now_ms();
+        let block_time = now - now % 1_000 + 3_600_000;
+        // Before anything this test writes.
+        let set_time: u64 = 1_000_000_000_000;
+
+        let platform = checkpointing_platform();
+        let app = FullAbciApplication::new(&platform.platform);
+        finalize_real_block(&platform, &app, 1, block_time, None).expect("first block");
+        assert_eq!(registered_checkpoint_heights(&platform), vec![1]);
+        assert_eq!(
+            time_of_the_checkpoint_at_height_1(&platform),
+            Some(block_time),
+            "a checkpoint made in a run is timed by its block"
+        );
+        let checkpoint_directory = platform.config.db_path.join("checkpoints").join("1");
+        let state_path = checkpoint_directory.join("platform_state.bin");
+        assert!(state_path.is_file());
+        let no_block = PlatformState::default_with_protocol_versions(
+            PlatformVersion::latest().protocol_version,
+            PlatformVersion::latest().protocol_version,
+            &platform.config,
+        )
+        .expect("a state with no block")
+        .serialize_standalone_to_bytes()
+        .expect("serialize the state with no block");
+
+        drop(app);
+        let TempPlatform {
+            platform: closed,
+            tempdir,
+        } = platform;
+        drop(closed);
+        set_modified_ms(&checkpoint_directory, set_time);
+        let mut platform = TempPlatform::open_with_tempdir(tempdir, checkpointing_config());
+
+        assert_eq!(
+            time_of_the_checkpoint_at_height_1(&platform),
+            Some(block_time),
+            "the state names the block"
+        );
+        assert_eq!(
+            platform
+                .checkpoint_platform_states
+                .load()
+                .get(&1)
+                .map(|state| state.last_committed_block_time_ms()),
+            Some(Some(block_time))
+        );
+
+        let cases: [(&str, Option<Vec<u8>>, Option<Option<u64>>); 3] = [
+            ("a state that names no block", Some(no_block), Some(None)),
+            ("a file that is no state", Some(b"no state".to_vec()), None),
+            ("no file", None, None),
+        ];
+        for (what, saved, state_read) in cases {
+            let TempPlatform {
+                platform: closed,
+                tempdir,
+            } = platform;
+            drop(closed);
+            match &saved {
+                Some(bytes) => std::fs::write(&state_path, bytes).expect("write the state file"),
+                None => std::fs::remove_file(&state_path).expect("remove the state file"),
+            }
+            platform = TempPlatform::open_with_tempdir(tempdir, checkpointing_config());
+
+            assert!(
+                time_of_the_checkpoint_at_height_1(&platform).is_some(),
+                "{what}: the checkpoint is loaded"
+            );
+            assert_eq!(
+                platform
+                    .checkpoint_platform_states
+                    .load()
+                    .get(&1)
+                    .map(|state| state.last_committed_block_time_ms()),
+                state_read,
+                "{what}"
+            );
+        }
+    }
+
+    /// A start says which directories of checkpoints it did not load. One that could not
+    /// be opened is a warning. One in which no database was ever made is skipped at every
+    /// start and is no warning. A directory under the name LigninDB builds a checkpoint
+    /// under, holding what no creation puts there, stays: on LigninDB the engine's removal
+    /// refuses it, which is a warning, and RocksDB is not asked and says nothing of it.
+    #[test]
+    fn a_start_logs_each_checkpoint_directory_it_skips() {
+        let platform = checkpointing_platform();
+        let app = FullAbciApplication::new(&platform.platform);
+        let [first_time, _, _] = block_times_around_a_checkpoint_interval();
+        finalize_real_block(&platform, &app, 1, first_time, None).expect("first block");
+        assert_eq!(registered_checkpoint_heights(&platform), vec![1]);
+
+        let checkpoints_path = platform.config.db_path.join("checkpoints");
+        let loaded = checkpoints_path.join("1");
+        let never_made = checkpoints_path.join("7");
+        let damaged = checkpoints_path.join("8");
+        std::fs::create_dir(&never_made).expect("a directory with no database");
+        std::fs::create_dir(&damaged).expect("a directory for a damaged database");
+        std::fs::write(damaged.join("CURRENT"), b"no manifest")
+            .expect("a file that names no manifest");
+        let no_creations = checkpoints_path.join(format!("9{CREATING_SUFFIX}"));
+        std::fs::create_dir(&no_creations).expect("a directory under the staging name");
+        std::fs::write(no_creations.join("note"), b"a note").expect("a file in it");
+
+        drop(app);
+        let TempPlatform {
+            platform: closed,
+            tempdir,
+        } = platform;
+        drop(closed);
+        let logs = CapturedLogs::default();
+        let platform =
+            logs.capture(|| TempPlatform::open_with_tempdir(tempdir, checkpointing_config()));
+
+        assert_eq!(registered_checkpoint_heights(&platform), vec![1]);
+        let skipped = |level: tracing::Level, directory: &std::path::Path| {
+            let directory = directory.display().to_string();
+            logs.events().iter().any(|(event_level, message)| {
+                *event_level == level && message.contains(&directory) && message.contains("skipped")
+            })
+        };
+        assert!(
+            skipped(tracing::Level::WARN, &damaged),
+            "{:?}",
+            logs.events()
+        );
+        assert!(
+            skipped(tracing::Level::INFO, &never_made),
+            "{:?}",
+            logs.events()
+        );
+        assert!(
+            !skipped(tracing::Level::WARN, &never_made),
+            "{:?}",
+            logs.events()
+        );
+        assert!(
+            !skipped(tracing::Level::WARN, &loaded) && !skipped(tracing::Level::INFO, &loaded),
+            "{:?}",
+            logs.events()
+        );
+        assert_eq!(
+            std::fs::read_dir(&never_made)
+                .expect("the entries of the directory with no database")
+                .count(),
+            0
+        );
+        let refused = logs.events().iter().any(|(level, message)| {
+            *level == tracing::Level::WARN
+                && message.contains(&no_creations.display().to_string())
+                && message.contains("returned an error")
+        });
+        assert_eq!(
+            refused,
+            platform.drive.lignindb_stats().is_some(),
+            "{:?}",
+            logs.events()
+        );
+        assert_eq!(
+            std::fs::read(no_creations.join("note")).expect("the file"),
+            b"a note"
+        );
     }
 
     mod state_transition_execution_proofs {

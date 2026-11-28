@@ -12,7 +12,6 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::BackwardsReferences;
 use grovedb::{GroveDb, PathQuery, TransactionArg};
 use grovedb_epoch_based_storage_flags::StorageFlags;
-use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
@@ -100,7 +99,7 @@ impl Drive {
                     estimated_key_size,
                     estimated_value_size,
                     ..
-                } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
+                } => GroveDb::average_case_delete_operation_for_delete_engine_free(
                     &KeyInfoPath::from_known_owned_path(path.to_vec()),
                     &KeyInfo::KnownKey(key.to_vec()),
                     in_tree_type,

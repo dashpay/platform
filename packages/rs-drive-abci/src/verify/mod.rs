@@ -3,6 +3,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::DefaultCoreRPC;
 use dpp::version::PlatformVersion;
+use drive::config::DriveConfig;
 use drive::drive::Drive;
 use std::fs::remove_file;
 use std::path::PathBuf;
@@ -12,7 +13,7 @@ use std::path::PathBuf;
 /// - platform state app hash vs GroveDB root
 /// - configuration consistency with stored protocol version
 pub fn run(config: &PlatformConfig, force: bool) -> Result<(), String> {
-    verify_grovedb(&config.db_path, force)?;
+    verify_grovedb(&config.db_path, &config.drive, force)?;
 
     let (drive, maybe_platform_version) =
         Drive::open(&config.db_path, Some(config.drive.clone())).map_err(|e| e.to_string())?;
@@ -37,7 +38,14 @@ pub fn run(config: &PlatformConfig, force: bool) -> Result<(), String> {
 /// - file `.fsck` in `db_path` exists
 ///
 /// After successful verification, .fsck file is removed.
-pub fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
+///
+/// The database is opened on the storage engine and with the options `drive_config`
+/// names, as the node opens it.
+pub fn verify_grovedb(
+    db_path: &PathBuf,
+    drive_config: &DriveConfig,
+    force: bool,
+) -> Result<(), String> {
     let fsck = PathBuf::from(db_path).join(".fsck");
 
     if !force {
@@ -50,7 +58,7 @@ pub fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
         );
     }
 
-    let grovedb = drive::grovedb::GroveDb::open(db_path)
+    let grovedb = Drive::open_grovedb(db_path, drive_config)
         .map_err(|e| format!("failed to open grovedb: {}", e))?;
     // TODO: fetch platform version instead of taking latest
     let result = grovedb

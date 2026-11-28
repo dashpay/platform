@@ -1,6 +1,6 @@
 //! The storage bytes GroveDB charges for one new element, restated from
-//! grovedb-merk, whose formulas are compiled only with its RocksDB storage
-//! (`minimal`), so the `verify` build can price an insert too. The tests pin
+//! grovedb-merk, whose formulas are compiled only with its `minimal` feature,
+//! so the `verify` build can price an insert too. The tests pin
 //! every restated number to grovedb's own functions.
 //!
 //! A new element costs its key (the 32-byte subtree prefix plus the key, with

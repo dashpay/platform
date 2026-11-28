@@ -84,9 +84,7 @@ console-subscriber = { version = "0.5", optional = true }
 dashcore-crypto = { workspace = true, features = ["bls"], optional = true }
 grovedb-commitment-tree = { workspace = true }
 nonempty = "0.11"
-# Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
-# bindings, and blake3 for the snapshot-file checksum.
-rocksdb = "0.25.0"
+# Shielded-pool snapshot: the snapshot-file checksum.
 blake3 = "1.5"
 
 [dev-dependencies]
@@ -114,8 +112,13 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "data-contract-cbor-conversion",
 ] }
 # `structure`: the strategy tests check every state they build against the
-# GroveDB structure description
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks", "structure"] }
+# GroveDB structure description. `test-storage-engine-env`: the tests run on the storage
+# engine `DRIVE_TEST_STORAGE_ENGINE` names
+drive = { path = "../rs-drive", features = [
+  "fixtures-and-mocks",
+  "structure",
+  "test-storage-engine-env",
+] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
 grovedb-commitment-tree = { workspace = true, features = ["client"] }
@@ -128,11 +131,6 @@ libc = "0.2"
 # For tests of grovedb verify
 rocksdb = "0.25.0"
 integer-encoding = { version = "4.0.0" }
-
-# For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
-# subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { workspace = true }
-grovedb-storage = { workspace = true }
 
 [features]
 default = []

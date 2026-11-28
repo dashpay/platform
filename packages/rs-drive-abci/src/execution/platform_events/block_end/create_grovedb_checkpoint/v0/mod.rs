@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
-use drive::drive::{Checkpoint, CheckpointInfo};
+use drive::drive::{Checkpoint, CheckpointInfo, Drive};
 use drive::error::Error::IOErrorWithInfoString;
 use drive::grovedb::GroveDb;
 use std::collections::BTreeMap;
@@ -25,7 +25,7 @@ where
     /// interval's checkpoint attempt so that `should_checkpoint` does not ask again
     /// before the next interval boundary. A failed attempt leaves nothing behind so that the
     /// caller's immediate retry starts clean: a checkpoint directory this attempt
-    /// created is removed again, while a directory it did not create (RocksDB
+    /// created is removed again, while a directory it did not create (GroveDB
     /// refuses an existing target) is left alone. Nothing is registered in the
     /// caches until the checkpoint is complete.
     ///
@@ -64,29 +64,36 @@ where
             .and_then(|()| std::fs::create_dir_all(&checkpoints_path))
             .map_err(|err| io_error(CheckpointStep::CreateDirectory, &checkpoints_path, err))?;
 
-        // Create checkpoint DB (this creates the checkpoint_path directory). RocksDB
+        // Create checkpoint DB (this creates the checkpoint_path directory). GroveDB
         // refuses an existing target, so the directory belongs to this attempt from
         // here on and is removed again if a later step fails.
         fail_if_injected(injected_fault, CheckpointStep::CreateCheckpoint)
             .map_err(|err| io_error(CheckpointStep::CreateCheckpoint, &checkpoint_path, err))?;
         self.drive.grove.create_checkpoint(&checkpoint_path)?;
 
-        let checkpoint_db =
-            match complete_checkpoint(&checkpoint_path, &platform_state, injected_fault) {
-                Ok(checkpoint_db) => checkpoint_db,
-                Err(error) => {
-                    // Nothing references the directory yet. Remove it so a restart does
-                    // not load a checkpoint that has no platform state next to it.
-                    if let Err(cleanup_error) = std::fs::remove_dir_all(&checkpoint_path) {
-                        tracing::warn!(
-                            error = ?cleanup_error,
-                            path = ?checkpoint_path,
-                            "failed to remove incomplete grovedb checkpoint directory"
-                        );
-                    }
-                    return Err(error);
+        let checkpoint_db = match complete_checkpoint(
+            &self.drive,
+            &checkpoint_path,
+            &platform_state,
+            injected_fault,
+        ) {
+            Ok(checkpoint_db) => checkpoint_db,
+            Err(error) => {
+                // Nothing references the directory yet, and no database is open on
+                // it. Delete it so a restart does not load a checkpoint that has no
+                // platform state next to it.
+                if let Err(cleanup_error) =
+                    Checkpoint::delete_closed(&checkpoint_path, self.drive.storage_engine())
+                {
+                    tracing::warn!(
+                        error = ?cleanup_error,
+                        path = ?checkpoint_path,
+                        "failed to remove incomplete grovedb checkpoint directory"
+                    );
                 }
-            };
+                return Err(error);
+            }
+        };
         let checkpoint = Checkpoint::new(checkpoint_db, checkpoint_path);
 
         // Load current checkpoints
@@ -160,6 +167,7 @@ where
 
 /// Writes the platform state next to the checkpoint's database and opens the checkpoint.
 fn complete_checkpoint(
+    drive: &Drive,
     checkpoint_path: &Path,
     platform_state: &PlatformState,
     injected_fault: Option<CheckpointStep>,
@@ -173,10 +181,11 @@ fn complete_checkpoint(
         .and_then(|()| std::fs::write(&checkpoint_state_path, &state_bytes))
         .map_err(|err| io_error(CheckpointStep::WriteState, &checkpoint_state_path, err))?;
 
-    // Open the checkpoint as a GroveDb instance
+    // Open the checkpoint as a GroveDb instance, on the storage engine of the database it
+    // was taken from and with the cache a checkpoint is given
     fail_if_injected(injected_fault, CheckpointStep::OpenCheckpoint)
         .map_err(|err| io_error(CheckpointStep::OpenCheckpoint, checkpoint_path, err))?;
-    Ok(GroveDb::open(checkpoint_path)?)
+    Ok(drive.open_checkpoint(checkpoint_path)?)
 }
 
 /// `Err` when a fault-injection test asked for `step` to fail, `Ok` otherwise.
@@ -320,7 +329,7 @@ mod tests {
         assert_checkpoint_registered(&platform, "retry after directory creation failure");
     }
 
-    /// RocksDB refuses to checkpoint into an existing directory. The directory is
+    /// GroveDB refuses to checkpoint into an existing directory. The directory is
     /// not this attempt's to remove, nothing is registered, and the attempt after
     /// the directory is cleared succeeds.
     #[test]

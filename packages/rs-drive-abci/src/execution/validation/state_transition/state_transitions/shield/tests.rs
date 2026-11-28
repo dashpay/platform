@@ -2818,7 +2818,7 @@ mod tests {
         /// The candidate fix for the leak above is `set_savepoint()` before each transition and
         /// `rollback_to_savepoint()` on failure, inside `process_raw_state_transitions`. That is
         /// only sound if a rollback restores everything the apply touched — including GroveDB's
-        /// in-memory Merk state, not just the RocksDB write batch. This runs a fully-funded shield
+        /// in-memory Merk state, not just the storage's write batch. This runs a fully-funded shield
         /// (so the writes are the same ones a mid-band shield leaks), rolls it back, and checks
         /// pool balance, note count, and root hash against the pre-apply snapshot.
         #[tokio::test]
@@ -2863,7 +2863,11 @@ mod tests {
             // savepoint, not this one, which stays on the stack unused. Both record identical
             // state, so every assertion is unaffected; this savepoint documents the mechanism
             // under test and kept the test meaningful before the loop rolled back on its own.
-            transaction.set_savepoint();
+            platform
+                .drive
+                .grove
+                .set_savepoint(&transaction)
+                .expect("set savepoint");
 
             let result = platform
                 .platform
@@ -2897,8 +2901,10 @@ mod tests {
                 "sanity: the applied shield must have changed the root hash"
             );
 
-            transaction
-                .rollback_to_savepoint()
+            platform
+                .drive
+                .grove
+                .rollback_to_savepoint(&transaction)
                 .expect("rollback to savepoint");
 
             let pool_after = platform
@@ -2936,7 +2942,7 @@ mod tests {
             assert_eq!(
                 hash_before, hash_after,
                 "savepoint rollback did not restore the root hash: GroveDB's in-memory Merk \
-                 state survives a RocksDB-level rollback, so a per-transition savepoint is NOT a \
+                 state survives a storage-level rollback, so a per-transition savepoint is NOT a \
                  sound implementation of the leak fix (use proposal re-execution instead)"
             );
 

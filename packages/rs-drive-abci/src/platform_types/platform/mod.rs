@@ -6,7 +6,7 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-use drive::drive::Drive;
+use drive::drive::{CheckpointInfo, Drive};
 use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
@@ -17,7 +17,7 @@ use dpp::prelude::BlockHeight;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion, PLATFORM_VERSIONS};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
@@ -162,6 +162,15 @@ impl<C> Platform<C> {
         // time to live lives by it, so it gets the same value rather than a setting of its own.
         let mut drive_config = config.drive.clone();
         drive_config.epoch_time_length_s = config.execution.epoch_time_length_s;
+        // On LigninDB every open database has a cache of its own, and Drive sizes them inside
+        // one memory budget: for the checkpoints a node keeps, and for the one that is open
+        // beside them while the oldest is replaced.
+        drive_config.open_checkpoints = PLATFORM_VERSIONS
+            .iter()
+            .map(|version| version.drive_abci.checkpoints.num_checkpoints)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1);
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(drive_config)).map_err(Error::Drive)?;
 
@@ -207,12 +216,10 @@ impl<C> Platform<C> {
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
-            for &block_height in checkpoints.keys() {
-                let checkpoint_state_path = config
-                    .db_path
-                    .join("checkpoints")
-                    .join(block_height.to_string())
-                    .join("platform_state.bin");
+            for (&block_height, loaded) in checkpoints.iter() {
+                // The state saved with a checkpoint is in the directory it was loaded
+                // from, however that directory spells its height.
+                let checkpoint_state_path = loaded.checkpoint.path().join("platform_state.bin");
 
                 if checkpoint_state_path.exists() {
                     match std::fs::read(&checkpoint_state_path) {
@@ -244,6 +251,23 @@ impl<C> Platform<C> {
                     }
                 }
             }
+
+            // A loaded checkpoint is timed by its block, as one that this run makes is,
+            // where the state saved with it was read above and names a block. The scan
+            // times it by the modification time of its directory, which is no record of
+            // the block.
+            let timed_by_block: BTreeMap<_, _> = checkpoints
+                .iter()
+                .map(|(height, loaded)| {
+                    let timestamp_ms = time_of_a_loaded_checkpoint(
+                        checkpoint_platform_states.get(height).map(Arc::as_ref),
+                        loaded.timestamp_ms,
+                    );
+                    let timed = CheckpointInfo::new(timestamp_ms, Arc::clone(&loaded.checkpoint));
+                    (*height, timed)
+                })
+                .collect();
+            drive.checkpoints.store(Arc::new(timed_by_block));
 
             return Platform::open_with_client_saved_state::<P>(
                 drive,
@@ -337,6 +361,15 @@ impl<C> Platform<C> {
     }
 }
 
+/// The time of a checkpoint that a start loaded: its block's, where the state saved with it
+/// was read and names a block, and else the time the scan gave it, which is the
+/// modification time of its directory, or 0 where the scan could read none.
+fn time_of_a_loaded_checkpoint(saved_state: Option<&PlatformState>, scanned_time_ms: u64) -> u64 {
+    saved_state
+        .and_then(|state| state.last_committed_block_time_ms())
+        .unwrap_or(scanned_time_ms)
+}
+
 impl<C> Drop for Platform<C> {
     fn drop(&mut self) {
         tracing::trace!("platform is shutting down");
@@ -415,6 +448,57 @@ mod tests {
             .build_with_mock_rpc();
         let state = tp.state.load();
         assert_eq!(state.current_protocol_version_in_consensus(), first);
+    }
+
+    /// A checkpoint that a start loaded has its block's time where the state saved with it
+    /// names a block, and exactly the time the scan gave it where the state names none or
+    /// no state was read.
+    #[test]
+    fn a_loaded_checkpoint_has_its_blocks_time_and_else_the_time_the_scan_gave_it() {
+        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+        use dpp::block::extended_block_info::ExtendedBlockInfo;
+
+        let block_time = 1_700_000_000_123;
+        let latest = PlatformVersion::latest().protocol_version;
+        let no_block = PlatformState::default_with_protocol_versions(
+            latest,
+            latest,
+            &PlatformConfig::default_testnet(),
+        )
+        .expect("a state with no block");
+        let mut at_a_block = no_block.clone();
+        at_a_block.set_last_committed_block_info(Some(ExtendedBlockInfo::V0(
+            ExtendedBlockInfoV0 {
+                basic_info: BlockInfo {
+                    time_ms: block_time,
+                    height: 7,
+                    core_height: 100,
+                    epoch: Default::default(),
+                },
+                app_hash: [0; 32],
+                quorum_hash: [0; 32],
+                block_id_hash: [0; 32],
+                proposer_pro_tx_hash: [0; 32],
+                signature: [0; 96],
+                round: 0,
+            },
+        )));
+
+        for scanned_time in [0, 946_684_800_000, block_time + 1, u64::MAX] {
+            assert_eq!(
+                time_of_a_loaded_checkpoint(Some(&at_a_block), scanned_time),
+                block_time
+            );
+            assert_eq!(
+                time_of_a_loaded_checkpoint(Some(&no_block), scanned_time),
+                scanned_time
+            );
+            assert_eq!(
+                time_of_a_loaded_checkpoint(None, scanned_time),
+                scanned_time
+            );
+        }
     }
 
     #[test]

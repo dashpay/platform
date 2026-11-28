@@ -418,7 +418,11 @@ mod tests {
          */
 
         // Commit transaction and merge block (transactional) cache to global cache
-        transaction.commit().expect("expected to commit");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
 
         drive.cache.data_contracts.merge_and_clear_block_cache();
 
