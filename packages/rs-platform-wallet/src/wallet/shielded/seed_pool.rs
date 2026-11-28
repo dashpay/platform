@@ -153,30 +153,39 @@ impl PlatformWallet {
         // pool is seeded at genesis (DRIVE_SHIELDED_SNAPSHOT); seeding it
         // from a client would burn real value to no purpose.
         if self.network() == key_wallet::Network::Mainnet {
-            return Err(PlatformWalletError::ShieldedBuildError(
-                "shielded_seed_pool_notes is a devnet/testnet utility and is disabled on mainnet \
-                 (Network::Mainnet) — the mainnet shielded pool is seeded at genesis via \
-                 DRIVE_SHIELDED_SNAPSHOT"
-                    .to_string(),
+            return Err(seed_refusal(
+                PlatformWalletError::ShieldedBuildError(
+                    "shielded_seed_pool_notes is a devnet/testnet utility and is disabled on \
+                     mainnet (Network::Mainnet) — the mainnet shielded pool is seeded at genesis \
+                     via DRIVE_SHIELDED_SNAPSHOT"
+                        .to_string(),
+                ),
+                false,
             ));
         }
 
         // The wallet must own this id and have its shielded sub-wallet
         // bound, or there's no default address to send the real notes to.
         if self.wallet_id() != *wallet_id {
-            return Err(PlatformWalletError::ShieldedBuildError(format!(
-                "shielded_seed_pool_notes called with wallet_id {} but this wallet is {}",
-                hex::encode(wallet_id),
-                hex::encode(self.wallet_id())
-            )));
+            return Err(seed_refusal(
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "shielded_seed_pool_notes called with wallet_id {} but this wallet is {}",
+                    hex::encode(wallet_id),
+                    hex::encode(self.wallet_id())
+                )),
+                false,
+            ));
         }
         // Snapshot the starting count so the batch-total estimate is
         // stable for the whole run.
         let sdk = self.sdk_arc();
         let start_notes = fetch_shielded_notes_count(&sdk).await.map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "failed to fetch shielded notes count before seeding: {e}"
-            ))
+            seed_refusal(
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "failed to fetch shielded notes count before seeding: {e}"
+                )),
+                false,
+            )
         })?;
 
         let max_batch_actions = max_actions_per_batch(sdk.version());
@@ -202,7 +211,10 @@ impl PlatformWallet {
         // Resolved only once seeding is actually needed, so the
         // already-satisfied no-op path above works even when the
         // shielded sub-wallet isn't bound.
-        let recipient = self.seed_pool_recipient(account).await?;
+        let recipient = self
+            .seed_pool_recipient(account)
+            .await
+            .map_err(|e| seed_refusal(e, false))?;
 
         // One prover handle for the whole run (zero-sized; shares the
         // process-global cached proving key).
@@ -237,12 +249,15 @@ impl PlatformWallet {
             // is structurally zero.
             let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
             let pool_fee = Self::shield_from_asset_lock_pool_fee(num_actions, self.sdk.version())
-                .map_err(|e| seed_batch_failure(e, batches_submitted > 0))?;
+                .map_err(|e| seed_refusal(e, batches_submitted > 0))?;
             let lock_credits = pool_fee
                 .checked_add(REAL_NOTE_VALUE_CREDITS)
                 .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(
-                        "seed batch lock amount overflowed credits".to_string(),
+                    seed_refusal(
+                        PlatformWalletError::ShieldedBuildError(
+                            "seed batch lock amount overflowed credits".to_string(),
+                        ),
+                        batches_submitted > 0,
                     )
                 })?;
             let amount_duffs = lock_credits.div_ceil(CREDITS_PER_DUFF);
@@ -396,6 +411,17 @@ where
     }
 }
 
+/// A refusal of the seed run raised before its next batch builds a lock:
+/// `NotSent` while no batch has dispatched, the run's failure after an
+/// earlier batch ([`seed_batch_failure`]).
+fn seed_refusal(error: PlatformWalletError, dispatched: bool) -> PlatformWalletError {
+    if dispatched {
+        seed_batch_failure(error, true)
+    } else {
+        error.before_dispatch()
+    }
+}
+
 /// The error a seed run ends with, classed for the whole run rather than the
 /// last batch alone. `dispatched` says the run already moved Core funds: a
 /// committed batch, or this batch's own lock broadcast (a finality retry that
@@ -445,6 +471,15 @@ mod tests {
                 0,
             ))
         };
+
+        // A refusal before any batch builds a lock (mainnet gate, wallet id,
+        // starting count, recipient, batch-0 fee) never sent anything.
+        let gate = || PlatformWalletError::ShieldedBuildError("mainnet".to_string());
+        let before_any = seed_refusal(gate(), false);
+        assert_eq!(before_any.payment_delivery(), PaymentDelivery::NotSent);
+        assert_eq!(before_any.to_string(), gate().to_string());
+        let after_a_batch = seed_refusal(gate(), true);
+        assert_eq!(after_a_batch.payment_delivery(), PaymentDelivery::MaybeSent);
 
         let first = seed_batch_failure(refusal(), false);
         assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
