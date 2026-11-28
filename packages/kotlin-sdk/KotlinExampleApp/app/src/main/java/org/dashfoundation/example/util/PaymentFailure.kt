@@ -135,7 +135,8 @@ data class PaymentFailure(
                 ?: error.message
                 ?: error.javaClass.simpleName,
             invitationVoucher,
-            lockHeld = (error as? DashSdkError)?.delivery == PaymentDelivery.LOCK_HELD,
+            lockHeld = (error as? WalletDrainAttemptException)?.lockHeld
+                ?: ((error as? DashSdkError)?.delivery == PaymentDelivery.LOCK_HELD),
         )
 
         /**

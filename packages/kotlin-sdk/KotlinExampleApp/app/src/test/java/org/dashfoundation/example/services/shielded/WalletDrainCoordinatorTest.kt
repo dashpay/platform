@@ -620,6 +620,37 @@ class WalletDrainCoordinatorTest {
         )
     }
 
+    /**
+     * A drain Rust classed LOCK_HELD whose outpoint did not reach the app
+     * waits like MAYBE_SENT but is never released after reconciliation: the
+     * lock stays held whatever the history shows.
+     */
+    @Test
+    fun `a lock-held drain without its outpoint is never released`() = runTest {
+        val f = fixture()
+        val unnamedLock = DashSdkError.fromNative(
+            DashSDKException(
+                code = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 20,
+                message = "proof wait timed out",
+                consensusError = null,
+                paymentDelivery = PaymentDelivery.LOCK_HELD,
+            ),
+        )
+        val error = f.coordinator.attemptError(WalletDrainOutcome(State.Pending, outpoint, unnamedLock))!!
+        assertEquals(PaymentRecovery.Reconcile, error.recovery)
+        val failure = PaymentFailure.of(error)
+        assertTrue(failure.holdsSlot)
+        assertFalse(failure.releasableAfterReconciliation)
+
+        val maybeSent = nativeWalletError(20, "broadcast unconfirmed", PaymentDelivery.MAYBE_SENT)
+        assertTrue(
+            "a MAYBE_SENT drain stays releasable after reconciliation",
+            PaymentFailure.of(
+                f.coordinator.attemptError(WalletDrainOutcome(State.Pending, outpoint, maybeSent))!!,
+            ).releasableAfterReconciliation,
+        )
+    }
+
     @Test
     fun `a lock-held drain's resume runs the resume of that lock`() = runTest {
         val f = fixture()

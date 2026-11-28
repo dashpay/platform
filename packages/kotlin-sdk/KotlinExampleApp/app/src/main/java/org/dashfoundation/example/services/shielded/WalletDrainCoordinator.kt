@@ -97,9 +97,19 @@ interface WalletDrainRuleSet {
 /**
  * The error a drain attempt fails with when Rust did not report it finished.
  * [recovery] is Rust's class of the failure, which [PaymentFailure] reads
- * instead of treating this app-side error as unclassified.
+ * instead of treating this app-side error as unclassified. [lockHeld] is
+ * whether Rust classed it LOCK_HELD, kept apart from [recovery] because a held
+ * lock whose outpoint did not decode reads as [PaymentRecovery.Reconcile].
  */
-class WalletDrainAttemptException(message: String, val recovery: PaymentRecovery) : Exception(message)
+class WalletDrainAttemptException(
+    message: String,
+    val recovery: PaymentRecovery,
+    val lockHeld: Boolean = false,
+) : Exception(message)
+
+/** Whether [error] is a native wallet error Rust classed LOCK_HELD. */
+internal fun isLockHeld(error: Throwable?): Boolean =
+    (error as? DashSdkError)?.delivery == PaymentDelivery.LOCK_HELD
 
 /**
  * Starts, resumes and reconciles Core to shielded "Max" transfers. Port of
@@ -325,13 +335,17 @@ class WalletDrainCoordinator(
             }
         return when (outcome.state) {
             WalletDrainOutcome.State.NotSent ->
-                WalletDrainAttemptException(rustText ?: "Nothing was sent.", recovery)
+                WalletDrainAttemptException(rustText ?: "Nothing was sent.", recovery, isLockHeld(outcome.error))
             // `Completed` lands here only if the rule call itself failed:
             // shown as unfinished, the fail-closed reading.
             WalletDrainOutcome.State.Pending, WalletDrainOutcome.State.Completed -> {
                 val notice = "This transfer is not finished: resume it from the wallet screen " +
                     "and do not start a new Max."
-                WalletDrainAttemptException(rustText?.let { "$it $notice" } ?: notice, recovery)
+                WalletDrainAttemptException(
+                    rustText?.let { "$it $notice" } ?: notice,
+                    recovery,
+                    isLockHeld(outcome.error),
+                )
             }
         }
     }
@@ -493,7 +507,7 @@ class WalletDrainCoordinator(
         } catch (e: DashSdkError.PlatformWallet.AssetLockNotTracked) {
             // Rust's "not tracked" text does not say what to do next; its
             // class stays the error's.
-            throw WalletDrainAttemptException(ASSET_LOCK_NOT_TRACKED_MESSAGE, PaymentRecovery.of(e))
+            throw WalletDrainAttemptException(ASSET_LOCK_NOT_TRACKED_MESSAGE, PaymentRecovery.of(e), isLockHeld(e))
         }
     }
 
