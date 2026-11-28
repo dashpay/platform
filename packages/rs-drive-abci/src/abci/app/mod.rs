@@ -8,6 +8,8 @@ mod consensus;
 /// Convert state transition execution result into ABCI response
 pub mod execution_result;
 mod full;
+/// Shadow mode: every block applied to a second database on the other storage engine
+pub mod shadow;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;

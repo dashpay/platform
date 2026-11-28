@@ -89,6 +89,40 @@ fn prepared_proposal_difference(
     None
 }
 
+/// Whether [`execute_proposal`] answers `request` from the proposal this node prepared
+/// itself, executing nothing: the block execution context is of the request's round and
+/// holds the results of a `PrepareProposal`, and either its block hash is the request's or
+/// it has none yet and every execution input of the request is the prepared one's.
+///
+/// It reads the context and changes nothing. Shadow mode asks it before the request, to
+/// know whether the fee calculations of the block are the ones of the preparation.
+pub(crate) fn answers_from_the_prepared_proposal<A>(
+    app: &A,
+    request: &proto::RequestProcessProposal,
+) -> bool
+where
+    A: BlockExecutionApplication,
+{
+    let block_execution_context_guard = app
+        .block_execution_context()
+        .read()
+        .expect("poisoned only after a panic, which stops the node");
+    let Some(block_execution_context) = block_execution_context_guard.as_ref() else {
+        return false;
+    };
+    let block_state_info = block_execution_context.block_state_info();
+    let Some(proposer_results) = block_execution_context.proposer_results() else {
+        return false;
+    };
+    if block_state_info.round() != (request.round as u32) {
+        return false;
+    }
+    match block_state_info.block_hash() {
+        Some(block_hash) => block_hash.as_slice() == request.hash,
+        None => prepared_proposal_difference(block_state_info, proposer_results, request).is_none(),
+    }
+}
+
 pub fn process_proposal<'a, A, C>(
     app: &A,
     request: proto::RequestProcessProposal,

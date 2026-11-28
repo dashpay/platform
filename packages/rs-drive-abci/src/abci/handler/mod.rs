@@ -50,8 +50,12 @@ pub use check_tx::check_tx;
 pub use echo::echo;
 pub use extend_vote::extend_vote;
 pub use finalize_block::finalize_block;
+pub(crate) use finalize_block::{
+    answer_unless_current, execute_block_unless_current, process_proposal_request,
+};
 pub use info::info;
 pub use init_chain::init_chain;
 pub use prepare_proposal::prepare_proposal;
+pub(crate) use process_proposal::answers_from_the_prepared_proposal;
 pub use process_proposal::process_proposal;
 pub use verify_vote_extension::verify_vote_extension;

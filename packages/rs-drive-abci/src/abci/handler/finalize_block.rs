@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 /// Executes the block being finalized the way `ProcessProposal` executes a proposal, when the
-/// block execution context this node holds is not that block's. Returns whether it had to.
+/// block execution context this node holds is not that block's.
 ///
 /// Tenderdash asks for a block to be processed again before committing it only when the round
 /// state it kept is not that block's, and a proposal this node refused does not replace that
@@ -28,10 +28,44 @@ use tenderdash_abci::proto::abci as proto;
 /// takes, from the request Tenderdash would have sent, so this node then holds what a node that
 /// processed the block right before its commit holds. The app hash the execution gives is still
 /// checked against the one in the block header before anything is committed.
-fn execute_block_unless_current<'a, A, C>(
+///
+/// Returns the answer to the `ProcessProposal` request it made, and `None` where the block
+/// execution context was the block's and nothing was executed. An answer that does not accept
+/// the block is an error. Shadow mode calls it on the primary before `finalize_block` to have
+/// that answer.
+pub(crate) fn execute_block_unless_current<'a, A, C>(
     app: &A,
     request: &proto::RequestFinalizeBlock,
-) -> Result<bool, Error>
+) -> Result<Option<proto::ResponseProcessProposal>, Error>
+where
+    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
+    C: CoreRPCLike,
+{
+    let Some(response) = answer_unless_current(app, request)? else {
+        return Ok(None);
+    };
+
+    if response.status != proto::response_process_proposal::ProposalStatus::Accept as i32 {
+        return Err(AbciError::WrongFinalizeBlockReceived(format!(
+            "the block being finalized at height {} round {}, block hash {}, is not valid on this node",
+            request.height,
+            request.round,
+            hex::encode(&request.hash),
+        ))
+        .into());
+    }
+
+    Ok(Some(response))
+}
+
+/// What [`execute_block_unless_current`] does, with the answer returned whatever it says of
+/// the block: an answer that does not accept it is returned as it is. The shadow of a node
+/// in shadow mode, which is given no `ProcessProposal`, executes every block here, and what
+/// it answers is kept where it does not accept a block the node committed.
+pub(crate) fn answer_unless_current<'a, A, C>(
+    app: &A,
+    request: &proto::RequestFinalizeBlock,
+) -> Result<Option<proto::ResponseProcessProposal>, Error>
 where
     A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
     C: CoreRPCLike,
@@ -53,7 +87,7 @@ where
                 .block_state_info()
                 .matches_current_block(height, round, request.hash.clone())?
             {
-                return Ok(false);
+                return Ok(None);
             }
         }
     }
@@ -66,26 +100,14 @@ where
         "the block execution context is not the one of the block being finalized; executing the block again before finalizing it",
     );
 
-    let response = execute_proposal(app, process_proposal_request(request)?)?;
-
-    if response.status != proto::response_process_proposal::ProposalStatus::Accept as i32 {
-        return Err(AbciError::WrongFinalizeBlockReceived(format!(
-            "the block being finalized at height {} round {}, block hash {}, is not valid on this node",
-            height,
-            round,
-            hex::encode(&request.hash),
-        ))
-        .into());
-    }
-
-    Ok(true)
+    execute_proposal(app, process_proposal_request(request)?).map(Some)
 }
 
 /// The `ProcessProposal` request for the block `request` finalizes, with the fields Tenderdash
 /// fills when it processes a block before committing it: the block's own, the commit round, and
 /// the quorum hash of the validator set that signed the commit. `proposed_last_commit` is left
 /// out, since a block proposal does not read it.
-fn process_proposal_request(
+pub(crate) fn process_proposal_request(
     request: &proto::RequestFinalizeBlock,
 ) -> Result<proto::RequestProcessProposal, Error> {
     let block = request.block.as_ref().ok_or_else(|| {
@@ -135,7 +157,7 @@ where
 
     // Before the transaction is read: executing the block replaces it
     #[cfg_attr(not(debug_assertions), allow(unused_variables))]
-    let executed_again = execute_block_unless_current(app, &request)?;
+    let executed_again = execute_block_unless_current(app, &request)?.is_some();
 
     #[cfg(debug_assertions)]
     phases.end_phase_if(executed_again, "execute_block_again");

@@ -86,6 +86,64 @@ pub struct CoreConfig {
     pub check_tx_rpc: CheckTxCoreRpcConfig,
 }
 
+/// What a node in shadow mode does at a divergence of the two storage engines. What
+/// becomes of the block and of the shadow in each case is written in the documentation
+/// of [`crate::abci::app::shadow`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OnDivergence {
+    /// The node goes on with what the primary answers.
+    #[default]
+    Continue,
+    /// The node is told to shut down.
+    Stop,
+}
+
+/// Shadow mode: the node applies the blocks it commits to a second database on the other
+/// storage engine and holds what the two made of each block against each other, as the
+/// documentation of [`crate::abci::app::shadow`] says. Off unless
+/// [`shadow_db_path`](ShadowConfig::shadow_db_path) is set.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShadowConfig {
+    /// The directory of the shadow's database. Setting it turns shadow mode on. The shadow
+    /// is on the storage engine that `GROVEDB_STORAGE_ENGINE` does not name.
+    #[serde(default)]
+    pub shadow_db_path: Option<PathBuf>,
+
+    /// The directory of the report: the counts, lines of blocks, and what is written of a
+    /// divergence. The checkpoints that a comparison of stored records leaves stay in the
+    /// directories of the two databases, `shadow-compare` in each. Where it is not set it
+    /// is the shadow's directory with `-report` added to its name.
+    #[serde(default)]
+    pub shadow_report_path: Option<PathBuf>,
+
+    /// What the node does at a divergence.
+    #[serde(default)]
+    pub shadow_on_divergence: OnDivergence,
+
+    /// The least number of seconds between two comparisons of the stored records of the
+    /// two databases that the clock begins. 0, the default, makes none by the clock. A
+    /// build without the feature `shadow-store-compare` compares no stored records and
+    /// refuses a value other than 0.
+    #[serde(default, deserialize_with = "from_str_or_number")]
+    pub shadow_store_compare_interval_s: u64,
+}
+
+impl ShadowConfig {
+    /// The directory the comparison writes to, where shadow mode is on.
+    pub fn report_path(&self) -> Option<PathBuf> {
+        let database = self.shadow_db_path.as_ref()?;
+        Some(self.shadow_report_path.clone().unwrap_or_else(|| {
+            let mut name = database
+                .file_name()
+                .map(|name| name.to_os_string())
+                .unwrap_or_default();
+            name.push("-report");
+            database.with_file_name(name)
+        }))
+    }
+}
+
 /// Configuration of the execution part of Dash Platform.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 // NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
@@ -162,6 +220,10 @@ pub struct PlatformConfig {
     #[serde(flatten)]
     pub execution: ExecutionConfig,
 
+    /// Shadow mode
+    #[serde(flatten)]
+    pub shadow: ShadowConfig,
+
     /// The default quorum type
     #[serde(flatten)]
     pub validator_set: ValidatorSetConfig,
@@ -225,6 +287,8 @@ struct PlatformConfigIntermediate {
     #[serde(flatten)]
     pub execution: ExecutionConfig,
     #[serde(flatten)]
+    pub shadow: ShadowConfig,
+    #[serde(flatten)]
     pub validator_set: ValidatorSetConfig,
     #[serde(flatten)]
     pub chain_lock: ChainLockConfig,
@@ -269,6 +333,7 @@ impl<'de> Deserialize<'de> for PlatformConfig {
             prometheus_bind_address: config.prometheus_bind_address,
             grpc_bind_address: config.grpc_bind_address,
             execution: config.execution,
+            shadow: config.shadow,
             validator_set: config.validator_set,
             chain_lock: config.chain_lock,
             instant_lock: config.instant_lock,
@@ -793,6 +858,7 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
+            shadow: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
@@ -835,6 +901,7 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
+            shadow: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
@@ -877,6 +944,7 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
+            shadow: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
@@ -919,6 +987,7 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
+            shadow: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
@@ -1469,5 +1538,106 @@ mod tests {
             "expected textual quorum type in JSON, got: {}",
             json
         );
+    }
+}
+
+#[cfg(test)]
+mod shadow_tests {
+    use super::{OnDivergence, ShadowConfig};
+    use std::path::PathBuf;
+
+    fn from(variables: &[(&str, &str)]) -> Result<ShadowConfig, envy::Error> {
+        envy::from_iter(
+            variables
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string())),
+        )
+    }
+
+    #[test]
+    fn shadow_mode_is_off_where_no_directory_is_named() {
+        let config = from(&[]).expect("a configuration");
+        assert_eq!(config, ShadowConfig::default());
+        assert_eq!(config.shadow_db_path, None);
+        assert_eq!(config.shadow_on_divergence, OnDivergence::Continue);
+        assert_eq!(config.shadow_store_compare_interval_s, 0);
+        assert_eq!(config.report_path(), None);
+        // A report directory alone turns nothing on.
+        let config = from(&[("SHADOW_REPORT_PATH", "/var/report")]).expect("a configuration");
+        assert_eq!(config.report_path(), None);
+    }
+
+    #[test]
+    fn the_settings_of_shadow_mode_are_read_from_the_environment() {
+        let config = from(&[
+            ("SHADOW_DB_PATH", "/var/lib/dash-platform/shadow"),
+            ("SHADOW_ON_DIVERGENCE", "stop"),
+            ("SHADOW_STORE_COMPARE_INTERVAL_S", "21600"),
+        ])
+        .expect("a configuration");
+        assert_eq!(
+            config.shadow_db_path,
+            Some(PathBuf::from("/var/lib/dash-platform/shadow"))
+        );
+        assert_eq!(config.shadow_on_divergence, OnDivergence::Stop);
+        assert_eq!(config.shadow_store_compare_interval_s, 21600);
+        // The report is beside the shadow's directory where it is given no place.
+        assert_eq!(
+            config.report_path(),
+            Some(PathBuf::from("/var/lib/dash-platform/shadow-report"))
+        );
+        let config = from(&[
+            ("SHADOW_DB_PATH", "/var/lib/dash-platform/shadow"),
+            ("SHADOW_REPORT_PATH", "/var/log/shadow"),
+            ("SHADOW_ON_DIVERGENCE", "continue"),
+        ])
+        .expect("a configuration");
+        assert_eq!(config.shadow_on_divergence, OnDivergence::Continue);
+        assert_eq!(config.report_path(), Some(PathBuf::from("/var/log/shadow")));
+    }
+
+    #[test]
+    fn a_setting_of_shadow_mode_that_is_not_one_is_refused() {
+        assert!(from(&[("SHADOW_ON_DIVERGENCE", "halt")]).is_err());
+        assert!(from(&[("SHADOW_STORE_COMPARE_INTERVAL_S", "often")]).is_err());
+    }
+
+    /// The whole configuration of a node, as each of its three examples gives it: shadow
+    /// mode is off in every example, and its four variables beside an example's own are
+    /// the settings of shadow mode in the configuration the node reads. The variables are
+    /// read from the files without touching the process environment, which other tests set.
+    #[test]
+    fn the_configuration_of_a_node_holds_the_settings_of_shadow_mode() {
+        for example in [".env.local", ".env.testnet", ".env.mainnet"] {
+            let envfile = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(example);
+            let mut variables: Vec<(String, String)> = dotenvy::from_path_iter(envfile.as_path())
+                .expect("cannot open .env file")
+                .collect::<Result<_, _>>()
+                .expect("cannot parse .env file");
+            let config = envy::from_iter::<_, super::PlatformConfig>(variables.clone())
+                .expect("a configuration");
+            assert_eq!(config.shadow, ShadowConfig::default(), "{example}");
+
+            for (name, value) in [
+                ("SHADOW_DB_PATH", "/var/lib/dash-platform/shadow"),
+                ("SHADOW_REPORT_PATH", "/var/log/shadow"),
+                ("SHADOW_ON_DIVERGENCE", "stop"),
+                ("SHADOW_STORE_COMPARE_INTERVAL_S", "21600"),
+            ] {
+                variables.push((name.to_string(), value.to_string()));
+            }
+            let config =
+                envy::from_iter::<_, super::PlatformConfig>(variables).expect("a configuration");
+            assert_eq!(
+                config.shadow,
+                ShadowConfig {
+                    shadow_db_path: Some(PathBuf::from("/var/lib/dash-platform/shadow")),
+                    shadow_report_path: Some(PathBuf::from("/var/log/shadow")),
+                    shadow_on_divergence: OnDivergence::Stop,
+                    shadow_store_compare_interval_s: 21600,
+                },
+                "{example}"
+            );
+        }
     }
 }

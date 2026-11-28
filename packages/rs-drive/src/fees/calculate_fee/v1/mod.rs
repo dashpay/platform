@@ -52,6 +52,11 @@ impl Drive {
                 aggregate_fee_result.checked_add_assign(drive_fee_result)?;
             }
 
+            // What this calculation charges for its own reads is part of what a caller
+            // that records fee calculations holds against another execution.
+            if !record_reads.is_empty() {
+                crate::fees::record::reads(&record_reads);
+            }
             aggregate_fee_result.checked_add_assign(Self::calculate_fee_v0(
                 None,
                 Some(record_reads),

@@ -1,3 +1,4 @@
+use crate::abci::app::shadow::Shadow;
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
@@ -26,6 +27,8 @@ pub struct FullAbciApplication<'a, C> {
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// The unsigned withdrawal transactions of every proposal accepted at the current height
     pub unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
+    /// The shadow, where the application runs in shadow mode
+    pub shadow: Option<Shadow<'a, C>>,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -36,7 +39,15 @@ impl<'a, C> FullAbciApplication<'a, C> {
             transaction: Default::default(),
             block_execution_context: Default::default(),
             unsigned_withdrawal_txs_by_round: Default::default(),
+            shadow: None,
         }
+    }
+
+    /// The application with a shadow: the blocks it commits are applied to the shadow's
+    /// database too and compared, as far and as long as [`Shadow`] says.
+    pub fn with_shadow(mut self, shadow: Shadow<'a, C>) -> Self {
+        self.shadow = Some(shadow);
+        self
     }
 }
 
@@ -197,7 +208,10 @@ where
         &self,
         request: proto::RequestInitChain,
     ) -> Result<proto::ResponseInitChain, proto::ResponseException> {
-        handler::init_chain(self, request).map_err(error_into_exception)
+        match &self.shadow {
+            Some(shadow) => shadow.init_chain(self, request),
+            None => handler::init_chain(self, request).map_err(error_into_exception),
+        }
     }
 
     fn query(
@@ -226,21 +240,30 @@ where
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        handler::finalize_block(self, request).map_err(error_into_exception)
+        match &self.shadow {
+            Some(shadow) => shadow.finalize_block(self, request),
+            None => handler::finalize_block(self, request).map_err(error_into_exception),
+        }
     }
 
     fn prepare_proposal(
         &self,
         request: proto::RequestPrepareProposal,
     ) -> Result<proto::ResponsePrepareProposal, proto::ResponseException> {
-        handler::prepare_proposal(self, request).map_err(error_into_exception)
+        match &self.shadow {
+            Some(shadow) => shadow.prepare_proposal(self, request),
+            None => handler::prepare_proposal(self, request).map_err(error_into_exception),
+        }
     }
 
     fn process_proposal(
         &self,
         request: proto::RequestProcessProposal,
     ) -> Result<proto::ResponseProcessProposal, proto::ResponseException> {
-        handler::process_proposal(self, request).map_err(error_into_exception)
+        match &self.shadow {
+            Some(shadow) => shadow.process_proposal(self, request),
+            None => handler::process_proposal(self, request).map_err(error_into_exception),
+        }
     }
 
     fn verify_vote_extension(

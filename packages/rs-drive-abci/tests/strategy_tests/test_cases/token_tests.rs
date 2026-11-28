@@ -648,6 +648,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution() {
+        // No shadow: between two runs of its chain this test executes a claim on the
+        // node's database in a transaction of its own and commits it. A shadow would not
+        // get that write.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -1160,6 +1164,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution_non_genesis() {
+        // No shadow: between two runs of its chain this test executes a claim on the
+        // node's database in a transaction of its own and commits it. A shadow would not
+        // get that write.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -1778,6 +1786,10 @@ mod tests {
     #[tokio::test]
     async fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution_non_genesis_with_start_offset_in_past(
     ) {
+        // No shadow: between two runs of its chain this test executes a claim on the
+        // node's database in a transaction of its own and commits it. A shadow would not
+        // get that write.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",

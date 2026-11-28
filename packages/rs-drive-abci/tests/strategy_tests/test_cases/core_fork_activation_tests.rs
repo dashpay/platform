@@ -252,6 +252,9 @@ mod tests {
     #[stack_size(4 * 1024 * 1024)]
     #[test]
     async fn should_never_ask_core_about_v24_again_once_it_is_recorded_even_after_a_restart() {
+        // No shadow: this test asserts every core height the node asked Core the coinbase
+        // of, and a shadow puts its own questions to the same Core.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         let mut app_hashes = vec![];
         for core_down_after_a_restart in [false, true] {
             let core = Core::new(3);
@@ -594,6 +597,9 @@ mod tests {
     #[stack_size(4 * 1024 * 1024)]
     #[test]
     async fn should_commit_only_the_v24_record_of_the_round_that_is_committed() {
+        // No shadow: this test asserts every core height the node asked Core the coinbase
+        // of, and a shadow puts its own questions to the same Core.
+        drive_abci::abci::app::shadow::testing::no_shadow_for_the_chains_of_this_thread();
         struct Case {
             blocks_before: u64,
             v24_activation_height: u32,

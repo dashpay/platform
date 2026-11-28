@@ -176,7 +176,8 @@ impl Cli {
                     tracing::info!("shielded verifying key is ready");
                 });
 
-                server::start(runtime, Arc::new(platform), config, cancel);
+                server::start(runtime, Arc::new(platform), config, cancel)
+                    .map_err(|e| format!("shadow mode did not start: {e}"))?;
 
                 tracing::info!("drive-abci server is stopped");
 
@@ -645,7 +646,11 @@ fn configure_logging(cli: &Cli, config: &PlatformConfig) -> Result<Loggers, logg
 fn install_panic_hook(cancel: CancellationToken) {
     std::panic::set_hook(Box::new(move |info| {
         tracing::error!(panic=%info, "panic");
-        cancel.cancel();
+        // A panic of the shadow of a node in shadow mode is caught where it happens, and
+        // the node goes on or ends by its configuration: it is not this hook's to end.
+        if !drive_abci::abci::app::shadow::a_panic_here_is_contained() {
+            cancel.cancel();
+        }
     }));
 }
 
@@ -760,5 +765,28 @@ mod test {
             result_error,
             "data corruption error: expected merk to contain value at key 0x08 for tree"
         );
+    }
+
+    /// The hook as the node installs it: a panic of the shadow, which is caught where it
+    /// happens, does not end the node, and any other panic does. The hook is the
+    /// process's, so that a panic of another test of this binary that fails meanwhile
+    /// ends this one's node too, and this test fails with it.
+    #[test]
+    fn the_panic_hook_ends_the_node_at_a_panic_that_is_not_the_shadows() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let before = std::panic::take_hook();
+        super::install_panic_hook(cancel.clone());
+        let of_the_shadow = drive_abci::abci::app::shadow::testing::a_panic_of_the_shadow();
+        let after_the_shadows = cancel.is_cancelled();
+        let another = std::panic::catch_unwind(|| panic!("not the shadow's"));
+        let after_another = cancel.is_cancelled();
+        std::panic::set_hook(before);
+        assert_eq!(
+            of_the_shadow,
+            "panic: a panic of the shadow, planted by a test"
+        );
+        assert!(!after_the_shadows);
+        assert!(another.is_err());
+        assert!(after_another);
     }
 }
